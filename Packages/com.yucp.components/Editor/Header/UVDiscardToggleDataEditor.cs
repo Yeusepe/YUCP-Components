@@ -28,11 +28,13 @@ namespace YUCP.Components.Editor
             root.Add(container);
             return root;
         }
-
         private void OnInspectorGUIContent()
         {
             serializedObject.Update();
             var data = (UVDiscardToggleData)target;
+
+            // Beta warning
+            BetaWarningHelper.DrawBetaWarningIMGUI(typeof(UVDiscardToggleData));
 
             // Show integration banner if AutoBodyHider is present
             var autoBodyHider = data.clothingMesh != null ? data.clothingMesh.GetComponent<AutoBodyHiderData>() : null;
