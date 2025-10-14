@@ -1,13 +1,17 @@
 {
-  "name": "YUCP Components",
-  "id": "com.yucp.components.listing",
-  "url": "https://vpm.yucp.club/index.json",
-  "author": "YUCP Club",
-  "description": "VRChat module components with VRCFury integration",
-  "infoLink": {
-    "text": "Documentation",
-    "url": "https://github.com/Yeusepe/YUCP-Components"
+  "Name": "YUCP Components",
+  "Id": "com.yucp.components.listing",
+  "Url": "https://vpm.yucp.club/index.json",
+  "Author": {
+    "Name": "YUCP Club",
+    "Url": "https://vpm.yucp.club/",
+    "Email": "conact@yucp.club"
   },
-  "bannerUrl": "banner.png"
+  "Description": "Advanced VRChat avatar components. Auto-link armatures, hide body parts, generate grips, and manage UDIM textures with GPU-accelerated detection.",
+  "InfoLink": {
+    "Text": "Documentation",
+    "Url": "https://github.com/Yeusepe/YUCP-Components"
+  },
+  "BannerUrl": "banner.png"
 }
 
