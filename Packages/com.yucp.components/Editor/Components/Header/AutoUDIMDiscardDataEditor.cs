@@ -10,124 +10,166 @@ namespace YUCP.Components.Editor.UI
     [CustomEditor(typeof(AutoUDIMDiscardData))]
     public class AutoUDIMDiscardDataEditor : UnityEditor.Editor
     {
+        private bool showAdvancedOptions = false;
+        private bool showToggleOptions = false;
+        private bool showBuildStats = false;
+
         public override void OnInspectorGUI()
         {
             // Display beta warning at the top
             BetaWarningHelper.DrawBetaWarningIMGUI(typeof(AutoUDIMDiscardData));
             
             serializedObject.Update();
-
             AutoUDIMDiscardData data = (AutoUDIMDiscardData)target;
 
-            DrawPropertiesWithConditionalVisibility();
+            // Target Mesh
+            DrawSection("Target Mesh", () => {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("targetBodyMesh"), new GUIContent("Body Mesh"));
+            });
 
-            // Preview button
-            EditorGUILayout.Space();
-            if (GUILayout.Button("Generate Preview", GUILayout.Height(30)))
+            // Detection Settings
+            DrawSection("Detection Settings", () => {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("uvChannel"), new GUIContent("UV Channel"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeTolerance"), new GUIContent("Merge Tolerance"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("minRegionSize"), new GUIContent("Min Region Size %"));
+            });
+
+            // UDIM Tile Assignment
+            DrawSection("UDIM Tile Assignment", () => {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("startRow"), new GUIContent("Start Row"), GUILayout.MinWidth(100));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("startColumn"), new GUIContent("Start Column"), GUILayout.MinWidth(100));
+                EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.HelpBox("Each detected region will be assigned to consecutive tiles starting from this position.", MessageType.None);
+            });
+
+            // Toggle Settings
+            EditorGUILayout.Space(5);
+            var createTogglesProp = serializedObject.FindProperty("createToggles");
+            EditorGUILayout.PropertyField(createTogglesProp, new GUIContent("Create Toggles"));
+
+            if (createTogglesProp.boolValue)
+            {
+                DrawSection("Toggle Configuration", () => {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleMenuPath"), new GUIContent("Menu Path Prefix"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleSaved"), new GUIContent("Saved"));
+                    
+                    EditorGUILayout.Space(3);
+                    var useMasterToggleProp = serializedObject.FindProperty("useMasterToggle");
+                    EditorGUILayout.PropertyField(useMasterToggleProp, new GUIContent("Use Master Toggle"));
+                    
+                    if (useMasterToggleProp.boolValue)
+                    {
+                        EditorGUI.indentLevel++;
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("masterTogglePath"), new GUIContent("Master Toggle Path"));
+                        EditorGUI.indentLevel--;
+                    }
+                    
+                    EditorGUILayout.Space(3);
+                    var useParameterDriverProp = serializedObject.FindProperty("useParameterDriver");
+                    EditorGUILayout.PropertyField(useParameterDriverProp, new GUIContent("Use Parameter Driver"));
+                    
+                    if (useParameterDriverProp.boolValue)
+                    {
+                        EditorGUI.indentLevel++;
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("parameterBaseName"), new GUIContent("Parameter Base Name"));
+                        EditorGUILayout.HelpBox("Parameter drivers create synced parameters.", MessageType.Info);
+                        EditorGUI.indentLevel--;
+                    }
+                });
+            }
+
+            // Advanced Options (Foldout)
+            EditorGUILayout.Space(5);
+            showAdvancedOptions = EditorGUILayout.BeginFoldoutHeaderGroup(showAdvancedOptions, "Advanced Options");
+            if (showAdvancedOptions)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("showPreview"), new GUIContent("Show Preview"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("useColorCoding"), new GUIContent("Use Color Coding"));
+                EditorGUI.indentLevel--;
+            }
+            EditorGUILayout.EndFoldoutHeaderGroup();
+
+            // Preview Button
+            EditorGUILayout.Space(10);
+            GUI.backgroundColor = Color.green;
+            if (GUILayout.Button("Generate Preview", GUILayout.Height(35)))
             {
                 GeneratePreview(data);
             }
+            GUI.backgroundColor = Color.white;
 
+            // Preview Results
             if (data.previewGenerated && data.previewRegions != null)
             {
-                EditorGUILayout.Space();
+                EditorGUILayout.Space(5);
                 EditorGUILayout.HelpBox($"Detected {data.previewRegions.Count} UV regions", MessageType.Info);
                 
-                for (int i = 0; i < data.previewRegions.Count; i++)
+                for (int i = 0; i < data.previewRegions.Count && i < 10; i++)
                 {
                     var region = data.previewRegions[i];
                     EditorGUILayout.LabelField($"Region {i + 1}: {region.vertexIndices.Count} vertices → UDIM ({region.assignedRow}, {region.assignedColumn})");
                 }
+                
+                if (data.previewRegions.Count > 10)
+                {
+                    EditorGUILayout.LabelField($"... and {data.previewRegions.Count - 10} more regions");
+                }
+            }
+
+            // Build Statistics (Foldout)
+            EditorGUILayout.Space(5);
+            var detectedRegionsProp = serializedObject.FindProperty("detectedRegions");
+            if (detectedRegionsProp.intValue > 0)
+            {
+                showBuildStats = EditorGUILayout.BeginFoldoutHeaderGroup(showBuildStats, "Build Statistics");
+                if (showBuildStats)
+                {
+                    EditorGUI.indentLevel++;
+                    GUI.enabled = false;
+                    EditorGUILayout.PropertyField(detectedRegionsProp, new GUIContent("Detected Regions"));
+                    
+                    var usedTiles = serializedObject.FindProperty("usedTiles");
+                    if (usedTiles.arraySize > 0)
+                    {
+                        EditorGUILayout.LabelField("Used Tiles:");
+                        for (int i = 0; i < usedTiles.arraySize; i++)
+                        {
+                            EditorGUILayout.LabelField($"  • {usedTiles.GetArrayElementAtIndex(i).stringValue}");
+                        }
+                    }
+                    GUI.enabled = true;
+                    EditorGUI.indentLevel--;
+                }
+                EditorGUILayout.EndFoldoutHeaderGroup();
             }
 
             serializedObject.ApplyModifiedProperties();
         }
 
-        private void DrawPropertiesWithConditionalVisibility()
+        private void DrawSection(string title, System.Action content)
         {
-            SerializedProperty targetBodyMesh = serializedObject.FindProperty("targetBodyMesh");
-            SerializedProperty uvChannel = serializedObject.FindProperty("uvChannel");
-            SerializedProperty mergeTolerance = serializedObject.FindProperty("mergeTolerance");
-            SerializedProperty minRegionSize = serializedObject.FindProperty("minRegionSize");
-            SerializedProperty startRow = serializedObject.FindProperty("startRow");
-            SerializedProperty startColumn = serializedObject.FindProperty("startColumn");
-            SerializedProperty createToggles = serializedObject.FindProperty("createToggles");
-            SerializedProperty toggleMenuPath = serializedObject.FindProperty("toggleMenuPath");
-            SerializedProperty toggleSaved = serializedObject.FindProperty("toggleSaved");
-            SerializedProperty useMasterToggle = serializedObject.FindProperty("useMasterToggle");
-            SerializedProperty masterTogglePath = serializedObject.FindProperty("masterTogglePath");
-            SerializedProperty useParameterDriver = serializedObject.FindProperty("useParameterDriver");
-            SerializedProperty parameterBaseName = serializedObject.FindProperty("parameterBaseName");
-            SerializedProperty showPreview = serializedObject.FindProperty("showPreview");
-            SerializedProperty useColorCoding = serializedObject.FindProperty("useColorCoding");
-            SerializedProperty detectedRegions = serializedObject.FindProperty("detectedRegions");
-            SerializedProperty usedTiles = serializedObject.FindProperty("usedTiles");
-
-            EditorGUILayout.PropertyField(targetBodyMesh);
+            EditorGUILayout.Space(5);
             
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Detection Settings", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(uvChannel);
-            EditorGUILayout.PropertyField(mergeTolerance);
-            EditorGUILayout.PropertyField(minRegionSize);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("UDIM Tile Assignment", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(startRow);
-            EditorGUILayout.PropertyField(startColumn);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Toggle Settings", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(createToggles);
-
-            if (createToggles.boolValue)
-            {
-                EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(toggleMenuPath);
-                EditorGUILayout.PropertyField(toggleSaved);
-                EditorGUILayout.PropertyField(useMasterToggle);
-
-                if (useMasterToggle.boolValue)
-                {
-                    EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(masterTogglePath);
-                    EditorGUI.indentLevel--;
-                }
-
-                EditorGUILayout.PropertyField(useParameterDriver);
-
-                if (useParameterDriver.boolValue)
-                {
-                    EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(parameterBaseName);
-                    EditorGUI.indentLevel--;
-                    EditorGUILayout.HelpBox("Parameter drivers create synced parameters that can be used by other systems.", MessageType.Info);
-                }
-
-                EditorGUI.indentLevel--;
-            }
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Advanced Options", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(showPreview);
-            EditorGUILayout.PropertyField(useColorCoding);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Build Statistics", EditorStyles.boldLabel);
-            GUI.enabled = false;
-            EditorGUILayout.PropertyField(detectedRegions);
+            var originalColor = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
             
-            if (usedTiles.arraySize > 0)
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUI.backgroundColor = originalColor;
+            
+            if (!string.IsNullOrEmpty(title))
             {
-                EditorGUILayout.LabelField("Used Tiles:");
-                EditorGUI.indentLevel++;
-                for (int i = 0; i < usedTiles.arraySize; i++)
-                {
-                    EditorGUILayout.LabelField(usedTiles.GetArrayElementAtIndex(i).stringValue);
-                }
-                EditorGUI.indentLevel--;
+                var style = new GUIStyle(EditorStyles.boldLabel);
+                style.alignment = TextAnchor.MiddleLeft;
+                EditorGUILayout.LabelField(title, style);
+                EditorGUILayout.Space(3);
             }
-            GUI.enabled = true;
+            
+            content?.Invoke();
+            
+            EditorGUILayout.EndVertical();
         }
 
         private void GeneratePreview(AutoUDIMDiscardData data)

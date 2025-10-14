@@ -30,6 +30,11 @@ namespace YUCP.Components.Editor
         private bool lastSmartRequireBidirectional;
         private Texture2D lastManualMask;
         private float lastManualMaskThreshold;
+        
+        // Foldout states
+        private bool showSmartDetection = false;
+        private bool showAdvancedOptions = false;
+        private bool showToggleOptions = false;
 
         private void OnEnable()
         {
@@ -69,15 +74,11 @@ namespace YUCP.Components.Editor
         {
             serializedObject.Update();
             
-            // Draw fields manually with conditional visibility
-            DrawPropertiesWithConditionalVisibility();
-            
             // Check if any detection settings changed that would invalidate the cache
             bool settingsChanged = CheckForSettingsChanges();
             
             if (data.previewGenerated && data.previewRawHiddenVertices != null)
             {
-                // If core detection settings changed, clear the entire cache
                 if (settingsChanged)
                 {
                     Debug.Log("[AutoBodyHider Editor] Detection settings changed, clearing preview cache");
@@ -85,7 +86,6 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    // Only check for safety margin and symmetry changes (these can be updated from cache)
                     bool needsUpdate = false;
                     
                     if (Mathf.Abs(data.safetyMargin - lastCheckedSafetyMargin) > 0.0001f)
@@ -107,10 +107,178 @@ namespace YUCP.Components.Editor
                 }
             }
 
+            // Target Meshes
+            DrawSection("Target Meshes", () => {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("targetBodyMesh"), new GUIContent("Body Mesh"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("clothingMesh"), new GUIContent("Clothing Mesh"));
+            });
+
+            // Detection Settings
+            DrawSection("Detection Settings", () => {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("detectionMethod"), new GUIContent("Detection Method"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("safetyMargin"), new GUIContent("Safety Margin"));
+
+                // Method-specific settings
+                if (data.detectionMethod == DetectionMethod.Proximity || data.detectionMethod == DetectionMethod.Hybrid)
+                {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("proximityThreshold"), new GUIContent("Proximity Threshold"));
+                }
+
+                if (data.detectionMethod == DetectionMethod.Raycast || data.detectionMethod == DetectionMethod.Hybrid || data.detectionMethod == DetectionMethod.Smart)
+                {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("raycastDistance"), new GUIContent("Raycast Distance"));
+                }
+
+                if (data.detectionMethod == DetectionMethod.Hybrid)
+                {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("hybridExpansionFactor"), new GUIContent("Expansion Factor"));
+                }
+
+                if (data.detectionMethod == DetectionMethod.Manual)
+                {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("manualMask"), new GUIContent("Manual Mask"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("manualMaskThreshold"), new GUIContent("Mask Threshold"));
+                }
+            });
+
+            // Smart Detection Settings (Foldout)
+            if (data.detectionMethod == DetectionMethod.Smart)
+            {
+                EditorGUILayout.Space(5);
+                showSmartDetection = EditorGUILayout.BeginFoldoutHeaderGroup(showSmartDetection, "Smart Detection Settings");
+                if (showSmartDetection)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("smartRayDirections"), new GUIContent("Ray Directions"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("smartOcclusionThreshold"), new GUIContent("Occlusion Threshold"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("smartUseNormals"), new GUIContent("Use Normals"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("smartRequireBidirectional"), new GUIContent("Require Bidirectional"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("smartRayOffset"), new GUIContent("Ray Offset"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("smartConservativeMode"), new GUIContent("Conservative Mode"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("smartMinDistanceToClothing"), new GUIContent("Min Distance to Clothing"));
+                    EditorGUI.indentLevel--;
+                }
+                EditorGUILayout.EndFoldoutHeaderGroup();
+            }
+
+            // Application Mode
+            DrawSection("Application Mode", () => {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("applicationMode"), new GUIContent("Mode"));
+                
+                if (data.applicationMode == ApplicationMode.AutoDetect)
+                {
+                    EditorGUILayout.HelpBox("Auto-detect will use UDIM Discard for Poiyomi shaders, Mesh Deletion for others.", MessageType.Info);
+                }
+            });
+
+            // UDIM Settings (only if UDIM mode)
+            if (data.applicationMode == ApplicationMode.UDIMDiscard || data.applicationMode == ApplicationMode.AutoDetect)
+            {
+                DrawSection("UDIM Discard Settings", () => {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("udimUVChannel"), new GUIContent("UV Channel"));
+                    
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("udimDiscardRow"), new GUIContent("Row"), GUILayout.MinWidth(100));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("udimDiscardColumn"), new GUIContent("Column"), GUILayout.MinWidth(100));
+                    EditorGUILayout.EndHorizontal();
+                });
+
+                // UDIM Toggle Settings
+                EditorGUILayout.Space(5);
+                var createToggleProp = serializedObject.FindProperty("createToggle");
+                EditorGUILayout.PropertyField(createToggleProp, new GUIContent("Create Toggle"));
+
+                if (createToggleProp.boolValue)
+                {
+                    DrawSection("Toggle Configuration", () => {
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleType"), new GUIContent("Toggle Type"));
+                        
+                        if (data.toggleType == ToggleType.ObjectToggle)
+                        {
+                            EditorGUILayout.HelpBox("Object Toggle: Toggles clothing + body hiding", MessageType.Info);
+                        }
+                        else
+                        {
+                            EditorGUILayout.HelpBox("Hidden Toggle: Only toggles body hiding (clothing always visible)", MessageType.Info);
+                        }
+                        
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleMenuPath"), new GUIContent("Menu Path"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleGlobalParameter"), new GUIContent("Global Parameter (Optional)"));
+                        
+                        // Show parameter mode info
+                        bool hasMenuPath = !string.IsNullOrEmpty(data.toggleMenuPath);
+                        bool hasGlobalParam = !string.IsNullOrEmpty(data.toggleGlobalParameter);
+                        
+                        if (!hasMenuPath && hasGlobalParam)
+                        {
+                            EditorGUILayout.HelpBox($"Global Parameter Only: Controlled by '{data.toggleGlobalParameter}' (no menu item).", MessageType.Info);
+                        }
+                        else if (hasMenuPath && hasGlobalParam)
+                        {
+                            EditorGUILayout.HelpBox($"Synced Toggle: Menu controls '{data.toggleGlobalParameter}' (synced across players).", MessageType.Info);
+                        }
+                        else if (hasMenuPath && !hasGlobalParam)
+                        {
+                            EditorGUILayout.HelpBox("Local Toggle: VRCFury auto-generates local parameter (not synced).", MessageType.Info);
+                        }
+                        else
+                        {
+                            EditorGUILayout.HelpBox("Menu path or global parameter is required!", MessageType.Warning);
+                        }
+                        
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleSaved"), new GUIContent("Saved"), GUILayout.MinWidth(100));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleDefaultOn"), new GUIContent("Default ON"), GUILayout.MinWidth(100));
+                        EditorGUILayout.EndHorizontal();
+                        
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("debugSaveAnimation"), new GUIContent("Debug: Save Animation"));
+                    });
+
+                    if (data.applicationMode == ApplicationMode.MeshDeletion)
+                    {
+                        EditorGUILayout.HelpBox("Toggle only works with UDIM Discard mode, not Mesh Deletion!", MessageType.Warning);
+                    }
+                }
+            }
+
+            // Advanced Options (Foldout)
+            EditorGUILayout.Space(5);
+            showAdvancedOptions = EditorGUILayout.BeginFoldoutHeaderGroup(showAdvancedOptions, "Advanced Options");
+            if (showAdvancedOptions)
+            {
+                EditorGUI.indentLevel++;
+                
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("mirrorSymmetry"), new GUIContent("Mirror Symmetry"));
+                
+                EditorGUILayout.Space(3);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("useBoneFiltering"), new GUIContent("Use Bone Filtering"));
+                if (data.useBoneFiltering)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("filterBones"), new GUIContent("Filter Bones"), true);
+                    EditorGUI.indentLevel--;
+                }
+                
+                EditorGUILayout.Space(3);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("optimizeTileUsage"), new GUIContent("Optimize Tile Usage"));
+                if (data.optimizeTileUsage)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Reduces UDIM tiles for layered outfits by skipping overlap tiles for fully-covered inner layers.",
+                        MessageType.Info);
+                }
+                
+                EditorGUILayout.Space(3);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("debugMode"), new GUIContent("Debug Mode"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("showPreview"), new GUIContent("Show Preview"));
+                
+                EditorGUI.indentLevel--;
+            }
+            EditorGUILayout.EndFoldoutHeaderGroup();
+
+            // Preview Tools
             EditorGUILayout.Space(15);
-            
             EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
-            
             EditorGUILayout.Space(10);
             
             GUIStyle headerStyle = new GUIStyle(EditorStyles.boldLabel);
@@ -152,7 +320,6 @@ namespace YUCP.Components.Editor
                 GUILayout.Height(40),
                 GUILayout.MinWidth(150)))
             {
-                Debug.Log("[YUCP Preview] Generate Preview button clicked");
                 GeneratePreview();
             }
             GUI.backgroundColor = Color.white;
@@ -162,7 +329,6 @@ namespace YUCP.Components.Editor
             GUI.backgroundColor = new Color(1f, 0.5f, 0.5f);
             if (GUILayout.Button("Clear Preview", GUILayout.Height(40), GUILayout.MinWidth(100)))
             {
-                Debug.Log("[YUCP Preview] Clear Preview button clicked");
                 ClearPreview();
             }
             GUI.backgroundColor = Color.white;
@@ -176,220 +342,43 @@ namespace YUCP.Components.Editor
             if (GUILayout.Button("Clear Detection Cache", GUILayout.Height(30)))
             {
                 DetectionCache.ClearCache();
-                Debug.Log("[YUCP Preview] Detection cache cleared");
                 EditorUtility.DisplayDialog("Cache Cleared", 
-                    "Detection cache has been cleared.\n\n" +
-                    "Next build will re-run detection for all Auto Body Hider components.", 
+                    "Detection cache has been cleared.\n\nNext build will re-run detection for all Auto Body Hider components.", 
                     "OK");
             }
             GUI.backgroundColor = Color.white;
 
+            // Validation
+            EditorGUILayout.Space(10);
             if (!ValidateData())
             {
-                EditorGUILayout.HelpBox(GetValidationError(), MessageType.Warning);
+                EditorGUILayout.HelpBox(GetValidationError(), MessageType.Error);
             }
-        }
-
-        private void DrawPropertiesWithConditionalVisibility()
-        {
-            // Target Meshes
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("targetBodyMesh"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("clothingMesh"));
-
-            EditorGUILayout.Space();
-
-            // Detection Settings
-            EditorGUILayout.LabelField("Detection Settings", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("detectionMethod"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("safetyMargin"));
-
-            // Show proximity threshold for methods that use it
-            if (data.detectionMethod == DetectionMethod.Proximity || 
-                data.detectionMethod == DetectionMethod.Hybrid)
-            {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("proximityThreshold"));
-            }
-
-            // Show raycast distance for methods that use it
-            if (data.detectionMethod == DetectionMethod.Raycast || 
-                data.detectionMethod == DetectionMethod.Hybrid || 
-                data.detectionMethod == DetectionMethod.Smart)
-            {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("raycastDistance"));
-            }
-
-            // Show hybrid-specific settings
-            if (data.detectionMethod == DetectionMethod.Hybrid)
-            {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("hybridExpansionFactor"));
-            }
-
-            // Show smart detection settings
-            if (data.detectionMethod == DetectionMethod.Smart)
-            {
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Smart Detection Settings", EditorStyles.boldLabel);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("smartRayDirections"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("smartOcclusionThreshold"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("smartUseNormals"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("smartRequireBidirectional"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("smartRayOffset"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("smartConservativeMode"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("smartMinDistanceToClothing"));
-            }
-
-            // Show manual mask settings
-            if (data.detectionMethod == DetectionMethod.Manual)
-            {
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Manual Mask (Manual Method Only)", EditorStyles.boldLabel);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("manualMask"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("manualMaskThreshold"));
-            }
-
-            EditorGUILayout.Space();
-
-            // Application Mode
-            EditorGUILayout.LabelField("Application Mode", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("applicationMode"));
-
-            // Show UDIM settings only if using UDIM mode
-            if (data.applicationMode == ApplicationMode.UDIMDiscard || 
-                data.applicationMode == ApplicationMode.AutoDetect)
-            {
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("UDIM Discard Settings (Poiyomi Only)", EditorStyles.boldLabel);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("udimUVChannel"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("udimDiscardRow"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("udimDiscardColumn"));
-
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("UDIM Toggle Settings (Optional)", EditorStyles.boldLabel);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("createToggle"));
-
-                // Show toggle settings only if createToggle is enabled
-                if (data.createToggle)
-                {
-                    EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("debugSaveAnimation"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleType"));
-                    
-                    // Show help text based on toggle type
-                    if (data.toggleType == ToggleType.ObjectToggle)
-                    {
-                        EditorGUILayout.HelpBox(
-                            "Object Toggle: Toggles clothing object ON/OFF + UDIM discard\n" +
-                            "• Toggle ON: Clothing visible, body hidden\n" +
-                            "• Toggle OFF: Clothing hidden, body visible", 
-                            MessageType.Info);
-                    }
-                    else
-                    {
-                        EditorGUILayout.HelpBox(
-                            "Hidden Toggle: Only toggles UDIM discard, clothing always visible\n" +
-                            "• Toggle ON: Body hidden\n" +
-                            "• Toggle OFF: Body visible", 
-                            MessageType.Info);
-                    }
-                    
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleMenuPath"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleGlobalParameter"));
-                    
-                    // Show info about local vs global parameter control
-                    bool hasMenuPath = !string.IsNullOrEmpty(data.toggleMenuPath);
-                    bool hasGlobalParam = !string.IsNullOrEmpty(data.toggleGlobalParameter);
-                    
-                    if (!hasMenuPath && hasGlobalParam)
-                    {
-                        EditorGUILayout.HelpBox(
-                            "Global Parameter Only Mode\n\n" +
-                            "No menu item will be created. This clothing's UDIM discard will be controlled " +
-                            "only by the global parameter '" + data.toggleGlobalParameter + "'.\n\n" +
-                            "Use this for:\n" +
-                            "• Outfit groups (all pieces share same parameter)\n" +
-                            "• OSC control from external apps\n" +
-                            "• Synced outfit switching across players\n\n" +
-                            "You'll need to create a separate toggle/driver to control this parameter.",
-                            MessageType.Info);
-                    }
-                    else if (hasMenuPath && hasGlobalParam)
-                    {
-                        EditorGUILayout.HelpBox(
-                            "Menu + Global Sync Mode\n\n" +
-                            "Menu toggle: '" + data.toggleMenuPath + "'\n" +
-                            "Global parameter: '" + data.toggleGlobalParameter + "'\n\n" +
-                            "Menu toggle will control the global parameter, syncing state across all players.",
-                            MessageType.Info);
-                    }
-                    else if (hasMenuPath && !hasGlobalParam)
-                    {
-                        EditorGUILayout.HelpBox(
-                            "Local Toggle Mode (Default)\n\n" +
-                            "Menu toggle: '" + data.toggleMenuPath + "'\n" +
-                            "Parameter: Auto-generated by VRCFury (prefixed with 'VF##')\n\n" +
-                            "Toggle state is local to your client only (not synced).",
-                            MessageType.Info);
-                    }
-                    else // !hasMenuPath && !hasGlobalParam
-                    {
-                        EditorGUILayout.HelpBox(
-                            "Menu path or global parameter is required for toggle functionality!",
-                            MessageType.Warning);
-                    }
-                    
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleSaved"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleDefaultOn"));
-                    EditorGUI.indentLevel--;
-
-                    // Show warning if using mesh deletion
-                    if (data.applicationMode == ApplicationMode.MeshDeletion)
-                    {
-                        EditorGUILayout.HelpBox("Toggle only works with UDIM Discard mode, not Mesh Deletion!", MessageType.Warning);
-                    }
-                }
-            }
-
-            EditorGUILayout.Space();
-
-            // Advanced Options
-            EditorGUILayout.LabelField("Advanced Options", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("useBoneFiltering"));
-            
-            if (data.useBoneFiltering)
-            {
-                EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("filterBones"), true);
-                EditorGUI.indentLevel--;
-            }
-
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("mirrorSymmetry"));
-
-            EditorGUILayout.Space();
-
-            // Multi-Clothing Optimization
-            EditorGUILayout.LabelField("Multi-Clothing Optimization", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("optimizeTileUsage"));
-            
-            if (data.optimizeTileUsage)
-            {
-                EditorGUILayout.HelpBox(
-                    "Tile Usage Optimization Enabled\n\n" +
-                    "• Clothing processed from most to least coverage\n" +
-                    "• Inner layers fully covered by outer layers won't need overlap tiles\n" +
-                    "• Saves significant UDIM tiles for complex layered outfits\n\n" +
-                    "Example: Jacket fully covers shirt → no shirt+jacket overlap tile needed\n\n" +
-                    "Note: Only affects UDIM Discard mode with multiple clothing pieces.",
-                    MessageType.Info);
-            }
-
-            EditorGUILayout.Space();
-
-            // Debug & Preview
-            EditorGUILayout.LabelField("Debug & Preview", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("debugMode"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("showPreview"));
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        private void DrawSection(string title, System.Action content)
+        {
+            EditorGUILayout.Space(5);
+            
+            var originalColor = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
+            
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUI.backgroundColor = originalColor;
+            
+            if (!string.IsNullOrEmpty(title))
+            {
+                var style = new GUIStyle(EditorStyles.boldLabel);
+                style.alignment = TextAnchor.MiddleLeft;
+                EditorGUILayout.LabelField(title, style);
+                EditorGUILayout.Space(3);
+            }
+            
+            content?.Invoke();
+            
+            EditorGUILayout.EndVertical();
         }
 
         private bool ValidateData()
@@ -425,16 +414,11 @@ namespace YUCP.Components.Editor
                     return;
                 }
                 
-                Debug.Log("[YUCP Preview] Validation passed");
-                
                 GPURaycast.Initialize();
-                Debug.Log("[YUCP Preview] GPU initialized");
 
                 Mesh bodyMesh = data.targetBodyMesh.sharedMesh;
                 Vector3[] vertices = bodyMesh.vertices;
                 Vector3[] normals = bodyMesh.normals;
-                
-                Debug.Log($"[YUCP Preview] Body mesh has {vertices.Length} vertices");
                 
                 List<Vector2> uv0List = new List<Vector2>();
                 bodyMesh.GetUVs(0, uv0List);
@@ -445,10 +429,8 @@ namespace YUCP.Components.Editor
                 {
                     data.previewVertexPositions[i] = data.targetBodyMesh.transform.TransformPoint(vertices[i]);
                 }
-                Debug.Log("[YUCP Preview] Generated world positions");
 
                 EditorUtility.DisplayProgressBar("YUCP Preview", "Detecting hidden vertices...", 0.5f);
-                Debug.Log($"[YUCP Preview] Running detection with method: {data.detectionMethod}");
                 
                 data.previewRawHiddenVertices = VertexDetection.DetectHiddenVertices(
                     data,
@@ -459,36 +441,19 @@ namespace YUCP.Components.Editor
                 );
                 
                 data.previewLocalVertices = vertices;
-                
                 data.previewTriangles = bodyMesh.triangles;
-                
-                Debug.Log("[YUCP Preview] Detection complete - raw data cached");
                 
                 data.previewHiddenVertices = new bool[data.previewRawHiddenVertices.Length];
                 System.Array.Copy(data.previewRawHiddenVertices, data.previewHiddenVertices, data.previewRawHiddenVertices.Length);
 
-                int initialCount = 0;
-                foreach (bool h in data.previewHiddenVertices) if (h) initialCount++;
-                Debug.Log($"[YUCP Preview DEBUG] Initial hidden vertices: {initialCount}");
-
                 if (data.mirrorSymmetry)
                 {
-                    Debug.Log("[YUCP Preview] Applying symmetry mirror");
                     data.previewHiddenVertices = ApplySymmetryMirror(data.previewHiddenVertices, vertices);
-                    
-                    int countAfterMirror = 0;
-                    foreach (bool h in data.previewHiddenVertices) if (h) countAfterMirror++;
-                    Debug.Log($"[YUCP Preview DEBUG] After symmetry mirror: {countAfterMirror} hidden vertices");
                 }
 
                 if (data.safetyMargin > 0.0001f)
                 {
-                    Debug.Log($"[YUCP Preview] Applying safety margin: {data.safetyMargin}m");
                     data.previewHiddenVertices = ApplySafetyMargin(data.previewHiddenVertices, vertices);
-                    
-                    int countAfterMargin = 0;
-                    foreach (bool h in data.previewHiddenVertices) if (h) countAfterMargin++;
-                    Debug.Log($"[YUCP Preview DEBUG] After safety margin: {countAfterMargin} hidden vertices");
                 }
                 
                 data.lastPreviewSafetyMargin = data.safetyMargin;
@@ -502,7 +467,6 @@ namespace YUCP.Components.Editor
                 data.showPreview = true;
 
                 SceneView.RepaintAll();
-
                 EditorUtility.ClearProgressBar();
                 
                 int totalFaces = data.previewTriangles.Length / 3;
@@ -512,15 +476,12 @@ namespace YUCP.Components.Editor
                     if (hidden) hiddenFaces++;
                 }
                 
-                Debug.Log($"[YUCP Preview] Preview generated successfully!\n" +
-                         $"Total faces: {totalFaces}\n" +
-                         $"Hidden faces: {hiddenFaces} ({(hiddenFaces * 100f / totalFaces):F1}%)\n" +
-                         $"Look at the Scene view to see red colored faces that will be deleted");
+                Debug.Log($"[YUCP Preview] Preview generated: {hiddenFaces}/{totalFaces} faces hidden ({(hiddenFaces * 100f / totalFaces):F1}%)");
             }
             catch (System.Exception e)
             {
                 EditorUtility.ClearProgressBar();
-                Debug.LogError($"[YUCP Preview] Failed to generate preview: {e.Message}");
+                Debug.LogError($"[YUCP Preview] Failed: {e.Message}");
                 Debug.LogException(e);
             }
             finally
@@ -532,13 +493,7 @@ namespace YUCP.Components.Editor
 
         private void UpdatePreviewFromCache()
         {
-            if (data.previewRawHiddenVertices == null || data.previewLocalVertices == null)
-            {
-                Debug.LogWarning("[YUCP Preview] Cannot update - no cached data. Generate preview first.");
-                return;
-            }
-            
-            Debug.Log("[YUCP Preview] Real-time update: Reapplying post-processing with new parameters");
+            if (data.previewRawHiddenVertices == null || data.previewLocalVertices == null) return;
             
             data.previewHiddenVertices = new bool[data.previewRawHiddenVertices.Length];
             System.Array.Copy(data.previewRawHiddenVertices, data.previewHiddenVertices, data.previewRawHiddenVertices.Length);
@@ -554,17 +509,6 @@ namespace YUCP.Components.Editor
             }
             
             CalculateHiddenFaces(data);
-            
-            int totalFaces = data.previewTriangles.Length / 3;
-            int hiddenFaces = 0;
-            foreach (bool hidden in data.previewHiddenFaces)
-            {
-                if (hidden) hiddenFaces++;
-            }
-            
-            Debug.Log($"[YUCP Preview] Real-time updated: {hiddenFaces}/{totalFaces} faces hidden " +
-                     $"({(hiddenFaces * 100f / totalFaces):F1}%)");
-            
             SceneView.RepaintAll();
             Repaint();
         }
@@ -580,8 +524,6 @@ namespace YUCP.Components.Editor
                 int v1 = data.previewTriangles[i * 3 + 1];
                 int v2 = data.previewTriangles[i * 3 + 2];
                 
-                // Match MeshDeleter behavior: face is deleted if ANY vertex is hidden
-                // (MeshDeleter only keeps triangles where ALL vertices are visible)
                 data.previewHiddenFaces[i] = data.previewHiddenVertices[v0] || 
                                              data.previewHiddenVertices[v1] || 
                                              data.previewHiddenVertices[v2];
@@ -592,59 +534,15 @@ namespace YUCP.Components.Editor
         {
             bool changed = false;
             
-            if (data.detectionMethod != lastDetectionMethod)
-            {
-                lastDetectionMethod = data.detectionMethod;
-                changed = true;
-            }
-            
-            if (Mathf.Abs(data.proximityThreshold - lastProximityThreshold) > 0.0001f)
-            {
-                lastProximityThreshold = data.proximityThreshold;
-                changed = true;
-            }
-            
-            if (Mathf.Abs(data.raycastDistance - lastRaycastDistance) > 0.0001f)
-            {
-                lastRaycastDistance = data.raycastDistance;
-                changed = true;
-            }
-            
-            if (data.smartRayDirections != lastSmartRayDirections)
-            {
-                lastSmartRayDirections = data.smartRayDirections;
-                changed = true;
-            }
-            
-            if (Mathf.Abs(data.smartOcclusionThreshold - lastSmartOcclusionThreshold) > 0.0001f)
-            {
-                lastSmartOcclusionThreshold = data.smartOcclusionThreshold;
-                changed = true;
-            }
-            
-            if (data.smartUseNormals != lastSmartUseNormals)
-            {
-                lastSmartUseNormals = data.smartUseNormals;
-                changed = true;
-            }
-            
-            if (data.smartRequireBidirectional != lastSmartRequireBidirectional)
-            {
-                lastSmartRequireBidirectional = data.smartRequireBidirectional;
-                changed = true;
-            }
-            
-            if (data.manualMask != lastManualMask)
-            {
-                lastManualMask = data.manualMask;
-                changed = true;
-            }
-            
-            if (Mathf.Abs(data.manualMaskThreshold - lastManualMaskThreshold) > 0.0001f)
-            {
-                lastManualMaskThreshold = data.manualMaskThreshold;
-                changed = true;
-            }
+            if (data.detectionMethod != lastDetectionMethod) { lastDetectionMethod = data.detectionMethod; changed = true; }
+            if (Mathf.Abs(data.proximityThreshold - lastProximityThreshold) > 0.0001f) { lastProximityThreshold = data.proximityThreshold; changed = true; }
+            if (Mathf.Abs(data.raycastDistance - lastRaycastDistance) > 0.0001f) { lastRaycastDistance = data.raycastDistance; changed = true; }
+            if (data.smartRayDirections != lastSmartRayDirections) { lastSmartRayDirections = data.smartRayDirections; changed = true; }
+            if (Mathf.Abs(data.smartOcclusionThreshold - lastSmartOcclusionThreshold) > 0.0001f) { lastSmartOcclusionThreshold = data.smartOcclusionThreshold; changed = true; }
+            if (data.smartUseNormals != lastSmartUseNormals) { lastSmartUseNormals = data.smartUseNormals; changed = true; }
+            if (data.smartRequireBidirectional != lastSmartRequireBidirectional) { lastSmartRequireBidirectional = data.smartRequireBidirectional; changed = true; }
+            if (data.manualMask != lastManualMask) { lastManualMask = data.manualMask; changed = true; }
+            if (Mathf.Abs(data.manualMaskThreshold - lastManualMaskThreshold) > 0.0001f) { lastManualMaskThreshold = data.manualMaskThreshold; changed = true; }
             
             return changed;
         }
@@ -663,7 +561,6 @@ namespace YUCP.Components.Editor
             lastCheckedMirrorSymmetry = false;
             SceneView.RepaintAll();
             Repaint();
-            Debug.Log("[YUCP Preview] Cleared preview data");
         }
 
         private bool[] ApplySymmetryMirror(bool[] hiddenVertices, Vector3[] vertices)
@@ -675,7 +572,6 @@ namespace YUCP.Components.Editor
             {
                 if (hiddenVertices[i])
                 {
-                    // Find mirror vertex on opposite side
                     Vector3 mirrorPos = new Vector3(-vertices[i].x, vertices[i].y, vertices[i].z);
                     float closestDist = float.MaxValue;
                     int closestIdx = -1;
@@ -702,12 +598,9 @@ namespace YUCP.Components.Editor
 
          private bool[] ApplySafetyMargin(bool[] hiddenVertices, Vector3[] vertices)
          {
-             // Safety margin creates a buffer INWARD from edges
-             // Higher margin = MORE vertices kept visible (less deletion)
              bool[] shrunk = new bool[hiddenVertices.Length];
              System.Array.Copy(hiddenVertices, shrunk, hiddenVertices.Length);
  
-             // Convert to world coordinates to match build-time processor behavior
              Vector3[] worldVertices = new Vector3[vertices.Length];
              for (int i = 0; i < vertices.Length; i++)
              {
@@ -718,27 +611,24 @@ namespace YUCP.Components.Editor
              {
                  if (hiddenVertices[i])
                  {
-                     // Check if this hidden vertex is near the edge (close to a visible vertex)
                      bool isNearEdge = false;
                      
                      for (int j = 0; j < vertices.Length; j++)
                      {
-                         if (!hiddenVertices[j]) // If j is visible
+                         if (!hiddenVertices[j])
                          {
                              float dist = Vector3.Distance(worldVertices[i], worldVertices[j]);
                              if (dist < data.safetyMargin)
                              {
-                                 // This hidden vertex is within safety margin of a visible vertex
                                  isNearEdge = true;
                                  break;
                              }
                          }
                      }
                      
-                     // If near edge, keep it visible (don't hide)
                      if (isNearEdge)
                      {
-                         shrunk[i] = false; // Keep visible
+                         shrunk[i] = false;
                      }
                  }
              }
@@ -781,7 +671,6 @@ namespace YUCP.Components.Editor
             }
             
             GUI.Box(new Rect(10, 10, 280, 90), "");
-            
             GUI.Label(new Rect(15, 15, 270, 20), "YUCP Preview", EditorStyles.boldLabel);
             
             GUI.color = new Color(1f, 0f, 0f, 0.6f);
@@ -796,4 +685,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-
