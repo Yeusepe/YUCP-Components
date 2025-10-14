@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using VRC.SDKBase;
 
@@ -39,12 +40,12 @@ namespace YUCP.Components
 
         [Header("Detection Settings")]
         [Tooltip("Choose how to detect which body parts to hide.\n\n" +
-                 "• Raycast: Fast single-direction raycasting\n" +
+                 "• Raycast: Fast single-direction raycasting (recommended)\n" +
                  "• Proximity: Distance-based (fastest)\n" +
                  "• Hybrid: Proximity + raycasting (balanced)\n" +
                  "• Smart: Multi-directional with bidirectional check (best for open clothing)\n" +
                  "• Manual: Use texture mask for full control")]
-        public DetectionMethod detectionMethod = DetectionMethod.Hybrid;
+        public DetectionMethod detectionMethod = DetectionMethod.Raycast;
 
         [Tooltip("Safety margin - buffer inward from edges (in meters).\n\n" +
                  "Creates a buffer zone that REDUCES deletion near edges.\n" +
@@ -72,7 +73,7 @@ namespace YUCP.Components
                  "Should be slightly larger than your clothing thickness.\n" +
                  "Typical range: 0.05-0.15m")]
         [Range(0.01f, 0.5f)]
-        public float raycastDistance = 0.1f;
+        public float raycastDistance = 0.05f;
 
         [Tooltip("For hybrid method: how much to expand proximity detection before raycasting.\n\n" +
                  "Higher values = more initial candidates = slower but more thorough.\n" +
@@ -207,20 +208,50 @@ namespace YUCP.Components
                  "Note: Due to VRCFury's resting state system, this MUST be false for material animations to work correctly.")]
         public bool toggleDefaultOn = false;
 
-        [Tooltip("OPTIONAL: Global parameter name for network sync or outfit groups.\n\n" +
-                 "When EMPTY:\n" +
-                 "• Creates a local toggle (parameter auto-named by VRCFury with 'VF##' prefix)\n" +
+        [Tooltip("Sync toggle state across all players in the instance.\n\n" +
+                 "When OFF (default):\n" +
                  "• Toggle state is local to your client only\n" +
-                 "• Standard individual clothing toggle\n\n" +
+                 "• VRCFury creates a local parameter (not synced)\n\n" +
+                 "When ON:\n" +
+                 "• Toggle state is synced across all players\n" +
+                 "• VRCFury auto-generates a synced parameter name, or uses the one you specify below\n" +
+                 "• Useful for outfit coordination or showing clothing state to others")]
+        public bool toggleSynced = false;
+
+        [Tooltip("OPTIONAL: Custom parameter name for synced toggle.\n\n" +
+                 "When EMPTY:\n" +
+                 "• VRCFury auto-generates a unique parameter name\n" +
+                 "• Each toggle gets its own synced parameter\n\n" +
                  "When SET:\n" +
-                 "• Uses this exact parameter name (no prefix)\n" +
-                 "• Synced across all players in the instance\n" +
-                 "• Multiple clothing pieces can share the same parameter\n\n" +
+                 "• Uses this exact parameter name\n" +
+                 "• Multiple clothing pieces can share the same parameter for outfit groups\n\n" +
                  "Examples:\n" +
                  "• 'Outfit1' - All Outfit 1 pieces share this (outfit group)\n" +
-                 "• 'JacketSync' - Sync individual jacket across network\n\n" +
-                 "Advanced: If menuPath is also empty, ONLY global parameter controls this (no menu item).")]
-        public string toggleGlobalParameter = "";
+                 "• 'JacketSync' - Specific name for this jacket\n\n" +
+                 "Advanced: If menuPath is also empty, ONLY this parameter controls the toggle (no menu item).")]
+        public string toggleParameterName = "";
+
+        [Header("Advanced Toggle Options")]
+        [Tooltip("Use slider instead of button.")]
+        public bool toggleSlider = false;
+
+        [Tooltip("Hold button instead of latching toggle.")]
+        public bool toggleHoldButton = false;
+
+        [Tooltip("Enable exclusive off state (only one toggle in the group can be on at a time).")]
+        public bool toggleExclusiveOffState = false;
+
+        [Tooltip("Enable exclusive tags (mutually exclusive with other toggles sharing the same tags).")]
+        public bool toggleEnableExclusiveTag = false;
+
+        [Tooltip("Exclusive tags (comma-separated). Toggles sharing tags are mutually exclusive.")]
+        public string toggleExclusiveTag = "";
+
+        [Tooltip("Enable custom menu icon.")]
+        public bool toggleEnableIcon = false;
+
+        [Tooltip("Custom menu icon texture.")]
+        public Texture2D toggleIcon;
 
         [Header("Advanced Options")]
         [Tooltip("If true, only process vertices that are weighted to specific bones.\n\n" +

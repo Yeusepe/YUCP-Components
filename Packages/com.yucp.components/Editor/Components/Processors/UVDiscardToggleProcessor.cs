@@ -48,12 +48,6 @@ namespace YUCP.Components.Editor
             // 3. Create VRCFury Toggle
             CreateVRCFuryToggle(data, poiyomiMaterial);
 
-            // 4. Optionally create and configure AutoBodyHider
-            if (data.autoHideBody)
-            {
-                CreateAutoBodyHider(data);
-            }
-
             Debug.Log($"[UVDiscardToggle] Successfully processed '{data.name}'. Clothing merged and toggle created.", data);
         }
 
@@ -364,44 +358,6 @@ namespace YUCP.Components.Editor
             }
 
             return clip;
-        }
-
-        private void CreateAutoBodyHider(UVDiscardToggleData data)
-        {
-            // Check if AutoBodyHider already exists on the clothing object
-            AutoBodyHiderData existingHider = data.clothingMesh.GetComponent<AutoBodyHiderData>();
-            if (existingHider != null)
-            {
-                Debug.LogWarning($"[UVDiscardToggle] AutoBodyHiderData already exists on '{data.clothingMesh.name}'. Skipping auto-creation.", data);
-                return;
-            }
-
-            // Add AutoBodyHiderData component to the clothing object
-            AutoBodyHiderData hider = data.clothingMesh.gameObject.AddComponent<AutoBodyHiderData>();
-            hider.name = $"AutoBodyHider_{data.clothingMesh.name}";
-
-            // Configure AutoBodyHider
-            hider.targetBodyMesh = data.targetBodyMesh;
-            hider.clothingMesh = data.clothingMesh; // Self-reference for detection
-            hider.applicationMode = ApplicationMode.UDIMDiscard; // Always UDIM discard
-            hider.udimUVChannel = data.udimUVChannel;
-            hider.udimDiscardRow = data.udimDiscardRow;
-            hider.udimDiscardColumn = data.udimDiscardColumn;
-
-            // Copy detection settings
-            hider.detectionMethod = data.detectionMethod;
-            hider.safetyMargin = data.safetyMargin;
-            hider.mirrorSymmetry = data.mirrorSymmetry;
-
-            // Configure toggle settings to match this UVDiscardToggle
-            hider.createToggle = true;
-            hider.toggleType = ToggleType.HiddenToggle; // Always hidden toggle for body hider
-            hider.toggleMenuPath = ""; // No menu item for body hider, controlled by UVDiscardToggle's parameter
-            hider.toggleGlobalParameter = data.globalParameter; // Use same global parameter
-            hider.toggleSaved = data.saved;
-            hider.toggleDefaultOn = data.defaultOn; // Match default state
-
-            Debug.Log($"[UVDiscardToggle] AutoBodyHiderData created and configured on '{data.clothingMesh.name}' for body hiding.", data);
         }
 
         private string GetRelativePath(Transform target, Transform root)

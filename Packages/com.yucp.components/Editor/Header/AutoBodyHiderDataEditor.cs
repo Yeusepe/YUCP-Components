@@ -30,7 +30,7 @@ namespace YUCP.Components.Editor
         private bool lastSmartRequireBidirectional;
         private Texture2D lastManualMask;
         private float lastManualMaskThreshold;
-        
+
         // Foldout states
         private bool showSmartDetection = false;
         private bool showAdvancedOptions = false;
@@ -73,6 +73,31 @@ namespace YUCP.Components.Editor
         private void OnInspectorGUIContent()
         {
             serializedObject.Update();
+            
+            // Show integration banner if VRCFury Toggle is present
+            var vrcFuryComponents = data.GetComponents<Component>();
+            Component vrcFuryToggle = null;
+            foreach (var comp in vrcFuryComponents)
+            {
+                if (comp != null && comp.GetType().Name == "VRCFury")
+                {
+                    vrcFuryToggle = comp;
+                    break;
+                }
+            }
+            if (vrcFuryToggle != null)
+            {
+                EditorGUILayout.Space(5);
+                var originalColor = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.3f, 0.7f, 1f, 0.4f);
+                EditorGUILayout.HelpBox(
+                    "VRCFury Toggle Integration Detected\n\n" +
+                    "This Auto Body Hider will work together with the VRCFury Toggle component. " +
+                    "The UDIM discard animation will be added to the toggle's actions automatically during build.",
+                    MessageType.Info);
+                GUI.backgroundColor = originalColor;
+                EditorGUILayout.Space(5);
+            }
             
             // Check if any detection settings changed that would invalidate the cache
             bool settingsChanged = CheckForSettingsChanges();
@@ -186,9 +211,40 @@ namespace YUCP.Components.Editor
                 // UDIM Toggle Settings
                 EditorGUILayout.Space(5);
                 var createToggleProp = serializedObject.FindProperty("createToggle");
-                EditorGUILayout.PropertyField(createToggleProp, new GUIContent("Create Toggle"));
+                
+                // Check if UV Discard Toggle or VRCFury Toggle is present
+                var uvDiscardToggle = data.GetComponent<UVDiscardToggleData>();
+                var hasVRCFuryToggle = vrcFuryToggle != null;
+                
+                if (uvDiscardToggle != null || hasVRCFuryToggle)
+                {
+                    GUI.enabled = false;
+                    string reason = uvDiscardToggle != null ? "UV Discard Toggle present" : "VRCFury Toggle present";
+                    EditorGUILayout.PropertyField(createToggleProp, new GUIContent($"Create Toggle (Disabled - {reason})"));
+                    GUI.enabled = true;
+                }
+                else
+                {
+                    EditorGUILayout.PropertyField(createToggleProp, new GUIContent("Create Toggle"));
+                    
+                    // Show helper button to create VRCFury toggle for advanced features
+                    if (!createToggleProp.boolValue)
+                    {
+                        EditorGUILayout.Space(3);
+                        GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
+                        if (GUILayout.Button("+ Add VRCFury Toggle (Advanced Features)", GUILayout.Height(30)))
+                        {
+                            CreateVRCFuryToggleComponent();
+                        }
+                        GUI.backgroundColor = Color.white;
+                        EditorGUILayout.HelpBox(
+                            "Use VRCFury Toggle for advanced features like blend shapes, material swaps, or multiple animations. " +
+                            "The Auto Body Hider will automatically integrate with it.",
+                            MessageType.Info);
+                    }
+                }
 
-                if (createToggleProp.boolValue)
+                if (createToggleProp.boolValue && uvDiscardToggle == null && !hasVRCFuryToggle)
                 {
                     DrawSection("Toggle Configuration", () => {
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleType"), new GUIContent("Toggle Type"));
@@ -203,41 +259,100 @@ namespace YUCP.Components.Editor
                         }
                         
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleMenuPath"), new GUIContent("Menu Path"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleGlobalParameter"), new GUIContent("Global Parameter (Optional)"));
                         
-                        // Show parameter mode info
-                        bool hasMenuPath = !string.IsNullOrEmpty(data.toggleMenuPath);
-                        bool hasGlobalParam = !string.IsNullOrEmpty(data.toggleGlobalParameter);
+                        var toggleSyncedProp = serializedObject.FindProperty("toggleSynced");
+                        EditorGUILayout.PropertyField(toggleSyncedProp, new GUIContent("Synced"));
                         
-                        if (!hasMenuPath && hasGlobalParam)
+                        if (toggleSyncedProp.boolValue)
                         {
-                            EditorGUILayout.HelpBox($"Global Parameter Only: Controlled by '{data.toggleGlobalParameter}' (no menu item).", MessageType.Info);
-                        }
-                        else if (hasMenuPath && hasGlobalParam)
-                        {
-                            EditorGUILayout.HelpBox($"Synced Toggle: Menu controls '{data.toggleGlobalParameter}' (synced across players).", MessageType.Info);
-                        }
-                        else if (hasMenuPath && !hasGlobalParam)
-                        {
-                            EditorGUILayout.HelpBox("Local Toggle: VRCFury auto-generates local parameter (not synced).", MessageType.Info);
+                            EditorGUI.indentLevel++;
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleParameterName"), new GUIContent("Parameter Name (Optional)"));
+                            
+                            bool hasMenuPath = !string.IsNullOrEmpty(data.toggleMenuPath);
+                            bool hasCustomParam = !string.IsNullOrEmpty(data.toggleParameterName);
+                            
+                            if (!hasMenuPath && hasCustomParam)
+                            {
+                                EditorGUILayout.HelpBox($"Parameter Only Mode: Controlled by '{data.toggleParameterName}' (no menu item).", MessageType.Info);
+                            }
+                            else if (hasCustomParam)
+                            {
+                                EditorGUILayout.HelpBox($"Custom Synced: Uses parameter '{data.toggleParameterName}' (synced across players).", MessageType.Info);
+                            }
+                            else
+                            {
+                                EditorGUILayout.HelpBox("Auto Synced: VRCFury will generate a unique synced parameter name.", MessageType.Info);
+                            }
+                            
+                            EditorGUI.indentLevel--;
                         }
                         else
                         {
-                            EditorGUILayout.HelpBox("Menu path or global parameter is required!", MessageType.Warning);
+                            EditorGUILayout.HelpBox("Local Toggle: State is local to your client only (not synced).", MessageType.Info);
+                        }
+                        
+                        if (string.IsNullOrEmpty(data.toggleMenuPath) && !data.toggleSynced)
+                        {
+                            EditorGUILayout.HelpBox("Menu path is required for local toggles!", MessageType.Warning);
                         }
                         
                         EditorGUILayout.BeginHorizontal();
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleSaved"), new GUIContent("Saved"), GUILayout.MinWidth(100));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleDefaultOn"), new GUIContent("Default ON"), GUILayout.MinWidth(100));
                         EditorGUILayout.EndHorizontal();
-                        
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("debugSaveAnimation"), new GUIContent("Debug: Save Animation"));
                     });
-
+                    
+                    // Advanced Toggle Options (Foldout) - Only show if toggle is enabled
+                    EditorGUILayout.Space(5);
+                    var showToggleAdvanced = SessionState.GetBool($"AutoBodyHider_ToggleAdvanced_{data.GetInstanceID()}", false);
+                    var newShowToggleAdvanced = EditorGUILayout.BeginFoldoutHeaderGroup(showToggleAdvanced, "Advanced Toggle Options");
+                    SessionState.SetBool($"AutoBodyHider_ToggleAdvanced_{data.GetInstanceID()}", newShowToggleAdvanced);
+                    if (newShowToggleAdvanced)
+                    {
+                        EditorGUI.indentLevel++;
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleSlider"), new GUIContent("Use Slider"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleHoldButton"), new GUIContent("Hold Button"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleExclusiveOffState"), new GUIContent("Exclusive Off State"));
+                        
+                        EditorGUILayout.Space(3);
+                        var enableExclusiveTagProp = serializedObject.FindProperty("toggleEnableExclusiveTag");
+                        EditorGUILayout.PropertyField(enableExclusiveTagProp, new GUIContent("Exclusive Tags"));
+                        if (enableExclusiveTagProp.boolValue)
+                        {
+                            EditorGUI.indentLevel++;
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleExclusiveTag"), new GUIContent("Tag Names"));
+                            EditorGUI.indentLevel--;
+                        }
+                        
+                        EditorGUILayout.Space(3);
+                        var enableIconProp = serializedObject.FindProperty("toggleEnableIcon");
+                        EditorGUILayout.PropertyField(enableIconProp, new GUIContent("Custom Icon"));
+                        if (enableIconProp.boolValue)
+                        {
+                            EditorGUI.indentLevel++;
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleIcon"), new GUIContent("Icon Texture"));
+                            EditorGUI.indentLevel--;
+                        }
+                        
+                        EditorGUILayout.Space(3);
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("debugSaveAnimation"), new GUIContent("Debug: Save Animation"));
+                        
+                        EditorGUI.indentLevel--;
+                    }
+                    EditorGUILayout.EndFoldoutHeaderGroup();
+                    
                     if (data.applicationMode == ApplicationMode.MeshDeletion)
                     {
                         EditorGUILayout.HelpBox("Toggle only works with UDIM Discard mode, not Mesh Deletion!", MessageType.Warning);
                     }
+                }
+                else if (uvDiscardToggle != null)
+                {
+                    // Show if create toggle is disabled but UV Discard Toggle is present
+                    EditorGUILayout.HelpBox(
+                        "Toggle disabled: UV Discard Toggle component detected on this object. " +
+                        "The UV Discard Toggle will handle the toggle functionality.",
+                        MessageType.Info);
                 }
             }
 
@@ -379,6 +494,38 @@ namespace YUCP.Components.Editor
             content?.Invoke();
             
             EditorGUILayout.EndVertical();
+        }
+        
+        private void CreateVRCFuryToggleComponent()
+        {
+            // Create a VRCFury Toggle component with pre-configured settings
+            var toggle = com.vrcfury.api.FuryComponents.CreateToggle(data.gameObject);
+            
+            // Pre-configure with sensible defaults for body hiding
+            toggle.SetMenuPath("Clothing/Hide Body");
+            toggle.SetSaved();
+            
+            // Don't set any actions - the user can add blend shapes, animations, etc. via the VRCFury inspector
+            // The Auto Body Hider processor will automatically add the UDIM discard animation during build
+            
+            EditorUtility.SetDirty(data.gameObject);
+            
+            Debug.Log($"[AutoBodyHider] Created VRCFury Toggle component on '{data.gameObject.name}'", data);
+            
+            // Show message to user
+            EditorUtility.DisplayDialog(
+                "VRCFury Toggle Created",
+                "A VRCFury Toggle component has been added to this object with default settings:\n\n" +
+                "• Menu Path: Clothing/Hide Body\n" +
+                "• Saved: Yes\n" +
+                "• Local (not synced)\n\n" +
+                "You can now:\n" +
+                "1. Configure the toggle settings in the VRCFury component below\n" +
+                "2. Add actions like blend shapes, object toggles, animations, etc.\n" +
+                "3. The UDIM discard animation will be added automatically during build\n\n" +
+                "The 'Create Toggle' option in Auto Body Hider is now disabled.",
+                "OK"
+            );
         }
 
         private bool ValidateData()

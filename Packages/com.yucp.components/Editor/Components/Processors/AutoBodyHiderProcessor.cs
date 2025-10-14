@@ -504,9 +504,31 @@ namespace YUCP.Components.Editor
             }
             data.targetBodyMesh.sharedMaterials = materials;
             
-            if (data.createToggle && poiyomiMaterial != null)
+            // Create toggle or integrate with existing VRCFury toggle
+            if (poiyomiMaterial != null)
             {
-                CreateUDIMToggle(data, poiyomiMaterial);
+                // Find VRCFury component by name (it's internal, can't use type directly)
+                Component existingToggle = null;
+                var components = data.gameObject.GetComponents<Component>();
+                foreach (var comp in components)
+                {
+                    if (comp != null && comp.GetType().Name == "VRCFury")
+                    {
+                        existingToggle = comp;
+                        break;
+                    }
+                }
+                
+                if (data.createToggle && existingToggle == null)
+                {
+                    // Create our own toggle
+                    CreateUDIMToggle(data, poiyomiMaterial);
+                }
+                else if (existingToggle != null)
+                {
+                    // Integrate with existing VRCFury toggle
+                    IntegrateWithVRCFuryToggle(data, poiyomiMaterial, existingToggle);
+                }
             }
             
             data.SetBuildStats(hiddenCount, "UDIM Discard");
@@ -645,6 +667,86 @@ namespace YUCP.Components.Editor
             }
         }
 
+        private void IntegrateWithVRCFuryToggle(AutoBodyHiderData data, Material poiyomiMaterial, Component vrcFuryComponent)
+        {
+            try
+            {
+                Debug.Log($"[AutoBodyHider] Integrating with existing VRCFury Toggle on '{data.gameObject.name}'", data);
+                
+                // Get the content field via reflection
+                var contentField = vrcFuryComponent.GetType().GetField("content", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (contentField == null)
+                {
+                    Debug.LogWarning($"[AutoBodyHider] Could not find 'content' field on VRCFury component", data);
+                    return;
+                }
+                
+                var content = contentField.GetValue(vrcFuryComponent);
+                if (content != null && content.GetType().Name == "Toggle")
+                {
+                    // Create the UDIM animation
+                    AnimationClip toggleAnimation = CreateUDIMToggleAnimation(data, poiyomiMaterial);
+                    
+                    if (toggleAnimation != null)
+                    {
+                        // Get the state field
+                        var stateField = content.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        if (stateField == null)
+                        {
+                            Debug.LogWarning($"[AutoBodyHider] Could not find 'state' field on Toggle", data);
+                            return;
+                        }
+                        
+                        var state = stateField.GetValue(content);
+                        var actionsField = state.GetType().GetField("actions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        if (actionsField == null)
+                        {
+                            Debug.LogWarning($"[AutoBodyHider] Could not find 'actions' field on State", data);
+                            return;
+                        }
+                        
+                        var actionsList = actionsField.GetValue(state) as System.Collections.IList;
+                        if (actionsList == null)
+                        {
+                            Debug.LogWarning($"[AutoBodyHider] Actions list is null", data);
+                            return;
+                        }
+                        
+                        // Create AnimationClipAction via reflection (it's internal)
+                        var animActionType = System.Type.GetType("VF.Model.StateAction.AnimationClipAction, VRCFury");
+                        if (animActionType == null)
+                        {
+                            Debug.LogWarning($"[AutoBodyHider] Could not find AnimationClipAction type", data);
+                            return;
+                        }
+                        
+                        var animAction = System.Activator.CreateInstance(animActionType);
+                        
+                        // Set the motion field
+                        var motionField = animActionType.GetField("motion", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        if (motionField != null)
+                        {
+                            motionField.SetValue(animAction, toggleAnimation);
+                        }
+                        
+                        actionsList.Add(animAction);
+                        
+                        Debug.Log($"[AutoBodyHider] Added UDIM discard animation to existing VRCFury Toggle", data);
+                        EditorUtility.SetDirty(vrcFuryComponent);
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[AutoBodyHider] VRCFury component content is not a Toggle type, cannot integrate", data);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[AutoBodyHider] Error integrating with VRCFury Toggle: {ex.Message}", data);
+                Debug.LogException(ex);
+            }
+        }
+        
         private void CreateUDIMToggle(AutoBodyHiderData data, Material poiyomiMaterial)
         {
             try
@@ -658,17 +760,17 @@ namespace YUCP.Components.Editor
                 }
                 
                 var toggle = FuryComponents.CreateToggle(data.gameObject);                
-                // If menuPath is empty and global parameter is set, this is global-only (no menu item)
+                
                 bool hasMenuPath = !string.IsNullOrEmpty(data.toggleMenuPath);
-                bool hasGlobalParam = !string.IsNullOrEmpty(data.toggleGlobalParameter);
+                bool hasCustomParam = !string.IsNullOrEmpty(data.toggleParameterName);
                 
                 if (hasMenuPath)
                 {
                     toggle.SetMenuPath(data.toggleMenuPath);
                 }
-                else if (hasGlobalParam)
+                else if (data.toggleSynced && hasCustomParam)
                 {
-                    // Global parameter only - disable menu item creation
+                    // Parameter only mode - disable menu item creation
                     var toggleType = toggle.GetType();
                     var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     var toggleModel = cField.GetValue(toggle);
@@ -676,7 +778,7 @@ namespace YUCP.Components.Editor
                     if (addMenuItemField != null)
                     {
                         addMenuItemField.SetValue(toggleModel, false);
-                        Debug.Log($"[AutoBodyHider] Global parameter only mode - menu item disabled", data);
+                        Debug.Log($"[AutoBodyHider] Parameter only mode - menu item disabled", data);
                     }
                 }
 
@@ -685,9 +787,58 @@ namespace YUCP.Components.Editor
 
                 if (data.toggleDefaultOn)
                     toggle.SetDefaultOn();
+                    
+                if (data.toggleSlider)
+                    toggle.SetSlider();
+                    
+                if (data.toggleExclusiveOffState)
+                    toggle.SetExclusiveOffState();
 
-                if (hasGlobalParam)
-                    toggle.SetGlobalParameter(data.toggleGlobalParameter);
+                // Set global parameter if synced (with or without custom name)
+                if (data.toggleSynced)
+                {
+                    if (hasCustomParam)
+                        toggle.SetGlobalParameter(data.toggleParameterName);
+                    else
+                        toggle.SetGlobalParameter(""); // VRCFury auto-generates synced parameter name
+                }
+                
+                // Apply advanced toggle options via reflection
+                if (data.toggleHoldButton || data.toggleEnableExclusiveTag || data.toggleEnableIcon)
+                {
+                    var toggleType = toggle.GetType();
+                    var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    var toggleModel = cField.GetValue(toggle);
+                    
+                    if (data.toggleHoldButton)
+                    {
+                        var holdButtonField = toggleModel.GetType().GetField("holdButton", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        if (holdButtonField != null) holdButtonField.SetValue(toggleModel, true);
+                    }
+                    
+                    if (data.toggleEnableExclusiveTag && !string.IsNullOrEmpty(data.toggleExclusiveTag))
+                    {
+                        toggle.AddExclusiveTag(data.toggleExclusiveTag);
+                    }
+                    
+                    if (data.toggleEnableIcon && data.toggleIcon != null)
+                    {
+                        var enableIconField = toggleModel.GetType().GetField("enableIcon", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        var iconField = toggleModel.GetType().GetField("icon", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        if (enableIconField != null && iconField != null)
+                        {
+                            enableIconField.SetValue(toggleModel, true);
+                            // Use reflection to create GuidTexture2d instance via implicit operator
+                            var guidTexture2dType = iconField.FieldType;
+                            var implicitOp = guidTexture2dType.GetMethod("op_Implicit", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static, null, new Type[] { typeof(Texture2D) }, null);
+                            if (implicitOp != null)
+                            {
+                                var guidTextureInstance = implicitOp.Invoke(null, new object[] { data.toggleIcon });
+                                iconField.SetValue(toggleModel, guidTextureInstance);
+                            }
+                        }
+                    }
+                }
 
                 var actions = toggle.GetActions();
 

@@ -1,8 +1,8 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEngine;
-using YUCP.Components;
 
 namespace YUCP.Components.Editor
 {
@@ -13,98 +13,134 @@ namespace YUCP.Components.Editor
     [InitializeOnLoad]
     public static class YUCPGizmoIconDisabler
     {
+        private const int MONO_BEHAVIOR_CLASS_ID = 114;
+        private static bool _hasRunOnce = false;
+
         static YUCPGizmoIconDisabler()
         {
-            EditorApplication.update += DisableYUCPSceneGizmos;
+            // Run after a delay to ensure types are registered
+            EditorApplication.delayCall += () =>
+            {
+                EditorApplication.update += DisableYUCPSceneGizmos;
+            };
         }
 
-        // From Acegikmo http://answers.unity.com/answers/1722605/view.html
-        // In Unity 2022.1+, this can be replaced with GizmoUtility.SetIconEnabled(type, enabled);
-        static MethodInfo setIconEnabled;
+        private static MethodInfo _setIconEnabled;
+        private static MethodInfo SetIconEnabled
+        {
+            get
+            {
+                if (_setIconEnabled == null)
+                {
+                    var asm = Assembly.GetAssembly(typeof(UnityEditor.Editor));
+                    var annotationUtility = asm?.GetType("UnityEditor.AnnotationUtility");
+                    _setIconEnabled = annotationUtility?.GetMethod("SetIconEnabled", 
+                        BindingFlags.Static | BindingFlags.NonPublic);
+                }
+                return _setIconEnabled;
+            }
+        }
 
-        static MethodInfo SetIconEnabled => setIconEnabled = setIconEnabled ?? Assembly.GetAssembly(typeof(UnityEditor.Editor))
-            ?.GetType("UnityEditor.AnnotationUtility")
-            ?.GetMethod("SetIconEnabled", BindingFlags.Static | BindingFlags.NonPublic);
-
-        private static MethodInfo getAnnotations;
-
-        private static MethodInfo GetAnnotations =>
-            getAnnotations = getAnnotations ??
-            Assembly.GetAssembly(typeof(UnityEditor.Editor))
-                ?.GetType("UnityEditor.AnnotationUtility")
-                ?.GetMethod("GetAnnotations", BindingFlags.Static | BindingFlags.NonPublic);
-
-        private static Type t_Annotation = Assembly.GetAssembly(typeof(UnityEditor.Editor))
-            ?.GetType("UnityEditor.AnnotationUtility+Annotation");
-
-        private static FieldInfo f_classID =
-            t_Annotation?.GetField("classID", BindingFlags.Instance | BindingFlags.Public);
-
-        private static FieldInfo f_scriptClass =
-            t_Annotation?.GetField("scriptClass", BindingFlags.Instance | BindingFlags.Public);
+        private static MethodInfo _getAnnotations;
+        private static MethodInfo GetAnnotations
+        {
+            get
+            {
+                if (_getAnnotations == null)
+                {
+                    var asm = Assembly.GetAssembly(typeof(UnityEditor.Editor));
+                    var annotationUtility = asm?.GetType("UnityEditor.AnnotationUtility");
+                    _getAnnotations = annotationUtility?.GetMethod("GetAnnotations",
+                        BindingFlags.Static | BindingFlags.NonPublic);
+                }
+                return _getAnnotations;
+            }
+        }
 
         static void SetGizmoIconEnabled(Type type, bool enabled)
         {
-            if (SetIconEnabled == null) return;
-            const int MONO_BEHAVIOR_CLASS_ID = 114; // https://docs.unity3d.com/Manual/ClassIDReference.html
-            SetIconEnabled.Invoke(null, new object[] { MONO_BEHAVIOR_CLASS_ID, type.Name, enabled ? 1 : 0 });
+            if (SetIconEnabled == null)
+            {
+                Debug.LogWarning("[YUCP] Could not access SetIconEnabled - scene icons may be visible");
+                return;
+            }
+            
+            try
+            {
+                SetIconEnabled.Invoke(null, new object[] { MONO_BEHAVIOR_CLASS_ID, type.Name, enabled ? 1 : 0 });
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[YUCP] Failed to disable icon for {type.Name}: {e.Message}");
+            }
         }
 
         static void DisableYUCPSceneGizmos()
         {
-            if (SessionState.GetBool("YUCPSceneIconsDisabled", false) ||
-                f_classID == null || f_scriptClass == null || GetAnnotations == null || SetIconEnabled == null)
+            // Check if reflection APIs are available
+            if (SetIconEnabled == null || GetAnnotations == null)
             {
                 EditorApplication.update -= DisableYUCPSceneGizmos;
-                SessionState.SetBool("YUCPSceneIconsDisabled", true);
+                Debug.LogWarning("[YUCP] Could not access Unity's internal AnnotationUtility - scene icons may be visible");
                 return;
             }
 
-            // Check if we have any YUCP components in the annotations yet
-            var annotations = (Array)GetAnnotations.Invoke(null, new object[] { });
-            bool hasYUCPComponent = false;
-            
-            for (int i = 0; i < annotations.Length; i++)
+            try
             {
-                var annotation = annotations.GetValue(i);
-                var classID = (int)f_classID.GetValue(annotation);
-                var scriptClass = (string)f_scriptClass.GetValue(annotation);
-
-                // Check for any YUCP component
-                if (classID == 114 && scriptClass != null && scriptClass.Contains("YUCP"))
+                // Get all current annotations
+                var annotations = (Array)GetAnnotations.Invoke(null, null);
+                if (annotations == null || annotations.Length == 0)
                 {
-                    hasYUCPComponent = true;
-                    break;
+                    // Annotations not ready yet, try again next frame
+                    return;
                 }
-            }
 
-            if (!hasYUCPComponent)
-            {
-                // Annotations aren't created yet for YUCP types, check back later.
-                return;
-            }
+                // Find all YUCP component types that need disabling
+                var yucpTypes = AppDomain.CurrentDomain.GetAssemblies()
+                    .SelectMany(asm => {
+                        try { return asm.GetTypes(); }
+                        catch { return Type.EmptyTypes; }
+                    })
+                    .Where(t => 
+                        t != null &&
+                        !t.IsAbstract &&
+                        typeof(MonoBehaviour).IsAssignableFrom(t) &&
+                        t.Namespace != null &&
+                        t.Namespace.StartsWith("YUCP.Components"))
+                    .ToList();
 
-            // Disable scene gizmos for all YUCP components
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                foreach (var ty in assembly.GetTypes())
+                if (yucpTypes.Count == 0)
                 {
-                    // Check if it's a YUCP component (inherits from MonoBehaviour and is in our namespace)
-                    if (typeof(MonoBehaviour).IsAssignableFrom(ty) && 
-                        !ty.IsAbstract && 
-                        ty.Namespace != null && 
-                        ty.Namespace.Contains("YUCP.Components"))
+                    // No types found yet, try again
+                    if (!_hasRunOnce)
                     {
-                        SetGizmoIconEnabled(ty, false);
-                        Debug.Log($"[YUCP] Disabled scene gizmo icon for: {ty.Name}");
+                        return;
                     }
                 }
-            }
 
-            EditorApplication.update -= DisableYUCPSceneGizmos;
-            SessionState.SetBool("YUCPSceneIconsDisabled", true);
-            
-            Debug.Log("[YUCP] Scene gizmo icons disabled for all YUCP components. Icons will still appear in Add Component menu and Inspector.");
+                // Disable icons for all YUCP component types
+                int disabledCount = 0;
+                foreach (var type in yucpTypes)
+                {
+                    SetGizmoIconEnabled(type, false);
+                    disabledCount++;
+                }
+
+                if (disabledCount > 0 && !_hasRunOnce)
+                {
+                    Debug.Log($"[YUCP] Disabled scene gizmo icons for {disabledCount} component types. Icons will still appear in Add Component menu and Inspector.");
+                }
+
+                _hasRunOnce = true;
+                
+                // Remove from update loop
+                EditorApplication.update -= DisableYUCPSceneGizmos;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[YUCP] Error disabling scene icons: {e.Message}");
+                EditorApplication.update -= DisableYUCPSceneGizmos;
+            }
         }
     }
 }

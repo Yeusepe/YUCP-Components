@@ -86,21 +86,6 @@ namespace YUCP.Components
         public bool enableIcon = false;
         public Texture2D icon;
 
-        [Header("Auto Body Hider Integration")]
-        [Tooltip("Automatically add and configure an AutoBodyHider component to hide body parts under this clothing.\n\n" +
-                 "This will use the same UDIM tile as this toggle.")]
-        public bool autoHideBody = true;
-
-        [Tooltip("Detection method for AutoBodyHider.")]
-        public DetectionMethod detectionMethod = DetectionMethod.Raycast;
-
-        [Tooltip("Safety margin for AutoBodyHider (in meters).")]
-        [Range(0.0f, 0.1f)]
-        public float safetyMargin = 0.01f;
-
-        [Tooltip("If true, mirror the detection across the X axis (for symmetric clothing).")]
-        public bool mirrorSymmetry = false;
-
         [Header("Debug Settings")]
         [Tooltip("Save generated animation clip as asset for debugging.")]
         public bool debugSaveAnimation = false;

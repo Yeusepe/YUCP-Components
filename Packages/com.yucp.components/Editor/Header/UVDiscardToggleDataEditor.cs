@@ -34,14 +34,17 @@ namespace YUCP.Components.Editor
             serializedObject.Update();
             var data = (UVDiscardToggleData)target;
 
-            // Show integration tooltip if AutoBodyHider is present
+            // Show integration banner if AutoBodyHider is present
             var autoBodyHider = data.clothingMesh != null ? data.clothingMesh.GetComponent<AutoBodyHiderData>() : null;
-            if (data.autoHideBody && autoBodyHider != null)
+            if (autoBodyHider != null)
             {
+                EditorGUILayout.Space(5);
                 var originalColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.3f, 0.7f, 1f, 0.3f);
+                GUI.backgroundColor = new Color(0.3f, 0.7f, 1f, 0.4f);
                 EditorGUILayout.HelpBox(
-                    "Integration Active: This component will work with the existing AutoBodyHider on the clothing mesh.",
+                    "Auto Body Hider Integration Detected\n\n" +
+                    "This UV Discard Toggle will work together with the AutoBodyHider component on the clothing mesh. " +
+                    "Both will use the same UDIM tile for coordinated body hiding and clothing toggling.",
                     MessageType.Info);
                 GUI.backgroundColor = originalColor;
                 EditorGUILayout.Space(5);
@@ -136,24 +139,6 @@ namespace YUCP.Components.Editor
                 EditorGUI.indentLevel--;
             }
             EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Auto Body Hider Integration
-            EditorGUILayout.Space(5);
-            DrawSection("Auto Body Hider Integration", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("autoHideBody"), new GUIContent("Auto Hide Body Parts"));
-                
-                if (serializedObject.FindProperty("autoHideBody").boolValue)
-                {
-                    EditorGUI.indentLevel++;
-                    EditorGUILayout.HelpBox(
-                        "Automatically creates body hiding using the same UDIM tile and toggle parameter.",
-                        MessageType.Info);
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("detectionMethod"), new GUIContent("Detection Method"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("safetyMargin"), new GUIContent("Safety Margin"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("mirrorSymmetry"), new GUIContent("Mirror Symmetry"));
-                    EditorGUI.indentLevel--;
-                }
-            });
 
             // Debug Options (Foldout)
             EditorGUILayout.Space(5);
