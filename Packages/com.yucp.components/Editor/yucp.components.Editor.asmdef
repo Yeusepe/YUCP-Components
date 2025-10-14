@@ -1,0 +1,32 @@
+{
+    "name": "com.yucp.components.Editor",
+    "rootNamespace": "YUCP.Components.Editor",
+    "references": [
+        "VRC.SDKBase.Editor.BuildPipeline",
+        "com.yucp.components.Runtime",
+        "VRCFury-Editor",
+        "com.vrcfury.api"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "VRCSDKBase.dll",
+        "VRCSDKBase-Editor.dll",
+        "VRCSDK3A.dll",
+        "VRCSDK3A-Editor.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.vrcfury.vrcfury",
+            "expression": "",
+            "define": "VRCFURY_INSTALLED"
+        }
+    ],
+    "noEngineReferences": false
+}

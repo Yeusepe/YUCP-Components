@@ -1,0 +1,116 @@
+/* YUCP Progress Window Styling - Modern Design */
+.YUCPProgressWindow {
+    background-color: rgba(0, 0, 0, 0); /* Fully transparent root */
+    border-radius: 0;
+    padding: 0;
+    overflow: visible;
+}
+
+.main-container {
+    background-color: #090909;
+    border-radius: 0;
+    width: 100%;
+    height: 100%;
+    padding: 40px 30px 40px 30px;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
+    overflow: visible;
+}
+
+.content-area {
+    width: 100%;
+    flex-direction: column;
+    gap: 25px;
+    flex-grow: 1;
+    align-items: flex-start;
+}
+
+.logo {
+    opacity: 1.0;
+}
+
+.status {
+    width: 100%;
+    -unity-text-align: middle-left;
+    color: white;
+    font-size: 20px;
+    text-align: left;
+    white-space: normal;
+    -unity-font: resource("Fonts/YUCP/MADEINFINITYPersonalUse-Regular");
+    margin-bottom: 15px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 50px;
+    background-color: #525252;
+    border-radius: 0;
+    border-width: 0;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    -unity-slice-left: 0;
+    -unity-slice-right: 0;
+    -unity-slice-top: 0;
+    -unity-slice-bottom: 0;
+}
+
+.progress-bar > .unity-progress-bar__background {
+    background-color: #525252;
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.progress-bar > .unity-progress-bar__progress {
+    background-color: #33BFBA;
+    border-radius: 0;
+    transition-duration: 0.3s;
+    margin: 0;
+    padding: 0;
+}
+
+.progress-bar > .unity-progress-bar__container {
+    margin: 0;
+    padding: 0;
+}
+
+.progress-bar > .unity-progress-bar__title {
+    display: none;
+}
+
+/* Override all Unity default ProgressBar styles */
+.unity-progress-bar {
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    background-color: transparent;
+}
+
+.unity-progress-bar__background {
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+}
+
+.unity-progress-bar__progress {
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+}
+
+.unity-progress-bar__container {
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    background-color: transparent;
+}
+
+.header {
+    display: none;
+}

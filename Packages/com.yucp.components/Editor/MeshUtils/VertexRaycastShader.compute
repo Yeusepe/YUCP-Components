@@ -1,0 +1,226 @@
+// GPU-accelerated vertex occlusion detection using ray-triangle intersection
+#pragma kernel CSRaycast
+#pragma kernel CSSmartRaycast
+
+struct Triangle
+{
+    float3 v0;
+    float3 v1;
+    float3 v2;
+};
+
+struct RaycastInput
+{
+    float3 origin;
+    float3 direction;
+    float maxDistance;
+};
+
+
+StructuredBuffer<float3> BodyVertices;
+StructuredBuffer<float3> BodyNormals;
+StructuredBuffer<Triangle> ClothingTriangles;
+StructuredBuffer<float3> TestDirections;
+RWStructuredBuffer<int> Results;
+
+float RaycastDistance;
+int TriangleCount;
+int DirectionCount;
+float OcclusionThreshold;
+int UseNormals;
+int RequireBidirectional;
+float RayOffset;
+int ConservativeMode;
+float MinDistanceToClothing;
+
+
+bool RayIntersectsTriangle(float3 origin, float3 direction, Triangle tri, float maxDist, out float t)
+{
+    const float EPSILON = 0.0000001;
+    float3 edge1 = tri.v1 - tri.v0;
+    float3 edge2 = tri.v2 - tri.v0;
+    
+    float3 h = cross(direction, edge2);
+    float a = dot(edge1, h);
+    
+    if (abs(a) < EPSILON)
+    {
+        t = 0.0;
+        return false;
+    }
+    
+    float f = 1.0 / a;
+    float3 s = origin - tri.v0;
+    float u = f * dot(s, h);
+    
+    if (u < 0.0 || u > 1.0)
+    {
+        t = 0.0;
+        return false;
+    }
+    
+    float3 q = cross(s, edge1);
+    float v = f * dot(direction, q);
+    
+    if (v < 0.0 || u + v > 1.0)
+    {
+        t = 0.0;
+        return false;
+    }
+    
+    t = f * dot(edge2, q);
+    
+    return t > EPSILON && t < maxDist;
+}
+
+
+bool RayHitsClothing(float3 origin, float3 direction, float maxDist)
+{
+    float t;
+    for (int i = 0; i < TriangleCount; i++)
+    {
+        if (RayIntersectsTriangle(origin, direction, ClothingTriangles[i], maxDist, t))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+[numthreads(64, 1, 1)]
+void CSRaycast(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    
+    float3 worldPos = BodyVertices[index];
+    float3 worldNormal = BodyNormals[index];
+    
+    if (RayHitsClothing(worldPos, worldNormal, RaycastDistance))
+    {
+        Results[index] = 1;
+    }
+    else
+    {
+        Results[index] = 0;
+    }
+}
+
+[numthreads(64, 1, 1)]
+void CSSmartRaycast(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    
+    float3 worldPos = BodyVertices[index];
+    float3 worldNormal = BodyNormals[index];
+    
+    float3 rayStart = worldPos + worldNormal * RayOffset;
+    
+    int occludedCount = 0;
+    int validDirections = 0;
+    float minDistFound = 999999.0;
+    float totalWeight = 0.0;
+    float weightedOcclusion = 0.0;
+    
+    for (int dirIdx = 0; dirIdx < DirectionCount; dirIdx++)
+    {
+        float3 direction = TestDirections[dirIdx];
+        
+        if (UseNormals == 1)
+        {
+            float alignment = dot(direction, worldNormal);
+            if (alignment < -0.1) continue;
+        }
+        
+        validDirections++;
+        
+        float t;
+        bool hitClothing = false;
+        
+        for (int i = 0; i < TriangleCount; i++)
+        {
+            if (RayIntersectsTriangle(rayStart, direction, ClothingTriangles[i], RaycastDistance, t))
+            {
+                hitClothing = true;
+                if (t < minDistFound)
+                {
+                    minDistFound = t;
+                }
+                break;
+            }
+        }
+        
+        if (hitClothing)
+        {
+            occludedCount++;
+            
+            if (ConservativeMode == 1)
+            {
+                float weight = 1.0 - (minDistFound / RaycastDistance);
+                weight = max(0.0, weight);
+                weightedOcclusion += weight;
+                totalWeight += 1.0;
+            }
+            
+            if (RequireBidirectional == 1)
+            {
+                float3 outerPoint = rayStart + direction * RaycastDistance;
+                
+                bool reverseHit = false;
+                for (int j = 0; j < TriangleCount; j++)
+                {
+                    float tReverse;
+                    if (RayIntersectsTriangle(outerPoint, -direction, ClothingTriangles[j], RaycastDistance, tReverse))
+                    {
+                        reverseHit = true;
+                        break;
+                    }
+                }
+                
+                if (!reverseHit)
+                {
+                    occludedCount--;
+                    if (ConservativeMode == 1)
+                    {
+                        weightedOcclusion -= (1.0 - (minDistFound / RaycastDistance));
+                    }
+                }
+            }
+        }
+    }
+    
+    if (minDistFound > MinDistanceToClothing && MinDistanceToClothing > 0.0001)
+    {
+        Results[index] = 0;
+        return;
+    }
+    
+    if (validDirections > 0)
+    {
+        float occlusionPercentage;
+        float effectiveThreshold = OcclusionThreshold;
+        
+        if (ConservativeMode == 1)
+        {
+            occlusionPercentage = weightedOcclusion / totalWeight;
+            effectiveThreshold = min(1.0, OcclusionThreshold + 0.1);
+        }
+        else
+        {
+            occlusionPercentage = (float)occludedCount / (float)validDirections;
+        }
+        
+        if (occlusionPercentage >= effectiveThreshold)
+        {
+            Results[index] = 1;
+        }
+        else
+        {
+            Results[index] = 0;
+        }
+    }
+    else
+    {
+        Results[index] = 0;
+    }
+}
+
