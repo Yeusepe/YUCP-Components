@@ -1,7 +1,7 @@
 {
   "name": "com.yucp.components",
   "displayName": "YUCP Components",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "unity": "2022.3",
   "description": "VRChat module components with VRCFury integration",
   "author": {
