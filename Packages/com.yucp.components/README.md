@@ -38,7 +38,7 @@ Advanced VRChat avatar components with VRCFury integration.
 
 ### Manual Installation
 
-1. Download the latest `.unitypackage` from [Releases](https://github.com/YOUR_USERNAME/YUCP-Components/releases)
+1. Download the latest `.unitypackage` from [Releases](https://github.com/Yeusepe/YUCP-Components/releases)
 2. Import into your Unity project
 3. Install VRCFury from https://vrcfury.com/download
 

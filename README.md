@@ -39,9 +39,7 @@ Then in VCC:
 2. **Enable GitHub Pages:**
    - Settings → Pages
    - Source: **GitHub Actions**
-
-3. **Update URLs:**
-   - Replace `YOUR_USERNAME` in this file with your GitHub username
+   - Custom domain: **vpm.yucp.club** (optional)
 
 ### Package Structure
 
