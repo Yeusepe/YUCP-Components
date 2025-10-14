@@ -1,5 +1,7 @@
 {
   "name": "YUCP Components",
+  "id": "com.yucp.components.listing",
+  "url": "https://vpm.yucp.club/index.json",
   "author": "YUCP Club",
   "description": "VRChat module components with VRCFury integration",
   "infoLink": {
