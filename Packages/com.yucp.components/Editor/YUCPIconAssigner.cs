@@ -119,7 +119,6 @@ namespace YUCP.Components.Editor
                 
                 // Read the meta file
                 string[] metaLines = File.ReadAllLines(metaPath);
-                bool iconAssigned = false;
                 
                 // Check if icon is already assigned
                 foreach (string line in metaLines)
@@ -131,7 +130,6 @@ namespace YUCP.Components.Editor
                         {
                             return true; // Already has our icon
                         }
-                        iconAssigned = true;
                         break;
                     }
                 }
@@ -216,21 +214,6 @@ namespace YUCP.Components.Editor
                 Debug.LogError($"[YUCP] Error assigning icon to {scriptPath}: {ex.Message}");
                 return false;
             }
-        }
-        
-        [MenuItem("Tools/YUCP/Reassign Icons")]
-        private static void ReassignIcons()
-        {
-            SessionState.SetBool(SESSION_KEY, false);
-            AssignIcons();
-            Debug.Log("[YUCP] Icon reassignment completed!");
-        }
-        
-        [MenuItem("Tools/YUCP/Clear Icon Cache")]
-        private static void ClearIconCache()
-        {
-            SessionState.SetBool(SESSION_KEY, false);
-            Debug.Log("[YUCP] Icon cache cleared. Icons will be reassigned on next editor startup.");
         }
     }
 }

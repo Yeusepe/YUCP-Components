@@ -5,6 +5,7 @@
         "VRC.SDKBase.Editor.BuildPipeline",
         "com.yucp.components.Runtime",
         "VRCFury-Editor",
+        "VRCFury",
         "com.vrcfury.api"
     ],
     "includePlatforms": [

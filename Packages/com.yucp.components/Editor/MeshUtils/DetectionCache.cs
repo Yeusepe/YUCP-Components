@@ -275,19 +275,6 @@ namespace YUCP.Components.Editor.MeshUtils
                 _cache.Clear();
             }
         }
-
-        [MenuItem("Tools/YUCP/Clear Body Hider Cache")]
-        private static void ClearCacheMenuItem()
-        {
-            if (EditorUtility.DisplayDialog(
-                "Clear Cache",
-                "This will clear all cached Auto Body Hider detection results. Are you sure?",
-                "Clear",
-                "Cancel"))
-            {
-                ClearCache();
-            }
-        }
     }
 }
 

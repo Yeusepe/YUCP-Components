@@ -106,35 +106,5 @@ namespace YUCP.Components.Editor
             
             Debug.Log("[YUCP] Scene gizmo icons disabled for all YUCP components. Icons will still appear in Add Component menu and Inspector.");
         }
-
-        [MenuItem("Tools/YUCP/Re-enable Scene Gizmo Icons")]
-        private static void ReEnableSceneGizmos()
-        {
-            SessionState.SetBool("YUCPSceneIconsDisabled", false);
-            EditorApplication.update += DisableYUCPSceneGizmos;
-            Debug.Log("[YUCP] Scene gizmo icons will be re-enabled on next editor update.");
-        }
-
-        [MenuItem("Tools/YUCP/Force Disable Scene Gizmo Icons")]
-        private static void ForceDisableSceneGizmos()
-        {
-            // Force disable without waiting for annotations
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                foreach (var ty in assembly.GetTypes())
-                {
-                    if (typeof(MonoBehaviour).IsAssignableFrom(ty) && 
-                        !ty.IsAbstract && 
-                        ty.Namespace != null && 
-                        ty.Namespace.Contains("YUCP.Components"))
-                    {
-                        SetGizmoIconEnabled(ty, false);
-                    }
-                }
-            }
-            
-            SessionState.SetBool("YUCPSceneIconsDisabled", true);
-            Debug.Log("[YUCP] Scene gizmo icons force-disabled for all YUCP components.");
-        }
     }
 }
