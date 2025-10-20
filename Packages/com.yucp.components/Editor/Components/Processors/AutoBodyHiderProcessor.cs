@@ -441,29 +441,61 @@ namespace YUCP.Components.Editor
 
         private ApplicationMode DetermineApplicationMode(AutoBodyHiderData data)
         {
-            if (data.applicationMode != ApplicationMode.AutoDetect)
-            {
-                return data.applicationMode;
-            }
-
             Material[] materials = data.targetBodyMesh.sharedMaterials;
             
+            // Log all materials on the body mesh for debugging
+            Debug.Log($"[AutoBodyHiderProcessor] Body mesh '{data.targetBodyMesh.name}' has {materials.Length} materials:");
+            for (int i = 0; i < materials.Length; i++)
+            {
+                if (materials[i] != null && materials[i].shader != null)
+                {
+                    Debug.Log($"[AutoBodyHiderProcessor]   [{i}] '{materials[i].name}' - Shader: '{materials[i].shader.name}'");
+                }
+                else
+                {
+                    Debug.Log($"[AutoBodyHiderProcessor]   [{i}] NULL or missing shader");
+                }
+            }
+            
+            // Check if user forced a specific mode
+            if (data.applicationMode == ApplicationMode.UDIMDiscard)
+            {
+                // User specifically requested UDIM mode - validate it's possible
+                bool hasCompatibleShader = false;
+                foreach (var material in materials)
+                {
+                    if (UDIMManipulator.IsPoiyomiWithUDIMSupport(material))
+                    {
+                        hasCompatibleShader = true;
+                        break;
+                    }
+                }
+                
+                if (!hasCompatibleShader)
+                {
+                    Debug.LogError($"[AutoBodyHiderProcessor] UDIM Discard mode selected but body mesh '{data.targetBodyMesh.name}' has no compatible shader (Poiyomi/FastFur). Falling back to Mesh Deletion.", data);
+                    return ApplicationMode.MeshDeletion;
+                }
+                
+                return ApplicationMode.UDIMDiscard;
+            }
+            else if (data.applicationMode == ApplicationMode.MeshDeletion)
+            {
+                return ApplicationMode.MeshDeletion;
+            }
+            
+            // Auto-detect mode
             foreach (var material in materials)
             {
                 if (UDIMManipulator.IsPoiyomiWithUDIMSupport(material))
                 {
-                    if (data.debugMode)
-                    {
-                        Debug.Log($"[AutoBodyHiderProcessor] Auto-detected Poiyomi shader, using UDIM discard mode");
-                    }
+                    string shaderName = UDIMManipulator.GetShaderDisplayName(material);
+                    Debug.Log($"[AutoBodyHiderProcessor] Auto-detected {shaderName} shader with UDIM support on '{material.name}', using UDIM discard mode");
                     return ApplicationMode.UDIMDiscard;
                 }
             }
 
-            if (data.debugMode)
-            {
-                Debug.Log($"[AutoBodyHiderProcessor] No compatible shader found, using mesh deletion mode");
-            }
+            Debug.Log($"[AutoBodyHiderProcessor] No UDIM-compatible shader found on body mesh, using mesh deletion mode");
             return ApplicationMode.MeshDeletion;
         }
 
@@ -644,8 +676,24 @@ namespace YUCP.Components.Editor
 
         private void ConfigurePoiyomiForToggle(Material material, AutoBodyHiderData data)
         {
+            string shaderNameLower = material.shader.name.ToLower();
+            
             material.SetFloat("_EnableUDIMDiscardOptions", 1f);
-            material.EnableKeyword("POI_UDIMDISCARD");
+            
+            // Enable appropriate shader keyword
+            if (shaderNameLower.Contains("poiyomi"))
+            {
+                material.EnableKeyword("POI_UDIMDISCARD");
+            }
+            else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("wffs"))
+            {
+                material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
+                if (material.HasProperty("_WFFS_FEATURES_UVDISCARD"))
+                {
+                    material.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
+                }
+            }
+            
             material.SetFloat("_UDIMDiscardMode", 0f);
             material.SetFloat("_UDIMDiscardUV", 1);
             
@@ -659,7 +707,8 @@ namespace YUCP.Components.Editor
                 material.SetFloat(tilePropertyName, baseValue);
                 material.SetOverrideTag(tilePropertyName + "Animated", "1");
                 
-                Debug.Log($"[AutoBodyHider] Configured for toggle: {tilePropertyName} = {baseValue} (OFF state), Animated tag set", data);
+                string shaderName = UDIMManipulator.GetShaderDisplayName(material);
+                Debug.Log($"[AutoBodyHider] Configured {shaderName} for toggle: {tilePropertyName} = {baseValue} (OFF state), Animated tag set", data);
             }
             else
             {
@@ -1385,30 +1434,64 @@ namespace YUCP.Components.Editor
             Material poiyomiMaterial = null;
             int poiyomiMaterialIndex = -1;
             
-            // Find the Poiyomi material
+            Debug.Log($"[AutoBodyHiderProcessor] ConfigureMaterialsForMultipleUDIM - Searching for compatible material on '{group.bodyMesh.name}'");
+            Debug.Log($"[AutoBodyHiderProcessor] Body mesh has {materials.Length} materials:");
+            
+            // Find the compatible material (Poiyomi or FastFur)
             for (int i = 0; i < materials.Length; i++)
             {
+                if (materials[i] == null)
+                {
+                    Debug.Log($"[AutoBodyHiderProcessor]   [{i}] NULL material");
+                    continue;
+                }
+                
+                string matShaderName = materials[i].shader != null ? materials[i].shader.name : "NULL SHADER";
+                Debug.Log($"[AutoBodyHiderProcessor]   [{i}] Material: '{materials[i].name}' | Shader: '{matShaderName}' | Has UDIM prop: {materials[i].HasProperty("_EnableUDIMDiscardOptions")}");
+                
                 if (UDIMManipulator.IsPoiyomiWithUDIMSupport(materials[i]))
                 {
                     poiyomiMaterial = materials[i];
                     poiyomiMaterialIndex = i;
+                    Debug.Log($"[AutoBodyHiderProcessor] Found compatible material at index {i}!");
                     break;
                 }
             }
             
             if (poiyomiMaterial == null)
             {
-                Debug.LogError($"[AutoBodyHiderProcessor] No Poiyomi material found on body mesh '{group.bodyMesh.name}'");
+                Debug.LogError($"[AutoBodyHiderProcessor] No Poiyomi or FastFur material found on body mesh '{group.bodyMesh.name}'. " +
+                             $"UDIM Discard mode requires a Poiyomi or FastFur shader with UDIM support. " +
+                             $"Please use Mesh Deletion mode instead, or add a compatible shader to the body mesh.");
                 return;
             }
+            
+            string shaderName = UDIMManipulator.GetShaderDisplayName(poiyomiMaterial);
+            Debug.Log($"[AutoBodyHiderProcessor] Configuring multi-UDIM on {shaderName} material '{poiyomiMaterial.name}'");
             
             // Create a copy of the material
             Material materialCopy = UnityEngine.Object.Instantiate(poiyomiMaterial);
             materialCopy.name = poiyomiMaterial.name + "_MultiUDIM";
             
+            string shaderNameLower = materialCopy.shader.name.ToLower();
+            
             // Enable UDIM discard system
             materialCopy.SetFloat("_EnableUDIMDiscardOptions", 1f);
-            materialCopy.EnableKeyword("POI_UDIMDISCARD");
+            
+            // Enable appropriate shader keyword
+            if (shaderNameLower.Contains("poiyomi"))
+            {
+                materialCopy.EnableKeyword("POI_UDIMDISCARD");
+            }
+            else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("wffs"))
+            {
+                materialCopy.EnableKeyword("WFFS_FEATURES_UVDISCARD");
+                if (materialCopy.HasProperty("_WFFS_FEATURES_UVDISCARD"))
+                {
+                    materialCopy.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
+                }
+            }
+            
             materialCopy.SetFloat("_UDIMDiscardMode", 0f); // Vertex mode
             materialCopy.SetFloat("_UDIMDiscardUV", 1); // Use UV1
             

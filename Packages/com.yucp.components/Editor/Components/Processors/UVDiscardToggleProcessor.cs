@@ -194,15 +194,34 @@ namespace YUCP.Components.Editor
 
             if (poiyomiMaterial == null)
             {
-                Debug.LogError($"[UVDiscardToggle] No Poiyomi material found on body mesh '{data.targetBodyMesh.name}'. UDIM discard cannot be configured.", data);
+                Debug.LogError($"[UVDiscardToggle] No Poiyomi or FastFur material found on body mesh '{data.targetBodyMesh.name}'. UDIM discard cannot be configured.", data);
                 return null;
             }
+            
+            string shaderName = UDIMManipulator.GetShaderDisplayName(poiyomiMaterial);
+            Debug.Log($"[UVDiscardToggle] Using {shaderName} shader for UDIM discard", data);
 
             Material materialCopy = UnityEngine.Object.Instantiate(poiyomiMaterial);
             materialCopy.name = poiyomiMaterial.name + "_UVDiscardToggle";
 
+            string shaderNameLower = materialCopy.shader.name.ToLower();
+            
             materialCopy.SetFloat("_EnableUDIMDiscardOptions", 1f);
-            materialCopy.EnableKeyword("POI_UDIMDISCARD");
+            
+            // Enable appropriate shader keyword
+            if (shaderNameLower.Contains("poiyomi"))
+            {
+                materialCopy.EnableKeyword("POI_UDIMDISCARD");
+            }
+            else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("wffs"))
+            {
+                materialCopy.EnableKeyword("WFFS_FEATURES_UVDISCARD");
+                if (materialCopy.HasProperty("_WFFS_FEATURES_UVDISCARD"))
+                {
+                    materialCopy.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
+                }
+            }
+            
             materialCopy.SetFloat("_UDIMDiscardMode", 0f); // Vertex mode
             materialCopy.SetFloat("_UDIMDiscardUV", data.udimUVChannel);
 

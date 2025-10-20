@@ -185,15 +185,12 @@ namespace YUCP.Components.Editor
         private bool ValidateData()
         {
             if (data.grippedObject == null) return false;
-            if (!data.autoGenerateGrip && data.customGripLeft == null && data.customGripRight == null) return false;
             return true;
         }
 
         private string GetValidationError()
         {
             if (data.grippedObject == null) return "Gripped Object is required";
-            if (!data.autoGenerateGrip && data.customGripLeft == null && data.customGripRight == null)
-                return "Either enable Auto Generate or provide custom animations";
             return "";
         }
 

@@ -239,7 +239,7 @@ namespace YUCP.Components.Editor
                       $"2. Combine clothing pieces that are always worn together\n" +
                       $"3. Use Mesh Deletion mode for some pieces (permanent)\n" +
                       $"4. Split clothing across multiple body renderers\n\n" +
-                      $"Note: Poiyomi shader supports a maximum of 16 UDIM discard tiles (4x4 grid).";
+                      $"Note: Poiyomi and FastFur shaders support a maximum of 16 UDIM discard tiles (4x4 grid).";
             
             EditorUtility.DisplayDialog(
                 "⚠️ UDIM Tile Limit Exceeded",

@@ -177,7 +177,7 @@ namespace YUCP.Components.Editor
                     }
                 }
                 if (!hasPoiyomi)
-                    EditorGUILayout.HelpBox("Body mesh needs a Poiyomi material with UDIM support", MessageType.Warning);
+                    EditorGUILayout.HelpBox("Body mesh needs a Poiyomi or FastFur material with UDIM support", MessageType.Warning);
             }
 
             serializedObject.ApplyModifiedProperties();

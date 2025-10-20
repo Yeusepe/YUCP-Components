@@ -192,7 +192,7 @@ namespace YUCP.Components.Editor
                 
                 if (data.applicationMode == ApplicationMode.AutoDetect)
                 {
-                    EditorGUILayout.HelpBox("Auto-detect will use UDIM Discard for Poiyomi shaders, Mesh Deletion for others.", MessageType.Info);
+                    EditorGUILayout.HelpBox("Auto-detect will use UDIM Discard for Poiyomi/FastFur shaders, Mesh Deletion for others.", MessageType.Info);
                 }
             });
 
@@ -344,6 +344,24 @@ namespace YUCP.Components.Editor
                     if (data.applicationMode == ApplicationMode.MeshDeletion)
                     {
                         EditorGUILayout.HelpBox("Toggle only works with UDIM Discard mode, not Mesh Deletion!", MessageType.Warning);
+                    }
+                    
+                    // Check if body mesh has compatible shader
+                    if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
+                    {
+                        bool hasCompatibleShader = false;
+                        foreach (var mat in data.targetBodyMesh.sharedMaterials)
+                        {
+                            if (UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                            {
+                                hasCompatibleShader = true;
+                                break;
+                            }
+                        }
+                        if (!hasCompatibleShader)
+                        {
+                            EditorGUILayout.HelpBox("Body mesh needs a Poiyomi or FastFur shader with UDIM support for toggles to work!", MessageType.Warning);
+                        }
                     }
                 }
                 else if (uvDiscardToggle != null)

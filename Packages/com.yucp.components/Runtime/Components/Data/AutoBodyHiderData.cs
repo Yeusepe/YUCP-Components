@@ -152,12 +152,12 @@ namespace YUCP.Components
 
         [Header("Application Mode")]
         [Tooltip("How to hide the body parts. Auto-detect will choose based on shader.\n\n" +
-                 "• Auto-Detect: Automatically uses UDIM for Poiyomi, mesh deletion for others\n" +
-                 "• UDIM Discard: Non-destructive, requires Poiyomi shader\n" +
+                 "• Auto-Detect: Automatically uses UDIM for Poiyomi/FastFur, mesh deletion for others\n" +
+                 "• UDIM Discard: Non-destructive, requires Poiyomi or FastFur shader\n" +
                  "• Mesh Deletion: Works with any shader, reduces poly count")]
         public ApplicationMode applicationMode = ApplicationMode.AutoDetect;
 
-        [Header("UDIM Discard Settings (Poiyomi Only)")]
+        [Header("UDIM Discard Settings (Poiyomi/FastFur)")]
         [Tooltip("Which UV channel to use for UDIM discard.\n\n" +
                  "• UV0 (Channel 0): Main UV, most common\n" +
                  "• UV1-3: Alternative channels if UV0 is used for other purposes\n\n" +
@@ -166,13 +166,13 @@ namespace YUCP.Components
         public int udimUVChannel = 0;
 
         [Tooltip("Which UDIM tile row to use for discarding (0-3).\n\n" +
-                 "Poiyomi will hide vertices with UVs in this tile.\n" +
+                 "The shader will hide vertices with UVs in this tile.\n" +
                  "Row 3 (default) is usually safe as it's rarely used for textures.")]
         [Range(0, 3)]
         public int udimDiscardRow = 3;
 
         [Tooltip("Which UDIM tile column to use for discarding (0-3).\n\n" +
-                 "Poiyomi will hide vertices with UVs in this tile.\n" +
+                 "The shader will hide vertices with UVs in this tile.\n" +
                  "Column 3 (default) is usually safe as it's rarely used for textures.")]
         [Range(0, 3)]
         public int udimDiscardColumn = 3;

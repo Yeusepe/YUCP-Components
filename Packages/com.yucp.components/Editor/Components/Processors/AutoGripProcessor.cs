@@ -71,17 +71,8 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            if (!data.autoGenerateGrip)
-            {
-                bool hasLeft = data.customGripLeft != null;
-                bool hasRight = data.customGripRight != null;
-                
-                if (!hasLeft && !hasRight)
-                {
-                    Debug.LogError("[AutoGripProcessor] Auto-generate is off but no custom animations provided", data);
-                    return false;
-                }
-            }
+            // Gizmo-based grip generation is always enabled
+            // No need to check for custom animations since we removed that system
 
             return true;
         }
@@ -168,22 +159,7 @@ namespace YUCP.Components.Editor
 
         private AnimationClip GetOrGenerateGripAnimation(AutoGripData data, Animator animator, bool isLeftHand)
         {
-            if (!data.autoGenerateGrip)
-            {
-                AnimationClip customClip = isLeftHand ? data.customGripLeft : data.customGripRight;
-                
-                if (customClip == null && data.mirrorGrip)
-                {
-                    customClip = isLeftHand ? data.customGripRight : data.customGripLeft;
-                    if (customClip != null)
-                    {
-                        return MirrorGripAnimation(customClip, isLeftHand);
-                    }
-                }
-
-                return customClip;
-            }
-
+            // Always generate grip from finger tip gizmos
             var gripResult = GripGenerator.GenerateGrip(animator, data.grippedObject, data, isLeftHand);
 
             if (gripResult == null)

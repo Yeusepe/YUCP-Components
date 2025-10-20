@@ -58,18 +58,43 @@ namespace YUCP.Components
         public string globalParameter = "";
 
         [Header("Grip Generation")]
-        [Tooltip("Automatically generate grip animation from object mesh.\n\n" +
-                 "When enabled, analyzes object shape and avatar hand to create realistic grip.\n" +
-                 "Disable to use custom animation clips instead.")]
-        public bool autoGenerateGrip = true;
+        [Tooltip("Show finger tip gizmos in Scene view for manual grip positioning.\n\n" +
+                 "Click 'Show Gizmos' to display colored finger tip handles that you can drag to position.\n" +
+                 "The system will calculate muscle values to reach these finger tip positions.")]
+        public bool showGizmos = false;
 
-        [Tooltip("Custom grip animation for left hand (overrides auto-generation).\n\n" +
-                 "Use this if you want manual control over the grip pose.")]
-        public AnimationClip customGripLeft;
+        [Tooltip("Position for left hand thumb tip in world space.\n\n" +
+                 "Drag the gizmo in Scene view to position the thumb tip.\n" +
+                 "The system will calculate muscle values to reach this position.")]
+        public Vector3 leftThumbTip = Vector3.zero;
 
-        [Tooltip("Custom grip animation for right hand (overrides auto-generation).\n\n" +
-                 "Leave empty to mirror left grip if mirrorGrip is enabled.")]
-        public AnimationClip customGripRight;
+        [Tooltip("Position for left hand index finger tip in world space.")]
+        public Vector3 leftIndexTip = Vector3.zero;
+
+        [Tooltip("Position for left hand middle finger tip in world space.")]
+        public Vector3 leftMiddleTip = Vector3.zero;
+
+        [Tooltip("Position for left hand ring finger tip in world space.")]
+        public Vector3 leftRingTip = Vector3.zero;
+
+        [Tooltip("Position for left hand little finger tip in world space.")]
+        public Vector3 leftLittleTip = Vector3.zero;
+
+        [Tooltip("Position for right hand thumb tip in world space.")]
+        public Vector3 rightThumbTip = Vector3.zero;
+
+        [Tooltip("Position for right hand index finger tip in world space.")]
+        public Vector3 rightIndexTip = Vector3.zero;
+
+        [Tooltip("Position for right hand middle finger tip in world space.")]
+        public Vector3 rightMiddleTip = Vector3.zero;
+
+        [Tooltip("Position for right hand ring finger tip in world space.")]
+        public Vector3 rightRingTip = Vector3.zero;
+
+        [Tooltip("Position for right hand little finger tip in world space.")]
+        public Vector3 rightLittleTip = Vector3.zero;
+
 
         [Header("Grip Parameters")]
         [Tooltip("How much to curl fingers (0 = barely curl, 1 = full grip).\n\n" +
@@ -86,45 +111,6 @@ namespace YUCP.Components
         [Range(-1f, 1f)]
         public float fingerSpread = 0.0f;
 
-        [Tooltip("How to grip the object.\n\n" +
-                 "• Auto: Detect based on object shape\n" +
-                 "• Wrap: All fingers curl around object (default for most items)\n" +
-                 "• Pinch: Thumb + index primarily (small objects)\n" +
-                 "• Point: Index extended, others curl (gun grip)")]
-        public GripStyle gripStyle = GripStyle.Auto;
-
-        [Tooltip("Custom grip point on the object (optional).\n\n" +
-                 "Drag an empty GameObject positioned where you want the hand to grip.\n" +
-                 "If not set, uses object center.")]
-        public Transform customGripPoint;
-
-        [Header("Advanced Settings")]
-        [Tooltip("Maximum distance to search for object contact (in meters).\n\n" +
-                 "Should be slightly larger than your hand size.\n" +
-                 "Typical range: 0.1-0.2m")]
-        [Range(0.05f, 0.3f)]
-        public float raycastDistance = 0.15f;
-
-        [Tooltip("Safety margin - distance to stop before actual contact (in meters).\n\n" +
-                 "Prevents finger mesh from touching object surface.\n" +
-                 "• 0.001m: Minimal gap (1mm)\n" +
-                 "• 0.002m: Recommended (2mm)\n" +
-                 "• 0.005m: Larger gap (5mm)")]
-        [Range(0.0005f, 0.01f)]
-        public float contactSafetyMargin = 0.002f;
-
-        [Tooltip("Mirror left hand grip to right hand.\n\n" +
-                 "When enabled and no customGripRight is set, creates mirrored version of left grip.\n" +
-                 "Useful for symmetric objects.")]
-        public bool mirrorGrip = true;
-
-        [Tooltip("Number of vertices to sample per finger segment.\n\n" +
-                 "Higher = more accurate contact detection but slower.\n" +
-                 "• 5: Fast, good for simple objects\n" +
-                 "• 10: Balanced (recommended)\n" +
-                 "• 20: Most accurate, slower")]
-        [Range(5, 50)]
-        public int vertexSamplingDensity = 10;
 
         [Header("Debug & Preview")]
         [Tooltip("Show debug information during build.")]

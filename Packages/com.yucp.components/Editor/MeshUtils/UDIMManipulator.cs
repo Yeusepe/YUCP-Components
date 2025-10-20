@@ -8,17 +8,57 @@ namespace YUCP.Components.Editor.MeshUtils
 {
     public static class UDIMManipulator
     {
+        /// <summary>
+        /// Check if material supports UDIM discard (Poiyomi or FastFur).
+        /// Both shaders use the same property naming convention.
+        /// </summary>
         public static bool IsPoiyomiWithUDIMSupport(Material material)
         {
             if (material == null || material.shader == null)
                 return false;
             
+            string shaderName = material.shader.name;
+            string shaderNameLower = shaderName.ToLower();
+            
+            // Check for Poiyomi
+            if (shaderNameLower.Contains("poiyomi"))
+            {
+                return material.HasProperty("_EnableUDIMDiscardOptions");
+            }
+            
+            // Check for FastFur (Warren's Fast Fur Shader)
+            // Common shader names: "Warren/FastFur", "WFFS", "FastFur"
+            if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("wffs") || shaderNameLower.Contains("warren"))
+            {
+                // FastFur requires the UV Discard module to be installed (enabled)
+                // Check for either the main property or the feature toggle
+                bool hasUDIMProperty = material.HasProperty("_EnableUDIMDiscardOptions");
+                bool hasFeatureToggle = material.HasProperty("_WFFS_FEATURES_UVDISCARD");
+                
+                return hasUDIMProperty || hasFeatureToggle;
+            }
+            
+            // Unknown shader
+            return false;
+        }
+        
+        /// <summary>
+        /// Get the shader name for logging/display purposes.
+        /// </summary>
+        public static string GetShaderDisplayName(Material material)
+        {
+            if (material == null || material.shader == null)
+                return "Unknown";
+            
             string shaderName = material.shader.name.ToLower();
             
-            if (!shaderName.Contains("poiyomi"))
-                return false;
+            if (shaderName.Contains("poiyomi"))
+                return "Poiyomi";
             
-            return material.HasProperty("_EnableUDIMDiscardOptions");
+            if (shaderName.Contains("fastfur") || shaderName.Contains("wffs") || shaderName.Contains("warren"))
+                return "FastFur";
+            
+            return material.shader.name;
         }
 
         public static Mesh ApplyUDIMDiscard(
@@ -76,20 +116,39 @@ namespace YUCP.Components.Editor.MeshUtils
                 return;
             }
             
+            string shaderName = GetShaderDisplayName(material);
+            string shaderNameLower = material.shader.name.ToLower();
+            
             material.SetFloat("_EnableUDIMDiscardOptions", 1f);
-            material.EnableKeyword("POI_UDIMDISCARD");
-            material.SetFloat("_UDIMDiscardMode", 0f);
-            material.SetFloat("_UDIMDiscardUV", 1);
+            
+            // Enable shader keywords - different for each shader
+            if (shaderNameLower.Contains("poiyomi"))
+            {
+                material.EnableKeyword("POI_UDIMDISCARD");
+            }
+            else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("wffs"))
+            {
+                material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
+                // Also need to enable the toggle property for FastFur
+                if (material.HasProperty("_WFFS_FEATURES_UVDISCARD"))
+                {
+                    material.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
+                }
+            }
+            
+            material.SetFloat("_UDIMDiscardMode", 0f);  // Vertex mode
+            material.SetFloat("_UDIMDiscardUV", 1);     // Use UV1
             
             string propertyName = $"_UDIMDiscardRow{data.udimDiscardRow}_{data.udimDiscardColumn}";
             
             if (material.HasProperty(propertyName))
             {
                 material.SetFloat(propertyName, 1f);
+                Debug.Log($"[UDIMManipulator] Configured {shaderName} material '{material.name}' with UDIM tile ({data.udimDiscardRow}, {data.udimDiscardColumn})");
             }
             else
             {
-                Debug.LogWarning($"[UDIMManipulator] Property {propertyName} not found on material.");
+                Debug.LogWarning($"[UDIMManipulator] Property {propertyName} not found on {shaderName} material '{material.name}'.");
             }
             
             EditorUtility.SetDirty(material);

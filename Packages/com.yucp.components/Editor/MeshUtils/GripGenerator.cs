@@ -33,44 +33,100 @@ namespace YUCP.Components.Editor.MeshUtils
             AutoGripData data,
             bool isLeftHand)
         {
-            Debug.Log($"[GripGenerator] Starting grip generation for {(isLeftHand ? "left" : "right")} hand");
+            Debug.Log($"[GripGenerator] Starting grip generation for {(isLeftHand ? "left" : "right")} hand using finger tip gizmos");
+            
+            return GenerateGripFromFingerTips(animator, data, isLeftHand);
+        }
+
+        private static GripResult GenerateGripFromFingerTips(Animator animator, AutoGripData data, bool isLeftHand)
+        {
+            Debug.Log($"[GripGenerator] Generating grip from finger tip gizmos for {(isLeftHand ? "left" : "right")} hand");
             
             var result = new GripResult();
-
-            Debug.Log("[GripGenerator] Analyzing hand...");
-            var handData = HandAnalyzer.AnalyzeHand(animator, isLeftHand);
-            if (handData == null)
+            
+            // Get finger tip targets from gizmo positions
+            var targets = new FingerTipSolver.FingerTipTarget();
+            if (isLeftHand)
             {
-                Debug.LogError("[GripGenerator] Failed to analyze hand");
+                targets.thumbTip = data.leftThumbTip;
+                targets.indexTip = data.leftIndexTip;
+                targets.middleTip = data.leftMiddleTip;
+                targets.ringTip = data.leftRingTip;
+                targets.littleTip = data.leftLittleTip;
+            }
+            else
+            {
+                targets.thumbTip = data.rightThumbTip;
+                targets.indexTip = data.rightIndexTip;
+                targets.middleTip = data.rightMiddleTip;
+                targets.ringTip = data.rightRingTip;
+                targets.littleTip = data.rightLittleTip;
+            }
+
+            // Initialize targets if they're not set
+            if (targets.thumbTip == Vector3.zero && targets.indexTip == Vector3.zero)
+            {
+                Debug.Log("[GripGenerator] Initializing finger tip positions from object");
+                targets = FingerTipSolver.InitializeFingerTips(data.grippedObject, isLeftHand);
+                
+                // Update the data with initialized positions
+                if (isLeftHand)
+                {
+                    data.leftThumbTip = targets.thumbTip;
+                    data.leftIndexTip = targets.indexTip;
+                    data.leftMiddleTip = targets.middleTip;
+                    data.leftRingTip = targets.ringTip;
+                    data.leftLittleTip = targets.littleTip;
+                }
+                else
+                {
+                    data.rightThumbTip = targets.thumbTip;
+                    data.rightIndexTip = targets.indexTip;
+                    data.rightMiddleTip = targets.middleTip;
+                    data.rightRingTip = targets.ringTip;
+                    data.rightLittleTip = targets.littleTip;
+                }
+            }
+
+            // Solve for muscle values using finger tip positions
+            var solverResult = FingerTipSolver.SolveFingerTips(animator, targets, isLeftHand);
+            if (!solverResult.success)
+            {
+                Debug.LogError($"[GripGenerator] Finger tip solving failed: {solverResult.errorMessage}");
                 return null;
             }
+
+            // Copy muscle values to result
+            result.muscleValues = solverResult.muscleValues;
             
-            Debug.Log($"[GripGenerator] Hand analysis complete - Found {handData.indexSegments.Count} index segments");
-
-            Debug.Log("[GripGenerator] Analyzing object...");
-            var objectAnalysis = GripStyleDetector.AnalyzeObject(grippedObject);
-            GripStyle style = data.gripStyle == GripStyle.Auto ? objectAnalysis.recommendedStyle : data.gripStyle;
-
-            Debug.Log($"[GripGenerator] Object analysis complete - Style: {style}, Size: {objectAnalysis.size}");
-
-            Vector3 gripPoint = data.customGripPoint != null 
-                ? data.customGripPoint.position 
-                : objectAnalysis.center;
-                
-            Debug.Log($"[GripGenerator] Grip point: {gripPoint}");
-
-            Debug.Log("[GripGenerator] Calculating finger muscles...");
-            CalculateFingerMuscles(handData, grippedObject, gripPoint, style, data, result, isLeftHand);
-            Debug.Log($"[GripGenerator] Muscle calculation complete - {result.muscleValues.Count} muscles, {result.contactPoints.Count} contacts");
-
-            Debug.Log("[GripGenerator] Creating animation clip...");
+            // Create contact points from finger tip positions
+            CreateContactPointsFromFingerTips(targets, result, isLeftHand);
+            
+            // Create animation clip
             result.animation = CreateAnimationClip(result.muscleValues, isLeftHand);
-            Debug.Log($"[GripGenerator] Animation clip created: {(result.animation != null ? result.animation.name : "NULL")}");
-
-            result.gripOffset = CalculateGripOffset(handData.handBone, gripPoint);
-
-            Debug.Log($"[GripGenerator] Grip generation complete!");
+            
+            Debug.Log($"[GripGenerator] Finger tip grip generation complete - {result.muscleValues.Count} muscles, {result.contactPoints.Count} contacts");
             return result;
+        }
+
+        private static void CreateContactPointsFromFingerTips(FingerTipSolver.FingerTipTarget targets, GripResult result, bool isLeftHand)
+        {
+            string hand = isLeftHand ? "Left" : "Right";
+            
+            if (targets.thumbTip != Vector3.zero)
+                result.contactPoints.Add(new ContactPoint { position = targets.thumbTip, normal = Vector3.up, fingerName = $"{hand} Thumb", segment = 3 });
+            
+            if (targets.indexTip != Vector3.zero)
+                result.contactPoints.Add(new ContactPoint { position = targets.indexTip, normal = Vector3.up, fingerName = $"{hand} Index", segment = 3 });
+            
+            if (targets.middleTip != Vector3.zero)
+                result.contactPoints.Add(new ContactPoint { position = targets.middleTip, normal = Vector3.up, fingerName = $"{hand} Middle", segment = 3 });
+            
+            if (targets.ringTip != Vector3.zero)
+                result.contactPoints.Add(new ContactPoint { position = targets.ringTip, normal = Vector3.up, fingerName = $"{hand} Ring", segment = 3 });
+            
+            if (targets.littleTip != Vector3.zero)
+                result.contactPoints.Add(new ContactPoint { position = targets.littleTip, normal = Vector3.up, fingerName = $"{hand} Little", segment = 3 });
         }
 
         private static void CalculateFingerMuscles(
@@ -238,7 +294,7 @@ namespace YUCP.Components.Editor.MeshUtils
             
             Debug.Log($"[GripGenerator] Segment {segment.bone} - Distance to grip point: {distanceToGrip:F4}m");
             
-            float curlValue = CalculateCurlFromDistance(distanceToGrip, data.gripStrength);
+            float curlValue = CalculateCurlFromDistance(distanceToGrip, 1.0f);
             
             result.contactPoints.Add(new ContactPoint
             {
@@ -283,7 +339,7 @@ namespace YUCP.Components.Editor.MeshUtils
             var objectMeshes = GetObjectMeshTriangles(grippedObject);
             Ray ray = new Ray(bonePos, direction);
 
-            if (RayIntersectsMesh(ray, objectMeshes, data.raycastDistance, out float hitDistance, out Vector3 hitPoint, out Vector3 hitNormal))
+            if (RayIntersectsMesh(ray, objectMeshes, 0.1f, out float hitDistance, out Vector3 hitPoint, out Vector3 hitNormal))
             {
                 result.contactPoints.Add(new ContactPoint
                 {
@@ -293,9 +349,9 @@ namespace YUCP.Components.Editor.MeshUtils
                     segment = 0
                 });
                 
-                float distance = hitDistance - data.contactSafetyMargin;
+                float distance = hitDistance - 0.01f;
                 float curlRatio = 1.0f - Mathf.Clamp01(distance / 0.04f);
-                return Mathf.Lerp(0.5f, -0.8f, curlRatio * data.gripStrength);
+                return Mathf.Lerp(0.5f, -0.8f, curlRatio * 1.0f);
             }
 
             return 0f;

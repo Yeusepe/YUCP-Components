@@ -52,13 +52,16 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                // Check if body has Poiyomi material
+                // Check if body has compatible material (Poiyomi or FastFur)
                 Material poiyomiMaterial = FindPoiyomiMaterial(data.targetBodyMesh);
                 if (poiyomiMaterial == null)
                 {
-                    Debug.LogError($"[AutoUDIMDiscard] Body mesh doesn't have a Poiyomi material with UDIM support!", data);
+                    Debug.LogError($"[AutoUDIMDiscard] Body mesh doesn't have a Poiyomi or FastFur material with UDIM support!", data);
                     return;
                 }
+                
+                string shaderName = UDIMManipulator.GetShaderDisplayName(poiyomiMaterial);
+                Debug.Log($"[AutoUDIMDiscard] Using {shaderName} shader for UDIM discard", data);
 
                 // Detect UV regions from clothing mesh
                 List<AutoUDIMDiscardData.UVRegion> regions = DetectUVRegions(clothingRenderer.sharedMesh, data);
@@ -281,8 +284,24 @@ namespace YUCP.Components.Editor
 
         private void ConfigurePoiyomiMaterial(Material material, int row, int column, AutoUDIMDiscardData data)
         {
+            string shaderNameLower = material.shader.name.ToLower();
+            
             material.SetFloat("_EnableUDIMDiscardOptions", 1f);
-            material.EnableKeyword("POI_UDIMDISCARD");
+            
+            // Enable appropriate shader keyword
+            if (shaderNameLower.Contains("poiyomi"))
+            {
+                material.EnableKeyword("POI_UDIMDISCARD");
+            }
+            else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("wffs"))
+            {
+                material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
+                if (material.HasProperty("_WFFS_FEATURES_UVDISCARD"))
+                {
+                    material.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
+                }
+            }
+            
             material.SetFloat("_UDIMDiscardMode", 0f); // Vertex mode
             material.SetFloat("_UDIMDiscardUV", 1); // UV1
 
