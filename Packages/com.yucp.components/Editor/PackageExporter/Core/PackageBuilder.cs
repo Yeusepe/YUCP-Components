@@ -620,12 +620,17 @@ namespace YUCP.Components.Editor.PackageExporter
                 Directory.CreateDirectory(tempExtractDir);
                 
                 // Extract the .unitypackage (it's a tar.gz)
+#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
                 using (var fileStream = File.OpenRead(unityPackagePath))
                 using (var gzipStream = new ICSharpCode.SharpZipLib.GZip.GZipInputStream(fileStream))
                 using (var tarArchive = ICSharpCode.SharpZipLib.Tar.TarArchive.CreateInputTarArchive(gzipStream, System.Text.Encoding.UTF8))
                 {
                     tarArchive.ExtractContents(tempExtractDir);
                 }
+#else
+                Debug.LogError("[PackageBuilder] ICSharpCode.SharpZipLib not available. Package injection disabled.");
+                return;
+#endif
                 
                 // Create a new folder for package.json in the tar structure
                 // Unity packages have a specific structure: each asset gets a GUID folder with:
@@ -676,6 +681,7 @@ namespace YUCP.Components.Editor.PackageExporter
                 }
                 
                 // Recompress the package
+#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
                 string tempOutputPath = unityPackagePath + ".tmp";
                 
                 using (var outputStream = File.Create(tempOutputPath))
@@ -692,6 +698,7 @@ namespace YUCP.Components.Editor.PackageExporter
                 // Replace original with new package
                 File.Delete(unityPackagePath);
                 File.Move(tempOutputPath, unityPackagePath);
+#endif
             }
             finally
             {
@@ -713,21 +720,28 @@ namespace YUCP.Components.Editor.PackageExporter
         /// <summary>
         /// Helper to recursively add files to a tar archive
         /// </summary>
-        private static void AddDirectoryFilesToTar(ICSharpCode.SharpZipLib.Tar.TarArchive tarArchive, string sourceDirectory, bool recurse)
+        private static void AddDirectoryFilesToTar(object tarArchive, string sourceDirectory, bool recurse)
         {
+#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
+            var archive = tarArchive as ICSharpCode.SharpZipLib.Tar.TarArchive;
+            if (archive == null) return;
+            
             var filenames = Directory.GetFiles(sourceDirectory);
             foreach (string filename in filenames)
             {
                 var entry = ICSharpCode.SharpZipLib.Tar.TarEntry.CreateEntryFromFile(filename);
-                tarArchive.WriteEntry(entry, false);
+                archive.WriteEntry(entry, false);
             }
 
             if (recurse)
             {
                 var directories = Directory.GetDirectories(sourceDirectory);
                 foreach (string directory in directories)
-                    AddDirectoryFilesToTar(tarArchive, directory, recurse);
+                    AddDirectoryFilesToTar(archive, directory, recurse);
             }
+#else
+            Debug.LogError("[PackageBuilder] ICSharpCode.SharpZipLib not available. Please install the ICSharpCode.SharpZipLib package.");
+#endif
         }
         
         /// <summary>

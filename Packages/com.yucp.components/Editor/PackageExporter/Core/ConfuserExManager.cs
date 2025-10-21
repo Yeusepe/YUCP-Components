@@ -6,7 +6,9 @@ using System.Net;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
 using ICSharpCode.SharpZipLib.Zip;
+#endif
 using Debug = UnityEngine.Debug;
 
 namespace YUCP.Components.Editor.PackageExporter
@@ -101,6 +103,7 @@ namespace YUCP.Components.Editor.PackageExporter
         /// </summary>
         private static void ExtractZipFile(string zipPath, string extractPath)
         {
+#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
             using (ZipInputStream zipStream = new ZipInputStream(File.OpenRead(zipPath)))
             {
                 ZipEntry entry;
@@ -128,6 +131,9 @@ namespace YUCP.Components.Editor.PackageExporter
                     }
                 }
             }
+#else
+            Debug.LogError("[ConfuserExManager] ICSharpCode.SharpZipLib not available. Please install the ICSharpCode.SharpZipLib package.");
+#endif
         }
         
         /// <summary>

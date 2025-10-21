@@ -1,8 +1,10 @@
 using System;
 using System.IO;
 using System.Text;
+#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
 using ICSharpCode.SharpZipLib.GZip;
 using ICSharpCode.SharpZipLib.Tar;
+#endif
 using UnityEngine;
 
 namespace YUCP.Components.Editor.PackageExporter
@@ -93,6 +95,7 @@ namespace YUCP.Components.Editor.PackageExporter
         /// </summary>
         private static void ExtractTarGz(string tarGzPath, string destFolder)
         {
+#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
             using (Stream inStream = File.OpenRead(tarGzPath))
             using (Stream gzipStream = new GZipInputStream(inStream))
             {
@@ -100,6 +103,9 @@ namespace YUCP.Components.Editor.PackageExporter
                 tarArchive.ExtractContents(destFolder);
                 tarArchive.Close();
             }
+#else
+            Debug.LogError("[PackageIconInjector] ICSharpCode.SharpZipLib not available. Please install the ICSharpCode.SharpZipLib package.");
+#endif
         }
         
         /// <summary>
@@ -107,6 +113,7 @@ namespace YUCP.Components.Editor.PackageExporter
         /// </summary>
         private static void CreateTarGzWithIcon(string outputPath, string sourceDirectory, string iconFilePath)
         {
+#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
             using (Stream outStream = File.Create(outputPath))
             using (Stream gzipStream = new GZipOutputStream(outStream))
             {
@@ -146,6 +153,9 @@ namespace YUCP.Components.Editor.PackageExporter
                 
                 tarArchive.Close();
             }
+#else
+            Debug.LogError("[PackageIconInjector] ICSharpCode.SharpZipLib not available. Please install the ICSharpCode.SharpZipLib package.");
+#endif
         }
     }
 }
