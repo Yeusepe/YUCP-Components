@@ -173,27 +173,62 @@ namespace YUCP.Components
 
         private float GetControllerButtonValue(string buttonName)
         {
-            if (string.IsNullOrEmpty(buttonName)) return 0f;
+            if (string.IsNullOrEmpty(buttonName) || buttonName == "None") return 0f;
+            
             string standardButton = MapToStandardButton(buttonName);
-            return Input.GetButton(standardButton) ? 1f : 0f;
+            
+            // Try to get button value with error handling for unmapped buttons
+            try
+            {
+                return Input.GetButton(standardButton) ? 1f : 0f;
+            }
+            catch (System.ArgumentException)
+            {
+                // Button not configured in Input Manager - try joystick button index
+                int joystickButton = GetJoystickButtonIndex(buttonName);
+                if (joystickButton >= 0)
+                {
+                    try
+                    {
+                        return Input.GetKey((KeyCode)((int)KeyCode.JoystickButton0 + joystickButton)) ? 1f : 0f;
+                    }
+                    catch
+                    {
+                        return 0f;
+                    }
+                }
+                return 0f;
+            }
         }
 
         private float GetControllerAxisValue(string axisName)
         {
-            if (string.IsNullOrEmpty(axisName)) return 0f;
+            if (string.IsNullOrEmpty(axisName) || axisName == "None") return 0f;
+            
             string standardAxis = MapToStandardAxis(axisName);
-            float value = Input.GetAxis(standardAxis);
-            // Apply deadzone but keep continuous values
-            if (Mathf.Abs(value) > controllerDeadzone)
+            
+            // Try to get axis value with error handling for unmapped axes
+            try
             {
-                return value * axisSensitivity;
+                float value = Input.GetAxis(standardAxis);
+                // Apply deadzone but keep continuous values
+                if (Mathf.Abs(value) > controllerDeadzone)
+                {
+                    return value * axisSensitivity;
+                }
+                return 0f;
             }
-            return 0f;
+            catch (System.ArgumentException)
+            {
+                // Axis not configured in Input Manager - silently return 0
+                return 0f;
+            }
         }
 
         private float GetControllerTriggerValue(string triggerName)
         {
-            if (string.IsNullOrEmpty(triggerName)) return 0f;
+            if (string.IsNullOrEmpty(triggerName) || triggerName == "None") return 0f;
+            
             float value = GetDirectAxisValue(triggerName);
             // Apply deadzone but keep continuous values
             if (Mathf.Abs(value) > controllerDeadzone)
@@ -205,7 +240,8 @@ namespace YUCP.Components
 
         private float GetControllerDpadValue(string dpadName)
         {
-            if (string.IsNullOrEmpty(dpadName)) return 0f;
+            if (string.IsNullOrEmpty(dpadName) || dpadName == "None") return 0f;
+            
             float value = GetDirectAxisValue(dpadName);
             // Apply deadzone but keep continuous values
             if (Mathf.Abs(value) > controllerDeadzone)
@@ -230,11 +266,34 @@ namespace YUCP.Components
                 case "y": case "triangle": return "Jump";
                 case "start": case "options": return "Submit";
                 case "select": case "share": return "Cancel";
-                case "l1": case "lb": return "Fire1";
-                case "r1": case "rb": return "Fire2";
-                case "l3": case "ls": return "Fire3";
-                case "r3": case "rs": return "Jump";
+                case "left shoulder": case "l1": case "lb": return "Fire1";
+                case "right shoulder": case "r1": case "rb": return "Fire2";
+                case "left stick": case "l3": case "ls": return "Fire3";
+                case "right stick": case "r3": case "rs": return "Jump";
                 default: return buttonName;
+            }
+        }
+        
+        private int GetJoystickButtonIndex(string buttonName)
+        {
+            // Map button names to joystick button indices (for direct KeyCode access)
+            switch (buttonName.ToLower())
+            {
+                case "a": case "cross": return 0;
+                case "b": case "circle": return 1;
+                case "x": case "square": return 2;
+                case "y": case "triangle": return 3;
+                case "left shoulder": case "l1": case "lb": return 4;
+                case "right shoulder": case "r1": case "rb": return 5;
+                case "select": case "share": case "back": return 6;
+                case "start": case "options": return 7;
+                case "left stick": case "l3": case "ls": return 8;
+                case "right stick": case "r3": case "rs": return 9;
+                case "d-pad up": return 10;
+                case "d-pad down": return 11;
+                case "d-pad left": return 12;
+                case "d-pad right": return 13;
+                default: return -1;
             }
         }
 
@@ -255,15 +314,44 @@ namespace YUCP.Components
 
         private float GetDirectAxisValue(string axisName)
         {
+            if (string.IsNullOrEmpty(axisName) || axisName == "None") return 0f;
+            
             // Try to get axis value directly by name first
             try
             {
                 return Input.GetAxis(axisName);
             }
-            catch
+            catch (System.ArgumentException)
             {
-                // Fallback to direct axis access
-                return GetDirectAxis(0); // Default to first axis
+                // Axis not configured in Input Manager - try to map it
+                string mappedAxis = MapAxisNameToJoystickAxis(axisName);
+                if (!string.IsNullOrEmpty(mappedAxis))
+                {
+                    try
+                    {
+                        return Input.GetAxis(mappedAxis);
+                    }
+                    catch
+                    {
+                        return 0f;
+                    }
+                }
+                return 0f;
+            }
+        }
+        
+        private string MapAxisNameToJoystickAxis(string axisName)
+        {
+            // Map trigger/dpad names to Unity's numbered axes
+            switch (axisName.ToLower())
+            {
+                case "left trigger": return "Axis 3";
+                case "right trigger": return "Axis 6";
+                case "d-pad up": case "dpad up": return "Axis 7";
+                case "d-pad down": case "dpad down": return "Axis 7"; // Same axis, negative
+                case "d-pad left": case "dpad left": return "Axis 6"; // Same axis as triggers
+                case "d-pad right": case "dpad right": return "Axis 6";
+                default: return null;
             }
         }
 

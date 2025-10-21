@@ -18,7 +18,9 @@
         "VRCSDKBase.dll",
         "VRCSDKBase-Editor.dll",
         "VRCSDK3A.dll",
-        "VRCSDK3A-Editor.dll"
+        "VRCSDK3A-Editor.dll",
+        "Newtonsoft.Json.dll",
+        "ICSharpCode.SharpZipLib.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],

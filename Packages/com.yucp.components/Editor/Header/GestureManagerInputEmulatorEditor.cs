@@ -69,6 +69,16 @@ namespace YUCP.Components.Editor.UI
             // Beta warning
             BetaWarningHelper.DrawBetaWarningIMGUI(typeof(GestureManagerInputEmulator));
 
+            // Game view requirement notice
+            EditorGUILayout.Space(5);
+            var originalColor = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(1f, 0.8f, 0.3f, 0.3f); // Yellow/orange background
+            EditorGUILayout.HelpBox(
+                "You have to be clicked into Game view for the inputs to be detected (I know it is a Unity thing I am working on it)",
+                MessageType.Info);
+            GUI.backgroundColor = originalColor;
+            EditorGUILayout.Space(5);
+
             // Handle key detection
             HandleKeyDetection();
 

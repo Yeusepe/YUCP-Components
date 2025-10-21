@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: PLACEHOLDER_GUID, type: 3}
+  m_Name: Example_ExportProfile
+  m_EditorClassIdentifier: 
+  packageName: MyPackage
+  version: 1.0.0
+  author: Your Name
+  description: A sample export profile showing how to configure package exports
+  icon: {fileID: 0}
+  foldersToExport:
+  - Assets/MyContent
+  includeDependencies: 1
+  recurseFolders: 1
+  excludeFilePatterns:
+  - '*.tmp'
+  - '*.log'
+  excludeFolderNames:
+  - .git
+  - Temp
+  dependencies: []
+  generatePackageJson: 1
+  enableObfuscation: 0
+  obfuscationPreset: 1
+  assembliesToObfuscate: []
+  stripDebugSymbols: 1
+  exportPath: 
+  autoIncrementVersion: 0
+  lastExportTime: 
+  exportCount: 0
+
