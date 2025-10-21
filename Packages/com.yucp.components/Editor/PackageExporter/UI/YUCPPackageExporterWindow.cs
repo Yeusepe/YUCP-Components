@@ -884,11 +884,22 @@ namespace YUCP.Components.Editor.PackageExporter
                 return;
             }
             
+            // Show detailed export confirmation
+            string foldersList = profile.foldersToExport.Count > 0 
+                ? string.Join("\n", profile.foldersToExport.Take(5)) + (profile.foldersToExport.Count > 5 ? $"\n... and {profile.foldersToExport.Count - 5} more" : "")
+                : "None configured";
+            
+            int bundledDeps = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);
+            int refDeps = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Dependency);
+            
             bool confirm = EditorUtility.DisplayDialog(
                 "Export Package",
                 $"Export package: {profile.packageName} v{profile.version}\n\n" +
-                $"Folders: {profile.foldersToExport.Count}\n" +
-                $"Obfuscation: {(profile.enableObfuscation ? $"Enabled ({profile.obfuscationPreset})" : "Disabled")}\n\n" +
+                $"Export Folders ({profile.foldersToExport.Count}):\n{foldersList}\n\n" +
+                $"Dependencies:\n" +
+                $"  Bundled: {bundledDeps}\n" +
+                $"  Referenced: {refDeps}\n\n" +
+                $"Obfuscation: {(profile.enableObfuscation ? $"Enabled ({profile.obfuscationPreset}, {profile.assembliesToObfuscate.Count(a => a.enabled)} assemblies)" : "Disabled")}\n\n" +
                 $"Output: {profile.GetOutputFilePath()}",
                 "Export",
                 "Cancel"

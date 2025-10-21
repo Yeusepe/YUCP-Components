@@ -99,43 +99,28 @@ namespace YUCP.Components.Editor.PackageExporter
                 
                 progressCallback?.Invoke(0.52f, $"Found {assetsToExport.Count} assets in export folders");
                 
-                // Handle bundled dependencies
+                // Track bundled dependencies to inject later (AssetDatabase.ExportPackage can't handle files without .meta)
+                var bundledPackagePaths = new Dictionary<string, string>(); // packageName -> packagePath
                 var bundledDeps = profile.dependencies.Where(d => d.enabled && d.exportMode == DependencyExportMode.Bundle).ToList();
                 if (bundledDeps.Count > 0)
                 {
-                    progressCallback?.Invoke(0.55f, $"Bundling {bundledDeps.Count} dependencies...");
+                    progressCallback?.Invoke(0.55f, $"Preparing to bundle {bundledDeps.Count} dependencies...");
                     
-                    int depIndex = 0;
                     foreach (var dep in bundledDeps)
                     {
-                        depIndex++;
-                        progressCallback?.Invoke(0.55f + (0.03f * depIndex / bundledDeps.Count), $"Bundling {dep.packageName} ({depIndex}/{bundledDeps.Count})...");
-                        
                         var depPackageInfo = DependencyScanner.ScanInstalledPackages()
                             .FirstOrDefault(p => p.packageName == dep.packageName);
                         
                         if (depPackageInfo != null && Directory.Exists(depPackageInfo.packagePath))
                         {
-                            // Add all assets from this package
-                            string relativePath = GetRelativePackagePath(depPackageInfo.packagePath);
-                            string[] depGuids = AssetDatabase.FindAssets("", new[] { relativePath });
-                            
-                            int addedCount = 0;
-                            foreach (string guid in depGuids)
-                            {
-                                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
-                                if (!ShouldExcludeAsset(assetPath, profile))
-                                {
-                                    assetsToExport.Add(assetPath);
-                                    addedCount++;
-                                }
-                            }
-                            
-                            Debug.Log($"[PackageBuilder] Bundled {dep.packageName}: added {addedCount} assets");
+                            bundledPackagePaths[dep.packageName] = depPackageInfo.packagePath;
+                            Debug.Log($"[PackageBuilder] Will bundle complete package: {dep.packageName} from {depPackageInfo.packagePath}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[PackageBuilder] Bundled package not found: {dep.packageName}");
                         }
                     }
-                    
-                    progressCallback?.Invoke(0.58f, $"Total: {assetsToExport.Count} assets to export");
                 }
                 
                  // Generate package.json if needed (but don't add to Unity export - will inject later)
@@ -186,26 +171,15 @@ namespace YUCP.Components.Editor.PackageExporter
                      }
                  }
                 
-                if (validAssets.Count == 0)
+                if (validAssets.Count == 0 && bundledPackagePaths.Count == 0)
                 {
                     throw new InvalidOperationException("No valid assets found to export. Check that the specified folders contain valid Unity assets.");
                 }
                 
-                progressCallback?.Invoke(0.63f, $"Validated {validAssets.Count} assets");
+                progressCallback?.Invoke(0.63f, $"Validated {validAssets.Count} assets from export folders");
                 
-                 // Final validation of all assets before export
-                 var finalValidAssets = new List<string>();
-                 foreach (string asset in validAssets)
-                 {
-                     if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(asset) != null)
-                     {
-                         finalValidAssets.Add(asset);
-                     }
-                     else
-                     {
-                         Debug.LogWarning($"[PackageBuilder] Asset no longer valid during export: {asset}");
-                     }
-                 }
+                 // Use validAssets directly - no need for second validation
+                 var finalValidAssets = validAssets;
                  
                  if (finalValidAssets.Count == 0)
                  {
@@ -259,19 +233,19 @@ namespace YUCP.Components.Editor.PackageExporter
                 
                  Debug.Log($"[PackageBuilder] Package exported to temp location: {tempPackagePath}");
                  
-                 // Inject package.json and auto-installer into the .unitypackage if needed
-                 if (!string.IsNullOrEmpty(packageJsonContent))
+                 // Inject package.json, auto-installer, and bundled packages into the .unitypackage
+                 if (!string.IsNullOrEmpty(packageJsonContent) || bundledPackagePaths.Count > 0)
                  {
-                     progressCallback?.Invoke(0.75f, "Injecting package.json and dependency installer...");
+                     progressCallback?.Invoke(0.75f, "Injecting package.json, installer, and bundled packages...");
                      
                      try
                      {
-                         InjectPackageJsonAndInstaller(tempPackagePath, packageJsonContent);
-                         Debug.Log("[PackageBuilder] Successfully injected package.json and auto-installer");
+                         InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, progressCallback);
+                         Debug.Log("[PackageBuilder] Successfully injected package.json, auto-installer, and bundled packages");
                      }
                      catch (Exception ex)
                      {
-                         Debug.LogWarning($"[PackageBuilder] Failed to inject package.json: {ex.Message}");
+                         Debug.LogWarning($"[PackageBuilder] Failed to inject content: {ex.Message}");
                      }
                  }
                  
@@ -487,27 +461,52 @@ namespace YUCP.Components.Editor.PackageExporter
                 string assetFolder = folder;
                 
                 // Convert absolute path to relative path if needed
-                if (folder.StartsWith(Application.dataPath))
+                if (Path.IsPathRooted(folder))
                 {
-                    assetFolder = folder.Replace(Application.dataPath, "Assets");
-                }
-                else if (!folder.StartsWith("Assets"))
-                {
-                    // Try to convert to relative path
-                    string relativePath = "Assets" + folder.Replace(Application.dataPath, "");
-                    if (Directory.Exists(relativePath))
+                    // This is an absolute path - try to make it relative to current project
+                    string currentProjectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    string normalizedFolder = folder.Replace('\\', '/');
+                    string normalizedProject = currentProjectPath.Replace('\\', '/');
+                    
+                    if (normalizedFolder.StartsWith(normalizedProject))
                     {
-                        assetFolder = relativePath;
+                        // Path is within current project
+                        assetFolder = normalizedFolder.Substring(normalizedProject.Length + 1);
+                    }
+                    else
+                    {
+                        // Path is from a different project - try to use just the last part
+                        string folderName = Path.GetFileName(folder);
+                        string possiblePath = Path.Combine("Assets", folderName);
+                        if (AssetDatabase.IsValidFolder(possiblePath))
+                        {
+                            assetFolder = possiblePath;
+                            Debug.Log($"[PackageBuilder] Resolved cross-project path: {folder} -> {assetFolder}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[PackageBuilder] Folder from different project not found in current project: {folder}");
+                            continue;
+                        }
                     }
                 }
-                
-                // Check if the folder exists on disk
-                string physicalPath = assetFolder.StartsWith("Assets") ? 
-                    assetFolder.Replace("Assets", Application.dataPath) : assetFolder;
-                    
-                if (!Directory.Exists(physicalPath))
+                else if (!folder.StartsWith("Assets") && !folder.StartsWith("Packages"))
                 {
-                    Debug.LogWarning($"[PackageBuilder] Folder not found: {physicalPath}");
+                    // Relative path that doesn't start with Assets or Packages
+                    assetFolder = Path.Combine("Assets", folder).Replace('\\', '/');
+                }
+                
+                // Ensure we have a valid Unity path format
+                if (!assetFolder.StartsWith("Assets") && !assetFolder.StartsWith("Packages"))
+                {
+                    Debug.LogWarning($"[PackageBuilder] Invalid folder path (must start with Assets or Packages): {assetFolder}");
+                    continue;
+                }
+                
+                // Check if the folder exists in AssetDatabase
+                if (!AssetDatabase.IsValidFolder(assetFolder))
+                {
+                    Debug.LogWarning($"[PackageBuilder] Folder not found in AssetDatabase: {assetFolder}");
                     continue;
                 }
                 
@@ -625,9 +624,13 @@ namespace YUCP.Components.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Inject package.json and DirectVpmInstaller into a .unitypackage file
+        /// Inject package.json, DirectVpmInstaller, and bundled packages into a .unitypackage file
         /// </summary>
-        private static void InjectPackageJsonAndInstaller(string unityPackagePath, string packageJsonContent)
+        private static void InjectPackageJsonInstallerAndBundles(
+            string unityPackagePath, 
+            string packageJsonContent, 
+            Dictionary<string, string> bundledPackagePaths,
+            Action<float, string> progressCallback = null)
         {
             // Unity packages are tar.gz archives
             // We need to:
@@ -661,16 +664,20 @@ namespace YUCP.Components.Editor.PackageExporter
                 // - asset.meta (metadata)
                 // - pathname (path in the project)
                 
-                // 1. Inject package.json
-                string packageJsonGuid = Guid.NewGuid().ToString("N");
-                string packageJsonFolder = Path.Combine(tempExtractDir, packageJsonGuid);
-                Directory.CreateDirectory(packageJsonFolder);
-                
-                File.WriteAllText(Path.Combine(packageJsonFolder, "asset"), packageJsonContent);
-                File.WriteAllText(Path.Combine(packageJsonFolder, "pathname"), "Assets/package.json");
-                
-                string packageJsonMeta = "fileFormatVersion: 2\nguid: " + packageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
-                File.WriteAllText(Path.Combine(packageJsonFolder, "asset.meta"), packageJsonMeta);
+                // 1. Inject package.json (temporary, will be deleted by installer)
+                if (!string.IsNullOrEmpty(packageJsonContent))
+                {
+                    string packageJsonGuid = Guid.NewGuid().ToString("N");
+                    string packageJsonFolder = Path.Combine(tempExtractDir, packageJsonGuid);
+                    Directory.CreateDirectory(packageJsonFolder);
+                    
+                    File.WriteAllText(Path.Combine(packageJsonFolder, "asset"), packageJsonContent);
+                    // Use a unique path to avoid conflicts between multiple package imports
+                    File.WriteAllText(Path.Combine(packageJsonFolder, "pathname"), $"Assets/YUCP_TempInstall_{packageJsonGuid}.json");
+                    
+                    string packageJsonMeta = "fileFormatVersion: 2\nguid: " + packageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                    File.WriteAllText(Path.Combine(packageJsonFolder, "asset.meta"), packageJsonMeta);
+                }
                 
                 // 2. Inject DirectVpmInstaller.cs
                 // Try to find the script in the package
@@ -691,16 +698,124 @@ namespace YUCP.Components.Editor.PackageExporter
                     
                     string installerContent = File.ReadAllText(installerScriptPath);
                     File.WriteAllText(Path.Combine(installerFolder, "asset"), installerContent);
-                    File.WriteAllText(Path.Combine(installerFolder, "pathname"), "Assets/Editor/DirectVpmInstaller.cs");
+                    // Use unique path to avoid conflicts with other package installers
+                    File.WriteAllText(Path.Combine(installerFolder, "pathname"), $"Assets/Editor/YUCP_Installer_{installerGuid}.cs");
                     
                     string installerMeta = "fileFormatVersion: 2\nguid: " + installerGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(installerFolder, "asset.meta"), installerMeta);
+                    
+                    // Also inject the .asmdef to isolate the installer from compilation errors
+                    string installerDir = Path.GetDirectoryName(installerScriptPath);
+                    string asmdefPath = Path.Combine(installerDir, "DirectVpmInstaller.asmdef");
+                    
+                    if (File.Exists(asmdefPath))
+                    {
+                        string asmdefGuid = Guid.NewGuid().ToString("N");
+                        string asmdefFolder = Path.Combine(tempExtractDir, asmdefGuid);
+                        Directory.CreateDirectory(asmdefFolder);
+                        
+                        string asmdefContent = File.ReadAllText(asmdefPath);
+                        File.WriteAllText(Path.Combine(asmdefFolder, "asset"), asmdefContent);
+                        File.WriteAllText(Path.Combine(asmdefFolder, "pathname"), $"Assets/Editor/YUCP_Installer_{installerGuid}.asmdef");
+                        
+                        string asmdefMeta = "fileFormatVersion: 2\nguid: " + asmdefGuid + "\nAssemblyDefinitionImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                        File.WriteAllText(Path.Combine(asmdefFolder, "asset.meta"), asmdefMeta);
+                        
+                        Debug.Log("[PackageBuilder] Added DirectVpmInstaller.asmdef to package");
+                    }
                     
                     Debug.Log("[PackageBuilder] Added DirectVpmInstaller.cs to package");
                 }
                 else
                 {
                     Debug.LogWarning("[PackageBuilder] Could not find DirectVpmInstaller.cs template");
+                }
+                
+                // 3. Inject bundled packages (ALL files including those without .meta)
+                if (bundledPackagePaths.Count > 0)
+                {
+                    int totalBundledFiles = 0;
+                    int packageIndex = 0;
+                    
+                    foreach (var bundledPackage in bundledPackagePaths)
+                    {
+                        packageIndex++;
+                        string packageName = bundledPackage.Key;
+                        string packagePath = bundledPackage.Value;
+                        
+                        progressCallback?.Invoke(0.75f + (0.05f * packageIndex / bundledPackagePaths.Count), 
+                            $"Injecting bundled package {packageIndex}/{bundledPackagePaths.Count}: {packageName}...");
+                        
+                        // Get all files in the package (excluding .meta)
+                        string[] allFiles = Directory.GetFiles(packagePath, "*", SearchOption.AllDirectories);
+                        int filesAdded = 0;
+                        
+                        foreach (string filePath in allFiles)
+                        {
+                            // Skip .meta files
+                            if (filePath.EndsWith(".meta"))
+                                continue;
+                            
+                            // Calculate the relative path within the package
+                            string relativePath = filePath.Substring(packagePath.Length).TrimStart('\\', '/');
+                            
+                            // Check if this is a script file that could cause compilation errors
+                            string extension = Path.GetExtension(filePath).ToLower();
+                            bool isCompilableScript = extension == ".cs" || extension == ".asmdef";
+                            
+                            // Create pathname for Unity package (put in Packages folder)
+                            // Add .yucp_disabled to compilable files to prevent compilation until dependencies are ready
+                            string unityPathname = $"Packages/{packageName}/{relativePath.Replace('\\', '/')}";
+                            if (isCompilableScript)
+                            {
+                                unityPathname += ".yucp_disabled";
+                            }
+                            
+                            // Try to preserve original GUID from .meta file if it exists
+                            string fileGuid = null;
+                            string metaContent = null;
+                            string originalMetaPath = filePath + ".meta";
+                            
+                            if (File.Exists(originalMetaPath))
+                            {
+                                // Read original .meta and extract GUID
+                                string originalMeta = File.ReadAllText(originalMetaPath);
+                                var guidMatch = System.Text.RegularExpressions.Regex.Match(originalMeta, @"guid:\s*([a-f0-9]{32})");
+                                if (guidMatch.Success)
+                                {
+                                    fileGuid = guidMatch.Groups[1].Value;
+                                    metaContent = originalMeta; // Use original meta content
+                                }
+                            }
+                            
+                            // If no GUID found, generate new one
+                            if (string.IsNullOrEmpty(fileGuid))
+                            {
+                                fileGuid = Guid.NewGuid().ToString("N");
+                                metaContent = GenerateMetaForFile(filePath, fileGuid);
+                            }
+                            
+                            // Create GUID folder
+                            string fileFolder = Path.Combine(tempExtractDir, fileGuid);
+                            Directory.CreateDirectory(fileFolder);
+                            
+                            // Copy the actual file
+                            File.Copy(filePath, Path.Combine(fileFolder, "asset"), true);
+                            
+                            // Write pathname
+                            File.WriteAllText(Path.Combine(fileFolder, "pathname"), unityPathname);
+                            
+                            // Write .meta
+                            File.WriteAllText(Path.Combine(fileFolder, "asset.meta"), metaContent);
+                            
+                            filesAdded++;
+                        }
+                        
+                        totalBundledFiles += filesAdded;
+                        Debug.Log($"[PackageBuilder] Bundled complete package {packageName}: {filesAdded} files");
+                    }
+                    
+                    Debug.Log($"[PackageBuilder] Total bundled package files injected: {totalBundledFiles}");
                 }
                 
                 // Recompress the package
@@ -765,6 +880,71 @@ namespace YUCP.Components.Editor.PackageExporter
 #else
             Debug.LogError("[PackageBuilder] ICSharpCode.SharpZipLib not available. Please install the ICSharpCode.SharpZipLib package.");
 #endif
+        }
+        
+        /// <summary>
+        /// Generate appropriate .meta file content based on file extension
+        /// </summary>
+        private static string GenerateMetaForFile(string filePath, string guid)
+        {
+            string extension = Path.GetExtension(filePath).ToLower();
+            
+            // C# scripts
+            if (extension == ".cs")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nMonoImporter:\n  externalObjects: {{}}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {{instanceID: 0}}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+            }
+            
+            // Assembly definitions
+            if (extension == ".asmdef")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nAssemblyDefinitionImporter:\n  externalObjects: {{}}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+            }
+            
+            // Text files (.md, .txt, .json, etc.)
+            if (extension == ".md" || extension == ".txt" || extension == ".json" || extension == ".xml")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nTextScriptImporter:\n  externalObjects: {{}}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+            }
+            
+            // Compute shaders
+            if (extension == ".compute")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nComputeShaderImporter:\n  externalObjects: {{}}\n  currentAPIMask: 4\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+            }
+            
+            // Shader files
+            if (extension == ".shader" || extension == ".cginc" || extension == ".hlsl")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nShaderImporter:\n  externalObjects: {{}}\n  defaultTextures: []\n  nonModifiableTextures: []\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+            }
+            
+            // Images
+            if (extension == ".png" || extension == ".jpg" || extension == ".jpeg")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nTextureImporter:\n  internalIDToNameTable: []\n  externalObjects: {{}}\n  serializedVersion: 11\n  mipmaps:\n    mipMapMode: 0\n    enableMipMap: 1\n    sRGBTexture: 1\n    linearTexture: 0\n    fadeOut: 0\n    borderMipMap: 0\n    mipMapsPreserveCoverage: 0\n    alphaTestReferenceValue: 0.5\n    mipMapFadeDistanceStart: 1\n    mipMapFadeDistanceEnd: 3\n  bumpmap:\n    convertToNormalMap: 0\n    externalNormalMap: 0\n    heightScale: 0.25\n    normalMapFilter: 0\n  isReadable: 0\n  streamingMipmaps: 0\n  streamingMipmapsPriority: 0\n  grayScaleToAlpha: 0\n  generateCubemap: 6\n  cubemapConvolution: 0\n  seamlessCubemap: 0\n  textureFormat: 1\n  maxTextureSize: 2048\n  textureSettings:\n    serializedVersion: 2\n    filterMode: -1\n    aniso: -1\n    mipBias: -100\n    wrapU: -1\n    wrapV: -1\n    wrapW: -1\n  nPOTScale: 1\n  lightmap: 0\n  compressionQuality: 50\n  spriteMode: 0\n  spriteExtrude: 1\n  spriteMeshType: 1\n  alignment: 0\n  spritePivot: {{x: 0.5, y: 0.5}}\n  spritePixelsToUnits: 100\n  spriteBorder: {{x: 0, y: 0, z: 0, w: 0}}\n  spriteGenerateFallbackPhysicsShape: 1\n  alphaUsage: 1\n  alphaIsTransparency: 0\n  spriteTessellationDetail: -1\n  textureType: 0\n  textureShape: 1\n  singleChannelComponent: 0\n  maxTextureSizeSet: 0\n  compressionQualitySet: 0\n  textureFormatSet: 0\n  applyGammaDecoding: 0\n  platformSettings:\n  - serializedVersion: 3\n    buildTarget: DefaultTexturePlatform\n    maxTextureSize: 2048\n    resizeAlgorithm: 0\n    textureFormat: -1\n    textureCompression: 1\n    compressionQuality: 50\n    crunchedCompression: 0\n    allowsAlphaSplitting: 0\n    overridden: 0\n    androidETC2FallbackOverride: 0\n    forceMaximumCompressionQuality_BC6H_BC7: 0\n  spriteSheet:\n    serializedVersion: 2\n    sprites: []\n    outline: []\n    physicsShape: []\n    bones: []\n    spriteID:\n    internalID: 0\n    vertices: []\n    indices:\n    edges: []\n    weights: []\n    secondaryTextures: []\n  spritePackingTag:\n  pSDRemoveMatte: 0\n  pSDShowRemoveMatteOption: 0\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+            }
+            
+            // Fonts
+            if (extension == ".ttf" || extension == ".otf")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nTrueTypeFontImporter:\n  externalObjects: {{}}\n  serializedVersion: 4\n  fontSize: 16\n  forceTextureCase: -2\n  characterSpacing: 0\n  characterPadding: 1\n  includeFontData: 1\n  fontName:\n  fontNames:\n  - \n  fallbackFontReferences: []\n  customCharacters:\n  fontRenderingMode: 0\n  ascentCalculationMode: 1\n  useLegacyBoundsCalculation: 0\n  shouldRoundAdvanceValue: 1\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+            }
+            
+            // UI Elements (.uxml, .uss)
+            if (extension == ".uxml" || extension == ".uss")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nScriptedImporter:\n  internalIDToNameTable: []\n  externalObjects: {{}}\n  serializedVersion: 2\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n  script: {{fileID: 13804, guid: 0000000000000000e000000000000000, type: 0}}\n";
+            }
+            
+            // SVG files
+            if (extension == ".svg")
+            {
+                return $"fileFormatVersion: 2\nguid: {guid}\nScriptedImporter:\n  internalIDToNameTable: []\n  externalObjects: {{}}\n  serializedVersion: 2\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n  script: {{fileID: 11500000, guid: a57477913897c46af91b7aeb59411556, type: 3}}\n  svgType: 0\n  texturedSpriteMeshType: 0\n  svgPixelsPerUnit: 100\n  gradientResolution: 64\n  alignment: 0\n  customPivot: {{x: 0, y: 0}}\n  generatePhysicsShape: 0\n  viewportOptions: 0\n  preserveViewport: 0\n  advancedMode: 0\n  predefinedResolutionIndex: 1\n  targetResolution: 1080\n  resolutionMultiplier: 1\n  stepDistance: 10\n  samplingStepDistance: 100\n  maxCordDeviationEnabled: 0\n  maxCordDeviation: 1\n  maxTangentAngleEnabled: 0\n  maxTangentAngle: 5\n  keepTextureAspectRatio: 1\n  textureSize: 256\n  textureWidth: 256\n  textureHeight: 256\n  wrapMode: 0\n  filterMode: 1\n  sampleCount: 4\n  preserveSVGImageAspect: 0\n  useSVGPixelsPerUnit: 0\n  meshCompression: 0\n  spriteData:\n    name:\n    originalName:\n    pivot: {{x: 0, y: 0}}\n    border: {{x: 0, y: 0, z: 0, w: 0}}\n    rect:\n      serializedVersion: 2\n      x: 0\n      y: 0\n      width: 0\n      height: 0\n    alignment: 0\n    tessellationDetail: 0\n    bones: []\n    spriteID:\n    internalID: 0\n    vertices: []\n    indices:\n    edges: []\n    weights: []\n";
+            }
+            
+            // Default for unknown file types
+            return $"fileFormatVersion: 2\nguid: {guid}\nDefaultImporter:\n  externalObjects: {{}}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
         }
         
         /// <summary>
