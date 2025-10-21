@@ -639,6 +639,11 @@ namespace YUCP.Components.Editor.PackageExporter
                     ScanProfileAssemblies(profile);
                 }
                 
+                if (GUILayout.Button(new GUIContent("Scan VPM Packages", "Find assemblies in YUCP VPM packages (like Spotify credentials)"), GUILayout.Height(25), GUILayout.ExpandWidth(true)))
+                {
+                    ScanVpmPackagesForObfuscation(profile);
+                }
+                
                 EditorGUI.indentLevel--;
             }
             
@@ -1092,6 +1097,39 @@ namespace YUCP.Components.Editor.PackageExporter
             int existingCount = foundAssemblies.Count(a => a.exists);
             EditorUtility.DisplayDialog("Scan Complete", 
                 $"Found {foundAssemblies.Count} assemblies ({existingCount} compiled)", 
+                "OK");
+        }
+        
+        private void ScanVpmPackagesForObfuscation(ExportProfile profile)
+        {
+            var foundAssemblies = AssemblyScanner.ScanVpmPackages(profile.dependencies);
+            
+            if (foundAssemblies.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No VPM Assemblies Found", 
+                    "No .asmdef files were found in enabled dependency packages. Make sure you have dependencies enabled in the 'Package Dependencies' section.", 
+                    "OK");
+                return;
+            }
+            
+            // Add to existing list instead of clearing
+            foreach (var assemblyInfo in foundAssemblies)
+            {
+                // Check if already exists
+                if (!profile.assembliesToObfuscate.Any(a => a.assemblyName == assemblyInfo.assemblyName))
+                {
+                    var settings = new AssemblyObfuscationSettings(assemblyInfo.assemblyName, assemblyInfo.asmdefPath);
+                    settings.enabled = assemblyInfo.exists;
+                    profile.assembliesToObfuscate.Add(settings);
+                }
+            }
+            
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+            
+            int existingCount = foundAssemblies.Count(a => a.exists);
+            EditorUtility.DisplayDialog("VPM Scan Complete", 
+                $"Found {foundAssemblies.Count} VPM assemblies ({existingCount} compiled)", 
                 "OK");
         }
         

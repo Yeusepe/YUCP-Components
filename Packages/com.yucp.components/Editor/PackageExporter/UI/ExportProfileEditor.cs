@@ -287,10 +287,15 @@ namespace YUCP.Components.Editor.PackageExporter
                         EditorGUILayout.Space(5);
                         EditorGUILayout.LabelField("Assemblies to Obfuscate", EditorStyles.boldLabel);
                         
-                        // Scan button
+                        // Scan buttons
                         if (GUILayout.Button("Scan for Assemblies in Export Folders", GUILayout.Height(30)))
                         {
                             ScanAndPopulateAssemblies(profile);
+                        }
+                        
+                        if (GUILayout.Button("Scan VPM Packages", GUILayout.Height(25)))
+                        {
+                            ScanVpmPackagesForObfuscation(profile);
                         }
                         
                         // Assembly list
@@ -590,6 +595,39 @@ namespace YUCP.Components.Editor.PackageExporter
             EditorUtility.DisplayDialog("Scan Complete", message, "OK");
             
             Debug.Log($"[ExportProfileEditor] Scan complete: {foundAssemblies.Count} assemblies found");
+        }
+        
+        private void ScanVpmPackagesForObfuscation(ExportProfile profile)
+        {
+            var foundAssemblies = AssemblyScanner.ScanVpmPackages(profile.dependencies);
+            
+            if (foundAssemblies.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No VPM Assemblies Found", 
+                    "No .asmdef files were found in enabled dependency packages. Make sure you have dependencies enabled in the 'Package Dependencies' section.", 
+                    "OK");
+                return;
+            }
+            
+            // Add to existing list instead of clearing
+            foreach (var assemblyInfo in foundAssemblies)
+            {
+                // Check if already exists
+                if (!profile.assembliesToObfuscate.Any(a => a.assemblyName == assemblyInfo.assemblyName))
+                {
+                    var settings = new AssemblyObfuscationSettings(assemblyInfo.assemblyName, assemblyInfo.asmdefPath);
+                    settings.enabled = assemblyInfo.exists;
+                    profile.assembliesToObfuscate.Add(settings);
+                }
+            }
+            
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+            
+            int existingCount = foundAssemblies.Count(a => a.exists);
+            EditorUtility.DisplayDialog("VPM Scan Complete", 
+                $"Found {foundAssemblies.Count} VPM assemblies ({existingCount} compiled)", 
+                "OK");
         }
         
         private string GetRelativePath(string absolutePath)

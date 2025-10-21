@@ -140,6 +140,39 @@ namespace YUCP.Components.Editor.PackageExporter
         }
         
         /// <summary>
+        /// Scan VPM packages for assemblies based on enabled dependencies
+        /// </summary>
+        public static List<AssemblyInfo> ScanVpmPackages(List<PackageDependency> dependencies)
+        {
+            var assemblies = new List<AssemblyInfo>();
+            
+            // Look for VPM packages in the Packages folder
+            string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
+            if (!Directory.Exists(packagesPath))
+                return assemblies;
+            
+            // Only scan packages that are enabled in dependencies
+            foreach (var dependency in dependencies)
+            {
+                if (!dependency.enabled || string.IsNullOrEmpty(dependency.packageName))
+                    continue;
+                
+                string packagePath = Path.Combine(packagesPath, dependency.packageName);
+                if (!Directory.Exists(packagePath))
+                    continue;
+                
+                var packageAssemblies = ScanFolders(new List<string> { packagePath });
+                if (packageAssemblies.Count > 0)
+                {
+                    Debug.Log($"[AssemblyScanner] Found {packageAssemblies.Count} assemblies in dependency: {dependency.packageName}");
+                    assemblies.AddRange(packageAssemblies);
+                }
+            }
+            
+            return assemblies;
+        }
+        
+        /// <summary>
         /// Validate that all required DLLs exist for obfuscation
         /// </summary>
         public static bool ValidateAssemblies(List<AssemblyObfuscationSettings> settings, out List<string> missingAssemblies)
