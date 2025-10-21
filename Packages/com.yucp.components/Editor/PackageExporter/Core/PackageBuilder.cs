@@ -33,6 +33,10 @@ namespace YUCP.Components.Editor.PackageExporter
             
             try
             {
+                // Save all assets before export
+                progressCallback?.Invoke(0.01f, "Saving all project assets...");
+                AssetDatabase.SaveAssets();
+                
                 // Validate profile
                 progressCallback?.Invoke(0.05f, "Validating export profile...");
                 if (!profile.Validate(out string errorMessage))
@@ -45,7 +49,14 @@ namespace YUCP.Components.Editor.PackageExporter
                 // Handle obfuscation if enabled
                 if (profile.enableObfuscation)
                 {
-                    progressCallback?.Invoke(0.1f, "Ensuring ConfuserEx is installed...");
+                    if (!ConfuserExManager.IsInstalled())
+                    {
+                        progressCallback?.Invoke(0.1f, "ConfuserEx not found - downloading...");
+                    }
+                    else
+                    {
+                        progressCallback?.Invoke(0.1f, "ConfuserEx ready");
+                    }
                     
                     if (!ConfuserExManager.EnsureInstalled((progress, status) =>
                     {
@@ -76,7 +87,7 @@ namespace YUCP.Components.Editor.PackageExporter
                 }
                 
                 // Build list of assets to export
-                progressCallback?.Invoke(0.5f, "Collecting assets to export...");
+                progressCallback?.Invoke(0.5f, $"Collecting assets from {profile.foldersToExport.Count} folders...");
                 
                 List<string> assetsToExport = CollectAssetsToExport(profile);
                 if (assetsToExport.Count == 0)
@@ -86,14 +97,20 @@ namespace YUCP.Components.Editor.PackageExporter
                     return result;
                 }
                 
+                progressCallback?.Invoke(0.52f, $"Found {assetsToExport.Count} assets in export folders");
+                
                 // Handle bundled dependencies
                 var bundledDeps = profile.dependencies.Where(d => d.enabled && d.exportMode == DependencyExportMode.Bundle).ToList();
                 if (bundledDeps.Count > 0)
                 {
-                    progressCallback?.Invoke(0.55f, $"Adding {bundledDeps.Count} bundled dependencies...");
+                    progressCallback?.Invoke(0.55f, $"Bundling {bundledDeps.Count} dependencies...");
                     
+                    int depIndex = 0;
                     foreach (var dep in bundledDeps)
                     {
+                        depIndex++;
+                        progressCallback?.Invoke(0.55f + (0.03f * depIndex / bundledDeps.Count), $"Bundling {dep.packageName} ({depIndex}/{bundledDeps.Count})...");
+                        
                         var depPackageInfo = DependencyScanner.ScanInstalledPackages()
                             .FirstOrDefault(p => p.packageName == dep.packageName);
                         
@@ -103,18 +120,22 @@ namespace YUCP.Components.Editor.PackageExporter
                             string relativePath = GetRelativePackagePath(depPackageInfo.packagePath);
                             string[] depGuids = AssetDatabase.FindAssets("", new[] { relativePath });
                             
+                            int addedCount = 0;
                             foreach (string guid in depGuids)
                             {
                                 string assetPath = AssetDatabase.GUIDToAssetPath(guid);
                                 if (!ShouldExcludeAsset(assetPath, profile))
                                 {
                                     assetsToExport.Add(assetPath);
+                                    addedCount++;
                                 }
                             }
                             
-                            Debug.Log($"[PackageBuilder] Bundled dependency: {dep.packageName}");
+                            Debug.Log($"[PackageBuilder] Bundled {dep.packageName}: added {addedCount} assets");
                         }
                     }
+                    
+                    progressCallback?.Invoke(0.58f, $"Total: {assetsToExport.Count} assets to export");
                 }
                 
                  // Generate package.json if needed (but don't add to Unity export - will inject later)
@@ -148,6 +169,8 @@ namespace YUCP.Components.Editor.PackageExporter
                      options |= ExportPackageOptions.Recurse;
                 
                  // Convert all assets to Unity-relative paths and validate
+                 progressCallback?.Invoke(0.61f, $"Validating {assetsToExport.Count} assets...");
+                 
                  var validAssets = new List<string>();
                  foreach (string asset in assetsToExport)
                  {
@@ -168,7 +191,7 @@ namespace YUCP.Components.Editor.PackageExporter
                     throw new InvalidOperationException("No valid assets found to export. Check that the specified folders contain valid Unity assets.");
                 }
                 
-                Debug.Log($"[PackageBuilder] Found {validAssets.Count} valid assets out of {assetsToExport.Count} total");
+                progressCallback?.Invoke(0.63f, $"Validated {validAssets.Count} assets");
                 
                  // Final validation of all assets before export
                  var finalValidAssets = new List<string>();
@@ -189,12 +212,7 @@ namespace YUCP.Components.Editor.PackageExporter
                      throw new InvalidOperationException("No valid assets remain for export after final validation.");
                  }
                  
-                 Debug.Log($"[PackageBuilder] Exporting {finalValidAssets.Count} final assets to: {tempPackagePath}");
-                 
-                 // Log what we're about to export
-                 Debug.Log($"[PackageBuilder] Assets to export: {string.Join(", ", finalValidAssets)}");
-                 Debug.Log($"[PackageBuilder] Export options: {options}");
-                 Debug.Log($"[PackageBuilder] Target path: {tempPackagePath}");
+                 progressCallback?.Invoke(0.65f, $"Exporting {finalValidAssets.Count} assets to Unity package...");
                  
                  // Export the package
                  try
@@ -204,7 +222,7 @@ namespace YUCP.Components.Editor.PackageExporter
                          tempPackagePath,
                          options
                      );
-                     Debug.Log("[PackageBuilder] ExportPackage call completed");
+                     progressCallback?.Invoke(0.7f, "Unity package export completed");
                  }
                  catch (Exception ex)
                  {
@@ -297,8 +315,11 @@ namespace YUCP.Components.Editor.PackageExporter
                 // Copy temp package to final location if icon wasn't added
                 if (!iconAdded)
                 {
+                    progressCallback?.Invoke(0.85f, "Copying package to output location...");
                     File.Copy(tempPackagePath, finalOutputPath, true);
                 }
+                
+                progressCallback?.Invoke(0.9f, "Cleaning up temporary files...");
                 
                 // Clean up temp package
                 if (File.Exists(tempPackagePath))
@@ -313,12 +334,14 @@ namespace YUCP.Components.Editor.PackageExporter
                     ConfuserExManager.RestoreOriginalDlls(profile.assembliesToObfuscate);
                 }
                 
-                progressCallback?.Invoke(1.0f, "Export complete!");
+                progressCallback?.Invoke(0.98f, "Saving export statistics...");
                 
                 // Update profile statistics
                 profile.RecordExport();
                 EditorUtility.SetDirty(profile);
                 AssetDatabase.SaveAssets();
+                
+                progressCallback?.Invoke(1.0f, "Export complete!");
                 
                 // Build result
                 result.success = true;

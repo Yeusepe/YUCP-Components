@@ -140,7 +140,7 @@ namespace YUCP.Components.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Scan VPM packages for assemblies based on enabled dependencies
+        /// Scan VPM packages for assemblies based on enabled dependencies set to Bundle mode
         /// </summary>
         public static List<AssemblyInfo> ScanVpmPackages(List<PackageDependency> dependencies)
         {
@@ -151,10 +151,13 @@ namespace YUCP.Components.Editor.PackageExporter
             if (!Directory.Exists(packagesPath))
                 return assemblies;
             
-            // Only scan packages that are enabled in dependencies
+            // Only scan packages that are enabled AND set to Bundle mode
             foreach (var dependency in dependencies)
             {
                 if (!dependency.enabled || string.IsNullOrEmpty(dependency.packageName))
+                    continue;
+                
+                if (dependency.exportMode != DependencyExportMode.Bundle)
                     continue;
                 
                 string packagePath = Path.Combine(packagesPath, dependency.packageName);
@@ -164,7 +167,7 @@ namespace YUCP.Components.Editor.PackageExporter
                 var packageAssemblies = ScanFolders(new List<string> { packagePath });
                 if (packageAssemblies.Count > 0)
                 {
-                    Debug.Log($"[AssemblyScanner] Found {packageAssemblies.Count} assemblies in dependency: {dependency.packageName}");
+                    Debug.Log($"[AssemblyScanner] Found {packageAssemblies.Count} assemblies in bundled dependency: {dependency.packageName}");
                     assemblies.AddRange(packageAssemblies);
                 }
             }

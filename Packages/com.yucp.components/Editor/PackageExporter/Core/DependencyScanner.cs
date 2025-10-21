@@ -170,10 +170,6 @@ namespace YUCP.Components.Editor.PackageExporter
                 if (pkg.packageName.StartsWith("com.unity."))
                     continue;
                 
-                // Skip the current package if it's YUCP components
-                if (pkg.packageName == "com.yucp.components")
-                    continue;
-                
                 var dependency = new PackageDependency(
                     pkg.packageName,
                     pkg.version,
@@ -239,8 +235,7 @@ namespace YUCP.Components.Editor.PackageExporter
                     {
                         dep.enabled = true;
                         
-                        // Default to Dependency mode for known packages
-                        if (dep.isVpmDependency || dep.packageName.Contains("vrcfury"))
+                        if (dep.isVpmDependency)
                         {
                             dep.exportMode = DependencyExportMode.Dependency;
                         }

@@ -632,16 +632,36 @@ namespace YUCP.Components.Editor.PackageExporter
                 profile.stripDebugSymbols = EditorGUILayout.Toggle(new GUIContent("Strip Debug Symbols", "Remove debug information to reduce file size and improve protection"), profile.stripDebugSymbols);
                 
                 EditorGUILayout.Space(5);
-                EditorGUILayout.LabelField($"Assemblies: {profile.assembliesToObfuscate.Count(a => a.enabled)} selected");
                 
-                if (GUILayout.Button(new GUIContent("Scan Assemblies", "Find and add available assemblies for obfuscation"), GUILayout.Height(30), GUILayout.ExpandWidth(true)))
+                if (GUILayout.Button(new GUIContent("Scan Assemblies", "Find assemblies in export folders and enabled dependencies"), GUILayout.Height(30), GUILayout.ExpandWidth(true)))
                 {
-                    ScanProfileAssemblies(profile);
+                    ScanAllAssemblies(profile);
                 }
                 
-                if (GUILayout.Button(new GUIContent("Scan VPM Packages", "Find assemblies in YUCP VPM packages (like Spotify credentials)"), GUILayout.Height(25), GUILayout.ExpandWidth(true)))
+                EditorGUILayout.Space(5);
+                
+                if (profile.assembliesToObfuscate.Count > 0)
                 {
-                    ScanVpmPackagesForObfuscation(profile);
+                    EditorGUILayout.LabelField($"Found Assemblies ({profile.assembliesToObfuscate.Count(a => a.enabled)}/{profile.assembliesToObfuscate.Count} selected):", EditorStyles.boldLabel);
+                    
+                    EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                    for (int i = 0; i < profile.assembliesToObfuscate.Count; i++)
+                    {
+                        var assembly = profile.assembliesToObfuscate[i];
+                        
+                        string displayName = assembly.assemblyName;
+                        if (!new AssemblyScanner.AssemblyInfo(assembly.assemblyName, assembly.asmdefPath).exists)
+                        {
+                            displayName += " (not compiled)";
+                        }
+                        
+                        assembly.enabled = EditorGUILayout.ToggleLeft(displayName, assembly.enabled);
+                    }
+                    EditorGUILayout.EndVertical();
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox("No assemblies found. Click 'Scan Assemblies' to find assemblies in your export folders and dependencies.", MessageType.Info);
                 }
                 
                 EditorGUI.indentLevel--;
@@ -1070,67 +1090,69 @@ namespace YUCP.Components.Editor.PackageExporter
             }
         }
         
-        private void ScanProfileAssemblies(ExportProfile profile)
+        private void ScanAllAssemblies(ExportProfile profile)
         {
-            var foundAssemblies = AssemblyScanner.ScanFolders(profile.foldersToExport);
-            
-            if (foundAssemblies.Count == 0)
+            try
             {
-                EditorUtility.DisplayDialog("No Assemblies Found", 
-                    "No .asmdef files were found in the selected export folders.", 
-                    "OK");
-                return;
-            }
-            
-            profile.assembliesToObfuscate.Clear();
-            
-            foreach (var assemblyInfo in foundAssemblies)
-            {
-                var settings = new AssemblyObfuscationSettings(assemblyInfo.assemblyName, assemblyInfo.asmdefPath);
-                settings.enabled = assemblyInfo.exists;
-                profile.assembliesToObfuscate.Add(settings);
-            }
-            
-            EditorUtility.SetDirty(profile);
-            AssetDatabase.SaveAssets();
-            
-            int existingCount = foundAssemblies.Count(a => a.exists);
-            EditorUtility.DisplayDialog("Scan Complete", 
-                $"Found {foundAssemblies.Count} assemblies ({existingCount} compiled)", 
-                "OK");
-        }
-        
-        private void ScanVpmPackagesForObfuscation(ExportProfile profile)
-        {
-            var foundAssemblies = AssemblyScanner.ScanVpmPackages(profile.dependencies);
-            
-            if (foundAssemblies.Count == 0)
-            {
-                EditorUtility.DisplayDialog("No VPM Assemblies Found", 
-                    "No .asmdef files were found in enabled dependency packages. Make sure you have dependencies enabled in the 'Package Dependencies' section.", 
-                    "OK");
-                return;
-            }
-            
-            // Add to existing list instead of clearing
-            foreach (var assemblyInfo in foundAssemblies)
-            {
-                // Check if already exists
-                if (!profile.assembliesToObfuscate.Any(a => a.assemblyName == assemblyInfo.assemblyName))
+                EditorUtility.DisplayProgressBar("Scanning Assemblies", "Initializing...", 0f);
+                
+                var foundAssemblies = new List<AssemblyScanner.AssemblyInfo>();
+                
+                // Scan export folders
+                EditorUtility.DisplayProgressBar("Scanning Assemblies", $"Scanning {profile.foldersToExport.Count} export folders...", 0.2f);
+                var folderAssemblies = AssemblyScanner.ScanFolders(profile.foldersToExport);
+                foundAssemblies.AddRange(folderAssemblies);
+                
+                EditorUtility.DisplayProgressBar("Scanning Assemblies", $"Found {folderAssemblies.Count} assemblies in export folders", 0.5f);
+                
+                // Count bundled dependencies
+                int bundledDepsCount = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);
+                
+                if (bundledDepsCount > 0)
+                {
+                    EditorUtility.DisplayProgressBar("Scanning Assemblies", $"Scanning {bundledDepsCount} bundled dependencies...", 0.6f);
+                }
+                
+                // Scan enabled dependencies
+                var dependencyAssemblies = AssemblyScanner.ScanVpmPackages(profile.dependencies);
+                foundAssemblies.AddRange(dependencyAssemblies);
+                
+                EditorUtility.DisplayProgressBar("Scanning Assemblies", $"Found {dependencyAssemblies.Count} assemblies in bundled dependencies", 0.8f);
+                
+                if (foundAssemblies.Count == 0)
+                {
+                    EditorUtility.ClearProgressBar();
+                    EditorUtility.DisplayDialog("No Assemblies Found", 
+                        "No .asmdef files were found in export folders or enabled dependencies.", 
+                        "OK");
+                    return;
+                }
+                
+                EditorUtility.DisplayProgressBar("Scanning Assemblies", "Processing assembly list...", 0.9f);
+                
+                profile.assembliesToObfuscate.Clear();
+                
+                foreach (var assemblyInfo in foundAssemblies)
                 {
                     var settings = new AssemblyObfuscationSettings(assemblyInfo.assemblyName, assemblyInfo.asmdefPath);
                     settings.enabled = assemblyInfo.exists;
                     profile.assembliesToObfuscate.Add(settings);
                 }
+                
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                
+                EditorUtility.DisplayProgressBar("Scanning Assemblies", "Complete!", 1.0f);
+                
+                int existingCount = foundAssemblies.Count(a => a.exists);
+                EditorUtility.DisplayDialog("Scan Complete", 
+                    $"Found {foundAssemblies.Count} assemblies ({existingCount} compiled)\n\nFrom export folders: {folderAssemblies.Count}\nFrom bundled dependencies: {dependencyAssemblies.Count}", 
+                    "OK");
             }
-            
-            EditorUtility.SetDirty(profile);
-            AssetDatabase.SaveAssets();
-            
-            int existingCount = foundAssemblies.Count(a => a.exists);
-            EditorUtility.DisplayDialog("VPM Scan Complete", 
-                $"Found {foundAssemblies.Count} VPM assemblies ({existingCount} compiled)", 
-                "OK");
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
         }
         
         private void DrawDependencyCard(PackageDependency dep, int index, ExportProfile profile)
