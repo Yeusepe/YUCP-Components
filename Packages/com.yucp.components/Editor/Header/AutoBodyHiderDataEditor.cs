@@ -34,7 +34,6 @@ namespace YUCP.Components.Editor
         // Foldout states
         private bool showSmartDetection = false;
         private bool showAdvancedOptions = false;
-        private bool showToggleOptions = false;
 
         private void OnEnable()
         {

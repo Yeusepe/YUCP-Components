@@ -9,8 +9,8 @@
     "url": "http://vpm.yucp.club/"
   },
   "vpmDependencies": {
-    "com.vrcfury.vrcfury": ">=1.1258.0",
-    "com.vrchat.core.vpm-resolver": ">=0.1.0"
+    "com.vrcfury.vrcfury": "1.1258.0",
+    "com.vrchat.core.vpm-resolver": "0.1.0"
   },
   "legacyPackages": []
 }

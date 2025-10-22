@@ -11,7 +11,6 @@ namespace YUCP.Components.Editor.UI
     public class AutoUDIMDiscardDataEditor : UnityEditor.Editor
     {
         private bool showAdvancedOptions = false;
-        private bool showToggleOptions = false;
         private bool showBuildStats = false;
 
         public override void OnInspectorGUI()

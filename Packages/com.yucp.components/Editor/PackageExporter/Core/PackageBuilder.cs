@@ -731,6 +731,36 @@ namespace YUCP.Components.Editor.PackageExporter
                     Debug.LogWarning("[PackageBuilder] Could not find DirectVpmInstaller.cs template");
                 }
                 
+                // 2b. Inject FullDomainReload.cs (helper for installer)
+                string fullReloadScriptPath = null;
+                string[] foundReloadScripts = AssetDatabase.FindAssets("FullDomainReload t:Script");
+                
+                if (foundReloadScripts.Length > 0)
+                {
+                    fullReloadScriptPath = AssetDatabase.GUIDToAssetPath(foundReloadScripts[0]);
+                    Debug.Log($"[PackageBuilder] Found FullDomainReload at: {fullReloadScriptPath}");
+                }
+                
+                if (!string.IsNullOrEmpty(fullReloadScriptPath) && File.Exists(fullReloadScriptPath))
+                {
+                    string reloadGuid = Guid.NewGuid().ToString("N");
+                    string reloadFolder = Path.Combine(tempExtractDir, reloadGuid);
+                    Directory.CreateDirectory(reloadFolder);
+                    
+                    string reloadContent = File.ReadAllText(fullReloadScriptPath);
+                    File.WriteAllText(Path.Combine(reloadFolder, "asset"), reloadContent);
+                    File.WriteAllText(Path.Combine(reloadFolder, "pathname"), $"Assets/Editor/YUCP_FullDomainReload_{reloadGuid}.cs");
+                    
+                    string reloadMeta = "fileFormatVersion: 2\nguid: " + reloadGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                    File.WriteAllText(Path.Combine(reloadFolder, "asset.meta"), reloadMeta);
+                    
+                    Debug.Log("[PackageBuilder] Added FullDomainReload.cs to package");
+                }
+                else
+                {
+                    Debug.LogWarning("[PackageBuilder] Could not find FullDomainReload.cs template");
+                }
+                
                 // 3. Inject bundled packages (ALL files including those without .meta)
                 if (bundledPackagePaths.Count > 0)
                 {

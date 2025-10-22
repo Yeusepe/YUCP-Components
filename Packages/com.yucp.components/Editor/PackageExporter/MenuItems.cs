@@ -12,6 +12,11 @@ namespace YUCP.Components.Editor.PackageExporter
         [MenuItem("Assets/Create/YUCP/Export Profile", priority = 100)]
         public static void CreateExportProfile()
         {
+            CreateExportProfileInternal();
+        }
+        
+        private static void CreateExportProfileInternal()
+        {
             // Ensure directory exists
             string profilesDir = "Assets/YUCP/ExportProfiles";
             if (!Directory.Exists(profilesDir))
@@ -54,7 +59,7 @@ namespace YUCP.Components.Editor.PackageExporter
         [MenuItem("Tools/YUCP/Package Exporter/Create Export Profile")]
         public static void CreateExportProfileFromMenu()
         {
-            CreateExportProfile();
+            CreateExportProfileInternal();
         }
         
         [MenuItem("Tools/YUCP/Package Exporter/Open Export Profiles Folder")]

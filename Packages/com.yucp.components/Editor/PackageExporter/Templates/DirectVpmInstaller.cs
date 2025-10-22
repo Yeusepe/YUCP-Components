@@ -12,6 +12,7 @@ namespace YUCP.DirectVpmInstaller
     [InitializeOnLoad]
     public static class DirectVpmInstaller
     {
+        
         static DirectVpmInstaller()
         {
             EditorApplication.delayCall += CheckAndInstallVpmPackages;
@@ -79,38 +80,52 @@ namespace YUCP.DirectVpmInstaller
                     return;
                 }
                 
-                // Install all packages
-                bool allSucceeded = true;
-                foreach (var package in packagesToInstall)
-                {
-                    if (!InstallPackage(package.Item1, package.Item2, repositories))
-                        allSucceeded = false;
-                }
+                // Lock assemblies and disable auto-refresh to prevent mid-install compilation
+                EditorApplication.LockReloadAssemblies();
+                AssetDatabase.DisallowAutoRefresh();
+                AssetDatabase.StartAssetEditing();
                 
-                // Enable bundled packages now that dependencies are installed
-                if (allSucceeded)
+                try
                 {
-                    EnableBundledPackages();
-                }
-                
-                // Clean up temporary files after installation
-                CleanupTemporaryFiles(packageJsonPath);
-                
-                // Force an immediate script reload now that dependencies are installed and bundled packages are enabled
-                if (allSucceeded)
-                {
-                    Debug.Log("[DirectVpmInstaller] All dependencies installed. Reloading scripts...");
+                    Debug.Log("[DirectVpmInstaller] Installing dependencies with compilation locked...");
                     
-                    // Delay the reload to ensure all file operations are complete
-                    EditorApplication.delayCall += () =>
+                    // Install all packages
+                    bool allSucceeded = true;
+                    foreach (var package in packagesToInstall)
                     {
-                        AssetDatabase.Refresh();
-                        EditorApplication.delayCall += () =>
-                        {
-                            // Force Unity to reload all scripts
-                            UnityEditorInternal.InternalEditorUtility.RequestScriptReload();
-                        };
-                    };
+                        if (!InstallPackage(package.Item1, package.Item2, repositories))
+                            allSucceeded = false;
+                    }
+                    
+                    if (allSucceeded)
+                    {
+                        Debug.Log("[DirectVpmInstaller] Dependencies installed. Enabling bundled packages...");
+                        
+                        // Enable bundled packages while still locked
+                        EnableBundledPackages();
+                        
+                        // Clean up temporary files
+                        CleanupTemporaryFiles(packageJsonPath);
+                    }
+                    else
+                    {
+                        CleanupTemporaryFiles(packageJsonPath);
+                    }
+                }
+                finally
+                {
+                    // Unlock everything in one atomic operation
+                    AssetDatabase.StopAssetEditing();
+                    AssetDatabase.AllowAutoRefresh();
+                    EditorApplication.UnlockReloadAssemblies();
+                    
+                    Debug.Log("[DirectVpmInstaller] Unlocked. Triggering full domain reload...");
+                    
+                    // Force a focus-grade full domain reload (includes UPM resolve, compile, and reload)
+                    FullDomainReload.Run(() =>
+                    {
+                        Debug.Log("[DirectVpmInstaller] Installation complete. Domain fully reloaded with all dependencies functional.");
+                    });
                 }
             }
             catch (Exception ex)
@@ -201,6 +216,18 @@ namespace YUCP.DirectVpmInstaller
                             File.Delete(metaPath);
                         
                         Debug.Log($"[DirectVpmInstaller] Deleted installer asmdef: {asmdefPath}");
+                    }
+                    
+                    // Also delete the FullDomainReload helper script
+                    string[] reloadScripts = Directory.GetFiles(editorPath, "YUCP_FullDomainReload_*.cs", SearchOption.TopDirectoryOnly);
+                    foreach (string reloadPath in reloadScripts)
+                    {
+                        File.Delete(reloadPath);
+                        string metaPath = reloadPath + ".meta";
+                        if (File.Exists(metaPath))
+                            File.Delete(metaPath);
+                        
+                        Debug.Log($"[DirectVpmInstaller] Deleted FullDomainReload script: {reloadPath}");
                     }
                 }
                 
