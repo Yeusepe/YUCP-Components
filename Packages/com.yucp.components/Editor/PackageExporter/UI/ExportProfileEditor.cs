@@ -742,6 +742,7 @@ namespace YUCP.Components.Editor.PackageExporter
             GUI.enabled = profile.foldersToExport.Count > 0;
             if (GUILayout.Button("Scan Assets", GUILayout.Height(30)))
             {
+                Undo.RecordObject(profile, "Scan Assets");
                 ScanAssetsForInspector(profile);
             }
             GUI.enabled = true;
@@ -752,6 +753,7 @@ namespace YUCP.Components.Editor.PackageExporter
                 if (EditorUtility.DisplayDialog("Clear Scan", 
                     "Clear all discovered assets and rescan later?", "Clear", "Cancel"))
                 {
+                    Undo.RecordObject(profile, "Clear Asset Scan");
                     profile.ClearScan();
                     EditorUtility.SetDirty(profile);
                 }
@@ -800,6 +802,7 @@ namespace YUCP.Components.Editor.PackageExporter
             
             if (GUILayout.Button("Include All", GUILayout.Width(80)))
             {
+                Undo.RecordObject(profile, "Include All Assets");
                 foreach (var asset in profile.discoveredAssets)
                     asset.included = true;
                 EditorUtility.SetDirty(profile);
@@ -807,6 +810,7 @@ namespace YUCP.Components.Editor.PackageExporter
             
             if (GUILayout.Button("Exclude All", GUILayout.Width(80)))
             {
+                Undo.RecordObject(profile, "Exclude All Assets");
                 foreach (var asset in profile.discoveredAssets)
                     asset.included = false;
                 EditorUtility.SetDirty(profile);
@@ -886,10 +890,13 @@ namespace YUCP.Components.Editor.PackageExporter
                         EditorGUILayout.BeginHorizontal();
                         
                         // Include checkbox
-                        bool wasIncluded = asset.included;
+                        EditorGUI.BeginChangeCheck();
                         asset.included = EditorGUILayout.Toggle(asset.included, GUILayout.Width(20));
-                        if (asset.included != wasIncluded)
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            Undo.RecordObject(profile, "Toggle Asset Inclusion");
                             EditorUtility.SetDirty(profile);
+                        }
                         
                         // Asset icon
                         Texture2D icon = AssetDatabase.GetCachedIcon(asset.assetPath) as Texture2D;
@@ -945,6 +952,7 @@ namespace YUCP.Components.Editor.PackageExporter
                     
                     if (GUILayout.Button("Remove", GUILayout.Width(60)))
                     {
+                        Undo.RecordObject(profile, "Remove Ignored Folder");
                         profile.permanentIgnoreFolders.RemoveAt(i);
                         EditorUtility.SetDirty(profile);
                     }
@@ -1004,6 +1012,7 @@ namespace YUCP.Components.Editor.PackageExporter
             
             if (!profile.permanentIgnoreFolders.Contains(folderPath))
             {
+                Undo.RecordObject(profile, "Add Folder to Ignore List");
                 profile.permanentIgnoreFolders.Add(folderPath);
                 EditorUtility.SetDirty(profile);
                 

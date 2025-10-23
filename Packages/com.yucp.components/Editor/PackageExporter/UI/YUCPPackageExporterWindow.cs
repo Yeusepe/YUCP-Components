@@ -515,13 +515,14 @@ namespace YUCP.Components.Editor.PackageExporter
                     GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
                     EditorGUILayout.LabelField(profile.foldersToExport[i], GUILayout.ExpandWidth(true));
                     
-                    if (GUILayout.Button("X", GUILayout.Width(25), GUILayout.Height(20)))
-                    {
-                        profile.foldersToExport.RemoveAt(i);
-                        EditorUtility.SetDirty(profile);
-                        AssetDatabase.SaveAssets();
-                        GUIUtility.ExitGUI();
-                    }
+                        if (GUILayout.Button("X", GUILayout.Width(25), GUILayout.Height(20)))
+                        {
+                            Undo.RecordObject(profile, "Remove Export Folder");
+                            profile.foldersToExport.RemoveAt(i);
+                            EditorUtility.SetDirty(profile);
+                            AssetDatabase.SaveAssets();
+                            GUIUtility.ExitGUI();
+                        }
                     
                     GUILayout.EndHorizontal();
                 }
@@ -534,6 +535,7 @@ namespace YUCP.Components.Editor.PackageExporter
                 if (!string.IsNullOrEmpty(selectedFolder))
                 {
                     string relativePath = GetRelativePath(selectedFolder);
+                    Undo.RecordObject(profile, "Add Export Folder");
                     profile.foldersToExport.Add(relativePath);
                     EditorUtility.SetDirty(profile);
                     AssetDatabase.SaveAssets();
@@ -1482,6 +1484,7 @@ namespace YUCP.Components.Editor.PackageExporter
             
             if (GUILayout.Button("Include All", GUILayout.Width(80)))
             {
+                Undo.RecordObject(profile, "Include All Assets");
                 foreach (var asset in profile.discoveredAssets)
                     asset.included = true;
                 EditorUtility.SetDirty(profile);
@@ -1489,6 +1492,7 @@ namespace YUCP.Components.Editor.PackageExporter
             
             if (GUILayout.Button("Exclude All", GUILayout.Width(80)))
             {
+                Undo.RecordObject(profile, "Exclude All Assets");
                 foreach (var asset in profile.discoveredAssets)
                     asset.included = false;
                 EditorUtility.SetDirty(profile);
@@ -1568,10 +1572,13 @@ namespace YUCP.Components.Editor.PackageExporter
                         GUILayout.BeginHorizontal();
                         
                         // Include checkbox
-                        bool wasIncluded = asset.included;
+                        EditorGUI.BeginChangeCheck();
                         asset.included = EditorGUILayout.Toggle(asset.included, GUILayout.Width(20));
-                        if (asset.included != wasIncluded)
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            Undo.RecordObject(profile, "Toggle Asset Inclusion");
                             EditorUtility.SetDirty(profile);
+                        }
                         
                         // Asset icon
                         Texture2D icon = AssetDatabase.GetCachedIcon(asset.assetPath) as Texture2D;

@@ -776,6 +776,9 @@ namespace YUCP.PackageGuardian
         
         private static void PerformStartupCleanup()
         {
+            // CRITICAL: Clean up duplicate installers FIRST to prevent compilation errors
+            CleanupDuplicateInstallers();
+            
             // Clean up stale temp files
             string[] tempFiles = SafeFindFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
             int cleanedCount = 0;
