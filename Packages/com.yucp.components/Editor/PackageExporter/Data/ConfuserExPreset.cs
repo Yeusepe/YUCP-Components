@@ -6,14 +6,9 @@ namespace YUCP.Components.Editor.PackageExporter
     /// </summary>
     public enum ConfuserExPreset
     {
-        /// <summary>Basic name obfuscation and string encryption. Fast and lightweight.</summary>
-        Light,
-        
-        /// <summary>Recommended for Unity. Strong obfuscation without metadata corruption (no anti-tamper).</summary>
+        Mild,
         Normal,
-        
-        /// <summary>Maximum protection with anti-tamper. May break Unity/Mono runtime.</summary>
-        Strong
+        Aggressive
     }
 
     /// <summary>
@@ -25,9 +20,9 @@ namespace YUCP.Components.Editor.PackageExporter
         {
             switch (preset)
             {
-                case ConfuserExPreset.Light:
+                case ConfuserExPreset.Mild:
                     return @"
-    <!-- Light protection - basic name obfuscation and string encryption -->
+    <!-- Mild protection - basic name obfuscation and string encryption -->
     <protection id=""rename"">
       <argument name=""mode"" value=""letters"" />
       <argument name=""renEnum"" value=""true"" />
@@ -40,23 +35,12 @@ namespace YUCP.Components.Editor.PackageExporter
 
                 case ConfuserExPreset.Normal:
                     return @"
-    <!-- Normal protection - RECOMMENDED FOR UNITY -->
-    <!-- Strong obfuscation without Unity-breaking features (no anti-tamper) -->
+    <!-- Normal protection - UNITY COMPATIBLE (NO anti-tamper) -->
     <protection id=""anti ildasm"" />
-    
-    <protection id=""ctrl flow"">
-      <argument name=""type"" value=""switch"" />
-      <argument name=""predicate"" value=""normal"" />
-    </protection>
-    
-    <protection id=""ref proxy"">
-      <argument name=""mode"" value=""mild"" />
-    </protection>
     
     <protection id=""rename"">
       <argument name=""mode"" value=""letters"" />
       <argument name=""renEnum"" value=""true"" />
-      <argument name=""renameArgs"" value=""true"" />
     </protection>
     
     <protection id=""constants"">
@@ -64,14 +48,13 @@ namespace YUCP.Components.Editor.PackageExporter
       <argument name=""decoderCount"" value=""5"" />
     </protection>";
 
-                case ConfuserExPreset.Strong:
+                case ConfuserExPreset.Aggressive:
                     return @"
-    <!-- Strong protection - Maximum obfuscation with anti-tamper -->
-    <!-- WARNING: anti-tamper may corrupt Unity metadata - use with caution -->
+    <!-- Aggressive protection - maximum obfuscation (may affect performance) -->
     <protection id=""anti ildasm"" />
     
     <protection id=""anti tamper"">
-      <argument name=""key"" value=""normal"" />
+      <argument name=""key"" value=""dynamic"" />
     </protection>
     
     <protection id=""anti debug"" />
@@ -114,14 +97,14 @@ namespace YUCP.Components.Editor.PackageExporter
         {
             switch (preset)
             {
-                case ConfuserExPreset.Light:
+                case ConfuserExPreset.Mild:
                     return "Basic protection - Renames symbols and encrypts strings. Fast and compatible.";
                 
                 case ConfuserExPreset.Normal:
-                    return "Recommended for Unity - Strong obfuscation without anti-tamper. Good balance.";
+                    return "Recommended protection - Full obfuscation with control flow and anti-tampering. Good balance.";
                 
-                case ConfuserExPreset.Strong:
-                    return "Maximum protection with anti-tamper. May break Unity/Mono runtime.";
+                case ConfuserExPreset.Aggressive:
+                    return "Maximum protection - All features enabled. May impact performance and compatibility.";
                 
                 default:
                     return "";

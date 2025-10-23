@@ -15,14 +15,49 @@ namespace YUCP.Components.Editor.PackageExporter
             CreateExportProfileInternal();
         }
         
-        private static void CreateExportProfileInternal()
+        [MenuItem("Assets/Create/YUCP/Export Profile Here", priority = 101)]
+        public static void CreateExportProfileHere()
         {
-            // Ensure directory exists
-            string profilesDir = "Assets/YUCP/ExportProfiles";
-            if (!Directory.Exists(profilesDir))
+            CreateExportProfileInternal(useCurrentFolder: true);
+        }
+        
+        private static void CreateExportProfileInternal(bool useCurrentFolder = false)
+        {
+            string profilesDir;
+            string defaultExportFolder = "Assets/";
+            
+            if (useCurrentFolder)
             {
-                Directory.CreateDirectory(profilesDir);
-                AssetDatabase.Refresh();
+                // Get currently selected folder in Project window
+                string selectedPath = AssetDatabase.GetAssetPath(Selection.activeObject);
+                
+                if (string.IsNullOrEmpty(selectedPath))
+                {
+                    profilesDir = "Assets";
+                }
+                else if (Directory.Exists(selectedPath))
+                {
+                    profilesDir = selectedPath;
+                    defaultExportFolder = selectedPath;
+                }
+                else
+                {
+                    // Selected a file, use its directory
+                    profilesDir = Path.GetDirectoryName(selectedPath);
+                    defaultExportFolder = profilesDir;
+                }
+                
+                Debug.Log($"[YUCP] Creating export profile in: {profilesDir}");
+            }
+            else
+            {
+                // Use default profiles directory
+                profilesDir = "Assets/YUCP/ExportProfiles";
+                if (!Directory.Exists(profilesDir))
+                {
+                    Directory.CreateDirectory(profilesDir);
+                    AssetDatabase.Refresh();
+                }
             }
             
             // Create profile
@@ -30,15 +65,21 @@ namespace YUCP.Components.Editor.PackageExporter
             profile.packageName = "NewPackage";
             profile.version = "1.0.0";
             
-            // Add some sensible defaults
-            profile.foldersToExport.Add("Assets/");
+            // Add sensible defaults based on location
+            profile.foldersToExport.Add(defaultExportFolder);
             profile.includeDependencies = true;
             profile.recurseFolders = true;
             profile.generatePackageJson = true;
             
+            // Store the profile save location for future reference
+            if (useCurrentFolder)
+            {
+                profile.profileSaveLocation = profilesDir;
+            }
+            
             // Generate unique path
             string assetPath = AssetDatabase.GenerateUniqueAssetPath(
-                Path.Combine(profilesDir, "NewExportProfile.asset"));
+                Path.Combine(profilesDir, "ExportProfile.asset"));
             
             AssetDatabase.CreateAsset(profile, assetPath);
             AssetDatabase.SaveAssets();

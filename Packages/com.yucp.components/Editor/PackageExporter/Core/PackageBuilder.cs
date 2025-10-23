@@ -283,7 +283,7 @@ namespace YUCP.Components.Editor.PackageExporter
                              ? profile.assembliesToObfuscate.Where(a => a.enabled).ToList() 
                              : new List<AssemblyObfuscationSettings>();
                          
-                         InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, obfuscatedAssemblies, progressCallback);
+                         InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, obfuscatedAssemblies, profile, progressCallback);
                          Debug.Log("[PackageBuilder] Successfully injected package.json, auto-installer, and bundled packages");
                      }
                      catch (Exception ex)
@@ -499,6 +499,26 @@ namespace YUCP.Components.Editor.PackageExporter
         {
             var assets = new HashSet<string>();
             
+            // If export inspector has been used and assets are selected, use that instead of folder scan
+            if (profile.HasScannedAssets && profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
+            {
+                Debug.Log($"[PackageBuilder] Using Export Inspector asset selection ({profile.discoveredAssets.Count} discovered assets)");
+                
+                // Only include assets that are explicitly marked as included
+                var includedAssets = profile.discoveredAssets
+                    .Where(a => a.included && !a.isFolder)
+                    .Select(a => GetRelativePackagePath(a.assetPath))
+                    .Where(path => !string.IsNullOrEmpty(path))
+                    .ToList();
+                
+                Debug.Log($"[PackageBuilder] Export Inspector: {includedAssets.Count} assets marked for inclusion");
+                
+                return includedAssets;
+            }
+            
+            // Otherwise use traditional folder scanning
+            Debug.Log($"[PackageBuilder] Using traditional folder scanning (Export Inspector not used)");
+            
             foreach (string folder in profile.foldersToExport)
             {
                 string assetFolder = folder;
@@ -674,6 +694,7 @@ namespace YUCP.Components.Editor.PackageExporter
             string packageJsonContent, 
             Dictionary<string, string> bundledPackagePaths,
             List<AssemblyObfuscationSettings> obfuscatedAssemblies,
+            ExportProfile profile,
             Action<float, string> progressCallback = null)
         {
             // Unity packages are tar.gz archives
@@ -723,7 +744,67 @@ namespace YUCP.Components.Editor.PackageExporter
                     File.WriteAllText(Path.Combine(packageJsonFolder, "asset.meta"), packageJsonMeta);
                 }
                 
-                // 2. Inject DirectVpmInstaller.cs
+                // 2a. Inject YUCPPackageGuardian.cs (permanent protection layer)
+                // Only inject if com.yucp.components is NOT already a dependency (to avoid duplication)
+                bool hasYucpComponentsDependency = profile.dependencies != null && 
+                    profile.dependencies.Any(d => d.enabled && d.packageName == "com.yucp.components");
+                
+                if (!hasYucpComponentsDependency)
+                {
+                    string guardianScriptPath = null;
+                    string[] foundGuardians = AssetDatabase.FindAssets("YUCPPackageGuardian t:Script");
+                    
+                    if (foundGuardians.Length > 0)
+                    {
+                        guardianScriptPath = AssetDatabase.GUIDToAssetPath(foundGuardians[0]);
+                        Debug.Log($"[PackageBuilder] Found YUCPPackageGuardian at: {guardianScriptPath}");
+                    }
+                    
+                    if (!string.IsNullOrEmpty(guardianScriptPath) && File.Exists(guardianScriptPath))
+                    {
+                        string guardianGuid = Guid.NewGuid().ToString("N");
+                        string guardianFolder = Path.Combine(tempExtractDir, guardianGuid);
+                        Directory.CreateDirectory(guardianFolder);
+                        
+                        string guardianContent = File.ReadAllText(guardianScriptPath);
+                        File.WriteAllText(Path.Combine(guardianFolder, "asset"), guardianContent);
+                        // Use Packages path to make it part of the imported package, not Assets/Editor
+                        File.WriteAllText(Path.Combine(guardianFolder, "pathname"), $"Packages/yucp.packageguardian/Editor/YUCPPackageGuardian.cs");
+                        
+                        string guardianMeta = "fileFormatVersion: 2\nguid: " + guardianGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                        File.WriteAllText(Path.Combine(guardianFolder, "asset.meta"), guardianMeta);
+                        
+                        // Also create a minimal package.json for the guardian
+                        string guardianPackageJsonGuid = Guid.NewGuid().ToString("N");
+                        string guardianPackageJsonFolder = Path.Combine(tempExtractDir, guardianPackageJsonGuid);
+                        Directory.CreateDirectory(guardianPackageJsonFolder);
+                        
+                        string guardianPackageJson = @"{
+  ""name"": ""yucp.packageguardian"",
+  ""displayName"": ""YUCP Package Guardian"",
+  ""version"": ""1.0.0"",
+  ""description"": ""Automatic import protection for YUCP packages"",
+  ""unity"": ""2022.3""
+}";
+                        File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset"), guardianPackageJson);
+                        File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "pathname"), "Packages/yucp.packageguardian/package.json");
+                        
+                        string guardianPackageJsonMeta = "fileFormatVersion: 2\nguid: " + guardianPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                        File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset.meta"), guardianPackageJsonMeta);
+                        
+                        Debug.Log("[PackageBuilder] Added YUCPPackageGuardian package (permanent import protection)");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[PackageBuilder] Could not find YUCPPackageGuardian.cs - package will have no import protection!");
+                    }
+                }
+                else
+                {
+                    Debug.Log("[PackageBuilder] Skipping YUCPPackageGuardian injection (com.yucp.components already provides it)");
+                }
+                
+                // 2b. Inject DirectVpmInstaller.cs
                 // Try to find the script in the package
                 string installerScriptPath = null;
                 string[] foundScripts = AssetDatabase.FindAssets("DirectVpmInstaller t:Script");
@@ -775,7 +856,7 @@ namespace YUCP.Components.Editor.PackageExporter
                     Debug.LogWarning("[PackageBuilder] Could not find DirectVpmInstaller.cs template");
                 }
                 
-                // 2b. Inject FullDomainReload.cs (helper for installer)
+                // 2a. Inject FullDomainReload.cs (helper for installer)
                 string fullReloadScriptPath = null;
                 string[] foundReloadScripts = AssetDatabase.FindAssets("FullDomainReload t:Script");
                 

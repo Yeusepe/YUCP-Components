@@ -30,6 +30,7 @@ namespace YUCP.Components.Editor.PackageExporter
         
         private Vector2 profileListScrollPos;
         private Vector2 mainScrollPos;
+        private Vector2 exportInspectorScrollPos;
         private bool isExporting = false;
         private float currentProgress = 0f;
         private string currentStatus = "";
@@ -37,6 +38,12 @@ namespace YUCP.Components.Editor.PackageExporter
         // Multi-selection state for profiles
         private HashSet<int> selectedProfileIndices = new HashSet<int>();
         private int lastClickedProfileIndex = -1;
+        
+        // Export Inspector state
+        private string inspectorSearchFilter = "";
+        private bool showOnlyIncluded = false;
+        private bool showOnlyExcluded = false;
+        private bool showExportInspector = false;
         
         private Texture2D logoTexture;
         private GUIStyle headerStyle;
@@ -533,6 +540,24 @@ namespace YUCP.Components.Editor.PackageExporter
                 }
             }
             GUILayout.EndHorizontal();
+            
+            GUILayout.EndVertical();
+            
+            GUILayout.Space(10);
+            
+            // Export Inspector section
+            GUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
+            
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Export Inspector ({profile.discoveredAssets.Count} assets)", summaryStyle, GUILayout.Height(20));
+            showExportInspector = GUILayout.Toggle(showExportInspector, showExportInspector ? "▼" : "▶", EditorStyles.label, GUILayout.Width(20));
+            GUILayout.EndHorizontal();
+            
+            if (showExportInspector)
+            {
+                GUILayout.Space(5);
+                DrawExportInspector(profile, summaryStyle);
+            }
             
             GUILayout.EndVertical();
             
@@ -1381,6 +1406,386 @@ namespace YUCP.Components.Editor.PackageExporter
             GUILayout.EndHorizontal();
             
             GUILayout.Space(10);
+        }
+        
+        /// <summary>
+        /// Draw the Export Inspector UI
+        /// </summary>
+        private void DrawExportInspector(ExportProfile profile, GUIStyle headerStyle)
+        {
+            EditorGUILayout.HelpBox(
+                "The Export Inspector shows all assets discovered from your export folders. " +
+                "Scan to discover assets, then deselect unwanted items or add folders to the permanent ignore list.",
+                MessageType.Info);
+            
+            // Action buttons
+            GUILayout.BeginHorizontal();
+            
+            GUI.enabled = profile.foldersToExport.Count > 0;
+            if (GUILayout.Button("Scan Assets", GUILayout.Height(30), GUILayout.ExpandWidth(true)))
+            {
+                ScanAssetsForInspector(profile);
+            }
+            GUI.enabled = true;
+            
+            GUI.enabled = profile.discoveredAssets.Count > 0;
+            if (GUILayout.Button("Clear Scan", GUILayout.Height(30), GUILayout.ExpandWidth(true)))
+            {
+                if (EditorUtility.DisplayDialog("Clear Scan", 
+                    "Clear all discovered assets and rescan later?", "Clear", "Cancel"))
+                {
+                    profile.ClearScan();
+                    EditorUtility.SetDirty(profile);
+                }
+            }
+            GUI.enabled = true;
+            
+            GUILayout.EndHorizontal();
+            
+            // Show scan required message
+            if (!profile.HasScannedAssets)
+            {
+                EditorGUILayout.HelpBox(
+                    "Click 'Scan Assets' to discover all assets from your export folders.",
+                    MessageType.Warning);
+                return;
+            }
+            
+            // Statistics
+            GUILayout.Space(5);
+            GUILayout.Label("Asset Statistics", EditorStyles.boldLabel);
+            string summary = AssetCollector.GetAssetSummary(profile.discoveredAssets);
+            EditorGUILayout.HelpBox(summary, MessageType.None);
+            
+            // Filter controls
+            GUILayout.Space(5);
+            GUILayout.Label("Filters", EditorStyles.boldLabel);
+            
+            GUILayout.BeginHorizontal();
+            inspectorSearchFilter = EditorGUILayout.TextField("Search:", inspectorSearchFilter);
+            if (GUILayout.Button("Clear", GUILayout.Width(60)))
+            {
+                inspectorSearchFilter = "";
+                GUI.FocusControl(null);
+            }
+            GUILayout.EndHorizontal();
+            
+            GUILayout.BeginHorizontal();
+            showOnlyIncluded = GUILayout.Toggle(showOnlyIncluded, "Show Only Included", GUILayout.Width(150));
+            showOnlyExcluded = GUILayout.Toggle(showOnlyExcluded, "Show Only Excluded", GUILayout.Width(150));
+            GUILayout.EndHorizontal();
+            
+            // Asset list
+            GUILayout.Space(5);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Discovered Assets", EditorStyles.boldLabel);
+            
+            if (GUILayout.Button("Include All", GUILayout.Width(80)))
+            {
+                foreach (var asset in profile.discoveredAssets)
+                    asset.included = true;
+                EditorUtility.SetDirty(profile);
+            }
+            
+            if (GUILayout.Button("Exclude All", GUILayout.Width(80)))
+            {
+                foreach (var asset in profile.discoveredAssets)
+                    asset.included = false;
+                EditorUtility.SetDirty(profile);
+            }
+            GUILayout.EndHorizontal();
+            
+            // Filter assets
+            var filteredAssets = profile.discoveredAssets.AsEnumerable();
+            
+            if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
+            {
+                filteredAssets = filteredAssets.Where(a => 
+                    a.assetPath.IndexOf(inspectorSearchFilter, System.StringComparison.OrdinalIgnoreCase) >= 0);
+            }
+            
+            if (showOnlyIncluded)
+                filteredAssets = filteredAssets.Where(a => a.included);
+            
+            if (showOnlyExcluded)
+                filteredAssets = filteredAssets.Where(a => !a.included);
+            
+            var filteredList = filteredAssets.ToList();
+            
+            // Display asset list
+            exportInspectorScrollPos = GUILayout.BeginScrollView(exportInspectorScrollPos, GUILayout.MaxHeight(400));
+            
+            if (filteredList.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No assets match the current filters.", MessageType.Info);
+            }
+            else
+            {
+                // Group by folder
+                var groupedByFolder = filteredList
+                    .Where(a => !a.isFolder)
+                    .GroupBy(a => a.GetFolderPath())
+                    .OrderBy(g => g.Key);
+                
+                foreach (var group in groupedByFolder)
+                {
+                    // Folder header
+                    GUILayout.BeginVertical(EditorStyles.helpBox);
+                    GUILayout.BeginHorizontal();
+                    
+                    GUILayout.Label(group.Key, EditorStyles.boldLabel);
+                    
+                    // Create/Edit .yucpignore button
+                    string folderFullPath = Path.GetFullPath(group.Key);
+                    bool hasIgnoreFile = YucpIgnoreHandler.HasIgnoreFile(folderFullPath);
+                    
+                    if (hasIgnoreFile)
+                    {
+                        if (GUILayout.Button("Edit .yucpignore", GUILayout.Width(110)))
+                        {
+                            OpenYucpIgnoreFile(folderFullPath);
+                        }
+                    }
+                    else
+                    {
+                        if (GUILayout.Button("Create .yucpignore", GUILayout.Width(120)))
+                        {
+                            CreateYucpIgnoreFile(profile, folderFullPath);
+                        }
+                    }
+                    
+                    // Add folder to ignore list button
+                    if (GUILayout.Button("Add to Ignore List", GUILayout.Width(120)))
+                    {
+                        AddFolderToIgnoreList(profile, group.Key);
+                    }
+                    
+                    GUILayout.EndHorizontal();
+                    
+                    // Files in this folder
+                    foreach (var asset in group)
+                    {
+                        GUILayout.BeginHorizontal();
+                        
+                        // Include checkbox
+                        bool wasIncluded = asset.included;
+                        asset.included = EditorGUILayout.Toggle(asset.included, GUILayout.Width(20));
+                        if (asset.included != wasIncluded)
+                            EditorUtility.SetDirty(profile);
+                        
+                        // Asset icon
+                        Texture2D icon = AssetDatabase.GetCachedIcon(asset.assetPath) as Texture2D;
+                        if (icon != null)
+                            GUILayout.Label(icon, GUILayout.Width(16), GUILayout.Height(16));
+                        
+                        // Asset name
+                        string displayName = asset.GetDisplayName();
+                        string label = $"{displayName}";
+                        if (asset.isDependency)
+                            label += " [Dep]";
+                        
+                        GUILayout.Label(label, GUILayout.MinWidth(150));
+                        
+                        // Asset type badge
+                        GUI.color = GetAssetTypeColor(asset.assetType);
+                        GUILayout.Label(asset.assetType, EditorStyles.miniLabel, GUILayout.Width(60));
+                        GUI.color = Color.white;
+                        
+                        // File size
+                        if (!asset.isFolder && asset.fileSize > 0)
+                        {
+                            GUILayout.Label(FormatBytes(asset.fileSize), EditorStyles.miniLabel, GUILayout.Width(60));
+                        }
+                        
+                        GUILayout.EndHorizontal();
+                    }
+                    
+                    GUILayout.EndVertical();
+                    GUILayout.Space(2);
+                }
+            }
+            
+            GUILayout.EndScrollView();
+            
+            // Permanent ignore list
+            GUILayout.Space(10);
+            GUILayout.Label("Permanent Ignore List", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Folders in this list will be permanently ignored from all exports (like .gitignore).",
+                MessageType.Info);
+            
+            if (profile.permanentIgnoreFolders == null || profile.permanentIgnoreFolders.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No folders in ignore list.", MessageType.None);
+            }
+            else
+            {
+                for (int i = profile.permanentIgnoreFolders.Count - 1; i >= 0; i--)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label(profile.permanentIgnoreFolders[i]);
+                    
+                    if (GUILayout.Button("Remove", GUILayout.Width(60)))
+                    {
+                        profile.permanentIgnoreFolders.RemoveAt(i);
+                        EditorUtility.SetDirty(profile);
+                    }
+                    
+                    GUILayout.EndHorizontal();
+                }
+            }
+            
+            if (GUILayout.Button("+ Add Folder to Ignore List", GUILayout.Height(25)))
+            {
+                string selectedFolder = EditorUtility.OpenFolderPanel("Select Folder to Ignore", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(selectedFolder))
+                {
+                    string relativePath = GetRelativePath(selectedFolder);
+                    AddFolderToIgnoreList(profile, relativePath);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Scan assets for the inspector
+        /// </summary>
+        private void ScanAssetsForInspector(ExportProfile profile)
+        {
+            EditorUtility.DisplayProgressBar("Scanning Assets", "Discovering assets from export folders...", 0f);
+            
+            try
+            {
+                profile.discoveredAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies);
+                profile.MarkScanned();
+                EditorUtility.SetDirty(profile);
+                
+                EditorUtility.DisplayDialog(
+                    "Scan Complete",
+                    $"Discovered {profile.discoveredAssets.Count} assets.\n\n" +
+                    AssetCollector.GetAssetSummary(profile.discoveredAssets),
+                    "OK");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[YUCPPackageExporterWindow] Asset scan failed: {ex.Message}");
+                EditorUtility.DisplayDialog("Scan Failed", $"Failed to scan assets:\n{ex.Message}", "OK");
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+        }
+        
+        /// <summary>
+        /// Add a folder to the permanent ignore list
+        /// </summary>
+        private void AddFolderToIgnoreList(ExportProfile profile, string folderPath)
+        {
+            if (profile.permanentIgnoreFolders == null)
+                profile.permanentIgnoreFolders = new List<string>();
+            
+            if (!profile.permanentIgnoreFolders.Contains(folderPath))
+            {
+                profile.permanentIgnoreFolders.Add(folderPath);
+                EditorUtility.SetDirty(profile);
+                
+                if (EditorUtility.DisplayDialog(
+                    "Added to Ignore List",
+                    $"Added '{folderPath}' to ignore list.\n\nRescan assets now to apply changes?",
+                    "Rescan",
+                    "Later"))
+                {
+                    ScanAssetsForInspector(profile);
+                }
+            }
+            else
+            {
+                EditorUtility.DisplayDialog("Already Ignored", $"'{folderPath}' is already in the ignore list.", "OK");
+            }
+        }
+        
+        /// <summary>
+        /// Get color for asset type badge
+        /// </summary>
+        private Color GetAssetTypeColor(string assetType)
+        {
+            return assetType switch
+            {
+                "Script" => new Color(0.3f, 0.7f, 0.3f),
+                "Prefab" => new Color(0.3f, 0.5f, 0.9f),
+                "Material" => new Color(0.9f, 0.5f, 0.3f),
+                "Texture" => new Color(0.8f, 0.3f, 0.8f),
+                "Scene" => new Color(0.9f, 0.9f, 0.3f),
+                "Shader" => new Color(0.5f, 0.9f, 0.9f),
+                "Assembly" => new Color(0.9f, 0.3f, 0.3f),
+                _ => Color.gray
+            };
+        }
+        
+        /// <summary>
+        /// Format bytes to human-readable size
+        /// </summary>
+        private string FormatBytes(long bytes)
+        {
+            string[] sizes = { "B", "KB", "MB", "GB" };
+            double len = bytes;
+            int order = 0;
+            
+            while (len >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                len = len / 1024;
+            }
+            
+            return $"{len:0.##} {sizes[order]}";
+        }
+        
+        /// <summary>
+        /// Create a .yucpignore file in a folder
+        /// </summary>
+        private void CreateYucpIgnoreFile(ExportProfile profile, string folderPath)
+        {
+            if (YucpIgnoreHandler.CreateIgnoreFile(folderPath))
+            {
+                AssetDatabase.Refresh();
+                
+                if (EditorUtility.DisplayDialog(
+                    "Created .yucpignore",
+                    $"Created .yucpignore file in:\n{folderPath}\n\nOpen the file to edit ignore patterns?",
+                    "Open",
+                    "Later"))
+                {
+                    OpenYucpIgnoreFile(folderPath);
+                }
+                
+                // Optionally rescan
+                if (EditorUtility.DisplayDialog(
+                    "Rescan Assets",
+                    "Rescan assets now to apply the new ignore file?",
+                    "Rescan",
+                    "Later"))
+                {
+                    ScanAssetsForInspector(profile);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Open a .yucpignore file in the default editor
+        /// </summary>
+        private void OpenYucpIgnoreFile(string folderPath)
+        {
+            string ignoreFilePath = YucpIgnoreHandler.GetIgnoreFilePath(folderPath);
+            
+            if (File.Exists(ignoreFilePath))
+            {
+                // Open in default text editor
+                System.Diagnostics.Process.Start(ignoreFilePath);
+            }
+            else
+            {
+                EditorUtility.DisplayDialog("File Not Found", $".yucpignore file not found:\n{ignoreFilePath}", "OK");
+            }
         }
     }
 }

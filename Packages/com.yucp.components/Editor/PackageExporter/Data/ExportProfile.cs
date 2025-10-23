@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace YUCP.Components.Editor.PackageExporter
@@ -32,6 +33,25 @@ namespace YUCP.Components.Editor.PackageExporter
         [Header("Export Folders")]
         [Tooltip("List of folder paths to include in the package (relative to project root)")]
         public List<string> foldersToExport = new List<string>();
+        
+        [Header("Export Inspector")]
+        [Tooltip("Discovered assets from export folders (populated by scanning)")]
+        public List<DiscoveredAsset> discoveredAssets = new List<DiscoveredAsset>();
+        
+        [Tooltip("Folders to permanently ignore from all exports (like .gitignore)")]
+        public List<string> permanentIgnoreFolders = new List<string>();
+        
+        [Tooltip("Cache of last scan results for UI performance")]
+        [SerializeField] private bool hasScannedAssets = false;
+        
+        public bool HasScannedAssets => hasScannedAssets;
+        
+        public void MarkScanned() => hasScannedAssets = true;
+        public void ClearScan() 
+        { 
+            discoveredAssets.Clear();
+            hasScannedAssets = false;
+        }
         
         [Header("Unity Export Options")]
         [Tooltip("Include dependencies of selected assets")]
@@ -70,6 +90,9 @@ namespace YUCP.Components.Editor.PackageExporter
         [Header("Export Settings")]
         [Tooltip("Default export path (leave empty for Desktop)")]
         public string exportPath = "";
+        
+        [Tooltip("Custom location to save this export profile (leave empty for default Profiles folder)")]
+        public string profileSaveLocation = "";
         
         [Tooltip("Automatically increment version number after each export")]
         public bool autoIncrementVersion = false;
@@ -207,6 +230,87 @@ namespace YUCP.Components.Editor.PackageExporter
             assemblyName = name;
             asmdefPath = path;
             enabled = true;
+        }
+    }
+    
+    /// <summary>
+    /// Represents a discovered asset from export folder scanning
+    /// </summary>
+    [Serializable]
+    public class DiscoveredAsset
+    {
+        [Tooltip("Asset path relative to project root")]
+        public string assetPath;
+        
+        [Tooltip("Whether this asset is included in export")]
+        public bool included = true;
+        
+        [Tooltip("Whether this is a folder (vs file)")]
+        public bool isFolder;
+        
+        [Tooltip("Source export folder that discovered this asset")]
+        public string sourceFolder;
+        
+        [Tooltip("Asset type (e.g., 'Prefab', 'Script', 'Material')")]
+        public string assetType;
+        
+        [Tooltip("File size in bytes (0 for folders)")]
+        public long fileSize;
+        
+        [Tooltip("Is this asset a dependency of a directly exported asset")]
+        public bool isDependency;
+        
+        public DiscoveredAsset()
+        {
+        }
+        
+        public DiscoveredAsset(string path, string source, bool isDir = false)
+        {
+            assetPath = path;
+            sourceFolder = source;
+            isFolder = isDir;
+            included = true;
+            isDependency = false;
+            
+            if (!isDir && File.Exists(path))
+            {
+                FileInfo fileInfo = new FileInfo(path);
+                fileSize = fileInfo.Length;
+                
+                // Determine asset type from extension
+                string ext = Path.GetExtension(path).ToLower();
+                assetType = ext switch
+                {
+                    ".prefab" => "Prefab",
+                    ".cs" => "Script",
+                    ".shader" => "Shader",
+                    ".mat" => "Material",
+                    ".png" or ".jpg" or ".jpeg" => "Texture",
+                    ".fbx" or ".obj" => "Model",
+                    ".unity" => "Scene",
+                    ".asmdef" => "Assembly Definition",
+                    ".dll" => "Assembly",
+                    ".anim" => "Animation",
+                    ".controller" => "Animator",
+                    ".asset" => "Asset",
+                    _ => "File"
+                };
+            }
+            else
+            {
+                assetType = "Folder";
+                fileSize = 0;
+            }
+        }
+        
+        public string GetDisplayName()
+        {
+            return Path.GetFileName(assetPath);
+        }
+        
+        public string GetFolderPath()
+        {
+            return isFolder ? assetPath : Path.GetDirectoryName(assetPath);
         }
     }
 }
