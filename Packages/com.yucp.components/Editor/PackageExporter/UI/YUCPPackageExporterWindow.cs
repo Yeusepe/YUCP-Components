@@ -34,6 +34,10 @@ namespace YUCP.Components.Editor.PackageExporter
         private float currentProgress = 0f;
         private string currentStatus = "";
         
+        // Multi-selection state for profiles
+        private HashSet<int> selectedProfileIndices = new HashSet<int>();
+        private int lastClickedProfileIndex = -1;
+        
         private Texture2D logoTexture;
         private GUIStyle headerStyle;
         private GUIStyle profileButtonStyle;
@@ -189,6 +193,14 @@ namespace YUCP.Components.Editor.PackageExporter
             GUILayout.Label("Export Profiles", sectionHeaderStyle);
             GUILayout.Space(5);
             
+            if (selectedProfileIndices.Count > 1)
+            {
+                EditorGUILayout.HelpBox(
+                    $"{selectedProfileIndices.Count} profiles selected. Use the export button below to export only these.",
+                    MessageType.None);
+                GUILayout.Space(5);
+            }
+            
             // Profile list - expands to fill available height
             profileListScrollPos = GUILayout.BeginScrollView(profileListScrollPos, GUI.skin.box, GUILayout.ExpandHeight(true));
             
@@ -205,7 +217,7 @@ namespace YUCP.Components.Editor.PackageExporter
                     if (profile == null)
                         continue;
                     
-                    bool isSelected = selectedProfileIndex == i;
+                    bool isSelected = selectedProfileIndices.Contains(i);
                     
                     // Create a custom clickable area with proper text display
                     GUILayout.BeginVertical();
@@ -239,11 +251,10 @@ namespace YUCP.Components.Editor.PackageExporter
                     
                     GUILayout.EndVertical();
                     
-                    // Make the entire area clickable
+                    // Make the entire area clickable with multi-selection support
                     if (Event.current.type == EventType.MouseDown && GUILayoutUtility.GetLastRect().Contains(Event.current.mousePosition))
                     {
-                        selectedProfileIndex = i;
-                        selectedProfile = profile;
+                        HandleProfileSelection(i, Event.current);
                         Event.current.Use();
                     }
                     
@@ -966,14 +977,15 @@ namespace YUCP.Components.Editor.PackageExporter
             }
         }
         
-        private void ExportAllProfiles()
+        private void ExportAllProfiles(List<ExportProfile> profilesToExport = null)
         {
-            if (allProfiles.Count == 0)
+            var profiles = profilesToExport ?? allProfiles;
+            if (profiles.Count == 0)
                 return;
             
             // Validate all profiles first
             var invalidProfiles = new List<string>();
-            foreach (var profile in allProfiles)
+            foreach (var profile in profiles)
             {
                 if (!profile.Validate(out string error))
                 {
@@ -989,9 +1001,9 @@ namespace YUCP.Components.Editor.PackageExporter
             }
             
             bool confirm = EditorUtility.DisplayDialog(
-                "Export All Profiles",
-                $"This will export {allProfiles.Count} package(s):\n\n" +
-                string.Join("\n", allProfiles.Select(p => $"• {p.packageName} v{p.version}")) +
+                "Export Profiles",
+                $"This will export {profiles.Count} package(s):\n\n" +
+                string.Join("\n", profiles.Select(p => $"• {p.packageName} v{p.version}")) +
                 "\n\nThis may take several minutes.",
                 "Export All",
                 "Cancel"
@@ -1004,7 +1016,7 @@ namespace YUCP.Components.Editor.PackageExporter
             
             try
             {
-                var results = PackageBuilder.ExportMultiple(allProfiles, (index, total, progress, status) =>
+                var results = PackageBuilder.ExportMultiple(profiles, (index, total, progress, status) =>
                 {
                     float overallProgress = (index + progress) / total;
                     currentProgress = overallProgress;
@@ -1245,6 +1257,77 @@ namespace YUCP.Components.Editor.PackageExporter
             GUILayout.Space(5f);
         }
         
+        private void HandleProfileSelection(int index, Event currentEvent)
+        {
+            if (currentEvent.control || currentEvent.command)
+            {
+                // Ctrl/Cmd+Click: Toggle individual selection
+                if (selectedProfileIndices.Contains(index))
+                {
+                    selectedProfileIndices.Remove(index);
+                }
+                else
+                {
+                    selectedProfileIndices.Add(index);
+                }
+                lastClickedProfileIndex = index;
+                
+                // Update selectedProfile to the first selected item
+                if (selectedProfileIndices.Count > 0)
+                {
+                    selectedProfileIndex = selectedProfileIndices.Min();
+                    selectedProfile = allProfiles[selectedProfileIndex];
+                }
+                else
+                {
+                    selectedProfileIndex = -1;
+                    selectedProfile = null;
+                }
+            }
+            else if (currentEvent.shift && lastClickedProfileIndex >= 0)
+            {
+                // Shift+Click: Range selection
+                int start = Mathf.Min(lastClickedProfileIndex, index);
+                int end = Mathf.Max(lastClickedProfileIndex, index);
+                
+                for (int i = start; i <= end; i++)
+                {
+                    if (i < allProfiles.Count)
+                    {
+                        selectedProfileIndices.Add(i);
+                    }
+                }
+                
+                // Update selectedProfile to the first selected item
+                selectedProfileIndex = selectedProfileIndices.Min();
+                selectedProfile = allProfiles[selectedProfileIndex];
+            }
+            else
+            {
+                // Normal click: Single selection
+                selectedProfileIndices.Clear();
+                selectedProfileIndices.Add(index);
+                lastClickedProfileIndex = index;
+                selectedProfileIndex = index;
+                selectedProfile = allProfiles[index];
+            }
+            
+            Repaint();
+        }
+        
+        private void ExportSelectedProfiles()
+        {
+            if (selectedProfileIndices.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Selection", "No profiles are selected.", "OK");
+                return;
+            }
+            
+            var selectedProfiles = selectedProfileIndices.OrderBy(i => i).Select(i => allProfiles[i]).ToList();
+            
+            ExportAllProfiles(selectedProfiles);
+        }
+        
         private void DrawExportButtons()
         {
             DrawHorizontalLine();
@@ -1252,14 +1335,39 @@ namespace YUCP.Components.Editor.PackageExporter
             
             GUILayout.BeginHorizontal();
             
-            GUI.enabled = selectedProfile != null && !isExporting;
+            // Dynamic export button that changes based on selection
+            GUI.enabled = selectedProfileIndices.Count > 0 && !isExporting;
             GUI.backgroundColor = new Color(0.2f, 0.75f, 0.73f); // Teal
-            if (GUILayout.Button("Export Selected Profile", GUILayout.Height(50)))
+            
+            string buttonText;
+            if (selectedProfileIndices.Count == 1)
             {
-                ExportProfile(selectedProfile);
+                buttonText = "Export Selected Profile";
+            }
+            else
+            {
+                buttonText = $"Export Selected Profiles ({selectedProfileIndices.Count})";
+            }
+            
+            if (GUILayout.Button(buttonText, GUILayout.Height(50)))
+            {
+                if (selectedProfileIndices.Count == 1)
+                {
+                    ExportProfile(selectedProfile);
+                }
+                else
+                {
+                    ExportSelectedProfiles();
+                }
             }
             GUI.backgroundColor = Color.white;
             GUI.enabled = true;
+            
+            GUILayout.EndHorizontal();
+            
+            GUILayout.Space(5);
+            
+            GUILayout.BeginHorizontal();
             
             GUI.enabled = allProfiles.Count > 0 && !isExporting;
             GUI.backgroundColor = new Color(0.3f, 0.7f, 0.9f);

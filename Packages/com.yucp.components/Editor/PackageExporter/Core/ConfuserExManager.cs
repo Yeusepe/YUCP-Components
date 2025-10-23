@@ -1,9 +1,11 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
@@ -36,6 +38,7 @@ namespace YUCP.Components.Editor.PackageExporter
         
         /// <summary>
         /// Download and install ConfuserEx CLI if not already present
+        /// Uses synchronous download with progress feedback
         /// </summary>
         public static bool EnsureInstalled(Action<float, string> progressCallback = null)
         {
@@ -49,51 +52,68 @@ namespace YUCP.Components.Editor.PackageExporter
             
             try
             {
+                // Create directory
                 progressCallback?.Invoke(0.1f, "Creating tools directory...");
-                
-                // Create tools directory if it doesn't exist
                 if (!Directory.Exists(ConfuserExDirectory))
                 {
                     Directory.CreateDirectory(ConfuserExDirectory);
                 }
                 
+                // Download with progress feedback
                 progressCallback?.Invoke(0.2f, "Downloading ConfuserEx CLI...");
-                
-                // Download the ZIP file
                 string tempZipPath = Path.Combine(Path.GetTempPath(), "ConfuserEx-CLI.zip");
+                
+                // Delete any existing temp file (from previous failed downloads)
+                if (File.Exists(tempZipPath))
+                {
+                    try
+                    {
+                        File.Delete(tempZipPath);
+                        Debug.Log("[ConfuserEx] Deleted existing temp file from previous download");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[ConfuserEx] Could not delete existing temp file: {ex.Message}");
+                        // Generate unique temp filename to avoid sharing violation
+                        tempZipPath = Path.Combine(Path.GetTempPath(), $"ConfuserEx-CLI_{Guid.NewGuid().ToString("N").Substring(0, 8)}.zip");
+                        Debug.Log($"[ConfuserEx] Using alternative temp path: {tempZipPath}");
+                    }
+                }
                 
                 using (var client = new WebClient())
                 {
+                    // Track download progress
                     client.DownloadProgressChanged += (sender, e) =>
                     {
                         float progress = 0.2f + (e.ProgressPercentage / 100f * 0.5f);
                         progressCallback?.Invoke(progress, $"Downloading ConfuserEx: {e.ProgressPercentage}%");
                     };
                     
-                    client.DownloadFileTaskAsync(CONFUSEREX_DOWNLOAD_URL, tempZipPath).Wait();
+                    // Synchronous download - will block but with progress updates
+                    client.DownloadFile(new Uri(CONFUSEREX_DOWNLOAD_URL), tempZipPath);
                 }
                 
+                // Extract
                 progressCallback?.Invoke(0.7f, "Extracting ConfuserEx...");
-                
-                // Extract the ZIP file
                 ExtractZipFile(tempZipPath, ConfuserExDirectory);
                 
+                // Cleanup
                 progressCallback?.Invoke(0.9f, "Cleaning up...");
-                
-                // Clean up temp file
                 if (File.Exists(tempZipPath))
                 {
                     File.Delete(tempZipPath);
                 }
                 
+                // Complete
                 progressCallback?.Invoke(1.0f, "ConfuserEx installed successfully!");
-                
                 Debug.Log($"[ConfuserEx] Successfully installed to: {ConfuserExDirectory}");
+                
                 return true;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[ConfuserEx] Failed to download/install: {ex.Message}");
+                Debug.LogError($"[ConfuserEx] Installation failed: {ex.Message}");
+                progressCallback?.Invoke(0f, "Installation failed");
                 return false;
             }
         }
@@ -184,7 +204,7 @@ namespace YUCP.Components.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Obfuscate assemblies using ConfuserEx
+        /// Obfuscate assemblies using ConfuserEx with non-blocking progress updates
         /// </summary>
         public static bool ObfuscateAssemblies(
             List<AssemblyObfuscationSettings> assemblies,
@@ -199,20 +219,27 @@ namespace YUCP.Components.Editor.PackageExporter
             
             try
             {
-                progressCallback?.Invoke(0.1f, "Preparing assemblies for obfuscation...");
+                progressCallback?.Invoke(0.05f, "Starting obfuscation process...");
                 
                 // Create temp working directory
+                progressCallback?.Invoke(0.08f, "Creating temporary workspace...");
                 string workingDir = Path.Combine(Path.GetTempPath(), "YUCP_Obfuscation_" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(workingDir);
                 
                 Debug.Log($"[ConfuserEx] Working directory: {workingDir}");
                 
-                // Copy DLLs to working directory
+                // Copy DLLs to working directory with detailed progress
+                progressCallback?.Invoke(0.1f, "Scanning assemblies for obfuscation...");
                 var validAssemblies = new List<AssemblyObfuscationSettings>();
+                int assemblyCount = 0;
+                
                 foreach (var assembly in assemblies)
                 {
                     if (!assembly.enabled)
                         continue;
+                    
+                    assemblyCount++;
+                    progressCallback?.Invoke(0.1f + (assemblyCount * 0.1f / assemblies.Count), $"Processing assembly {assemblyCount}/{assemblies.Count}: {assembly.assemblyName}");
                     
                     var assemblyInfo = new AssemblyScanner.AssemblyInfo(assembly.assemblyName, assembly.asmdefPath);
                     if (!assemblyInfo.exists)
@@ -223,11 +250,129 @@ namespace YUCP.Components.Editor.PackageExporter
                     
                     string dllFileName = Path.GetFileName(assemblyInfo.dllPath);
                     string destPath = Path.Combine(workingDir, dllFileName);
+                    
+                    progressCallback?.Invoke(0.1f + (assemblyCount * 0.1f / assemblies.Count), $"Copying {dllFileName} to workspace...");
                     File.Copy(assemblyInfo.dllPath, destPath, true);
                     
                     validAssemblies.Add(assembly);
                     Debug.Log($"[ConfuserEx] Copied DLL: {dllFileName}");
                 }
+                
+                // Copy all dependency DLLs from ScriptAssemblies (ConfuserEx needs them for resolution)
+                progressCallback?.Invoke(0.2f, "Copying dependency DLLs for resolution...");
+                int copiedDeps = 0;
+                
+                // 1. Copy from ScriptAssemblies
+                string scriptAssembliesPath = Path.Combine(Application.dataPath, "..", "Library", "ScriptAssemblies");
+                if (Directory.Exists(scriptAssembliesPath))
+                {
+                    string[] allDlls = Directory.GetFiles(scriptAssembliesPath, "*.dll", SearchOption.TopDirectoryOnly);
+                    
+                    foreach (string dllPath in allDlls)
+                    {
+                        string dllFileName = Path.GetFileName(dllPath);
+                        string destPath = Path.Combine(workingDir, dllFileName);
+                        
+                        // Skip if already copied (the assembly being obfuscated)
+                        if (File.Exists(destPath))
+                            continue;
+                        
+                        try
+                        {
+                            File.Copy(dllPath, destPath, true);
+                            copiedDeps++;
+                        }
+                        catch
+                        {
+                            // Ignore copy errors for dependency DLLs (might be locked)
+                        }
+                    }
+                }
+                
+                // 2. Copy from PackageCache (for Unity packages like Newtonsoft.Json)
+                string packageCachePath = Path.Combine(Application.dataPath, "..", "Library", "PackageCache");
+                if (Directory.Exists(packageCachePath))
+                {
+                    string[] packageDlls = Directory.GetFiles(packageCachePath, "*.dll", SearchOption.AllDirectories);
+                    
+                    foreach (string dllPath in packageDlls)
+                    {
+                        string dllFileName = Path.GetFileName(dllPath);
+                        string destPath = Path.Combine(workingDir, dllFileName);
+                        
+                        // Skip if already copied
+                        if (File.Exists(destPath))
+                            continue;
+                        
+                        try
+                        {
+                            File.Copy(dllPath, destPath, true);
+                            copiedDeps++;
+                        }
+                        catch
+                        {
+                            // Ignore copy errors for dependency DLLs
+                        }
+                    }
+                }
+                
+                // 3. Copy Unity Engine DLLs (UnityEngine.CoreModule, etc.)
+                string unityEditorPath = Path.GetDirectoryName(EditorApplication.applicationPath);
+                string unityEnginePath = Path.Combine(unityEditorPath, "Data", "Managed", "UnityEngine");
+                
+                if (Directory.Exists(unityEnginePath))
+                {
+                    string[] unityDlls = Directory.GetFiles(unityEnginePath, "*.dll", SearchOption.TopDirectoryOnly);
+                    
+                    foreach (string dllPath in unityDlls)
+                    {
+                        string dllFileName = Path.GetFileName(dllPath);
+                        string destPath = Path.Combine(workingDir, dllFileName);
+                        
+                        // Skip if already copied
+                        if (File.Exists(destPath))
+                            continue;
+                        
+                        try
+                        {
+                            File.Copy(dllPath, destPath, true);
+                            copiedDeps++;
+                        }
+                        catch
+                        {
+                            // Ignore copy errors
+                        }
+                    }
+                }
+                
+                // 4. Also copy from Data/Managed root (for other Unity assemblies)
+                string unityManagedPath = Path.Combine(unityEditorPath, "Data", "Managed");
+                if (Directory.Exists(unityManagedPath))
+                {
+                    string[] managedDlls = Directory.GetFiles(unityManagedPath, "*.dll", SearchOption.TopDirectoryOnly);
+                    
+                    foreach (string dllPath in managedDlls)
+                    {
+                        string dllFileName = Path.GetFileName(dllPath);
+                        string destPath = Path.Combine(workingDir, dllFileName);
+                        
+                        // Skip if already copied
+                        if (File.Exists(destPath))
+                            continue;
+                        
+                        try
+                        {
+                            File.Copy(dllPath, destPath, true);
+                            copiedDeps++;
+                        }
+                        catch
+                        {
+                            // Ignore copy errors
+                        }
+                    }
+                }
+                
+                Debug.Log($"[ConfuserEx] Copied {copiedDeps} dependency DLLs for assembly resolution");
                 
                 if (validAssemblies.Count == 0)
                 {
@@ -235,15 +380,16 @@ namespace YUCP.Components.Editor.PackageExporter
                     return false;
                 }
                 
-                progressCallback?.Invoke(0.3f, "Generating ConfuserEx configuration...");
+                progressCallback?.Invoke(0.25f, "Generating ConfuserEx configuration file...");
                 
                 // Generate .crproj file
                 string projectFilePath = GenerateProjectFile(validAssemblies, preset, workingDir);
                 
-                progressCallback?.Invoke(0.4f, $"Running ConfuserEx ({preset} preset)...");
+                progressCallback?.Invoke(0.3f, $"Starting ConfuserEx obfuscation ({preset} preset)...");
+                Debug.Log($"[ConfuserEx] Starting obfuscation of {validAssemblies.Count} assemblies with {preset} preset");
                 
-                // Run ConfuserEx
-                bool success = RunConfuserEx(projectFilePath, workingDir, progressCallback);
+                // Run ConfuserEx with non-blocking progress updates
+                bool success = RunConfuserExNonBlocking(projectFilePath, workingDir, progressCallback);
                 
                 if (!success)
                 {
@@ -251,14 +397,18 @@ namespace YUCP.Components.Editor.PackageExporter
                     return false;
                 }
                 
-                progressCallback?.Invoke(0.9f, "Copying obfuscated assemblies...");
+                progressCallback?.Invoke(0.85f, "Obfuscation completed! Copying obfuscated assemblies...");
                 
                 // Copy obfuscated DLLs back to Library/ScriptAssemblies
                 string obfuscatedDir = Path.Combine(workingDir, "Obfuscated");
                 if (Directory.Exists(obfuscatedDir))
                 {
+                    int copyCount = 0;
                     foreach (var assembly in validAssemblies)
                     {
+                        copyCount++;
+                        progressCallback?.Invoke(0.85f + (copyCount * 0.1f / validAssemblies.Count), $"Installing obfuscated assembly {copyCount}/{validAssemblies.Count}: {assembly.assemblyName}");
+                        
                         var assemblyInfo = new AssemblyScanner.AssemblyInfo(assembly.assemblyName, assembly.asmdefPath);
                         string obfuscatedDllPath = Path.Combine(obfuscatedDir, Path.GetFileName(assemblyInfo.dllPath));
                         
@@ -268,17 +418,19 @@ namespace YUCP.Components.Editor.PackageExporter
                             string backupPath = assemblyInfo.dllPath + ".backup";
                             if (!File.Exists(backupPath))
                             {
+                                progressCallback?.Invoke(0.85f + (copyCount * 0.1f / validAssemblies.Count), $"Backing up original {assembly.assemblyName}...");
                                 File.Copy(assemblyInfo.dllPath, backupPath, true);
                             }
                             
                             // Replace with obfuscated version
+                            progressCallback?.Invoke(0.85f + (copyCount * 0.1f / validAssemblies.Count), $"Installing obfuscated {assembly.assemblyName}...");
                             File.Copy(obfuscatedDllPath, assemblyInfo.dllPath, true);
                             Debug.Log($"[ConfuserEx] Replaced DLL with obfuscated version: {assembly.assemblyName}");
                         }
                     }
                 }
                 
-                progressCallback?.Invoke(1.0f, "Obfuscation complete!");
+                progressCallback?.Invoke(0.98f, "Cleaning up temporary files...");
                 
                 // Clean up working directory
                 try
@@ -289,6 +441,9 @@ namespace YUCP.Components.Editor.PackageExporter
                 {
                     // Ignore cleanup errors
                 }
+                
+                progressCallback?.Invoke(1.0f, "Obfuscation complete! All assemblies protected.");
+                Debug.Log($"[ConfuserEx] Successfully obfuscated {validAssemblies.Count} assemblies");
                 
                 return true;
             }
@@ -301,9 +456,9 @@ namespace YUCP.Components.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Execute ConfuserEx CLI
+        /// Execute ConfuserEx CLI with non-blocking progress updates
         /// </summary>
-        private static bool RunConfuserEx(string projectFilePath, string workingDirectory, Action<float, string> progressCallback)
+        private static bool RunConfuserExNonBlocking(string projectFilePath, string workingDirectory, Action<float, string> progressCallback)
         {
             try
             {
@@ -322,11 +477,46 @@ namespace YUCP.Components.Editor.PackageExporter
                 
                 using (Process process = Process.Start(startInfo))
                 {
-                    // Read output
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
+                    // Read output asynchronously with progress updates
+                    string output = "";
+                    string error = "";
                     
-                    process.WaitForExit();
+                    var outputTask = process.StandardOutput.ReadToEndAsync();
+                    var errorTask = process.StandardError.ReadToEndAsync();
+                    
+                    // Update progress while waiting for completion
+                    int waitCount = 0;
+                    while (!process.HasExited)
+                    {
+                        // Yield control back to Unity to prevent hanging
+                        EditorApplication.delayCall += () => { };
+                        
+                        System.Threading.Thread.Sleep(500); // Wait 500ms
+                        waitCount++;
+                        
+                        // Update progress every 2 seconds (every 4 iterations)
+                        if (waitCount % 4 == 0)
+                        {
+                            float progress = 0.4f + (waitCount / 100f) * 0.4f; // Progress from 0.4 to 0.8 over time
+                            progressCallback?.Invoke(progress, $"Obfuscating assemblies... ({waitCount * 0.5f:F0}s elapsed)");
+                        }
+                        
+                        // Safety timeout - if it takes more than 5 minutes, something is wrong
+                        if (waitCount > 600) // 5 minutes
+                        {
+                            Debug.LogError("[ConfuserEx] Process timed out after 5 minutes");
+                            try
+                            {
+                                process.Kill();
+                            }
+                            catch { }
+                            return false;
+                        }
+                    }
+                    
+                    // Get the output
+                    output = outputTask.Result;
+                    error = errorTask.Result;
                     
                     if (!string.IsNullOrEmpty(output))
                     {
@@ -344,6 +534,7 @@ namespace YUCP.Components.Editor.PackageExporter
                         return false;
                     }
                     
+                    progressCallback?.Invoke(0.8f, "Obfuscation completed successfully!");
                     return true;
                 }
             }
@@ -353,6 +544,8 @@ namespace YUCP.Components.Editor.PackageExporter
                 return false;
             }
         }
+        
+        
         
         /// <summary>
         /// Restore original DLLs from backups (in case obfuscation needs to be undone)

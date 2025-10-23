@@ -70,6 +70,12 @@ namespace YUCP.Components.Editor.PackageExporter
                     
                     progressCallback?.Invoke(0.2f, "Obfuscating assemblies...");
                     
+                    // Show warning about obfuscation time
+                    if (profile.assembliesToObfuscate.Count(a => a.enabled) > 3)
+                    {
+                        Debug.Log("[PackageBuilder] Obfuscating multiple assemblies - this may take several minutes. Please wait...");
+                    }
+                    
                     if (!ConfuserExManager.ObfuscateAssemblies(
                         profile.assembliesToObfuscate,
                         profile.obfuscationPreset,
@@ -801,20 +807,28 @@ namespace YUCP.Components.Editor.PackageExporter
                                 unityPathname += ".yucp_disabled";
                             }
                             
-                            // Try to preserve original GUID from .meta file if it exists
+                            // GUID handling strategy:
+                            // - For .yucp_disabled files: Generate NEW GUID to avoid conflicts with enabled version
+                            // - For normal files: Preserve original GUID to maintain references
                             string fileGuid = null;
                             string metaContent = null;
                             string originalMetaPath = filePath + ".meta";
                             
-                            if (File.Exists(originalMetaPath))
+                            if (isCompilableScript)
                             {
-                                // Read original .meta and extract GUID
+                                // Generate new GUID for disabled files (prevents GUID conflicts on re-import)
+                                fileGuid = Guid.NewGuid().ToString("N");
+                                metaContent = GenerateMetaForFile(filePath, fileGuid);
+                            }
+                            else if (File.Exists(originalMetaPath))
+                            {
+                                // Preserve original GUID for non-script files (safe, no renaming occurs)
                                 string originalMeta = File.ReadAllText(originalMetaPath);
                                 var guidMatch = System.Text.RegularExpressions.Regex.Match(originalMeta, @"guid:\s*([a-f0-9]{32})");
                                 if (guidMatch.Success)
                                 {
                                     fileGuid = guidMatch.Groups[1].Value;
-                                    metaContent = originalMeta; // Use original meta content
+                                    metaContent = originalMeta;
                                 }
                             }
                             

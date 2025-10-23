@@ -31,6 +31,48 @@ namespace YUCP.DirectVpmInstaller
             try
             {
                 var packageInfo = JObject.Parse(File.ReadAllText(packageJsonPath));
+                string bundledPackageName = packageInfo["name"]?.Value<string>();
+                string bundledPackageVersion = packageInfo["version"]?.Value<string>();
+                
+                // Check if this bundled package is already installed
+                if (!string.IsNullOrEmpty(bundledPackageName))
+                {
+                    string existingPackagePath = Path.Combine(Application.dataPath, "..", "Packages", bundledPackageName);
+                    if (Directory.Exists(existingPackagePath))
+                    {
+                        string existingPackageJson = Path.Combine(existingPackagePath, "package.json");
+                        if (File.Exists(existingPackageJson))
+                        {
+                            try
+                            {
+                                var existingData = JObject.Parse(File.ReadAllText(existingPackageJson));
+                                string existingVersion = existingData["version"]?.Value<string>();
+                                
+                                if (!string.IsNullOrEmpty(existingVersion) && !string.IsNullOrEmpty(bundledPackageVersion))
+                                {
+                                    if (CompareVersions(existingVersion, bundledPackageVersion) >= 0)
+                                    {
+                                        Debug.Log($"[DirectVpmInstaller] Bundled package {bundledPackageName}@{bundledPackageVersion} is already installed (current: {existingVersion}). Skipping extraction.");
+                                        
+                                        // Still enable any .yucp_disabled files (might be from previous failed install)
+                                        EnableBundledPackages();
+                                        CleanupTemporaryFiles(packageJsonPath);
+                                        return;
+                                    }
+                                    else
+                                    {
+                                        Debug.Log($"[DirectVpmInstaller] Upgrading bundled package {bundledPackageName} from {existingVersion} to {bundledPackageVersion}");
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.LogWarning($"[DirectVpmInstaller] Failed to check existing package version: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+                
                 var vpmDependencies = packageInfo["vpmDependencies"] as JObject;
                 var vpmRepositories = packageInfo["vpmRepositories"] as JObject;
                 
@@ -150,19 +192,43 @@ namespace YUCP.DirectVpmInstaller
                 {
                     // Remove .yucp_disabled extension to enable the file
                     string enabledFile = disabledFile.Substring(0, disabledFile.Length - ".yucp_disabled".Length);
-                    
-                    // Move the file
-                    File.Move(disabledFile, enabledFile);
-                    
-                    // Move the .meta file if it exists
                     string disabledMeta = disabledFile + ".meta";
                     string enabledMeta = enabledFile + ".meta";
-                    if (File.Exists(disabledMeta))
+                    
+                    // Check if target already exists and compare timestamps
+                    bool shouldReplace = true;
+                    if (File.Exists(enabledFile))
                     {
-                        File.Move(disabledMeta, enabledMeta);
+                        DateTime disabledTime = File.GetLastWriteTimeUtc(disabledFile);
+                        DateTime enabledTime = File.GetLastWriteTimeUtc(enabledFile);
+                        
+                        if (disabledTime <= enabledTime)
+                        {
+                            // Existing file is newer or same, skip replacement
+                            Debug.Log($"[DirectVpmInstaller] Skipping '{Path.GetFileName(enabledFile)}' (existing file is same or newer)");
+                            shouldReplace = false;
+                        }
                     }
                     
-                    enabledCount++;
+                    if (shouldReplace)
+                    {
+                        // Delete existing files if they exist (File.Move can't overwrite)
+                        if (File.Exists(enabledFile))
+                            File.Delete(enabledFile);
+                        if (File.Exists(enabledMeta))
+                            File.Delete(enabledMeta);
+                        
+                        // Move the file
+                        File.Move(disabledFile, enabledFile);
+                        
+                        // Move the .meta file if it exists
+                        if (File.Exists(disabledMeta))
+                        {
+                            File.Move(disabledMeta, enabledMeta);
+                        }
+                        
+                        enabledCount++;
+                    }
                 }
                 
                 if (enabledCount > 0)
@@ -228,6 +294,29 @@ namespace YUCP.DirectVpmInstaller
                             File.Delete(metaPath);
                         
                         Debug.Log($"[DirectVpmInstaller] Deleted FullDomainReload script: {reloadPath}");
+                    }
+                }
+                
+                // Delete all .yucp_disabled files from bundled packages (orphaned after enabling)
+                string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
+                if (Directory.Exists(packagesPath))
+                {
+                    string[] disabledFiles = Directory.GetFiles(packagesPath, "*.yucp_disabled", SearchOption.AllDirectories);
+                    int deletedCount = 0;
+                    
+                    foreach (string disabledFile in disabledFiles)
+                    {
+                        File.Delete(disabledFile);
+                        string metaPath = disabledFile + ".meta";
+                        if (File.Exists(metaPath))
+                            File.Delete(metaPath);
+                        
+                        deletedCount++;
+                    }
+                    
+                    if (deletedCount > 0)
+                    {
+                        Debug.Log($"[DirectVpmInstaller] Deleted {deletedCount} orphaned .yucp_disabled files");
                     }
                 }
                 
