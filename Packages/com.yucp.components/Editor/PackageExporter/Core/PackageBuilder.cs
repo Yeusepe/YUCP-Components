@@ -95,7 +95,39 @@ namespace YUCP.Components.Editor.PackageExporter
                 // Build list of assets to export
                 progressCallback?.Invoke(0.5f, $"Collecting assets from {profile.foldersToExport.Count} folders...");
                 
+                // Collect all assets, then filter out obfuscated assembly files
                 List<string> assetsToExport = CollectAssetsToExport(profile);
+                
+                // Exclude .cs and .asmdef files from obfuscated assemblies (DLL will be included instead)
+                if (profile.assembliesToObfuscate != null && profile.assembliesToObfuscate.Count > 0)
+                {
+                    var obfuscatedAsmdefPaths = profile.assembliesToObfuscate
+                        .Where(a => a.enabled)
+                        .Select(a => Path.GetFullPath(a.asmdefPath).Replace("\\", "/"))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    
+                    assetsToExport = assetsToExport.Where(assetPath => {
+                        string fullPath = Path.GetFullPath(assetPath).Replace("\\", "/");
+                        string extension = Path.GetExtension(fullPath).ToLower();
+                        
+                        // Check if this file belongs to an obfuscated assembly
+                        if (extension == ".cs" || extension == ".asmdef")
+                        {
+                            string fileDir = Path.GetDirectoryName(fullPath).Replace("\\", "/");
+                            foreach (var asmdefPath in obfuscatedAsmdefPaths)
+                            {
+                                string asmdefDir = Path.GetDirectoryName(asmdefPath).Replace("\\", "/");
+                                if (fileDir.StartsWith(asmdefDir, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    Debug.Log($"[PackageBuilder] Excluding obfuscated assembly file from export folders: {assetPath}");
+                                    return false; // Exclude this file
+                                }
+                            }
+                        }
+                        return true; // Include this file
+                    }).ToList();
+                }
+                
                 if (assetsToExport.Count == 0)
                 {
                     result.success = false;
@@ -103,7 +135,7 @@ namespace YUCP.Components.Editor.PackageExporter
                     return result;
                 }
                 
-                progressCallback?.Invoke(0.52f, $"Found {assetsToExport.Count} assets in export folders");
+                progressCallback?.Invoke(0.52f, $"Found {assetsToExport.Count} assets in export folders (excluded obfuscated assemblies)");
                 
                 // Track bundled dependencies to inject later (AssetDatabase.ExportPackage can't handle files without .meta)
                 var bundledPackagePaths = new Dictionary<string, string>(); // packageName -> packagePath
@@ -246,7 +278,12 @@ namespace YUCP.Components.Editor.PackageExporter
                      
                      try
                      {
-                         InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, progressCallback);
+                         // Pass obfuscated assemblies info so bundled packages can replace source with DLLs
+                         var obfuscatedAssemblies = profile.enableObfuscation 
+                             ? profile.assembliesToObfuscate.Where(a => a.enabled).ToList() 
+                             : new List<AssemblyObfuscationSettings>();
+                         
+                         InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, obfuscatedAssemblies, progressCallback);
                          Debug.Log("[PackageBuilder] Successfully injected package.json, auto-installer, and bundled packages");
                      }
                      catch (Exception ex)
@@ -636,6 +673,7 @@ namespace YUCP.Components.Editor.PackageExporter
             string unityPackagePath, 
             string packageJsonContent, 
             Dictionary<string, string> bundledPackagePaths,
+            List<AssemblyObfuscationSettings> obfuscatedAssemblies,
             Action<float, string> progressCallback = null)
         {
             // Unity packages are tar.gz archives
@@ -782,9 +820,38 @@ namespace YUCP.Components.Editor.PackageExporter
                         progressCallback?.Invoke(0.75f + (0.05f * packageIndex / bundledPackagePaths.Count), 
                             $"Injecting bundled package {packageIndex}/{bundledPackagePaths.Count}: {packageName}...");
                         
+                        // Build a set of obfuscated assembly names for this package (for quick lookup)
+                        var obfuscatedAsmdefPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        var obfuscatedDllPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // asmdefPath -> dllPath
+                        
+                        foreach (var obfuscatedAsm in obfuscatedAssemblies)
+                        {
+                            // Check if this obfuscated assembly belongs to the current bundled package
+                            if (obfuscatedAsm.asmdefPath.Replace("\\", "/").Contains($"/{packageName}/"))
+                            {
+                                // Normalize path with forward slashes for consistent comparison
+                                string normalizedAsmdefPath = Path.GetFullPath(obfuscatedAsm.asmdefPath).Replace("\\", "/");
+                                obfuscatedAsmdefPaths.Add(normalizedAsmdefPath);
+                                
+                                // Get the obfuscated DLL path from Library/ScriptAssemblies
+                                var assemblyInfo = new AssemblyScanner.AssemblyInfo(obfuscatedAsm.assemblyName, obfuscatedAsm.asmdefPath);
+                                if (assemblyInfo.exists)
+                                {
+                                    obfuscatedDllPaths[normalizedAsmdefPath] = assemblyInfo.dllPath;
+                                    Debug.Log($"[PackageBuilder] Will replace source code with obfuscated DLL for: {obfuscatedAsm.assemblyName}");
+                                    Debug.Log($"[PackageBuilder]   - Asmdef path (normalized): {normalizedAsmdefPath}");
+                                    Debug.Log($"[PackageBuilder]   - DLL path: {assemblyInfo.dllPath}");
+                                }
+                            }
+                        }
+                        
                         // Get all files in the package (excluding .meta)
                         string[] allFiles = Directory.GetFiles(packagePath, "*", SearchOption.AllDirectories);
                         int filesAdded = 0;
+                        int filesReplaced = 0;
+                        
+                        // Track which asmdef directories have been processed (to avoid adding files multiple times)
+                        var processedAsmdefDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         
                         foreach (string filePath in allFiles)
                         {
@@ -795,9 +862,130 @@ namespace YUCP.Components.Editor.PackageExporter
                             // Calculate the relative path within the package
                             string relativePath = filePath.Substring(packagePath.Length).TrimStart('\\', '/');
                             
+                            // Check if this file belongs to an obfuscated assembly
+                            string fileDir = Path.GetDirectoryName(filePath);
+                            string asmdefInDir = obfuscatedAsmdefPaths.FirstOrDefault(asmdefPath => 
+                            {
+                                string asmdefDir = Path.GetDirectoryName(asmdefPath);
+                                return fileDir.Replace("\\", "/").StartsWith(asmdefDir.Replace("\\", "/"));
+                            });
+                            
+                            bool isInObfuscatedAssembly = !string.IsNullOrEmpty(asmdefInDir);
+                            
                             // Check if this is a script file that could cause compilation errors
                             string extension = Path.GetExtension(filePath).ToLower();
                             bool isCompilableScript = extension == ".cs" || extension == ".asmdef";
+                            
+                            // Skip ConfuserEx project files
+                            if (extension == ".crproj")
+                            {
+                                Debug.Log($"[PackageBuilder] Skipping ConfuserEx project file: {relativePath}");
+                                continue;
+                            }
+                            
+                            // Skip .cs files if they belong to an obfuscated assembly (DLL will be added instead)
+                            bool shouldSkipCsFile = false;
+                            if (extension == ".cs")
+                            {
+                                if (isInObfuscatedAssembly)
+                                {
+                                    Debug.Log($"[PackageBuilder] DEBUG: Skipping source file via isInObfuscatedAssembly (will use obfuscated DLL): {relativePath}");
+                                    Debug.Log($"[PackageBuilder] DEBUG:   File dir: {fileDir}");
+                                    Debug.Log($"[PackageBuilder] DEBUG:   Matched asmdef: {asmdefInDir}");
+                                    shouldSkipCsFile = true;
+                                }
+                                else
+                                {
+                                    // Also check by full path comparison
+                                    string fullPath = Path.GetFullPath(filePath).Replace("\\", "/");
+                                    foreach (var asmdefPath in obfuscatedAsmdefPaths)
+                                    {
+                                        string asmdefDir = Path.GetDirectoryName(asmdefPath).Replace("\\", "/");
+                                        if (fullPath.StartsWith(asmdefDir + "/", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            Debug.Log($"[PackageBuilder] DEBUG: Skipping source file by full path match (will use obfuscated DLL): {relativePath}");
+                                            Debug.Log($"[PackageBuilder] DEBUG:   File full path: {fullPath}");
+                                            Debug.Log($"[PackageBuilder] DEBUG:   Matched asmdef dir: {asmdefDir}");
+                                            shouldSkipCsFile = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (shouldSkipCsFile)
+                            {
+                                continue;
+                            }
+                            
+                            // Skip .asmdef if it belongs to an obfuscated assembly (DLL doesn't need it)
+                            if (extension == ".asmdef")
+                            {
+                                string asmdefFullPath = Path.GetFullPath(filePath).Replace("\\", "/");
+                                
+                                // DEBUG: Log when we encounter ANY .asmdef
+                                Debug.Log($"[PackageBuilder] DEBUG: Found .asmdef: {relativePath}");
+                                Debug.Log($"[PackageBuilder] DEBUG:   Full path: {asmdefFullPath}");
+                                Debug.Log($"[PackageBuilder] DEBUG:   isInObfuscatedAssembly: {isInObfuscatedAssembly}");
+                                Debug.Log($"[PackageBuilder] DEBUG:   In obfuscatedAsmdefPaths: {obfuscatedAsmdefPaths.Contains(asmdefFullPath)}");
+                                
+                                if (obfuscatedAsmdefPaths.Contains(asmdefFullPath))
+                                {
+                                    Debug.Log($"[PackageBuilder] Skipping asmdef (replaced by obfuscated DLL): {relativePath}");
+                                    
+                                    // Add the obfuscated DLL instead (only once per asmdef)
+                                    if (!processedAsmdefDirs.Contains(asmdefFullPath))
+                                    {
+                                        processedAsmdefDirs.Add(asmdefFullPath);
+                                        
+                                        if (obfuscatedDllPaths.TryGetValue(asmdefFullPath, out string dllPath))
+                                        {
+                                            // Add the obfuscated DLL
+                                            string dllFileName = Path.GetFileName(dllPath);
+                                            string dllRelativePath = Path.Combine(Path.GetDirectoryName(relativePath), dllFileName).Replace("\\", "/");
+                                            string dllUnityPathname = $"Packages/{packageName}/{dllRelativePath}";
+                                            
+                                            Debug.Log($"[PackageBuilder] DEBUG: Adding obfuscated DLL");
+                                            Debug.Log($"[PackageBuilder] DEBUG:   DLL file: {dllFileName}");
+                                            Debug.Log($"[PackageBuilder] DEBUG:   DLL relative path: {dllRelativePath}");
+                                            Debug.Log($"[PackageBuilder] DEBUG:   DLL Unity pathname: {dllUnityPathname}");
+                                            
+                                            string dllGuid = Guid.NewGuid().ToString("N");
+                                            string dllMetaContent = GenerateMetaForFile(dllPath, dllGuid);
+                                            
+                                            string dllFolder = Path.Combine(tempExtractDir, dllGuid);
+                                            Directory.CreateDirectory(dllFolder);
+                                            
+                                            File.Copy(dllPath, Path.Combine(dllFolder, "asset"), true);
+                                            File.WriteAllText(Path.Combine(dllFolder, "pathname"), dllUnityPathname);
+                                            File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), dllMetaContent);
+                                            
+                                            filesAdded++;
+                                            filesReplaced++;
+                                            Debug.Log($"[PackageBuilder] Added obfuscated DLL: {dllFileName} (replaces source code)");
+                                        }
+                                        else
+                                        {
+                                            Debug.LogWarning($"[PackageBuilder] DEBUG: Could not find DLL path for asmdef: {asmdefFullPath}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Debug.Log($"[PackageBuilder] DEBUG: Already processed this asmdef");
+                                    }
+                                    
+                                    continue;
+                                }
+                                else
+                                {
+                                    Debug.Log($"[PackageBuilder] DEBUG: Asmdef NOT in obfuscatedAsmdefPaths set");
+                                    Debug.Log($"[PackageBuilder] DEBUG: obfuscatedAsmdefPaths contains {obfuscatedAsmdefPaths.Count} entries:");
+                                    foreach (var path in obfuscatedAsmdefPaths)
+                                    {
+                                        Debug.Log($"[PackageBuilder] DEBUG:     - {path}");
+                                    }
+                                }
+                            }
                             
                             // Create pathname for Unity package (put in Packages folder)
                             // Add .yucp_disabled to compilable files to prevent compilation until dependencies are ready
@@ -856,7 +1044,15 @@ namespace YUCP.Components.Editor.PackageExporter
                         }
                         
                         totalBundledFiles += filesAdded;
-                        Debug.Log($"[PackageBuilder] Bundled complete package {packageName}: {filesAdded} files");
+                        
+                        if (filesReplaced > 0)
+                        {
+                            Debug.Log($"[PackageBuilder] Bundled package {packageName}: {filesAdded} files ({filesReplaced} assemblies replaced with obfuscated DLLs)");
+                        }
+                        else
+                        {
+                            Debug.Log($"[PackageBuilder] Bundled complete package {packageName}: {filesAdded} files");
+                        }
                     }
                     
                     Debug.Log($"[PackageBuilder] Total bundled package files injected: {totalBundledFiles}");
