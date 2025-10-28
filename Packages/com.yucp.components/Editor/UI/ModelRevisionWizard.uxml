@@ -1,0 +1,97 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="True">
+    <ui:VisualElement class="root-container">
+        <ui:VisualElement class="header-container">
+            <ui:Label text="Model Revision Manager" class="main-title" />
+        </ui:VisualElement>
+        <ui:VisualElement class="main-content">
+            <ui:VisualElement name="tab-buttons" class="tab-buttons">
+                <ui:Button name="tab-setup" text="Setup" class="tab-button active" />
+                <ui:Button name="tab-blendshapes" text="Blendshapes" class="tab-button" />
+                <ui:Button name="tab-components" text="Components" class="tab-button" />
+                <ui:Button name="tab-avatar-descriptor" text="Avatar Descriptor" class="tab-button" />
+                <ui:Button name="tab-animation" text="Animation" class="tab-button" />
+                <ui:Button name="tab-transfer" text="Transfer" class="tab-button" />
+            </ui:VisualElement>
+            <ui:VisualElement name="tab-content" class="tab-content">
+                <!-- Setup Tab -->
+                <ui:ScrollView name="setup-tab" class="tab-page active">
+                    <ui:Label text="Setup Configuration" class="tab-page-title" />
+                    <ui:VisualElement name="setup-content" class="settings-container">
+                        <ui:Label text="Prefab References" class="section-title" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="button-group">
+                        <ui:Button name="detect-differences-button" text="Detect Differences" class="action-button" />
+                    </ui:VisualElement>
+                </ui:ScrollView>
+                
+                <!-- Blendshapes Tab -->
+                <ui:ScrollView name="blendshapes-tab" class="tab-page">
+                    <ui:Label text="Blendshape Mappings" class="tab-page-title" />
+                    <ui:VisualElement class="button-group">
+                        <ui:Button name="auto-detect-button" text="Auto-Detect Mappings" class="action-button" />
+                        <ui:Button name="generate-report-button" text="Generate Report" class="action-button" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="blendshape-mappings-container" class="list-container">
+                        <ui:Label text="Blendshape Mappings" class="section-title" />
+                        <ui:VisualElement name="blendshape-mappings-list" class="item-list" />
+                    </ui:VisualElement>
+                </ui:ScrollView>
+                
+                <!-- Components Tab -->
+                <ui:ScrollView name="components-tab" class="tab-page">
+                    <ui:Label text="Component Transfers" class="tab-page-title" />
+                    <ui:VisualElement class="settings-container">
+                        <ui:Label text="Bone Matching Settings" class="section-title" />
+                        <ui:VisualElement name="bone-matching-settings" class="settings-row">
+                            <ui:Label text="Matching Mode:" class="setting-label" />
+                            <ui:DropdownField name="bone-matching-mode" class="setting-dropdown" />
+                        </ui:VisualElement>
+                        <ui:Toggle name="ignore-humanoid-bones" label="Ignore Humanoid Bones" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="component-mappings-container" class="list-container">
+                        <ui:Label text="Component Mappings" class="section-title" />
+                        <ui:VisualElement name="component-mappings-list" class="item-list" />
+                    </ui:VisualElement>
+                </ui:ScrollView>
+                
+                <!-- Avatar Descriptor Tab -->
+                <ui:ScrollView name="avatar-descriptor-tab" class="tab-page">
+                    <ui:Label text="Avatar Descriptor Settings" class="tab-page-title" />
+                    <ui:VisualElement class="settings-container">
+                        <ui:Label text="Transfer Settings" class="section-title" />
+                        <ui:Toggle name="transfer-visemes" label="Transfer Visemes" binding-path="avatarDescriptorSettings.transferVisemes" />
+                        <ui:Toggle name="transfer-eye-look" label="Transfer Eye Look" binding-path="avatarDescriptorSettings.transferEyeLook" />
+                        <ui:Toggle name="transfer-view-position" label="Transfer View Position" binding-path="avatarDescriptorSettings.transferViewPosition" />
+                        <ui:Toggle name="transfer-collision" label="Transfer Collision" binding-path="avatarDescriptorSettings.transferCollision" />
+                        <ui:Toggle name="transfer-animation-overrides" label="Transfer Animation Overrides" binding-path="avatarDescriptorSettings.transferAnimationOverrides" />
+                        <ui:Toggle name="transfer-expressions-menu" label="Transfer Expressions Menu" binding-path="avatarDescriptorSettings.transferExpressionsMenu" />
+                        <ui:Toggle name="transfer-expression-parameters" label="Transfer Expression Parameters" binding-path="avatarDescriptorSettings.transferExpressionParameters" />
+                    </ui:VisualElement>
+                </ui:ScrollView>
+                
+                <!-- Animation Tab -->
+                <ui:ScrollView name="animation-tab" class="tab-page">
+                    <ui:Label text="Animation Remapping" class="tab-page-title" />
+                    <ui:Toggle name="enable-animation-remapping" label="Enable Animation Remapping" binding-path="enableAnimationRemapping" />
+                    <ui:VisualElement name="animation-remappings-container" class="list-container">
+                        <ui:Label text="Animation Remappings" class="section-title" />
+                        <ui:VisualElement name="animation-remappings-list" class="item-list" />
+                    </ui:VisualElement>
+                </ui:ScrollView>
+                
+                <!-- Transfer Tab -->
+                <ui:ScrollView name="transfer-tab" class="tab-page">
+                    <ui:Label text="Transfer &amp; Apply" class="tab-page-title" />
+                    <ui:VisualElement name="transfer-summary" class="summary-container">
+                        <ui:Label text="Transfer Summary" class="section-title" />
+                        <ui:Label name="summary-text" text="No transfers configured" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="button-group">
+                        <ui:Button name="preview-transfer-button" text="Preview Transfer" class="action-button" />
+                        <ui:Button name="perform-transfer-button" text="Perform Transfer" class="action-button primary" />
+                    </ui:VisualElement>
+                </ui:ScrollView>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

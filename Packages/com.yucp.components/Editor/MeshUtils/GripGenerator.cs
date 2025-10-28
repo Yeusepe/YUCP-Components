@@ -17,6 +17,7 @@ namespace YUCP.Components.Editor.MeshUtils
             public Vector3 gripOffset;
             public Dictionary<string, float> muscleValues = new Dictionary<string, float>();
             public List<ContactPoint> contactPoints = new List<ContactPoint>();
+            public Dictionary<HumanBodyBones, Quaternion> solvedRotations = new Dictionary<HumanBodyBones, Quaternion>();
         }
 
         public class ContactPoint
@@ -133,20 +134,19 @@ namespace YUCP.Components.Editor.MeshUtils
             HandAnalyzer.HandData handData,
             Transform grippedObject,
             Vector3 gripPoint,
-            GripStyle style,
             AutoGripData data,
             GripResult result,
             bool isLeftHand)
         {
             string side = isLeftHand ? "Left" : "Right";
 
-            ProcessFinger(handData.indexSegments, "Index", side, grippedObject, gripPoint, data, result, style != GripStyle.Point);
+            ProcessFinger(handData.indexSegments, "Index", side, grippedObject, gripPoint, data, result, true);
             ProcessFinger(handData.middleSegments, "Middle", side, grippedObject, gripPoint, data, result, true);
             ProcessFinger(handData.ringSegments, "Ring", side, grippedObject, gripPoint, data, result, true);
             ProcessFinger(handData.littleSegments, "Little", side, grippedObject, gripPoint, data, result, true);
             ProcessFinger(handData.thumbSegments, "Thumb", side, grippedObject, gripPoint, data, result, true);
 
-            AddSpreadValues(result, side, data.fingerSpread, style);
+            AddSpreadValues(result, side, 0f);
         }
 
         private static void ProcessFinger(
@@ -488,9 +488,9 @@ namespace YUCP.Components.Editor.MeshUtils
             return false;
         }
 
-        private static void AddSpreadValues(GripResult result, string side, float spreadAdjustment, GripStyle style)
+        private static void AddSpreadValues(GripResult result, string side, float spreadAdjustment)
         {
-            float baseSpread = style == GripStyle.Pinch ? 0.3f : 0.0f;
+            float baseSpread = 0.0f; // Manual grip uses default spread
             float finalSpread = baseSpread + spreadAdjustment;
 
             string[] fingers = { "Index", "Middle", "Ring", "Little", "Thumb" };

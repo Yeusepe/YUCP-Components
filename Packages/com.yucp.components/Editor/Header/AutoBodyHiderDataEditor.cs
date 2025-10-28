@@ -415,7 +415,7 @@ namespace YUCP.Components.Editor
             
             GUIStyle headerStyle = new GUIStyle(EditorStyles.boldLabel);
             headerStyle.fontSize = 14;
-            headerStyle.normal.textColor = Color.cyan;
+            headerStyle.normal.textColor = new Color(0.212f, 0.749f, 0.694f);
             EditorGUILayout.LabelField("PREVIEW TOOLS", headerStyle);
 
             if (data.previewGenerated && data.previewHiddenFaces != null)

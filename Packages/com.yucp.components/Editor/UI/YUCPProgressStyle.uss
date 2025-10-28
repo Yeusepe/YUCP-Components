@@ -64,7 +64,7 @@
 }
 
 .progress-bar > .unity-progress-bar__progress {
-    background-color: #33BFBA;
+    background-color: #36BFB1;
     border-radius: 0;
     transition-duration: 0.3s;
     margin: 0;

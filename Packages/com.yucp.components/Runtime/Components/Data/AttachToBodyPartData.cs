@@ -35,11 +35,11 @@ namespace YUCP.Components
         public string offset = "";
 
         [Header("Auto-Delete Components")]
-        [Tooltip("Drag in the Component you want destroyed if Left is selected.")]
-        public Component leftComponentToDelete;
+        [Tooltip("Drag in the GameObject you want destroyed if Left is selected.")]
+        public GameObject leftComponentToDelete;
 
-        [Tooltip("Drag in the Component you want destroyed if Right is selected.")]
-        public Component rightComponentToDelete;
+        [Tooltip("Drag in the GameObject you want destroyed if Right is selected.")]
+        public GameObject rightComponentToDelete;
 
         public int PreprocessOrder => 0;
         public bool OnPreprocess() => true;

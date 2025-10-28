@@ -10,7 +10,6 @@ namespace YUCP.Components.Editor.MeshUtils
     {
         public class ObjectAnalysis
         {
-            public GripStyle recommendedStyle;
             public Vector3 size;
             public Vector3 center;
             public float maxDimension;
@@ -31,8 +30,6 @@ namespace YUCP.Components.Editor.MeshUtils
             analysis.aspectRatio = analysis.maxDimension / Mathf.Max(0.001f, analysis.minDimension);
 
             analysis.hasHandle = DetectHandle(obj, bounds);
-
-            analysis.recommendedStyle = DetermineGripStyle(analysis);
 
             return analysis;
         }
@@ -74,39 +71,15 @@ namespace YUCP.Components.Editor.MeshUtils
             return false;
         }
 
-        private static GripStyle DetermineGripStyle(ObjectAnalysis analysis)
+        private static string DetermineGripStyle(ObjectAnalysis analysis)
         {
-            if (analysis.maxDimension < 0.04f)
-            {
-                return GripStyle.Pinch;
-            }
-
-            if (analysis.hasHandle || analysis.aspectRatio > 3.0f)
-            {
-                if (analysis.size.y > analysis.size.x && analysis.size.y > analysis.size.z)
-                {
-                    return GripStyle.Point;
-                }
-            }
-
-            return GripStyle.Wrap;
+            // Only manual grip positioning is supported now
+            return "Manual";
         }
 
-        public static string GetGripStyleDescription(GripStyle style)
+        public static string GetGripStyleDescription()
         {
-            switch (style)
-            {
-                case GripStyle.Wrap:
-                    return "All fingers curl around object";
-                case GripStyle.Pinch:
-                    return "Thumb and index finger primarily, light grip";
-                case GripStyle.Point:
-                    return "Index extended, other fingers curl (trigger/point grip)";
-                case GripStyle.Auto:
-                    return "Automatically detected based on object shape";
-                default:
-                    return "";
-            }
+            return "Manual grip positioning - position finger gizmos manually in Scene view";
         }
     }
 }

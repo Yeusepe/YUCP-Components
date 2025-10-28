@@ -1,0 +1,138 @@
+/* YUCP Attach to Blendshape Component Styling */
+
+.attach-blendshape-root {
+    padding: 0;
+    margin: 0;
+}
+
+.section-container {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 5px;
+    padding: 8px;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+.section-header {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: rgb(200, 200, 200);
+    margin-bottom: 5px;
+}
+
+.blendshape-mode-selector {
+    flex-direction: row;
+    justify-content: space-between;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+.mode-button {
+    flex-grow: 1;
+    height: 35px;
+    margin: 2px;
+    background-color: rgba(50, 50, 50, 0.8);
+    border-radius: 3px;
+    color: rgb(180, 180, 180);
+}
+
+.mode-button:hover {
+    background-color: rgba(80, 80, 80, 0.9);
+}
+
+.mode-button-selected {
+    background-color: rgba(54, 191, 177, 0.8);
+    color: white;
+    -unity-font-style: bold;
+}
+
+.preview-box {
+    background-color: rgba(20, 20, 20, 0.5);
+    border-radius: 5px;
+    padding: 10px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.preview-stat {
+    color: rgb(54, 191, 177);
+    font-size: 11px;
+    margin-bottom: 3px;
+}
+
+.blendshape-list {
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+    padding: 5px;
+    max-height: 150px;
+}
+
+.blendshape-item {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px;
+    margin-bottom: 2px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+}
+
+.blendshape-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    margin-right: 5px;
+}
+
+.status-valid {
+    background-color: rgb(100, 255, 100);
+}
+
+.status-warning {
+    background-color: rgb(255, 200, 100);
+}
+
+.status-error {
+    background-color: rgb(255, 100, 100);
+}
+
+.action-button {
+    height: 40px;
+    margin: 3px;
+    border-radius: 3px;
+}
+
+.action-button-primary {
+    background-color: rgba(50, 200, 100, 0.8);
+}
+
+.action-button-secondary {
+    background-color: rgba(255, 150, 100, 0.8);
+}
+
+.solver-mode-card {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 3px;
+    margin-bottom: 3px;
+}
+
+.solver-mode-title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgb(54, 191, 177);
+    margin-bottom: 3px;
+}
+
+.solver-mode-description {
+    font-size: 10px;
+    color: rgb(180, 180, 180);
+    white-space: normal;
+}
+
+

@@ -21,11 +21,17 @@ namespace YUCP.Components.Editor
     {
         private AutoGripData data;
         private bool isGeneratingPreview = false;
+        private bool isContinuousPreview = false;
+        private float lastIKUpdateTime = 0f;
+        private const float IK_UPDATE_INTERVAL = 0.016f; // ~60 FPS max
         private static GripGenerator.GripResult previewGripLeft;
         private static GripGenerator.GripResult previewGripRight;
         private GripStyleDetector.ObjectAnalysis objectAnalysis;
         
         private static System.Action previewRestoreAction = null;
+        
+        // Store original bone rotations for proper restoration
+        private static Dictionary<HumanBodyBones, Quaternion> originalBoneRotations = new Dictionary<HumanBodyBones, Quaternion>();
 
         [InitializeOnLoadMethod]
         private static void InitPreviewSystem()
@@ -38,6 +44,12 @@ namespace YUCP.Components.Editor
                     var action = previewRestoreAction;
                     previewRestoreAction = null;
                     action();
+                }
+                
+                // Also cleanup bone rotations if previews are cleared
+                if (previewGripLeft == null && previewGripRight == null && originalBoneRotations.Count > 0)
+                {
+                    originalBoneRotations.Clear();
                 }
             };
         }
@@ -84,10 +96,186 @@ namespace YUCP.Components.Editor
             OnInspectorGUIContent();
         }
 
+        /// <summary>
+        /// Draw grip configuration header.
+        /// </summary>
+        private void DrawGripConfiguration()
+        {
+            EditorGUILayout.Space(10);
+            
+            // Main header
+            GUIStyle headerStyle = new GUIStyle(EditorStyles.boldLabel);
+            headerStyle.fontSize = 16;
+            headerStyle.normal.textColor = new Color(0.212f, 0.749f, 0.694f);
+            EditorGUILayout.LabelField("GRIP CONFIGURATION", headerStyle);
+            
+            EditorGUILayout.Space(5);
+            
+            // Show that we're using manual grip positioning
+            EditorGUILayout.LabelField("Manual Finger Positioning", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Position finger gizmos manually in Scene view to create your grip.", MessageType.Info);
+            
+            EditorGUILayout.Space(5);
+            
+            // Auto-show gizmos toggle
+            EditorGUI.BeginChangeCheck();
+            data.autoShowGizmos = EditorGUILayout.Toggle("Auto-Show Gizmos in Scene View", data.autoShowGizmos);
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorUtility.SetDirty(data);
+            }
+            
+            EditorGUILayout.Space(10);
+        }
+        
+        /// <summary>
+        /// Check if all finger positions are set to zero (no preset applied).
+        /// </summary>
+        private bool AreAllFingerPositionsZero()
+        {
+            return data.leftThumbTip == Vector3.zero && data.leftIndexTip == Vector3.zero && 
+                   data.leftMiddleTip == Vector3.zero && data.leftRingTip == Vector3.zero && 
+                   data.leftLittleTip == Vector3.zero && data.rightThumbTip == Vector3.zero && 
+                   data.rightIndexTip == Vector3.zero && data.rightMiddleTip == Vector3.zero && 
+                   data.rightRingTip == Vector3.zero && data.rightLittleTip == Vector3.zero;
+        }
+        
+        /// <summary>
+        /// Draw manual finger positioning controls (only shown for Custom grip type).
+        /// </summary>
+        private void DrawManualFingerPositioning()
+        {
+            EditorGUILayout.Space(10);
+            
+            // Header with foldout
+            GUIStyle headerStyle = new GUIStyle(EditorStyles.boldLabel);
+            headerStyle.fontSize = 12;
+            headerStyle.normal.textColor = new Color(1f, 0.8f, 0.2f); // Orange
+            
+            EditorGUILayout.LabelField("Manual Finger Positioning", headerStyle);
+            EditorGUILayout.HelpBox("Drag the gizmos in Scene view to position finger tips manually. " +
+                                  "Use the rotation handles to adjust finger orientations.", MessageType.Info);
+            
+            EditorGUILayout.Space(5);
+            
+            // Show current finger tip positions in a compact format
+            EditorGUILayout.LabelField("Current Finger Positions:", EditorStyles.miniBoldLabel);
+            
+            EditorGUI.indentLevel++;
+            
+            // Get hand transforms for coordinate conversion
+            Animator animator = data.GetComponentInParent<Animator>();
+            Transform leftHandTransform = animator?.GetBoneTransform(HumanBodyBones.LeftHand);
+            Transform rightHandTransform = animator?.GetBoneTransform(HumanBodyBones.RightHand);
+            
+            // Left hand positions
+            EditorGUILayout.LabelField("Left Hand:", EditorStyles.miniLabel);
+            EditorGUI.indentLevel++;
+            DrawFingerPositionField("Thumb", data.leftThumbTip, leftHandTransform, "Thumb", true);
+            DrawFingerPositionField("Index", data.leftIndexTip, leftHandTransform, "Index", true);
+            DrawFingerPositionField("Middle", data.leftMiddleTip, leftHandTransform, "Middle", true);
+            DrawFingerPositionField("Ring", data.leftRingTip, leftHandTransform, "Ring", true);
+            DrawFingerPositionField("Little", data.leftLittleTip, leftHandTransform, "Little", true);
+            EditorGUI.indentLevel--;
+            
+            EditorGUILayout.Space(3);
+            
+            // Right hand positions
+            EditorGUILayout.LabelField("Right Hand:", EditorStyles.miniLabel);
+            EditorGUI.indentLevel++;
+            DrawFingerPositionField("Thumb", data.rightThumbTip, rightHandTransform, "Thumb", false);
+            DrawFingerPositionField("Index", data.rightIndexTip, rightHandTransform, "Index", false);
+            DrawFingerPositionField("Middle", data.rightMiddleTip, rightHandTransform, "Middle", false);
+            DrawFingerPositionField("Ring", data.rightRingTip, rightHandTransform, "Ring", false);
+            DrawFingerPositionField("Little", data.rightLittleTip, rightHandTransform, "Little", false);
+            EditorGUI.indentLevel--;
+            
+            EditorGUI.indentLevel--;
+            
+            EditorGUILayout.Space(5);
+            
+            // Reset button
+            if (GUILayout.Button("Reset All Finger Positions", GUILayout.Height(20)))
+            {
+                Undo.RecordObject(data, "Reset Finger Positions");
+                ResetAllFingerPositions();
+                EditorUtility.SetDirty(data);
+            }
+        }
+        
+        /// <summary>
+        /// Draw a compact finger position field showing the actual world position.
+        /// </summary>
+        private void DrawFingerPositionField(string fingerName, Vector3 storedPosition, Transform handTransform, string fingerType, bool isLeftHand)
+        {
+            // Get the actual world position that the gizmo is using
+            Vector3 worldPosition = GetFingerWorldPosition(storedPosition, handTransform, fingerType, isLeftHand);
+            
+            // Show the world position as editable
+            EditorGUI.BeginChangeCheck();
+            Vector3 newWorldPosition = EditorGUILayout.Vector3Field(fingerName, worldPosition);
+            if (EditorGUI.EndChangeCheck())
+            {
+                // Update the stored position based on the new world position
+                UpdateFingerPosition(newWorldPosition, fingerType, isLeftHand);
+                EditorUtility.SetDirty(data);
+            }
+            
+            // Show coordinate system info
+            string coordinateInfo = data.grippedObject != null ? "(Local to Object)" : "(World Space)";
+            EditorGUILayout.LabelField(coordinateInfo, EditorStyles.miniLabel);
+        }
+        
+        /// <summary>
+        /// Reset all finger positions to zero.
+        /// </summary>
+        private void ResetAllFingerPositions()
+        {
+            data.leftThumbTip = Vector3.zero;
+            data.leftIndexTip = Vector3.zero;
+            data.leftMiddleTip = Vector3.zero;
+            data.leftRingTip = Vector3.zero;
+            data.leftLittleTip = Vector3.zero;
+            
+            data.rightThumbTip = Vector3.zero;
+            data.rightIndexTip = Vector3.zero;
+            data.rightMiddleTip = Vector3.zero;
+            data.rightRingTip = Vector3.zero;
+            data.rightLittleTip = Vector3.zero;
+            
+            data.leftThumbRotation = Quaternion.identity;
+            data.leftIndexRotation = Quaternion.identity;
+            data.leftMiddleRotation = Quaternion.identity;
+            data.leftRingRotation = Quaternion.identity;
+            data.leftLittleRotation = Quaternion.identity;
+            
+            data.rightThumbRotation = Quaternion.identity;
+            data.rightIndexRotation = Quaternion.identity;
+            data.rightMiddleRotation = Quaternion.identity;
+            data.rightRingRotation = Quaternion.identity;
+            data.rightLittleRotation = Quaternion.identity;
+        }
+        
+
         private void OnInspectorGUIContent()
         {
             serializedObject.Update();
-            DrawPropertiesExcluding(serializedObject, "m_Script");
+            
+            // Draw grip configuration at the top
+            DrawGripConfiguration();
+            
+            // Draw only essential properties, excluding all the manual finger fields
+            DrawPropertiesExcluding(serializedObject, 
+                "m_Script", 
+                "leftThumbTip", "leftIndexTip", "leftMiddleTip", "leftRingTip", "leftLittleTip",
+                "rightThumbTip", "rightIndexTip", "rightMiddleTip", "rightRingTip", "rightLittleTip",
+                "leftThumbRotation", "leftIndexRotation", "leftMiddleRotation", "leftRingRotation", "leftLittleRotation",
+                "rightThumbRotation", "rightIndexRotation", "rightMiddleRotation", "rightRingRotation", "rightLittleRotation"
+            );
+            
+            // Draw manual finger positioning section only if Custom grip type is selected
+            // Show manual finger positioning fields
+            DrawManualFingerPositioning();
 
             EditorGUILayout.Space(15);
             EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
@@ -95,8 +283,8 @@ namespace YUCP.Components.Editor
 
             GUIStyle headerStyle = new GUIStyle(EditorStyles.boldLabel);
             headerStyle.fontSize = 14;
-            headerStyle.normal.textColor = Color.cyan;
-            EditorGUILayout.LabelField("GRIP ANALYSIS", headerStyle);
+            headerStyle.normal.textColor = new Color(0.212f, 0.749f, 0.694f);
+            EditorGUILayout.LabelField("OBJECT ANALYSIS", headerStyle);
 
             if (data.grippedObject != null)
             {
@@ -105,20 +293,22 @@ namespace YUCP.Components.Editor
                     objectAnalysis = GripStyleDetector.AnalyzeObject(data.grippedObject);
                 }
 
-                EditorGUILayout.HelpBox(
-                    $"Object Analysis:\n" +
-                    $"Size: {objectAnalysis.size.x:F3} x {objectAnalysis.size.y:F3} x {objectAnalysis.size.z:F3}m\n" +
-                    $"Max dimension: {objectAnalysis.maxDimension:F3}m\n" +
-                    $"Aspect ratio: {objectAnalysis.aspectRatio:F2}\n" +
-                    $"Has handle: {objectAnalysis.hasHandle}\n" +
-                    $"Recommended grip: {objectAnalysis.recommendedStyle}\n\n" +
-                    $"{GripStyleDetector.GetGripStyleDescription(objectAnalysis.recommendedStyle)}",
-                    MessageType.Info
-                );
+                // Compact analysis display
+                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.LabelField($"Size: {objectAnalysis.size.x:F2} × {objectAnalysis.size.y:F2} × {objectAnalysis.size.z:F2}m", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField($"Max Dimension: {objectAnalysis.maxDimension:F2}m", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField($"Aspect Ratio: {objectAnalysis.aspectRatio:F1}", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField($"Has Handle: {(objectAnalysis.hasHandle ? "Yes" : "No")}", EditorStyles.miniLabel);
+                
+                EditorGUILayout.Space(3);
+                EditorGUILayout.LabelField("Manual Grip Positioning", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField(GripStyleDetector.GetGripStyleDescription(), EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.EndVertical();
+                
             }
             else
             {
-                EditorGUILayout.HelpBox("Set 'Gripped Object' to see analysis", MessageType.None);
+                EditorGUILayout.HelpBox("Assign a Gripped Object to see analysis and recommendations", MessageType.None);
             }
 
             EditorGUILayout.Space(10);
@@ -158,6 +348,13 @@ namespace YUCP.Components.Editor
             GUI.backgroundColor = Color.white;
             GUI.enabled = true;
 
+            // Show continuous preview indicator
+            if (isContinuousPreview)
+            {
+                EditorGUILayout.Space(5);
+                EditorGUILayout.HelpBox("🔄 Continuous IK Preview Active - Move gizmos to see real-time finger updates", MessageType.Info);
+            }
+
             if (previewGripLeft != null || previewGripRight != null)
             {
                 EditorGUILayout.Space(10);
@@ -196,7 +393,7 @@ namespace YUCP.Components.Editor
 
         private void GeneratePreview()
         {
-            Debug.Log("[AutoGrip Preview] Starting preview generation...");
+            Debug.Log("[AutoGrip Preview] Starting IK preview generation...");
             isGeneratingPreview = true;
             
             try
@@ -210,70 +407,293 @@ namespace YUCP.Components.Editor
                 
                 Debug.Log($"[AutoGrip Preview] Found animator on '{animator.gameObject.name}'");
 
-                objectAnalysis = GripStyleDetector.AnalyzeObject(data.grippedObject);
-                Debug.Log($"[AutoGrip Preview] Object analysis complete - Style: {objectAnalysis.recommendedStyle}, Size: {objectAnalysis.size}");
-
-                switch (data.targetHand)
-                {
-                    case HandTarget.Left:
-                        Debug.Log("[AutoGrip Preview] Generating left hand grip...");
-                        previewGripLeft = GripGenerator.GenerateGrip(animator, data.grippedObject, data, true);
-                        Debug.Log($"[AutoGrip Preview] Left grip result: {(previewGripLeft != null ? "Success" : "NULL")}");
-                        if (previewGripLeft != null)
-                        {
-                            Debug.Log($"[AutoGrip Preview] Left contacts: {previewGripLeft.contactPoints.Count}, muscles: {previewGripLeft.muscleValues.Count}");
-                        }
-                        break;
-
-                    case HandTarget.Right:
-                        Debug.Log("[AutoGrip Preview] Generating right hand grip...");
-                        previewGripRight = GripGenerator.GenerateGrip(animator, data.grippedObject, data, false);
-                        Debug.Log($"[AutoGrip Preview] Right grip result: {(previewGripRight != null ? "Success" : "NULL")}");
-                        if (previewGripRight != null)
-                        {
-                            Debug.Log($"[AutoGrip Preview] Right contacts: {previewGripRight.contactPoints.Count}, muscles: {previewGripRight.muscleValues.Count}");
-                        }
-                        break;
-
-                    case HandTarget.Both:
-                        Debug.Log("[AutoGrip Preview] Generating both hands grip...");
-                        previewGripLeft = GripGenerator.GenerateGrip(animator, data.grippedObject, data, true);
-                        previewGripRight = GripGenerator.GenerateGrip(animator, data.grippedObject, data, false);
-                        break;
-
-                    case HandTarget.Closest:
-                        bool isLeft = DetermineClosestHand(animator);
-                        Debug.Log($"[AutoGrip Preview] Closest hand is: {(isLeft ? "Left" : "Right")}");
-                        if (isLeft)
-                        {
-                            previewGripLeft = GripGenerator.GenerateGrip(animator, data.grippedObject, data, true);
-                            previewGripRight = null; // Clear the other hand
-                        }
-                        else
-                        {
-                            previewGripRight = GripGenerator.GenerateGrip(animator, data.grippedObject, data, false);
-                            previewGripLeft = null; // Clear the other hand
-                        }
-                        break;
-            }
-
-            data.showPreview = true;
-            
-            PreviewGripPose();
-            
-            SceneView.RepaintAll();
-            Repaint();
-
-                Debug.Log("[AutoGrip Preview] Preview generated successfully - Check Scene view for visualization");
+                // Generate IK preview instead of full grip
+                GenerateIKPreview(animator);
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"[AutoGrip Preview] Failed: {e.Message}");
+                Debug.LogError($"[AutoGrip Preview] Error during preview generation: {e.Message}");
                 Debug.LogException(e);
             }
             finally
             {
                 isGeneratingPreview = false;
+                Debug.Log("[AutoGrip Preview] Preview generation complete");
+            }
+        }
+        
+        /// <summary>
+        /// Generate IK preview showing finger positions and bone rotations.
+        /// </summary>
+        private void GenerateIKPreview(Animator animator)
+        {
+            // Clear previous previews
+            previewGripLeft = null;
+            previewGripRight = null;
+            
+            // Generate IK solutions for each hand based on target
+            switch (data.targetHand)
+            {
+                case HandTarget.Left:
+                    previewGripLeft = GenerateIKGrip(animator, true);
+                    break;
+                    
+                case HandTarget.Right:
+                    previewGripRight = GenerateIKGrip(animator, false);
+                    break;
+                    
+                case HandTarget.Both:
+                    previewGripLeft = GenerateIKGrip(animator, true);
+                    previewGripRight = GenerateIKGrip(animator, false);
+                    break;
+                    
+                case HandTarget.Closest:
+                    bool isLeft = DetermineClosestHand(animator);
+                    if (isLeft)
+                    {
+                        previewGripLeft = GenerateIKGrip(animator, true);
+                    }
+                    else
+                    {
+                        previewGripRight = GenerateIKGrip(animator, false);
+                    }
+                    break;
+            }
+            
+            data.showPreview = true;
+            PreviewIKPose();
+            
+            Debug.Log($"[AutoGrip Preview] IK preview generated - Left: {(previewGripLeft != null ? "Yes" : "No")}, Right: {(previewGripRight != null ? "Yes" : "No")}");
+        }
+        
+        /// <summary>
+        /// Generate IK grip for a specific hand.
+        /// </summary>
+        private GripGenerator.GripResult GenerateIKGrip(Animator animator, bool isLeftHand)
+        {
+            if (data.grippedObject == null)
+            {
+                Debug.LogWarning("[AutoGrip Preview] No gripped object assigned");
+                return null;
+            }
+            
+            string hand = isLeftHand ? "Left" : "Right";
+            Debug.Log($"[AutoGrip Preview] Generating IK grip for {hand} hand...");
+            
+            // Get finger tip targets from data
+            var fingerTargets = GetFingerTargets(isLeftHand);
+            
+            // Debug: Log the finger tip positions and rotations being used
+            Debug.Log($"[AutoGrip Preview] {hand} hand finger targets - " +
+                    $"Thumb: {fingerTargets.thumbTip} (rot: {fingerTargets.thumbRotation.eulerAngles}), " +
+                    $"Index: {fingerTargets.indexTip} (rot: {fingerTargets.indexRotation.eulerAngles}), " +
+                    $"Middle: {fingerTargets.middleTip} (rot: {fingerTargets.middleRotation.eulerAngles}), " +
+                    $"Ring: {fingerTargets.ringTip} (rot: {fingerTargets.ringRotation.eulerAngles}), " +
+                    $"Little: {fingerTargets.littleTip} (rot: {fingerTargets.littleRotation.eulerAngles})");
+            
+            // Check if all finger positions are zero (no preset applied)
+            bool allZero = fingerTargets.thumbTip == Vector3.zero && 
+                          fingerTargets.indexTip == Vector3.zero && 
+                          fingerTargets.middleTip == Vector3.zero && 
+                          fingerTargets.ringTip == Vector3.zero && 
+                          fingerTargets.littleTip == Vector3.zero;
+            
+            if (allZero)
+            {
+                Debug.LogWarning($"[AutoGrip Preview] All {hand} hand finger positions are zero! " +
+                               "Try selecting a grip preset (Pinch, Power, etc.) or manually positioning finger gizmos in Scene view.");
+                return null;
+            }
+            
+            // Use FingerTipSolver to solve IK and get bone rotations
+            var solverResult = FingerTipSolver.SolveFingerTips(animator, fingerTargets, isLeftHand);
+            
+            if (!solverResult.success)
+            {
+                Debug.LogWarning($"[AutoGrip Preview] Failed to solve IK for {hand} hand: {solverResult.errorMessage}");
+                return null;
+            }
+            
+            // Create a GripResult with the IK solution (bone rotations, not muscles)
+            var gripResult = new GripGenerator.GripResult
+            {
+                muscleValues = new Dictionary<string, float>(), // Empty for preview
+                contactPoints = new List<GripGenerator.ContactPoint>() // Empty for IK preview
+            };
+            
+            // Store the solved rotations for preview (we'll apply these directly to bones)
+            gripResult.solvedRotations = solverResult.solvedRotations;
+            
+            Debug.Log($"[AutoGrip Preview] {hand} hand IK solved - Bone rotations: {gripResult.solvedRotations.Count}");
+            
+            return gripResult;
+        }
+        
+        /// <summary>
+        /// Get finger tip targets for the specified hand.
+        /// </summary>
+        private FingerTipSolver.FingerTipTarget GetFingerTargets(bool isLeftHand)
+        {
+            // Get hand transform for default positioning
+            Animator animator = data.GetComponentInParent<Animator>();
+            Transform handTransform = animator?.GetBoneTransform(isLeftHand ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+            
+            if (isLeftHand)
+            {
+                return new FingerTipSolver.FingerTipTarget
+                {
+                    // Convert local positions to world positions, using defaults if no gripped object
+                    thumbTip = GetFingerWorldPosition(data.leftThumbTip, handTransform, "Thumb", isLeftHand),
+                    indexTip = GetFingerWorldPosition(data.leftIndexTip, handTransform, "Index", isLeftHand),
+                    middleTip = GetFingerWorldPosition(data.leftMiddleTip, handTransform, "Middle", isLeftHand),
+                    ringTip = GetFingerWorldPosition(data.leftRingTip, handTransform, "Ring", isLeftHand),
+                    littleTip = GetFingerWorldPosition(data.leftLittleTip, handTransform, "Little", isLeftHand),
+                    
+                    thumbRotation = data.leftThumbRotation,
+                    indexRotation = data.leftIndexRotation,
+                    middleRotation = data.leftMiddleRotation,
+                    ringRotation = data.leftRingRotation,
+                    littleRotation = data.leftLittleRotation
+                };
+            }
+            else
+            {
+                return new FingerTipSolver.FingerTipTarget
+                {
+                    // Convert local positions to world positions, using defaults if no gripped object
+                    thumbTip = GetFingerWorldPosition(data.rightThumbTip, handTransform, "Thumb", isLeftHand),
+                    indexTip = GetFingerWorldPosition(data.rightIndexTip, handTransform, "Index", isLeftHand),
+                    middleTip = GetFingerWorldPosition(data.rightMiddleTip, handTransform, "Middle", isLeftHand),
+                    ringTip = GetFingerWorldPosition(data.rightRingTip, handTransform, "Ring", isLeftHand),
+                    littleTip = GetFingerWorldPosition(data.rightLittleTip, handTransform, "Little", isLeftHand),
+                    
+                    thumbRotation = data.rightThumbRotation,
+                    indexRotation = data.rightIndexRotation,
+                    middleRotation = data.rightMiddleRotation,
+                    ringRotation = data.rightRingRotation,
+                    littleRotation = data.rightLittleRotation
+                };
+            }
+        }
+        
+        /// <summary>
+        /// Preview the IK pose by applying bone rotations directly.
+        /// </summary>
+        private void PreviewIKPose()
+        {
+            var animator = FindAnimator();
+            if (animator == null)
+            {
+                Debug.LogError("[AutoGrip Preview] No Animator found on avatar");
+                return;
+            }
+
+            // Save original bone rotations before applying IK
+            SaveOriginalBoneRotations(animator);
+
+            // Apply bone rotations directly for IK preview
+            ApplyBoneRotationsToAnimator(animator);
+            
+            SceneView.RepaintAll();
+            Repaint();
+            
+            Debug.Log("[AutoGrip Preview] IK preview applied using direct bone rotations - Check Scene view for visualization");
+        }
+        
+        /// <summary>
+        /// Save original bone rotations before applying IK preview.
+        /// </summary>
+        private void SaveOriginalBoneRotations(Animator animator)
+        {
+            originalBoneRotations.Clear();
+            
+            // Save all finger bone rotations
+            HumanBodyBones[] fingerBones = {
+                HumanBodyBones.LeftThumbProximal, HumanBodyBones.LeftThumbIntermediate, HumanBodyBones.LeftThumbDistal,
+                HumanBodyBones.LeftIndexProximal, HumanBodyBones.LeftIndexIntermediate, HumanBodyBones.LeftIndexDistal,
+                HumanBodyBones.LeftMiddleProximal, HumanBodyBones.LeftMiddleIntermediate, HumanBodyBones.LeftMiddleDistal,
+                HumanBodyBones.LeftRingProximal, HumanBodyBones.LeftRingIntermediate, HumanBodyBones.LeftRingDistal,
+                HumanBodyBones.LeftLittleProximal, HumanBodyBones.LeftLittleIntermediate, HumanBodyBones.LeftLittleDistal,
+                HumanBodyBones.RightThumbProximal, HumanBodyBones.RightThumbIntermediate, HumanBodyBones.RightThumbDistal,
+                HumanBodyBones.RightIndexProximal, HumanBodyBones.RightIndexIntermediate, HumanBodyBones.RightIndexDistal,
+                HumanBodyBones.RightMiddleProximal, HumanBodyBones.RightMiddleIntermediate, HumanBodyBones.RightMiddleDistal,
+                HumanBodyBones.RightRingProximal, HumanBodyBones.RightRingIntermediate, HumanBodyBones.RightRingDistal,
+                HumanBodyBones.RightLittleProximal, HumanBodyBones.RightLittleIntermediate, HumanBodyBones.RightLittleDistal
+            };
+            
+            foreach (var bone in fingerBones)
+            {
+                var boneTransform = animator.GetBoneTransform(bone);
+                if (boneTransform != null)
+                {
+                    originalBoneRotations[bone] = boneTransform.rotation;
+                }
+            }
+            
+            Debug.Log($"[AutoGrip Preview] Saved {originalBoneRotations.Count} original bone rotations");
+        }
+        
+        /// <summary>
+        /// Apply bone rotations directly to the animator for IK preview.
+        /// </summary>
+        private void ApplyBoneRotationsToAnimator(Animator animator)
+        {
+            // Apply left hand bone rotations
+            if (previewGripLeft != null && previewGripLeft.solvedRotations != null)
+            {
+                foreach (var boneRotation in previewGripLeft.solvedRotations)
+                {
+                    var boneTransform = animator.GetBoneTransform(boneRotation.Key);
+                    if (boneTransform != null)
+                    {
+                        boneTransform.rotation = boneRotation.Value;
+                        Debug.Log($"[AutoGrip Preview] Set {boneRotation.Key} rotation = {boneRotation.Value}");
+                    }
+                }
+                Debug.Log($"[AutoGrip Preview] Applied {previewGripLeft.solvedRotations.Count} left hand bone rotations");
+            }
+            
+            // Apply right hand bone rotations
+            if (previewGripRight != null && previewGripRight.solvedRotations != null)
+            {
+                foreach (var boneRotation in previewGripRight.solvedRotations)
+                {
+                    var boneTransform = animator.GetBoneTransform(boneRotation.Key);
+                    if (boneTransform != null)
+                    {
+                        boneTransform.rotation = boneRotation.Value;
+                        Debug.Log($"[AutoGrip Preview] Set {boneRotation.Key} rotation = {boneRotation.Value}");
+                    }
+                }
+                Debug.Log($"[AutoGrip Preview] Applied {previewGripRight.solvedRotations.Count} right hand bone rotations");
+            }
+        }
+        
+        /// <summary>
+        /// Apply muscle values directly to the animator for IK preview.
+        /// </summary>
+        private void ApplyMuscleValuesToAnimator(Animator animator)
+        {
+            // Apply left hand muscle values
+            if (previewGripLeft != null && previewGripLeft.muscleValues != null)
+            {
+                foreach (var muscle in previewGripLeft.muscleValues)
+                {
+                    animator.SetFloat(muscle.Key, muscle.Value);
+                    Debug.Log($"[AutoGrip Preview] Set {muscle.Key} = {muscle.Value}");
+                }
+                Debug.Log($"[AutoGrip Preview] Applied {previewGripLeft.muscleValues.Count} left hand muscle values");
+            }
+            
+            // Apply right hand muscle values
+            if (previewGripRight != null && previewGripRight.muscleValues != null)
+            {
+                foreach (var muscle in previewGripRight.muscleValues)
+                {
+                    animator.SetFloat(muscle.Key, muscle.Value);
+                    Debug.Log($"[AutoGrip Preview] Set {muscle.Key} = {muscle.Value}");
+                }
+                Debug.Log($"[AutoGrip Preview] Applied {previewGripRight.muscleValues.Count} right hand muscle values");
             }
         }
 
@@ -301,8 +721,12 @@ namespace YUCP.Components.Editor
 
         private void ClearPreview()
         {
-            // Stop AnimationMode to restore avatar to original pose
-            StopAnimationPreview();
+            // Reset bone rotations to clear IK preview
+            var animator = FindAnimator();
+            if (animator != null && originalBoneRotations.Count > 0)
+            {
+                ResetBoneRotations(animator);
+            }
             
             previewGripLeft = null;
             previewGripRight = null;
@@ -311,7 +735,61 @@ namespace YUCP.Components.Editor
             SceneView.RepaintAll();
             Repaint();
             
-            Debug.Log("[AutoGrip Preview] Preview cleared");
+            Debug.Log("[AutoGrip Preview] IK preview cleared");
+        }
+        
+        /// <summary>
+        /// Reset bone rotations to clear the IK preview.
+        /// </summary>
+        private void ResetBoneRotations(Animator animator)
+        {
+            // Restore original bone rotations
+            foreach (var boneRotation in originalBoneRotations)
+            {
+                var boneTransform = animator.GetBoneTransform(boneRotation.Key);
+                if (boneTransform != null)
+                {
+                    boneTransform.rotation = boneRotation.Value;
+                }
+            }
+            
+            Debug.Log($"[AutoGrip Preview] Restored {originalBoneRotations.Count} original bone rotations");
+            originalBoneRotations.Clear();
+        }
+        
+        /// <summary>
+        /// Reset all muscle values to zero to clear the IK preview.
+        /// </summary>
+        private void ResetMuscleValues(Animator animator)
+        {
+            // Reset all hand muscle values to zero
+            string[] leftMuscles = {
+                "Left Thumb 1 Stretched", "Left Thumb Spread", "Left Thumb 2 Stretched", "Left Thumb 3 Stretched",
+                "Left Index 1 Stretched", "Left Index Spread", "Left Index 2 Stretched", "Left Index 3 Stretched",
+                "Left Middle 1 Stretched", "Left Middle Spread", "Left Middle 2 Stretched", "Left Middle 3 Stretched",
+                "Left Ring 1 Stretched", "Left Ring Spread", "Left Ring 2 Stretched", "Left Ring 3 Stretched",
+                "Left Little 1 Stretched", "Left Little Spread", "Left Little 2 Stretched", "Left Little 3 Stretched"
+            };
+            
+            string[] rightMuscles = {
+                "Right Thumb 1 Stretched", "Right Thumb Spread", "Right Thumb 2 Stretched", "Right Thumb 3 Stretched",
+                "Right Index 1 Stretched", "Right Index Spread", "Right Index 2 Stretched", "Right Index 3 Stretched",
+                "Right Middle 1 Stretched", "Right Middle Spread", "Right Middle 2 Stretched", "Right Middle 3 Stretched",
+                "Right Ring 1 Stretched", "Right Ring Spread", "Right Ring 2 Stretched", "Right Ring 3 Stretched",
+                "Right Little 1 Stretched", "Right Little Spread", "Right Little 2 Stretched", "Right Little 3 Stretched"
+            };
+            
+            foreach (var muscle in leftMuscles)
+            {
+                animator.SetFloat(muscle, 0f);
+            }
+            
+            foreach (var muscle in rightMuscles)
+            {
+                animator.SetFloat(muscle, 0f);
+            }
+            
+            Debug.Log("[AutoGrip Preview] Reset all muscle values to zero");
         }
 
         private void ShowPreviewStats()
@@ -362,7 +840,7 @@ namespace YUCP.Components.Editor
 
             if (previewGripLeft != null)
             {
-                DrawGripGizmos(previewGripLeft, Color.cyan);
+                DrawGripGizmos(previewGripLeft, new Color(0.212f, 0.749f, 0.694f));
             }
 
             if (previewGripRight != null)
@@ -404,7 +882,7 @@ namespace YUCP.Components.Editor
             if (previewGripLeft != null) totalContacts += previewGripLeft.contactPoints.Count;
             if (previewGripRight != null) totalContacts += previewGripRight.contactPoints.Count;
 
-            GUI.color = Color.cyan;
+            GUI.color = new Color(0.212f, 0.749f, 0.694f);
             GUI.Box(new Rect(15, 40, 15, 15), "");
             GUI.color = Color.white;
             GUI.Label(new Rect(35, 38, 200, 20), "= Left hand contacts");
@@ -732,9 +1210,550 @@ namespace YUCP.Components.Editor
 
         private void OnSceneGUI(SceneView sceneView)
         {
-            if (!data.showPreview) return;
+            // Always show gizmos when component is selected and autoShowGizmos is enabled
+            if (data.autoShowGizmos && Selection.activeGameObject == data.gameObject)
+            {
+                DrawFingerTipGizmos();
+            }
+            
+            // Show preview gizmos if enabled
+            if (data.showPreview)
+            {
+                DrawPreviewGizmos();
+                
+                // Enable continuous IK calculation when preview is on
+                if (!isContinuousPreview)
+                {
+                    isContinuousPreview = true;
+                    Debug.Log("[AutoGrip Preview] Continuous IK calculation enabled");
+                }
+                
+                // Continuously recalculate IK when gizmos are visible
+                UpdateContinuousPreview();
+            }
+            else if (isContinuousPreview)
+            {
+                // Disable continuous preview when preview is turned off
+                isContinuousPreview = false;
+                Debug.Log("[AutoGrip Preview] Continuous IK calculation disabled");
+            }
+        }
+        
+        /// <summary>
+        /// Update continuous preview by recalculating IK in real-time.
+        /// </summary>
+        private void UpdateContinuousPreview()
+        {
+            // Frame rate limiting to avoid excessive IK calculations
+            float currentTime = (float)EditorApplication.timeSinceStartup;
+            if (currentTime - lastIKUpdateTime < IK_UPDATE_INTERVAL)
+            {
+                return;
+            }
+            lastIKUpdateTime = currentTime;
+            
+            var animator = FindAnimator();
+            if (animator == null) return;
+            
+            // Only recalculate if we have valid finger positions
+            bool hasValidPositions = HasValidFingerPositions();
+            if (!hasValidPositions) return;
+            
+            // Recalculate IK for each hand based on target
+            switch (data.targetHand)
+            {
+                case HandTarget.Left:
+                    previewGripLeft = GenerateIKGrip(animator, true);
+                    break;
+                    
+                case HandTarget.Right:
+                    previewGripRight = GenerateIKGrip(animator, false);
+                    break;
+                    
+                case HandTarget.Both:
+                    previewGripLeft = GenerateIKGrip(animator, true);
+                    previewGripRight = GenerateIKGrip(animator, false);
+                    break;
+                    
+                case HandTarget.Closest:
+                    bool isLeft = DetermineClosestHand(animator);
+                    if (isLeft)
+                    {
+                        previewGripLeft = GenerateIKGrip(animator, true);
+                        previewGripRight = null;
+                    }
+                    else
+                    {
+                        previewGripRight = GenerateIKGrip(animator, false);
+                        previewGripLeft = null;
+                    }
+                    break;
+            }
+            
+            // Apply the updated IK solution
+            ApplyBoneRotationsToAnimator(animator);
+        }
+        
+        /// <summary>
+        /// Check if we have valid finger positions for IK calculation.
+        /// </summary>
+        private bool HasValidFingerPositions()
+        {
+            switch (data.targetHand)
+            {
+                case HandTarget.Left:
+                    return data.leftThumbTip != Vector3.zero || data.leftIndexTip != Vector3.zero || 
+                           data.leftMiddleTip != Vector3.zero || data.leftRingTip != Vector3.zero || 
+                           data.leftLittleTip != Vector3.zero;
+                           
+                case HandTarget.Right:
+                    return data.rightThumbTip != Vector3.zero || data.rightIndexTip != Vector3.zero || 
+                           data.rightMiddleTip != Vector3.zero || data.rightRingTip != Vector3.zero || 
+                           data.rightLittleTip != Vector3.zero;
+                           
+                case HandTarget.Both:
+                    return (data.leftThumbTip != Vector3.zero || data.leftIndexTip != Vector3.zero || 
+                            data.leftMiddleTip != Vector3.zero || data.leftRingTip != Vector3.zero || 
+                            data.leftLittleTip != Vector3.zero) ||
+                           (data.rightThumbTip != Vector3.zero || data.rightIndexTip != Vector3.zero || 
+                            data.rightMiddleTip != Vector3.zero || data.rightRingTip != Vector3.zero || 
+                            data.rightLittleTip != Vector3.zero);
+                           
+                case HandTarget.Closest:
+                    return data.leftThumbTip != Vector3.zero || data.leftIndexTip != Vector3.zero || 
+                           data.leftMiddleTip != Vector3.zero || data.leftRingTip != Vector3.zero || 
+                           data.leftLittleTip != Vector3.zero ||
+                           data.rightThumbTip != Vector3.zero || data.rightIndexTip != Vector3.zero || 
+                           data.rightMiddleTip != Vector3.zero || data.rightRingTip != Vector3.zero || 
+                           data.rightLittleTip != Vector3.zero;
+                           
+                default:
+                    return false;
+            }
+        }
+        
+        /// <summary>
+        /// Draw draggable finger tip gizmos in Scene view.
+        /// </summary>
+        private void DrawFingerTipGizmos()
+        {
+            if (data.grippedObject == null) return;
+            
+            // Get hand bone for reference
+            Animator animator = data.GetComponentInParent<Animator>();
+            if (animator == null) return;
+            
+            Transform leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+            Transform rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+            
+            // Determine which hands to show gizmos for
+            switch (data.targetHand)
+            {
+                case HandTarget.Left:
+                    if (leftHand != null)
+                    {
+                        DrawHandGizmos(true, leftHand.position);
+                    }
+                    break;
+                    
+                case HandTarget.Right:
+                    if (rightHand != null)
+                    {
+                        DrawHandGizmos(false, rightHand.position);
+                    }
+                    break;
+                    
+                case HandTarget.Both:
+                    if (leftHand != null)
+                    {
+                        DrawHandGizmos(true, leftHand.position);
+                    }
+                    if (rightHand != null)
+                    {
+                        DrawHandGizmos(false, rightHand.position);
+                    }
+                    break;
+                    
+                case HandTarget.Closest:
+                    // Show gizmos only for the closest hand
+                    if (leftHand != null && rightHand != null)
+                    {
+                        float leftDistance = Vector3.Distance(leftHand.position, data.grippedObject.position);
+                        float rightDistance = Vector3.Distance(rightHand.position, data.grippedObject.position);
+                        
+                        if (leftDistance < rightDistance)
+                        {
+                            DrawHandGizmos(true, leftHand.position);
+                        }
+                        else
+                        {
+                            DrawHandGizmos(false, rightHand.position);
+                        }
+                    }
+                    else if (leftHand != null)
+                    {
+                        DrawHandGizmos(true, leftHand.position);
+                    }
+                    else if (rightHand != null)
+                    {
+                        DrawHandGizmos(false, rightHand.position);
+                    }
+                    break;
+            }
+        }
+        
+        /// <summary>
+        /// Draw gizmos for one hand.
+        /// </summary>
+        private void DrawHandGizmos(bool isLeftHand, Vector3 handPosition)
+        {
+            Vector3 thumbTip, indexTip, middleTip, ringTip, littleTip;
+            Quaternion thumbRot, indexRot, middleRot, ringRot, littleRot;
+            
+            // Get hand transform for default positioning
+            Animator animator = data.GetComponentInParent<Animator>();
+            Transform handTransform = animator?.GetBoneTransform(isLeftHand ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+            
+            if (isLeftHand)
+            {
+                // Convert local positions to world positions, using defaults if no gripped object
+                thumbTip = GetFingerWorldPosition(data.leftThumbTip, handTransform, "Thumb", isLeftHand);
+                indexTip = GetFingerWorldPosition(data.leftIndexTip, handTransform, "Index", isLeftHand);
+                middleTip = GetFingerWorldPosition(data.leftMiddleTip, handTransform, "Middle", isLeftHand);
+                ringTip = GetFingerWorldPosition(data.leftRingTip, handTransform, "Ring", isLeftHand);
+                littleTip = GetFingerWorldPosition(data.leftLittleTip, handTransform, "Little", isLeftHand);
+                thumbRot = data.leftThumbRotation;
+                indexRot = data.leftIndexRotation;
+                middleRot = data.leftMiddleRotation;
+                ringRot = data.leftRingRotation;
+                littleRot = data.leftLittleRotation;
+            }
+            else
+            {
+                // Convert local positions to world positions, using defaults if no gripped object
+                thumbTip = GetFingerWorldPosition(data.rightThumbTip, handTransform, "Thumb", isLeftHand);
+                indexTip = GetFingerWorldPosition(data.rightIndexTip, handTransform, "Index", isLeftHand);
+                middleTip = GetFingerWorldPosition(data.rightMiddleTip, handTransform, "Middle", isLeftHand);
+                ringTip = GetFingerWorldPosition(data.rightRingTip, handTransform, "Ring", isLeftHand);
+                littleTip = GetFingerWorldPosition(data.rightLittleTip, handTransform, "Little", isLeftHand);
+                thumbRot = data.rightThumbRotation;
+                indexRot = data.rightIndexRotation;
+                middleRot = data.rightMiddleRotation;
+                ringRot = data.rightRingRotation;
+                littleRot = data.rightLittleRotation;
+            }
+            
+            // Draw finger tip gizmos with colors
+            DrawFingerGizmo(thumbTip, thumbRot, Color.red, "Thumb", isLeftHand);
+            DrawFingerGizmo(indexTip, indexRot, Color.yellow, "Index", isLeftHand);
+            DrawFingerGizmo(middleTip, middleRot, Color.green, "Middle", isLeftHand);
+            DrawFingerGizmo(ringTip, ringRot, new Color(0.212f, 0.749f, 0.694f), "Ring", isLeftHand);
+            DrawFingerGizmo(littleTip, littleRot, new Color(0.212f, 0.749f, 0.694f), "Little", isLeftHand);
+            
+            // Draw lines from hand to finger tips
+            DrawHandToFingerLines(handPosition, thumbTip, indexTip, middleTip, ringTip, littleTip);
+        }
+        
+        /// <summary>
+        /// Draw a single finger gizmo with position and rotation handles.
+        /// </summary>
+        private void DrawFingerGizmo(Vector3 position, Quaternion rotation, Color color, string fingerName, bool isLeftHand)
+        {
+            // If position is zero, use a default position relative to the hand
+            if (position == Vector3.zero)
+            {
+                Animator animator = data.GetComponentInParent<Animator>();
+                if (animator == null) return;
+                
+                Transform handTransform = animator.GetBoneTransform(isLeftHand ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+                if (handTransform == null) return;
+                
+                // Calculate default position for this finger (returns local coordinates)
+                Vector3 localDefaultPosition = CalculateDefaultFingerPosition(handTransform, fingerName, isLeftHand);
+                position = LocalToWorldPosition(localDefaultPosition);
+                
+                // Use a lighter color to indicate this is a default position
+                color = new Color(color.r, color.g, color.b, 0.5f);
+            }
+            
+            Handles.color = color;
+            
+            // Draw position handle
+            EditorGUI.BeginChangeCheck();
+            Vector3 newPosition = Handles.PositionHandle(position, rotation);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(data, $"Move {fingerName} Tip");
+                UpdateFingerPosition(newPosition, fingerName, isLeftHand);
+                EditorUtility.SetDirty(data);
+            }
+            
+            // Draw rotation handle
+            EditorGUI.BeginChangeCheck();
+            Quaternion newRotation = Handles.RotationHandle(rotation, position);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(data, $"Rotate {fingerName} Tip");
+                UpdateFingerRotation(newRotation, fingerName, isLeftHand);
+                EditorUtility.SetDirty(data);
+            }
+            
+            // Draw coordinate axes (smaller)
+            Handles.color = color * 0.7f;
+            Handles.DrawLine(position, position + rotation * Vector3.right * 0.005f);
+            Handles.DrawLine(position, position + rotation * Vector3.up * 0.005f);
+            Handles.DrawLine(position, position + rotation * Vector3.forward * 0.005f);
+            
+            // Draw finger name label with default indicator
+            string labelText = fingerName;
+            if (color.a < 1.0f) // Semi-transparent color indicates default position
+            {
+                labelText += " (Default)";
+            }
+            Handles.Label(position + Vector3.up * 0.01f, labelText);
+            
+            // Draw sphere at tip (smaller)
+            Handles.color = color;
+            Handles.SphereHandleCap(0, position, rotation, 0.003f, EventType.Repaint);
+        }
+        
+        /// <summary>
+        /// Update finger position in data component (stores in local coordinates relative to gripped object).
+        /// </summary>
+        private void UpdateFingerPosition(Vector3 worldPosition, string fingerName, bool isLeftHand)
+        {
+            // If no gripped object, store world position directly
+            Vector3 positionToStore = data.grippedObject != null ? WorldToLocalPosition(worldPosition) : worldPosition;
+            
+            if (isLeftHand)
+            {
+                switch (fingerName)
+                {
+                    case "Thumb": data.leftThumbTip = positionToStore; break;
+                    case "Index": data.leftIndexTip = positionToStore; break;
+                    case "Middle": data.leftMiddleTip = positionToStore; break;
+                    case "Ring": data.leftRingTip = positionToStore; break;
+                    case "Little": data.leftLittleTip = positionToStore; break;
+                }
+            }
+            else
+            {
+                switch (fingerName)
+                {
+                    case "Thumb": data.rightThumbTip = positionToStore; break;
+                    case "Index": data.rightIndexTip = positionToStore; break;
+                    case "Middle": data.rightMiddleTip = positionToStore; break;
+                    case "Ring": data.rightRingTip = positionToStore; break;
+                    case "Little": data.rightLittleTip = positionToStore; break;
+                }
+            }
+            
+            // Trigger continuous preview update if preview is active
+            if (isContinuousPreview)
+            {
+                SceneView.RepaintAll();
+            }
+        }
+        
+        /// <summary>
+        /// Update finger rotation in data component.
+        /// </summary>
+        private void UpdateFingerRotation(Quaternion rotation, string fingerName, bool isLeftHand)
+        {
+            if (isLeftHand)
+            {
+                switch (fingerName)
+                {
+                    case "Thumb": data.leftThumbRotation = rotation; break;
+                    case "Index": data.leftIndexRotation = rotation; break;
+                    case "Middle": data.leftMiddleRotation = rotation; break;
+                    case "Ring": data.leftRingRotation = rotation; break;
+                    case "Little": data.leftLittleRotation = rotation; break;
+                }
+            }
+            else
+            {
+                switch (fingerName)
+                {
+                    case "Thumb": data.rightThumbRotation = rotation; break;
+                    case "Index": data.rightIndexRotation = rotation; break;
+                    case "Middle": data.rightMiddleRotation = rotation; break;
+                    case "Ring": data.rightRingRotation = rotation; break;
+                    case "Little": data.rightLittleRotation = rotation; break;
+                }
+            }
+            
+            // Trigger continuous preview update if preview is active
+            if (isContinuousPreview)
+            {
+                SceneView.RepaintAll();
+            }
+        }
 
-            DrawPreviewGizmos();
+        /// <summary>
+        /// Convert world position to local position relative to gripped object.
+        /// </summary>
+        private Vector3 WorldToLocalPosition(Vector3 worldPosition)
+        {
+            if (data.grippedObject == null) return worldPosition;
+            return data.grippedObject.InverseTransformPoint(worldPosition);
+        }
+        
+        /// <summary>
+        /// Convert local position relative to gripped object to world position.
+        /// </summary>
+        private Vector3 LocalToWorldPosition(Vector3 localPosition)
+        {
+            if (data.grippedObject == null) return localPosition;
+            return data.grippedObject.TransformPoint(localPosition);
+        }
+        
+        /// <summary>
+        /// Get world position for a finger, using default position if stored position is zero or no gripped object.
+        /// </summary>
+        private Vector3 GetFingerWorldPosition(Vector3 storedPosition, Transform handTransform, string fingerName, bool isLeftHand)
+        {
+            // If we have a gripped object and a non-zero stored position, convert from local to world
+            if (data.grippedObject != null && storedPosition != Vector3.zero)
+            {
+                return LocalToWorldPosition(storedPosition);
+            }
+            
+            // If no gripped object and we have a stored position, it's already a world position
+            if (data.grippedObject == null && storedPosition != Vector3.zero)
+            {
+                return storedPosition;
+            }
+            
+            // Otherwise, calculate a default world position relative to the hand
+            if (handTransform != null)
+            {
+                return CalculateDefaultFingerPosition(handTransform, fingerName, isLeftHand);
+            }
+            
+            // Fallback: return the stored position as-is (will be zero)
+            return storedPosition;
+        }
+
+        /// <summary>
+        /// Calculate a default finger position when the stored position is zero.
+        /// </summary>
+        private Vector3 CalculateDefaultFingerPosition(Transform handTransform, string fingerName, bool isLeftHand)
+        {
+            Vector3 basePosition;
+            
+            // If no gripped object, use object center as base position
+            if (data.grippedObject == null)
+            {
+                // Use the component's transform position as the object center
+                basePosition = data.transform.position;
+            }
+            else
+            {
+                // Use hand position as base
+                basePosition = handTransform.position;
+            }
+            
+            // Get hand forward direction (palm normal)
+            Vector3 handForward = handTransform.forward;
+            Vector3 handRight = handTransform.right;
+            Vector3 handUp = handTransform.up;
+            
+            // Calculate finger spread directions
+            float spreadAngle = fingerName switch
+            {
+                "Thumb" => isLeftHand ? 45f : -45f,  // Thumb points inward
+                "Index" => 0f,                       // Index points forward
+                "Middle" => 0f,                      // Middle points forward
+                "Ring" => -15f,                      // Ring points slightly inward
+                "Little" => -30f,                    // Little points more inward
+                _ => 0f
+            };
+            
+            // Calculate finger extension distance (reduced for better default positioning)
+            float extensionDistance = fingerName switch
+            {
+                "Thumb" => 0.04f,    // 4cm
+                "Index" => 0.05f,    // 5cm
+                "Middle" => 0.06f,   // 6cm
+                "Ring" => 0.05f,     // 5cm
+                "Little" => 0.04f,   // 4cm
+                _ => 0.05f
+            };
+            
+            // Calculate finger direction
+            Vector3 fingerDirection = Quaternion.AngleAxis(spreadAngle, handUp) * handForward;
+            
+            // Calculate default position in world coordinates
+            Vector3 worldDefaultPosition = basePosition + fingerDirection * extensionDistance;
+            
+            // If no gripped object, return world coordinates directly
+            if (data.grippedObject == null)
+            {
+                return worldDefaultPosition;
+            }
+            
+            // Convert to local coordinates relative to gripped object
+            Vector3 localDefaultPosition = WorldToLocalPosition(worldDefaultPosition);
+            
+            return localDefaultPosition;
+        }
+
+        /// <summary>
+        /// Draw lines from hand to finger tips.
+        /// </summary>
+        private void DrawHandToFingerLines(Vector3 handPosition, Vector3 thumbTip, Vector3 indexTip, Vector3 middleTip, Vector3 ringTip, Vector3 littleTip)
+        {
+            Handles.color = Color.white * 0.5f;
+            
+            // Determine if this is left or right hand based on hand position
+            Animator animator = data.GetComponentInParent<Animator>();
+            bool isLeftHand = false;
+            if (animator != null)
+            {
+                Transform leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+                Transform rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+                
+                if (leftHand != null && rightHand != null)
+                {
+                    float leftDistance = Vector3.Distance(handPosition, leftHand.position);
+                    float rightDistance = Vector3.Distance(handPosition, rightHand.position);
+                    isLeftHand = leftDistance < rightDistance;
+                }
+            }
+            
+            // Always draw lines, using default positions if stored positions are zero
+            DrawFingerLine(handPosition, thumbTip, "Thumb", isLeftHand);
+            DrawFingerLine(handPosition, indexTip, "Index", isLeftHand);
+            DrawFingerLine(handPosition, middleTip, "Middle", isLeftHand);
+            DrawFingerLine(handPosition, ringTip, "Ring", isLeftHand);
+            DrawFingerLine(handPosition, littleTip, "Little", isLeftHand);
+        }
+        
+        /// <summary>
+        /// Draw a line from hand to finger tip, using default position if tip is zero.
+        /// </summary>
+        private void DrawFingerLine(Vector3 handPosition, Vector3 fingerTip, string fingerName, bool isLeftHand)
+        {
+            Vector3 lineEnd = fingerTip;
+            
+            // If finger tip is zero, calculate default position
+            if (fingerTip == Vector3.zero)
+            {
+                Animator animator = data.GetComponentInParent<Animator>();
+                if (animator != null)
+                {
+                    Transform handTransform = animator.GetBoneTransform(isLeftHand ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+                    if (handTransform != null)
+                    {
+                        // CalculateDefaultFingerPosition now returns local coordinates, convert to world
+                        Vector3 localDefault = CalculateDefaultFingerPosition(handTransform, fingerName, isLeftHand);
+                        lineEnd = LocalToWorldPosition(localDefault);
+                    }
+                }
+            }
+            
+            Handles.DrawLine(handPosition, lineEnd);
         }
 
         private void DrawPreviewGizmos()
@@ -743,7 +1762,7 @@ namespace YUCP.Components.Editor
             {
                 foreach (var contact in previewGripLeft.contactPoints)
                 {
-                    Handles.color = Color.cyan;
+                    Handles.color = new Color(0.212f, 0.749f, 0.694f);
                     Handles.SphereHandleCap(0, contact.position, Quaternion.identity, 0.01f, EventType.Repaint);
                     Handles.color = Color.yellow;
                     Handles.DrawLine(contact.position, contact.position + contact.normal * 0.02f);
@@ -771,7 +1790,7 @@ namespace YUCP.Components.Editor
             if (previewGripLeft != null) totalContacts += previewGripLeft.contactPoints.Count;
             if (previewGripRight != null) totalContacts += previewGripRight.contactPoints.Count;
 
-            GUI.color = Color.cyan;
+            GUI.color = new Color(0.212f, 0.749f, 0.694f);
             GUI.Box(new Rect(15, 40, 15, 15), "");
             GUI.color = Color.white;
             GUI.Label(new Rect(35, 38, 200, 20), "= Left hand contacts");

@@ -125,36 +125,53 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            var toggle = FuryComponents.CreateToggle(data.gameObject);
-            toggle.SetMenuPath(menuPath);
-
-            if (data.saved)
-            {
-                toggle.SetSaved();
-            }
-
-            if (data.defaultOn)
-            {
-                toggle.SetDefaultOn();
-            }
-
+            // Only create toggle if there's a global parameter
             if (!string.IsNullOrEmpty(data.globalParameter))
             {
+                var toggle = FuryComponents.CreateToggle(data.gameObject);
+                
+                // Only set menu path if it's not empty
+                if (!string.IsNullOrEmpty(menuPath))
+                {
+                    toggle.SetMenuPath(menuPath);
+                }
+
+                if (data.saved)
+                {
+                    toggle.SetSaved();
+                }
+
+                if (data.defaultOn)
+                {
+                    toggle.SetDefaultOn();
+                }
+
+                // Set the global parameter (this is why we create the toggle)
                 toggle.SetGlobalParameter(data.globalParameter);
+
+                var actions = toggle.GetActions();
+                actions.AddTurnOn(data.grippedObject.gameObject);
+                actions.AddAnimationClip(gripAnimation);
+
+                if (data.debugMode)
+                {
+                    Debug.Log($"[AutoGripProcessor] Created grip toggle with global parameter '{data.globalParameter}' for {(isLeftHand ? "left" : "right")} hand", data);
+                }
+            }
+            else
+            {
+                // No global parameter - create actions without toggle
+                // This could be used for direct animation triggers or other systems
+                if (data.debugMode)
+                {
+                    Debug.Log($"[AutoGripProcessor] Skipped toggle creation (no global parameter) for {(isLeftHand ? "left" : "right")} hand", data);
+                }
             }
 
-            var actions = toggle.GetActions();
-            actions.AddTurnOn(data.grippedObject.gameObject);
-            actions.AddAnimationClip(gripAnimation);
-
+            // Always create armature link regardless of toggle creation
             HumanBodyBones handBone = isLeftHand ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand;
             var armatureLink = FuryComponents.CreateArmatureLink(data.grippedObject.gameObject);
             armatureLink.LinkTo(handBone);
-
-            if (data.debugMode)
-            {
-                Debug.Log($"[AutoGripProcessor] Created grip toggle '{menuPath}' for {(isLeftHand ? "left" : "right")} hand", data);
-            }
         }
 
         private AnimationClip GetOrGenerateGripAnimation(AutoGripData data, Animator animator, bool isLeftHand)

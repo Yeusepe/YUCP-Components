@@ -174,8 +174,8 @@ namespace YUCP.Components.Editor
             List<AutoUDIMDiscardData.UVRegion> regions = new List<AutoUDIMDiscardData.UVRegion>();
             Color[] debugColors = new Color[] 
             { 
-                Color.red, Color.green, Color.blue, Color.yellow, 
-                Color.cyan, Color.magenta, new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 1f) 
+                Color.red, Color.green, new Color(0.212f, 0.749f, 0.694f), Color.yellow, 
+                new Color(0.212f, 0.749f, 0.694f), Color.magenta, new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 1f) 
             };
 
             for (int i = 0; i < uvClusters.Count; i++)

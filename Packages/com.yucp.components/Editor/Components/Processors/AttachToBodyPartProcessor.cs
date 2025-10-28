@@ -36,16 +36,13 @@ namespace YUCP.Components.Editor
                     var data = dataList[i];
                     var chosenSide = data.GetSelectedSide(animator);
 
-                    Component toDelete = (chosenSide == AttachToBodyPartData.Side.Left)
+                    GameObject toDelete = (chosenSide == AttachToBodyPartData.Side.Left)
                         ? data.leftComponentToDelete
                         : data.rightComponentToDelete;
 
                     if (toDelete != null)
                     {
-                        if (toDelete is Transform tr)
-                            Object.DestroyImmediate(tr.gameObject);
-                        else
-                            Object.DestroyImmediate(toDelete);
+                        Object.DestroyImmediate(toDelete);
                     }
 
                     if (!data.TryResolveBone(animator, out HumanBodyBones bone))

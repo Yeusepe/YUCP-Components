@@ -11,6 +11,7 @@ namespace YUCP.Components
     /// Captures keyboard and controller inputs and sends them directly to Gesture Manager parameters.
     /// This component is automatically added by the processor during build.
     /// </summary>
+    [BetaWarning("This component is in BETA and may not work as intended. Gesture Manager input handling is experimental and may require manual configuration.")]
     public class GestureManagerInputHandler : MonoBehaviour
     {
         #region Fields and Properties
@@ -497,11 +498,6 @@ namespace YUCP.Components
                 if (setMethod != null)
                 {
                     setMethod.Invoke(vrc3Param, new object[] { moduleVrc3, parameterValue, null });
-                    
-                    if (debugMode)
-                    {
-                        Debug.Log($"[GestureManagerInputHandler] Set parameter '{mapping.parameterName}' = {parameterValue:F2}");
-                    }
                 }
                 else
                 {
@@ -510,11 +506,6 @@ namespace YUCP.Components
                     if (setMethod != null)
                     {
                         setMethod.Invoke(vrc3Param, new object[] { moduleVrc3, parameterValue });
-                        
-                        if (debugMode)
-                        {
-                            Debug.Log($"[GestureManagerInputHandler] Set parameter '{mapping.parameterName}' = {parameterValue:F2}");
-                        }
                     }
                 }
             }
@@ -538,11 +529,6 @@ namespace YUCP.Components
                 if (animator != null)
                 {
                     animator.SetFloat(mapping.parameterName, parameterValue);
-                    
-                    if (debugMode)
-                    {
-                        Debug.Log($"[GestureManagerInputHandler] Set Animator parameter '{mapping.parameterName}' = {parameterValue:F2}");
-                    }
                 }
             }
             catch (System.Exception ex)

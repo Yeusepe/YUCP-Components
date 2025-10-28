@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEditor;
 
@@ -6,10 +7,15 @@ namespace YUCP.Components.Editor.MeshUtils
 {
     /// <summary>
     /// Solves for muscle values that place finger tips at target positions.
-    /// Uses inverse kinematics to calculate the required muscle values.
+    /// Uses FABRIK IK solver to calculate bone rotations, then converts to muscle values.
     /// </summary>
     public static class FingerTipSolver
     {
+        /// <summary>
+        /// Debug flag to disable rotation application entirely.
+        /// </summary>
+        public static bool DisableRotationApplication = false;
+        
         public struct FingerTipTarget
         {
             public Vector3 thumbTip;
@@ -17,6 +23,12 @@ namespace YUCP.Components.Editor.MeshUtils
             public Vector3 middleTip;
             public Vector3 ringTip;
             public Vector3 littleTip;
+            
+            public Quaternion thumbRotation;
+            public Quaternion indexRotation;
+            public Quaternion middleRotation;
+            public Quaternion ringRotation;
+            public Quaternion littleRotation;
         }
 
         public struct FingerTipResult
@@ -24,16 +36,18 @@ namespace YUCP.Components.Editor.MeshUtils
             public Dictionary<string, float> muscleValues;
             public bool success;
             public string errorMessage;
+            public Dictionary<HumanBodyBones, Quaternion> solvedRotations;
         }
 
         /// <summary>
-        /// Solve for muscle values that place finger tips at target positions.
+        /// Solve for muscle values that place finger tips at target positions using IK.
         /// </summary>
         public static FingerTipResult SolveFingerTips(Animator animator, FingerTipTarget targets, bool isLeftHand)
         {
             var result = new FingerTipResult
             {
                 muscleValues = new Dictionary<string, float>(),
+                solvedRotations = new Dictionary<HumanBodyBones, Quaternion>(),
                 success = false,
                 errorMessage = ""
             };
@@ -46,17 +60,16 @@ namespace YUCP.Components.Editor.MeshUtils
 
             try
             {
-                // Get current human pose
-                var humanPose = new HumanPose();
-                var humanPoseHandler = new HumanPoseHandler(animator.avatar, animator.transform);
-                humanPoseHandler.GetHumanPose(ref humanPose);
+                // Solve IK for each finger with target rotations
+                SolveFingerIK(animator, targets.thumbTip, targets.thumbRotation, isLeftHand, "Thumb", result.solvedRotations);
+                SolveFingerIK(animator, targets.indexTip, targets.indexRotation, isLeftHand, "Index", result.solvedRotations);
+                SolveFingerIK(animator, targets.middleTip, targets.middleRotation, isLeftHand, "Middle", result.solvedRotations);
+                SolveFingerIK(animator, targets.ringTip, targets.ringRotation, isLeftHand, "Ring", result.solvedRotations);
+                SolveFingerIK(animator, targets.littleTip, targets.littleRotation, isLeftHand, "Little", result.solvedRotations);
 
-                // Solve for each finger
-                SolveFingerMuscles(humanPose, targets.thumbTip, isLeftHand ? "Left" : "Right", "Thumb", result.muscleValues);
-                SolveFingerMuscles(humanPose, targets.indexTip, isLeftHand ? "Left" : "Right", "Index", result.muscleValues);
-                SolveFingerMuscles(humanPose, targets.middleTip, isLeftHand ? "Left" : "Right", "Middle", result.muscleValues);
-                SolveFingerMuscles(humanPose, targets.ringTip, isLeftHand ? "Left" : "Right", "Ring", result.muscleValues);
-                SolveFingerMuscles(humanPose, targets.littleTip, isLeftHand ? "Left" : "Right", "Little", result.muscleValues);
+                // Convert bone rotations to muscle values
+                result.muscleValues = BoneRotationToMuscle.ConvertFingerRotationsToMuscles(
+                    animator, isLeftHand, result.solvedRotations);
 
                 result.success = true;
             }
@@ -68,56 +81,319 @@ namespace YUCP.Components.Editor.MeshUtils
             return result;
         }
 
-        private static void SolveFingerMuscles(HumanPose humanPose, Vector3 targetTip, string hand, string finger, Dictionary<string, float> muscleValues)
+        /// <summary>
+        /// Solve IK for a single finger using FABRIK algorithm with target rotation.
+        /// </summary>
+        private static void SolveFingerIK(Animator animator, Vector3 targetTip, Quaternion targetRotation, bool isLeftHand, string fingerName, Dictionary<HumanBodyBones, Quaternion> solvedRotations)
         {
             if (targetTip == Vector3.zero) return; // Skip if not set
 
-            // Get finger bone positions from current pose
-            var fingerBones = GetFingerBonePositions(humanPose, hand, finger);
-            if (fingerBones.Count == 0) return;
-
-            // Calculate distances from each bone to target
-            var distances = new List<float>();
-            foreach (var bone in fingerBones)
+            // Get finger bone chain using dynamic discovery
+            var fingerBones = GetFingerBoneChainDynamic(animator, isLeftHand, fingerName);
+            if (fingerBones.Length == 0) 
             {
-                distances.Add(Vector3.Distance(bone, targetTip));
+                Debug.LogWarning($"[FingerTipSolver] Dynamic discovery failed for {fingerName}, trying fallback method");
+                // Fallback to hardcoded method
+                fingerBones = GetFingerBoneChain(isLeftHand, fingerName);
+                if (fingerBones.Length == 0)
+                {
+                    Debug.LogWarning($"[FingerTipSolver] No bones found for {fingerName} {(isLeftHand ? "left" : "right")} hand");
+                    return;
+                }
             }
 
-            // Simple heuristic: closer bones should have more curl
-            // This is a simplified approach - a full IK solver would be more complex
-            for (int i = 0; i < fingerBones.Count; i++)
+            // Get bone transforms
+            var boneTransforms = new Transform[fingerBones.Length];
+            for (int i = 0; i < fingerBones.Length; i++)
             {
-                float distance = distances[i];
-                float normalizedDistance = Mathf.Clamp01(distance / 0.1f); // Normalize to 10cm range
-                
-                // Convert distance to muscle value (closer = more curl)
-                float muscleValue = Mathf.Lerp(1f, 0f, normalizedDistance);
-                
-                // Apply to appropriate muscle
-                string muscleName = GetFingerMuscleName(hand, finger, i + 1);
-                if (!string.IsNullOrEmpty(muscleName))
+                boneTransforms[i] = animator.GetBoneTransform(fingerBones[i]);
+                if (boneTransforms[i] == null)
                 {
-                    muscleValues[muscleName] = muscleValue;
+                    Debug.LogWarning($"[FingerTipSolver] Could not find bone transform for {fingerBones[i]}");
+                    return;
+                }
+            }
+            
+            // Calculate chain length for debugging
+            float chainLength = 0f;
+            for (int i = 0; i < boneTransforms.Length - 1; i++)
+            {
+                chainLength += Vector3.Distance(boneTransforms[i].position, boneTransforms[i + 1].position);
+            }
+            float targetDistance = Vector3.Distance(boneTransforms[0].position, targetTip);
+            
+            Debug.Log($"[FingerTipSolver] Solving IK for {fingerName} {(isLeftHand ? "left" : "right")} hand: " +
+                     $"Target: {targetTip}, Bones: {fingerBones.Length}, " +
+                     $"Chain length: {chainLength * 100f:F1}cm, Target distance: {targetDistance * 100f:F1}cm, " +
+                     $"Chain: {string.Join(" -> ", fingerBones.Select(b => b.ToString()))}");
+
+            // Validate bone chain before solving IK
+            if (!ValidateBoneChain(boneTransforms, fingerName))
+            {
+                Debug.LogWarning($"[FingerTipSolver] Bone chain validation failed for {fingerName}");
+                return;
+            }
+
+            // Solve IK using FABRIK for position
+            var ikResult = FastIKFabric.SolveFingerChain(boneTransforms, targetTip, 10, 0.001f);
+            
+            if (!ikResult.success)
+            {
+                Debug.LogWarning($"[FingerTipSolver] IK solving failed for {fingerName}: {ikResult.errorMessage}");
+                
+                // Fallback: apply a basic finger curl pose
+                ApplyFallbackFingerPose(fingerBones, solvedRotations, fingerName);
+                return;
+            }
+            
+            Debug.Log($"[FingerTipSolver] IK solved successfully for {fingerName}: " +
+                     $"Final error: {ikResult.finalError:F4}, Rotations: {ikResult.solvedRotations.Length}");
+
+            // Store solved rotations
+            for (int i = 0; i < fingerBones.Length; i++)
+            {
+                solvedRotations[fingerBones[i]] = ikResult.solvedRotations[i];
+            }
+            
+            // Apply target rotation more conservatively - only to the tip bone and only if significantly different
+            if (!DisableRotationApplication && fingerBones.Length > 0 && targetRotation != Quaternion.identity)
+            {
+                HumanBodyBones distalBone = fingerBones[fingerBones.Length - 1];
+                Quaternion ikRotation = ikResult.solvedRotations[fingerBones.Length - 1];
+                
+                // Only apply rotation if it's significantly different from identity
+                float rotationAngle = Quaternion.Angle(targetRotation, Quaternion.identity);
+                if (rotationAngle > 10f) // Only if rotation is more than 10 degrees
+                {
+                    // Apply a very conservative blend to avoid breaking the finger
+                    Quaternion conservativeRotation = Quaternion.Slerp(ikRotation, targetRotation, 0.2f);
+                    solvedRotations[distalBone] = conservativeRotation;
+                    
+                    Debug.Log($"[FingerTipSolver] Applied conservative rotation to {fingerName} distal bone: " +
+                             $"Angle: {rotationAngle:F1}°, Blend: 20%");
+                }
+            }
+            else if (DisableRotationApplication)
+            {
+                Debug.Log($"[FingerTipSolver] Rotation application disabled for debugging - {fingerName}");
+            }
+        }
+
+        /// <summary>
+        /// Apply a basic fallback finger pose when IK fails.
+        /// </summary>
+        private static void ApplyFallbackFingerPose(HumanBodyBones[] fingerBones, Dictionary<HumanBodyBones, Quaternion> solvedRotations, string fingerName)
+        {
+            Debug.Log($"[FingerTipSolver] Applying fallback pose for {fingerName}");
+            
+            // Apply basic finger curl rotations
+            for (int i = 0; i < fingerBones.Length; i++)
+            {
+                // Basic finger curl - each joint bends progressively more
+                float curlAngle = (i + 1) * 15f; // 15, 30, 45 degrees
+                Quaternion curlRotation = Quaternion.AngleAxis(curlAngle, Vector3.right);
+                
+                solvedRotations[fingerBones[i]] = curlRotation;
+            }
+        }
+
+        /// <summary>
+        /// Validate that the bone chain is properly connected and has reasonable lengths.
+        /// </summary>
+        private static bool ValidateBoneChain(Transform[] boneTransforms, string fingerName)
+        {
+            if (boneTransforms.Length < 2) return false;
+            
+            float totalLength = 0f;
+            for (int i = 0; i < boneTransforms.Length - 1; i++)
+            {
+                float boneLength = Vector3.Distance(boneTransforms[i].position, boneTransforms[i + 1].position);
+                totalLength += boneLength;
+                
+                // Check for reasonable bone lengths (should be 1-10cm for fingers)
+                if (boneLength < 0.001f || boneLength > 0.1f)
+                {
+                    Debug.LogWarning($"[FingerTipSolver] Unusual bone length for {fingerName} bone {i}: {boneLength * 100f:F1}cm");
+                    return false;
+                }
+            }
+            
+            Debug.Log($"[FingerTipSolver] {fingerName} bone chain validated: {boneTransforms.Length} bones, total length: {totalLength * 100f:F1}cm");
+            return true;
+        }
+
+        /// <summary>
+        /// Get ALL bones in a finger chain using hardcoded fallback (for when dynamic discovery fails).
+        /// </summary>
+        private static HumanBodyBones[] GetFingerBoneChain(bool isLeftHand, string fingerName)
+        {
+            if (isLeftHand)
+            {
+                return fingerName switch
+                {
+                    "Thumb" => new HumanBodyBones[] { 
+                        HumanBodyBones.LeftThumbProximal, 
+                        HumanBodyBones.LeftThumbIntermediate, 
+                        HumanBodyBones.LeftThumbDistal 
+                    },
+                    "Index" => new HumanBodyBones[] { 
+                        HumanBodyBones.LeftIndexProximal, 
+                        HumanBodyBones.LeftIndexIntermediate, 
+                        HumanBodyBones.LeftIndexDistal 
+                    },
+                    "Middle" => new HumanBodyBones[] { 
+                        HumanBodyBones.LeftMiddleProximal, 
+                        HumanBodyBones.LeftMiddleIntermediate, 
+                        HumanBodyBones.LeftMiddleDistal 
+                    },
+                    "Ring" => new HumanBodyBones[] { 
+                        HumanBodyBones.LeftRingProximal, 
+                        HumanBodyBones.LeftRingIntermediate, 
+                        HumanBodyBones.LeftRingDistal 
+                    },
+                    "Little" => new HumanBodyBones[] { 
+                        HumanBodyBones.LeftLittleProximal, 
+                        HumanBodyBones.LeftLittleIntermediate, 
+                        HumanBodyBones.LeftLittleDistal 
+                    },
+                    _ => new HumanBodyBones[0]
+                };
+            }
+            else // Right hand
+            {
+                return fingerName switch
+                {
+                    "Thumb" => new HumanBodyBones[] { 
+                        HumanBodyBones.RightThumbProximal, 
+                        HumanBodyBones.RightThumbIntermediate, 
+                        HumanBodyBones.RightThumbDistal 
+                    },
+                    "Index" => new HumanBodyBones[] { 
+                        HumanBodyBones.RightIndexProximal, 
+                        HumanBodyBones.RightIndexIntermediate, 
+                        HumanBodyBones.RightIndexDistal 
+                    },
+                    "Middle" => new HumanBodyBones[] { 
+                        HumanBodyBones.RightMiddleProximal, 
+                        HumanBodyBones.RightMiddleIntermediate, 
+                        HumanBodyBones.RightMiddleDistal 
+                    },
+                    "Ring" => new HumanBodyBones[] { 
+                        HumanBodyBones.RightRingProximal, 
+                        HumanBodyBones.RightRingIntermediate, 
+                        HumanBodyBones.RightRingDistal 
+                    },
+                    "Little" => new HumanBodyBones[] { 
+                        HumanBodyBones.RightLittleProximal, 
+                        HumanBodyBones.RightLittleIntermediate, 
+                        HumanBodyBones.RightLittleDistal 
+                    },
+                    _ => new HumanBodyBones[0]
+                };
+            }
+        }
+        
+        /// <summary>
+        /// Dynamically discover finger bone chain by traversing the actual bone hierarchy.
+        /// This works with any humanoid armature structure.
+        /// </summary>
+        private static HumanBodyBones[] GetFingerBoneChainDynamic(Animator animator, bool isLeftHand, string fingerName)
+        {
+            // Get the root bone for this finger
+            HumanBodyBones rootBone = GetFingerRootBone(isLeftHand, fingerName);
+            if (rootBone == HumanBodyBones.LastBone)
+            {
+                Debug.LogWarning($"[FingerTipSolver] Could not find root bone for {fingerName} {(isLeftHand ? "left" : "right")} hand");
+                return new HumanBodyBones[0];
+            }
+            
+            // Get the root transform
+            Transform rootTransform = animator.GetBoneTransform(rootBone);
+            if (rootTransform == null)
+            {
+                Debug.LogWarning($"[FingerTipSolver] Root transform not found for {rootBone}");
+                return new HumanBodyBones[0];
+            }
+            
+            // Traverse the actual bone hierarchy to find all finger bones
+            var boneChain = new List<HumanBodyBones>();
+            TraverseActualBoneHierarchy(rootTransform, boneChain, animator, fingerName);
+            
+            Debug.Log($"[FingerTipSolver] Dynamically found {boneChain.Count} bones for {fingerName} {(isLeftHand ? "left" : "right")} hand: " +
+                     string.Join(" -> ", boneChain.Select(b => b.ToString())));
+            
+            return boneChain.ToArray();
+        }
+        
+        /// <summary>
+        /// Traverse the actual bone hierarchy to discover finger bones.
+        /// </summary>
+        private static void TraverseActualBoneHierarchy(Transform currentTransform, List<HumanBodyBones> boneChain, Animator animator, string fingerName)
+        {
+            // Find which HumanBodyBones this transform corresponds to
+            HumanBodyBones currentBone = FindHumanBodyBoneForTransform(currentTransform, animator);
+            if (currentBone != HumanBodyBones.LastBone && !boneChain.Contains(currentBone))
+            {
+                boneChain.Add(currentBone);
+                
+                // Continue traversing children
+                for (int i = 0; i < currentTransform.childCount; i++)
+                {
+                    Transform childTransform = currentTransform.GetChild(i);
+                    TraverseActualBoneHierarchy(childTransform, boneChain, animator, fingerName);
                 }
             }
         }
-
-        private static List<Vector3> GetFingerBonePositions(HumanPose humanPose, string hand, string finger)
+        
+        /// <summary>
+        /// Find which HumanBodyBones a transform corresponds to.
+        /// </summary>
+        private static HumanBodyBones FindHumanBodyBoneForTransform(Transform transform, Animator animator)
         {
-            // This is a simplified version - in a real implementation, you'd need to:
-            // 1. Get the actual bone transforms from the avatar
-            // 2. Calculate their world positions
-            // 3. Return the positions
+            // Check all possible HumanBodyBones to see which one matches this transform
+            foreach (HumanBodyBones bone in System.Enum.GetValues(typeof(HumanBodyBones)))
+            {
+                if (bone == HumanBodyBones.LastBone) continue;
+                
+                Transform boneTransform = animator.GetBoneTransform(bone);
+                if (boneTransform == transform)
+                {
+                    return bone;
+                }
+            }
             
-            // For now, return empty list - this would need proper bone tracking
-            return new List<Vector3>();
+            return HumanBodyBones.LastBone; // Not found
         }
-
-        private static string GetFingerMuscleName(string hand, string finger, int segment)
+        
+        /// <summary>
+        /// Get the root bone for a specific finger.
+        /// </summary>
+        private static HumanBodyBones GetFingerRootBone(bool isLeftHand, string fingerName)
         {
-            // Convert to the format expected by the animation system
-            string handPrefix = hand == "Left" ? "LeftHand" : "RightHand";
-            return $"{handPrefix}.{finger}.{segment} Stretched";
+            if (isLeftHand)
+            {
+                return fingerName switch
+                {
+                    "Thumb" => HumanBodyBones.LeftThumbProximal,
+                    "Index" => HumanBodyBones.LeftIndexProximal,
+                    "Middle" => HumanBodyBones.LeftMiddleProximal,
+                    "Ring" => HumanBodyBones.LeftRingProximal,
+                    "Little" => HumanBodyBones.LeftLittleProximal,
+                    _ => HumanBodyBones.LastBone
+                };
+            }
+            else
+            {
+                return fingerName switch
+                {
+                    "Thumb" => HumanBodyBones.RightThumbProximal,
+                    "Index" => HumanBodyBones.RightIndexProximal,
+                    "Middle" => HumanBodyBones.RightMiddleProximal,
+                    "Ring" => HumanBodyBones.RightRingProximal,
+                    "Little" => HumanBodyBones.RightLittleProximal,
+                    _ => HumanBodyBones.LastBone
+                };
+            }
         }
 
         /// <summary>

@@ -11,13 +11,6 @@ namespace YUCP.Components
         Closest
     }
 
-    public enum GripStyle
-    {
-        Auto,
-        Wrap,
-        Pinch,
-        Point
-    }
 
     /// <summary>
     /// Automatically generates hand grip animations based on object mesh geometry.
@@ -30,6 +23,10 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     public class AutoGripData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
+        [Header("Grip Configuration")]
+        [Tooltip("Auto-display gizmos in Scene view when component is selected")]
+        public bool autoShowGizmos = true;
+
         [Header("Grip Target")]
         [Tooltip("The object that will be gripped (usually this GameObject or a child mesh).")]
         public Transform grippedObject;
@@ -57,12 +54,7 @@ namespace YUCP.Components
                  "If set, creates a synced bool parameter with this name.")]
         public string globalParameter = "";
 
-        [Header("Grip Generation")]
-        [Tooltip("Show finger tip gizmos in Scene view for manual grip positioning.\n\n" +
-                 "Click 'Show Gizmos' to display colored finger tip handles that you can drag to position.\n" +
-                 "The system will calculate muscle values to reach these finger tip positions.")]
-        public bool showGizmos = false;
-
+        [Header("Manual Finger Positioning")]
         [Tooltip("Position for left hand thumb tip in world space.\n\n" +
                  "Drag the gizmo in Scene view to position the thumb tip.\n" +
                  "The system will calculate muscle values to reach this position.")]
@@ -95,21 +87,35 @@ namespace YUCP.Components
         [Tooltip("Position for right hand little finger tip in world space.")]
         public Vector3 rightLittleTip = Vector3.zero;
 
+        [Tooltip("Rotation for left hand thumb tip")]
+        public Quaternion leftThumbRotation = Quaternion.identity;
 
-        [Header("Grip Parameters")]
-        [Tooltip("How much to curl fingers (0 = barely curl, 1 = full grip).\n\n" +
-                 "• 0.3: Light touch\n" +
-                 "• 0.7: Normal grip (recommended)\n" +
-                 "• 1.0: Tight grip")]
-        [Range(0f, 1f)]
-        public float gripStrength = 0.7f;
+        [Tooltip("Rotation for left hand index finger tip")]
+        public Quaternion leftIndexRotation = Quaternion.identity;
 
-        [Tooltip("Adjust finger spreading (-1 = fingers together, 1 = fingers spread apart).\n\n" +
-                 "• -0.5: Fingers closer together\n" +
-                 "• 0.0: Natural spread (recommended)\n" +
-                 "• 0.5: Fingers spread wider")]
-        [Range(-1f, 1f)]
-        public float fingerSpread = 0.0f;
+        [Tooltip("Rotation for left hand middle finger tip")]
+        public Quaternion leftMiddleRotation = Quaternion.identity;
+
+        [Tooltip("Rotation for left hand ring finger tip")]
+        public Quaternion leftRingRotation = Quaternion.identity;
+
+        [Tooltip("Rotation for left hand little finger tip")]
+        public Quaternion leftLittleRotation = Quaternion.identity;
+
+        [Tooltip("Rotation for right hand thumb tip")]
+        public Quaternion rightThumbRotation = Quaternion.identity;
+
+        [Tooltip("Rotation for right hand index finger tip")]
+        public Quaternion rightIndexRotation = Quaternion.identity;
+
+        [Tooltip("Rotation for right hand middle finger tip")]
+        public Quaternion rightMiddleRotation = Quaternion.identity;
+
+        [Tooltip("Rotation for right hand ring finger tip")]
+        public Quaternion rightRingRotation = Quaternion.identity;
+
+        [Tooltip("Rotation for right hand little finger tip")]
+        public Quaternion rightLittleRotation = Quaternion.identity;
 
 
         [Header("Debug & Preview")]
