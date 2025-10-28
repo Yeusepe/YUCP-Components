@@ -840,6 +840,18 @@ namespace YUCP.Components.Editor.PackageExporter
                         Directory.CreateDirectory(asmdefFolder);
                         
                         string asmdefContent = File.ReadAllText(asmdefPath);
+                        // Ensure the injected asmdef has a unique assembly name to avoid collisions
+                        // with any template asmdef included in com.yucp.components or previous installers
+                        try
+                        {
+                            string uniqueAssemblyName = $"YUCP.DirectVpmInstaller.{installerGuid}";
+                            asmdefContent = System.Text.RegularExpressions.Regex.Replace(
+                                asmdefContent,
+                                "\"name\"\\s*:\\s*\"[^\"]*\"",
+                                "\"name\": \"" + uniqueAssemblyName + "\""
+                            );
+                        }
+                        catch { /* best-effort replacement */ }
                         File.WriteAllText(Path.Combine(asmdefFolder, "asset"), asmdefContent);
                         File.WriteAllText(Path.Combine(asmdefFolder, "pathname"), $"Assets/Editor/YUCP_Installer_{installerGuid}.asmdef");
                         

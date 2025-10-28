@@ -13,7 +13,7 @@ Advanced VRChat avatar components with VRCFury integration.
 - **Auto Body Hider** - Automatically hide body parts covered by clothing
   - GPU-accelerated detection
   - Multiple detection algorithms (Raycast, Proximity, Hybrid, Smart, Manual)
-  - Poiyomi UDIM support with multi-clothing coordination
+  - Poiyomi and FastFur UDIM support with multi-clothing coordination
   - Layered clothing optimization
 
 ### Animation Components

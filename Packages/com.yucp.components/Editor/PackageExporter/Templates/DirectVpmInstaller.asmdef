@@ -1,5 +1,5 @@
 {
-  "name": "YUCP.DirectVpmInstaller",
+  "name": "YUCP.DirectVpmInstaller.Template",
   "rootNamespace": "YUCP.DirectVpmInstaller",
   "references": [],
   "includePlatforms": [
