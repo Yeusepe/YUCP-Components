@@ -1,8 +1,16 @@
 # YUCP Components
 
-Advanced VRChat avatar components with VRCFury integration.
+Advanced VRChat avatar components with VRCFury integration and Pakacage Guardian VCS.
 
 ## Features
+
+### Version Control
+- **Pakacage Guardian** - Content-addressed version control system for Unity projects
+  - Automatic snapshots on file save and package manager events
+  - Visual commit graph with timeline
+  - Fast rollback to any previous state
+  - Stash management
+  - Deep Unity integration
 
 ### Armature Components
 - **Symmetric Armature Auto-Link** - Automatically attach objects to left/right body parts
@@ -50,6 +58,17 @@ This package requires:
 - Unity 2022.3.x
 
 ## Usage
+
+### Pakacage Guardian
+
+Access Pakacage Guardian via `Tools > YUCP > Pakacage Guardian`:
+- **Unified Interface**: Single window with tabbed navigation and YUCP brand styling
+- **Overview Tab**: Repository status, quick actions, and recent activity
+- **Commit Graph Tab**: Visual timeline with file changes and diff viewer
+- **Stashes Tab**: Manage automatic and manual snapshots
+- **Full Diff Engine**: Line-by-line comparison for text files
+
+### Avatar Components
 
 1. Add YUCP components to your avatar from `Component > YUCP` menu
 2. Configure component settings in the Inspector

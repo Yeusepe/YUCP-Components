@@ -1,0 +1,8 @@
+# Pakacage Guardian ignore patterns
+# Additional patterns beyond the built-in Unity ignores
+
+# Custom patterns can be added here
+# Examples:
+# *.tmp
+# *.cache
+

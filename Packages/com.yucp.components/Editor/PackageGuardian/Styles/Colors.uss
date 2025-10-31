@@ -1,0 +1,55 @@
+/* Color palette for Package Guardian - YUCP Brand Colors */
+
+.pg-color-lane-0 {
+    background-color: #36BFB1; /* YUCP Teal */
+}
+
+.pg-color-lane-1 {
+    background-color: #E2A54A; /* Orange */
+}
+
+.pg-color-lane-2 {
+    background-color: #48d1c3; /* Light Teal */
+}
+
+.pg-color-lane-3 {
+    background-color: #E24A90; /* Pink */
+}
+
+.pg-color-lane-4 {
+    background-color: #5BA3FF; /* Blue */
+}
+
+.pg-color-lane-5 {
+    background-color: #E2E24A; /* Yellow */
+}
+
+.pg-color-lane-6 {
+    background-color: #4AE2E2; /* Cyan */
+}
+
+.pg-color-lane-7 {
+    background-color: #E24A4A; /* Red */
+}
+
+/* File status colors */
+.pg-file-added {
+    color: #36BFB1; /* YUCP Teal */
+}
+
+.pg-file-modified {
+    color: #5BA3FF; /* Blue */
+}
+
+.pg-file-deleted {
+    color: #E24A4A; /* Red */
+}
+
+.pg-file-renamed {
+    color: #E2A54A; /* Orange */
+}
+
+.pg-file-binary {
+    color: #A54AE2; /* Purple */
+}
+

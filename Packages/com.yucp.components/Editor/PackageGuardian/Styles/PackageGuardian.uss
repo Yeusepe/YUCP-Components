@@ -1,0 +1,772 @@
+/* Package Guardian Design System - YUCP Brand Style */
+
+/* ============================================================================
+   COLOR PALETTE - YUCP Brand Colors
+   ============================================================================ */
+.pg-window {
+    /* Base colors */
+    --pg-bg-primary: #090909;      /* YUCP dark background */
+    --pg-bg-secondary: #1a1a1a;    /* Card/panel background */
+    --pg-bg-tertiary: #2a2a2a;     /* List items, inputs */
+    --pg-bg-hover: #525252;        /* Hover states - YUCP gray */
+    
+    /* Borders */
+    --pg-border-primary: #2a2a2a;
+    --pg-border-secondary: #3a3a3a;
+    
+    /* Text */
+    --pg-text-primary: #ffffff;    /* Main text */
+    --pg-text-secondary: #b0b0b0;  /* Secondary text */
+    --pg-text-tertiary: #808080;   /* Subtle text */
+    
+    /* Accent colors - YUCP Brand */
+    --pg-accent-primary: #36BFB1;  /* YUCP Teal - primary actions */
+    --pg-accent-success: #36BFB1;  /* Teal - added/success */
+    --pg-accent-warning: #E2A54A;  /* Orange - warnings */
+    --pg-accent-danger: #E24A4A;   /* Red - deleted/danger */
+    --pg-accent-info: #5BA3FF;     /* Blue - info */
+    
+    /* Graph lane colors */
+    --pg-lane-1: #36BFB1;         /* YUCP Teal */
+    --pg-lane-2: #E2A54A;         /* Orange */
+    --pg-lane-3: #48d1c3;         /* Light Teal */
+    --pg-lane-4: #E24A90;         /* Pink */
+    --pg-lane-5: #5BA3FF;         /* Blue */
+}
+
+/* ============================================================================
+   BASE WINDOW & LAYOUT
+   ============================================================================ */
+.pg-window {
+    flex-grow: 1;
+    background-color: #090909;
+}
+
+.pg-main-container {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+/* ============================================================================
+   TOP BAR - Global Controls & Status
+   ============================================================================ */
+.pg-top-bar {
+    flex-direction: row;
+    min-height: 60px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    padding-left: 16px;
+    padding-right: 16px;
+    background-color: #1a1a1a;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
+.pg-top-bar-left {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-right: 16px;
+}
+
+.pg-top-bar-center {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-right: 16px;
+}
+
+.pg-top-bar-right {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.pg-status-badge {
+    padding-top: 4px;
+    padding-bottom: 4px;
+    padding-left: 12px;
+    padding-right: 12px;
+    border-radius: 4px;
+    background-color: #2a2a2a;
+    margin-right: 8px;
+    font-size: 11px;
+    color: #b0b0b0;
+    white-space: nowrap;
+}
+
+.pg-status-badge-active {
+    background-color: rgba(54, 191, 177, 0.2);
+    color: #36BFB1;
+}
+
+/* ============================================================================
+   3-PANE LAYOUT
+   ============================================================================ */
+.pg-content-container {
+    flex-grow: 1;
+    flex-direction: row;
+}
+
+.pg-left-pane {
+    width: 35%;
+    min-width: 300px;
+    background-color: #090909;
+    border-right-width: 1px;
+    border-right-color: #2a2a2a;
+}
+
+.pg-right-pane {
+    flex-grow: 1;
+    background-color: #090909;
+}
+
+/* ============================================================================
+   BUTTONS - Consistent sizing and styling
+   ============================================================================ */
+.pg-button {
+    height: 32px;
+    padding-left: 16px;
+    padding-right: 16px;
+    border-radius: 0;
+    background-color: #525252;
+    border-width: 0;
+    color: #ffffff;
+    font-size: 12px;
+    -unity-font-style: normal;
+    margin-left: 4px;
+    margin-right: 4px;
+    -unity-text-align: middle-center;
+}
+
+.pg-button:hover {
+    background-color: #666666;
+}
+
+.pg-button:active {
+    background-color: #3a3a3a;
+}
+
+.pg-button-primary {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.pg-button-primary:hover {
+    background-color: #48d1c3;
+}
+
+.pg-button-primary:active {
+    background-color: #2da89c;
+}
+
+.pg-button-danger {
+    background-color: #E24A4A;
+    color: #ffffff;
+}
+
+.pg-button-danger:hover {
+    background-color: #e66666;
+}
+
+.pg-button-danger:active {
+    background-color: #c93a3a;
+}
+
+.pg-button-small {
+    height: 24px;
+    padding-left: 12px;
+    padding-right: 12px;
+    font-size: 11px;
+}
+
+.pg-button-icon {
+    width: 32px;
+    height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ============================================================================
+   TYPOGRAPHY
+   ============================================================================ */
+.pg-title {
+    font-size: 18px;
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+.pg-subtitle {
+    font-size: 14px;
+    color: #b0b0b0;
+    -unity-font-style: normal;
+}
+
+.pg-label {
+    font-size: 12px;
+    color: #ffffff;
+}
+
+.pg-label-secondary {
+    font-size: 11px;
+    color: #b0b0b0;
+}
+
+.pg-label-small {
+    font-size: 10px;
+    color: #808080;
+}
+
+.pg-text-mono {
+    font-size: 11px;
+    color: #b0b0b0;
+}
+
+/* ============================================================================
+   PANELS & SECTIONS
+   ============================================================================ */
+.pg-panel {
+    flex-direction: column;
+    padding: 16px;
+}
+
+.pg-panel-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+}
+
+.pg-section {
+    margin-bottom: 12px;
+    padding: 12px;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+}
+
+.pg-section-title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    color: #b0b0b0;
+    letter-spacing: 0.5px;
+}
+
+/* ============================================================================
+   COMMIT GRAPH - Visual Timeline
+   ============================================================================ */
+.pg-graph-container {
+    flex-grow: 1;
+}
+
+.pg-graph-item {
+    flex-direction: row;
+    align-items: flex-start;
+    min-height: 50px;
+    padding: 8px;
+    border-radius: 0;
+}
+
+.pg-graph-item:hover {
+    background-color: #1a1a1a;
+}
+
+.pg-graph-item-selected {
+    background-color: #1a1a1a;
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+}
+
+.pg-graph-lanes {
+    flex-direction: row;
+    width: 80px;
+    align-items: center;
+    justify-content: center;
+}
+
+.pg-graph-lane {
+    width: 16px;
+    height: 100%;
+    position: relative;
+}
+
+.pg-graph-node {
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    border-width: 3px;
+    background-color: #090909;
+}
+
+.pg-graph-node-main {
+    border-color: #36BFB1;
+}
+
+.pg-graph-node-branch {
+    border-color: #5BA3FF;
+}
+
+.pg-graph-node-stash {
+    border-color: #48d1c3;
+}
+
+.pg-graph-node-merge {
+    border-color: #E2A54A;
+}
+
+.pg-graph-commit-info {
+    flex-grow: 1;
+    flex-direction: column;
+    padding-left: 12px;
+}
+
+.pg-graph-commit-message {
+    font-size: 13px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.pg-graph-commit-meta {
+    flex-direction: row;
+    align-items: center;
+}
+
+.pg-graph-commit-author {
+    font-size: 11px;
+    color: #b0b0b0;
+    margin-right: 8px;
+}
+
+.pg-graph-commit-time {
+    font-size: 10px;
+    color: #808080;
+}
+
+.pg-graph-commit-hash {
+    font-size: 10px;
+    color: #808080;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    padding-left: 6px;
+    padding-right: 6px;
+    background-color: #2a2a2a;
+    border-radius: 0;
+    margin-left: 8px;
+}
+
+.pg-graph-commit-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 0;
+    justify-content: center;
+    align-items: center;
+    margin-right: 8px;
+    font-size: 12px;
+}
+
+.pg-icon-manual {
+    background-color: rgba(54, 191, 177, 0.2);
+    color: #36BFB1;
+}
+
+.pg-icon-auto {
+    background-color: rgba(82, 82, 82, 0.2);
+    color: #b0b0b0;
+}
+
+.pg-icon-package {
+    background-color: rgba(91, 163, 255, 0.2);
+    color: #5BA3FF;
+}
+
+.pg-icon-merge {
+    background-color: rgba(226, 165, 74, 0.2);
+    color: #E2A54A;
+}
+
+/* ============================================================================
+   FILE CHANGES LIST
+   ============================================================================ */
+.pg-file-list {
+    flex-grow: 1;
+}
+
+.pg-file-group {
+    margin-bottom: 16px;
+}
+
+.pg-file-group-header {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    margin-bottom: 4px;
+}
+
+.pg-file-group-title {
+    font-size: 11px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+}
+
+.pg-file-group-count {
+    font-size: 10px;
+    color: #808080;
+    margin-left: 8px;
+}
+
+.pg-file-item {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+    margin-bottom: 2px;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-left-width: 3px;
+    border-left-color: transparent;
+}
+
+.pg-file-item:hover {
+    background-color: #2a2a2a;
+}
+
+.pg-file-item-selected {
+    border-left-color: #36BFB1;
+    background-color: #2a2a2a;
+}
+
+.pg-file-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 0;
+    justify-content: center;
+    align-items: center;
+    margin-right: 10px;
+    font-size: 12px;
+    -unity-font-style: bold;
+    border-width: 1px;
+}
+
+.pg-file-icon-added {
+    background-color: rgba(54, 191, 177, 0.15);
+    border-color: rgba(54, 191, 177, 0.3);
+    color: #36BFB1;
+}
+
+.pg-file-icon-modified {
+    background-color: rgba(91, 163, 255, 0.15);
+    border-color: rgba(91, 163, 255, 0.3);
+    color: #5BA3FF;
+}
+
+.pg-file-icon-deleted {
+    background-color: rgba(226, 74, 74, 0.15);
+    border-color: rgba(226, 74, 74, 0.3);
+    color: #E24A4A;
+}
+
+.pg-file-icon-renamed {
+    background-color: rgba(226, 165, 74, 0.15);
+    border-color: rgba(226, 165, 74, 0.3);
+    color: #E2A54A;
+}
+
+.pg-file-info {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.pg-file-path {
+    font-size: 12px;
+    color: #ffffff;
+}
+
+.pg-file-stats {
+    font-size: 10px;
+    color: #808080;
+    margin-top: 2px;
+}
+
+.pg-file-stats-added {
+    color: #36BFB1;
+}
+
+.pg-file-stats-deleted {
+    color: #E24A4A;
+}
+
+/* ============================================================================
+   DIFF VIEWER
+   ============================================================================ */
+.pg-diff-container {
+    flex-grow: 1;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+}
+
+.pg-diff-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+}
+
+.pg-diff-line {
+    flex-direction: row;
+    font-size: 11px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.pg-diff-line-number {
+    width: 50px;
+    color: #808080;
+    -unity-text-align: middle-right;
+    margin-right: 12px;
+}
+
+.pg-diff-line-content {
+    flex-grow: 1;
+    color: #ffffff;
+}
+
+.pg-diff-line-added {
+    background-color: rgba(54, 191, 177, 0.1);
+}
+
+.pg-diff-line-deleted {
+    background-color: rgba(226, 74, 74, 0.1);
+}
+
+.pg-diff-line-modified {
+    background-color: rgba(91, 163, 255, 0.05);
+}
+
+/* ============================================================================
+   SEARCH & FILTER
+   ============================================================================ */
+.pg-search-container {
+    flex-direction: row;
+    align-items: center;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-left: 12px;
+    padding-right: 12px;
+    min-width: 200px;
+    max-width: 250px;
+}
+
+.pg-search-icon {
+    font-size: 14px;
+    color: #b0b0b0;
+    margin-right: 8px;
+}
+
+.pg-search-input {
+    flex-grow: 1;
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    font-size: 12px;
+    min-width: 150px;
+}
+
+.pg-search-input:focus {
+    border-width: 0;
+}
+
+TextField .unity-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    padding: 0;
+}
+
+.pg-filter-bar {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    margin-bottom: 12px;
+}
+
+.pg-filter-chip {
+    padding-top: 4px;
+    padding-bottom: 4px;
+    padding-left: 10px;
+    padding-right: 10px;
+    border-radius: 0;
+    background-color: #2a2a2a;
+    color: #b0b0b0;
+    font-size: 11px;
+    margin-right: 6px;
+}
+
+.pg-filter-chip-active {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   SCROLLVIEWS
+   ============================================================================ */
+.pg-scrollview {
+    flex-grow: 1;
+}
+
+/* ============================================================================
+   MISC UTILITIES
+   ============================================================================ */
+.pg-separator {
+    height: 1px;
+    background-color: #2a2a2a;
+    margin-top: 12px;
+    margin-bottom: 12px;
+}
+
+.pg-spacer {
+    flex-grow: 1;
+}
+
+.pg-empty-state {
+    flex-grow: 1;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+}
+
+.pg-empty-state-icon {
+    font-size: 48px;
+    color: #808080;
+    margin-bottom: 12px;
+}
+
+.pg-empty-state-title {
+    font-size: 16px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    margin-bottom: 6px;
+}
+
+.pg-empty-state-description {
+    font-size: 12px;
+    color: #808080;
+    -unity-text-align: middle-center;
+    max-width: 300px;
+}
+
+/* ============================================================================
+   TIMELINE SLIDER
+   ============================================================================ */
+.pg-timeline-slider {
+    flex-direction: row;
+    align-items: center;
+    padding: 12px;
+    background-color: #1a1a1a;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+}
+
+.pg-timeline-track {
+    flex-grow: 1;
+    height: 4px;
+    background-color: #2a2a2a;
+    border-radius: 0;
+    margin-left: 12px;
+    margin-right: 12px;
+}
+
+.pg-timeline-thumb {
+    width: 16px;
+    height: 16px;
+    background-color: #36BFB1;
+    border-radius: 8px;
+    border-width: 2px;
+    border-color: #ffffff;
+}
+
+/* ============================================================================
+   MODAL/WINDOW STYLES
+   ============================================================================ */
+.pg-modal-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.8);
+    justify-content: center;
+    align-items: center;
+}
+
+.pg-modal-container {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 20px;
+    min-width: 400px;
+    max-width: 800px;
+}
+
+.pg-modal-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+}
+
+.pg-modal-title {
+    font-size: 16px;
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+.pg-modal-body {
+    flex-grow: 1;
+    margin-bottom: 16px;
+}
+
+.pg-modal-footer {
+    flex-direction: row;
+    justify-content: flex-end;
+}

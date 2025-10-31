@@ -1,0 +1,25 @@
+{
+    "name": "com.yucp.components.packageguardian.editor",
+    "rootNamespace": "YUCP.Components.PackageGuardian.Editor",
+    "references": [
+        "com.yucp.components.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.yucp.components",
+            "expression": "",
+            "define": "YUCP_PG_ENABLED"
+        }
+    ],
+    "noEngineReferences": false
+}
+
