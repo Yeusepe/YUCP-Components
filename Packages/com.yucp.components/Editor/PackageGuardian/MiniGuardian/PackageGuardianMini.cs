@@ -23,6 +23,13 @@ namespace YUCP.PackageGuardian.Mini
         
         private static bool _hasProcessedThisSession = false;
         private static GuardianTransaction _currentTransaction = null;
+        private static readonly string MarkerDir = Path.Combine(Application.dataPath, "..", "Library", "YUCP");
+        private static string MarkerPath(string name) => Path.Combine(MarkerDir, "install." + name);
+        private static bool HasMarker(string name) { try { return File.Exists(MarkerPath(name)); } catch { return false; } }
+        private static bool IsMarkerStale(string name, TimeSpan maxAge)
+        {
+            try { var p = MarkerPath(name); if (!File.Exists(p)) return false; return (DateTime.UtcNow - File.GetLastWriteTimeUtc(p)) > maxAge; } catch { return false; }
+        }
         
         static PackageGuardianMini()
         {
@@ -80,8 +87,8 @@ namespace YUCP.PackageGuardian.Mini
                 // Start transaction
                 _currentTransaction = new GuardianTransaction();
                 
-                // Execute protection
-                ProtectImport();
+                // Execute protection (but skip duplicate detection - installer scripts need to run first)
+                ProtectImport(importedAssets);
                 
                 // Commit if successful
                 _currentTransaction.Commit();
@@ -115,10 +122,10 @@ namespace YUCP.PackageGuardian.Mini
         /// <summary>
         /// Main protection logic
         /// </summary>
-        private static void ProtectImport()
+        private static void ProtectImport(string[] importedAssets)
         {
-            // Step 1: Handle duplicate detection
-            DetectAndRemoveDuplicates();
+            // Step 1: Handle duplicate detection (but skip installer scripts - they need to run first)
+            DetectAndRemoveDuplicates(importedAssets);
             
             // Step 2: Handle .yucp_disabled files
             HandleDisabledFiles();
@@ -133,11 +140,15 @@ namespace YUCP.PackageGuardian.Mini
         /// <summary>
         /// Detects and removes duplicate guardian/installer scripts
         /// </summary>
-        private static void DetectAndRemoveDuplicates()
+        private static void DetectAndRemoveDuplicates(string[] importedAssets)
         {
             string editorPath = Path.Combine(Application.dataPath, "Editor");
             if (!Directory.Exists(editorPath))
                 return;
+                
+            // Normalize imported asset paths for comparison
+            var importedPaths = new HashSet<string>(importedAssets.Select(a => Path.GetFullPath(a).Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
+            bool installActive = HasMarker("lock") || HasMarker("pending");
                 
             // Find guardian scripts
             var guardians = Directory.GetFiles(editorPath, "*Guardian*.cs", SearchOption.TopDirectoryOnly)
@@ -151,6 +162,11 @@ namespace YUCP.PackageGuardian.Mini
                 // Keep only the one in Packages folder, remove standalone ones
                 foreach (var guardian in guardians)
                 {
+                    string normalizedPath = Path.GetFullPath(guardian).Replace('\\', '/');
+                    // Don't remove if it was just imported (part of current import)
+                    if (importedPaths.Contains(normalizedPath))
+                        continue;
+                        
                     if (guardian.Contains("Assets") && !guardian.Contains("Packages"))
                     {
                         try
@@ -168,28 +184,48 @@ namespace YUCP.PackageGuardian.Mini
                 }
             }
             
-            // Find installer scripts
+            // Find installer scripts - but DON'T remove them during active install (they need to run first)
+            // Installer scripts clean themselves up after running
             var installers = Directory.GetFiles(editorPath, "*Installer*.cs", SearchOption.TopDirectoryOnly)
                 .Where(f => f.Contains("YUCP"))
                 .ToArray();
                 
             if (installers.Length > 1)
             {
-                Debug.Log($"[Mini Guardian] Found {installers.Length} installer scripts - removing duplicates");
-                
-                foreach (var installer in installers)
+                if (installActive)
                 {
-                    if (installer.Contains("Assets") && !installer.Contains("Packages"))
+                    Debug.Log($"[Mini Guardian] Found {installers.Length} installer scripts - skipping removal (active install)");
+                }
+                
+                // If install is complete, aggressively clean up leftovers in Assets/Editor
+                if (!installActive && HasMarker("complete"))
+                {
+                    var leftovers = installers.Where(i => {
+                        string normalizedPath = Path.GetFullPath(i).Replace('\\', '/');
+                        return !importedPaths.Contains(normalizedPath) && i.Contains("Assets") && !i.Contains("Packages");
+                    }).ToArray();
+
+                    foreach (var installer in leftovers)
                     {
                         try
                         {
                             _currentTransaction.BackupFile(installer);
                             File.Delete(installer);
                             File.Delete(installer + ".meta");
-                            Debug.Log($"[Mini Guardian] Removed duplicate: {Path.GetFileName(installer)}");
+                            Debug.Log($"[Mini Guardian] Cleaned leftover installer: {Path.GetFileName(installer)}");
                         }
                         catch { }
                     }
+                }
+                else
+                {
+                    // Only log a warning if there are truly old duplicates (not part of current import)
+                    var oldInstallers = installers.Where(i => {
+                        string normalizedPath = Path.GetFullPath(i).Replace('\\', '/');
+                        return !importedPaths.Contains(normalizedPath) && i.Contains("Assets") && !i.Contains("Packages");
+                    }).ToArray();
+                    if (oldInstallers.Length > 0)
+                        Debug.LogWarning($"[Mini Guardian] Found {oldInstallers.Length} installer script(s) - awaiting installer cleanup");
                 }
             }
         }

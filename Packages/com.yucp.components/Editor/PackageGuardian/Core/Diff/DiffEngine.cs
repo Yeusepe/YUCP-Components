@@ -10,79 +10,102 @@ using PackageGuardian.Core.Hashing;
 
 namespace PackageGuardian.Core.Diff
 {
-    /// <summary>
-    /// Compares commits and generates diffs.
-    /// </summary>
-    public sealed class DiffEngine
-    {
-        private readonly IObjectStore _store;
-        
-        public DiffEngine(IObjectStore store)
-        {
-            _store = store ?? throw new ArgumentNullException(nameof(store));
-        }
-        
         /// <summary>
-        /// Compare two commits and return the list of changed files.
+        /// Compares commits and generates diffs.
         /// </summary>
-        public List<FileChange> CompareCommits(string oldCommitId, string newCommitId)
+        public sealed class DiffEngine
         {
-            return CompareCommits(oldCommitId, newCommitId, DiffOptions.Default);
-        }
-
-        /// <summary>
-        /// Compare two commits with options and return the list of changed files.
-        /// </summary>
-        public List<FileChange> CompareCommits(string oldCommitId, string newCommitId, DiffOptions options)
-        {
-            if (string.IsNullOrEmpty(oldCommitId))
-                throw new ArgumentNullException(nameof(oldCommitId));
-            if (string.IsNullOrEmpty(newCommitId))
-                throw new ArgumentNullException(nameof(newCommitId));
+            private readonly IObjectStore _store;
             
-            options = options ?? DiffOptions.Default;
-            
-            // Load commits
-            var oldCommit = _store.ReadObject(oldCommitId) as Commit;
-            var newCommit = _store.ReadObject(newCommitId) as Commit;
-            
-            if (oldCommit == null || newCommit == null)
-                throw new InvalidOperationException("Invalid commit ID");
-            
-            string oldTreeId = BytesToHex(oldCommit.TreeId);
-            string newTreeId = BytesToHex(newCommit.TreeId);
-            
-            var changes = CompareTrees("", oldTreeId, newTreeId);
-            
-            // Apply rename detection if enabled
-            if (options.DetectRenames)
+            public DiffEngine(IObjectStore store)
             {
-                changes = DetectRenames(changes, options);
+                _store = store ?? throw new ArgumentNullException(nameof(store));
             }
             
-            return changes;
-        }
-        
-        /// <summary>
-        /// Compare two trees recursively.
-        /// </summary>
-        public List<FileChange> CompareTrees(string basePath, string oldTreeId, string newTreeId)
-        {
-            var changes = new List<FileChange>();
+            /// <summary>
+            /// Safely read an object, returning null if corrupted.
+            /// </summary>
+            private PgObject SafeReadObject(string oid)
+            {
+                if (string.IsNullOrEmpty(oid))
+                    return null;
+                
+                try
+                {
+                    return _store.ReadObject(oid);
+                }
+                catch (InvalidDataException)
+                {
+                    UnityEngine.Debug.LogWarning($"[DiffEngine] Corrupted object {oid.Substring(0, Math.Min(8, oid.Length))}... - skipping");
+                    return null;
+                }
+                catch (FileNotFoundException)
+                {
+                    return null;
+                }
+            }
             
-            // Handle null tree IDs (e.g., comparing against nothing)
-            if (string.IsNullOrEmpty(oldTreeId) && string.IsNullOrEmpty(newTreeId))
+            /// <summary>
+            /// Compare two commits and return the list of changed files.
+            /// </summary>
+            public List<FileChange> CompareCommits(string oldCommitId, string newCommitId)
+            {
+                return CompareCommits(oldCommitId, newCommitId, DiffOptions.Default);
+            }
+
+            /// <summary>
+            /// Compare two commits with options and return the list of changed files.
+            /// </summary>
+            public List<FileChange> CompareCommits(string oldCommitId, string newCommitId, DiffOptions options)
+            {
+                if (string.IsNullOrEmpty(oldCommitId))
+                    throw new ArgumentNullException(nameof(oldCommitId));
+                if (string.IsNullOrEmpty(newCommitId))
+                    throw new ArgumentNullException(nameof(newCommitId));
+                
+                options = options ?? DiffOptions.Default;
+                
+                // Load commits
+                var oldCommit = SafeReadObject(oldCommitId) as Commit;
+                var newCommit = SafeReadObject(newCommitId) as Commit;
+                
+                if (oldCommit == null || newCommit == null)
+                    throw new InvalidOperationException("Invalid commit ID");
+                
+                string oldTreeId = BytesToHex(oldCommit.TreeId);
+                string newTreeId = BytesToHex(newCommit.TreeId);
+                
+                var changes = CompareTrees("", oldTreeId, newTreeId);
+                
+                // Apply rename detection if enabled
+                if (options.DetectRenames)
+                {
+                    changes = DetectRenames(changes, options);
+                }
+                
                 return changes;
+            }
             
-            // Load trees
-            Tree oldTree = null;
-            Tree newTree = null;
-            
-            if (!string.IsNullOrEmpty(oldTreeId))
-                oldTree = _store.ReadObject(oldTreeId) as Tree;
-            
-            if (!string.IsNullOrEmpty(newTreeId))
-                newTree = _store.ReadObject(newTreeId) as Tree;
+            /// <summary>
+            /// Compare two trees recursively.
+            /// </summary>
+            public List<FileChange> CompareTrees(string basePath, string oldTreeId, string newTreeId)
+            {
+                var changes = new List<FileChange>();
+                
+                // Handle null tree IDs (e.g., comparing against nothing)
+                if (string.IsNullOrEmpty(oldTreeId) && string.IsNullOrEmpty(newTreeId))
+                    return changes;
+                
+                // Load trees
+                Tree oldTree = null;
+                Tree newTree = null;
+                
+                if (!string.IsNullOrEmpty(oldTreeId))
+                    oldTree = SafeReadObject(oldTreeId) as Tree;
+                
+                if (!string.IsNullOrEmpty(newTreeId))
+                    newTree = SafeReadObject(newTreeId) as Tree;
             
             // If old tree is null, all files in new tree are added
             if (oldTree == null && newTree != null)
@@ -189,7 +212,7 @@ namespace PackageGuardian.Core.Diff
         
         private void AddDeletedTreeFiles(string basePath, string treeId, List<FileChange> changes)
         {
-            var tree = _store.ReadObject(treeId) as Tree;
+            var tree = SafeReadObject(treeId) as Tree;
             if (tree == null) return;
             
             foreach (var entry in tree.Entries)
@@ -210,7 +233,7 @@ namespace PackageGuardian.Core.Diff
         
         private void AddNewTreeFiles(string basePath, string treeId, List<FileChange> changes)
         {
-            var tree = _store.ReadObject(treeId) as Tree;
+            var tree = SafeReadObject(treeId) as Tree;
             if (tree == null) return;
             
             foreach (var entry in tree.Entries)
@@ -242,7 +265,7 @@ namespace PackageGuardian.Core.Diff
         
         private string[] GetFileLines(string blobOid)
         {
-            var blob = _store.ReadObject(blobOid) as Blob;
+            var blob = SafeReadObject(blobOid) as Blob;
             if (blob == null) return new string[0];
             
             try
@@ -395,8 +418,8 @@ namespace PackageGuardian.Core.Diff
                     // Skip if files are too large
                     if (options.MaxFileSizeForRenameDetection > 0)
                     {
-                        var delBlob = _store.ReadObject(del.OldOid) as Blob;
-                        var addBlob = _store.ReadObject(add.NewOid) as Blob;
+                        var delBlob = SafeReadObject(del.OldOid) as Blob;
+                        var addBlob = SafeReadObject(add.NewOid) as Blob;
                         
                         if (delBlob.Data.Length > options.MaxFileSizeForRenameDetection ||
                             addBlob.Data.Length > options.MaxFileSizeForRenameDetection)
@@ -471,8 +494,8 @@ namespace PackageGuardian.Core.Diff
         {
             try
             {
-                var oldBlob = _store.ReadObject(deleted.OldOid) as Blob;
-                var newBlob = _store.ReadObject(added.NewOid) as Blob;
+                var oldBlob = SafeReadObject(deleted.OldOid) as Blob;
+                var newBlob = SafeReadObject(added.NewOid) as Blob;
 
                 if (oldBlob == null || newBlob == null)
                     return 0f;
@@ -562,7 +585,7 @@ namespace PackageGuardian.Core.Diff
         
         private void CollectTreeFilesForWorkingDiff(string treeId, string basePath, Dictionary<string, (string oid, string mode)> files)
         {
-            var tree = _store.ReadObject(treeId) as Tree;
+            var tree = SafeReadObject(treeId) as Tree;
             if (tree == null) return;
             
             foreach (var entry in tree.Entries)

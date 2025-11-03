@@ -4,6 +4,8 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 using YUCP.Components.PackageGuardian.Editor.Services;
+using global::PackageGuardian.Core.Diff;
+using global::PackageGuardian.Core.Objects;
 
 namespace YUCP.Components.PackageGuardian.Editor.Windows
 {
@@ -188,7 +190,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             var headerRow = new VisualElement();
             headerRow.style.flexDirection = FlexDirection.Row;
             headerRow.style.justifyContent = Justify.SpaceBetween;
-            headerRow.style.alignItems = Align.Center;
+            headerRow.style.alignItems = Align.FlexStart;
             headerRow.style.marginBottom = 12;
             
             var infoSection = new VisualElement();
@@ -221,17 +223,29 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             metaRow.Add(idLabel);
             
             infoSection.Add(metaRow);
+            
+            // Add diff summary if available
+            var diffSummary = GetDiffSummary(stash);
+            if (!string.IsNullOrEmpty(diffSummary))
+            {
+                var summaryLabel = new Label(diffSummary);
+                summaryLabel.AddToClassList("pg-label-small");
+                summaryLabel.style.marginTop = 4;
+                summaryLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+                infoSection.Add(summaryLabel);
+            }
+            
             headerRow.Add(infoSection);
             
             // Actions
             var actionsRow = new VisualElement();
-            actionsRow.style.flexDirection = FlexDirection.Row;
+            actionsRow.style.flexDirection = FlexDirection.Column;
             
             var applyButton = new Button(() => ApplyStash(stash));
             applyButton.text = "Apply";
             applyButton.AddToClassList("pg-button");
             applyButton.AddToClassList("pg-button-primary");
-            applyButton.style.marginRight = 8;
+            applyButton.style.marginBottom = 4;
             actionsRow.Add(applyButton);
             
             var dropButton = new Button(() => DropStash(stash));
@@ -244,6 +258,87 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             container.Add(headerRow);
             
             return container;
+        }
+        
+        private string GetDiffSummary(global::PackageGuardian.Core.Repository.StashEntry stash)
+        {
+            try
+            {
+                var service = RepositoryService.Instance;
+                var repo = service.Repository;
+                
+                if (repo == null) return null;
+                
+                // Get the commit
+                var commitObj = repo.Store.ReadObject(stash.CommitId);
+                if (commitObj is not Commit commit) return null;
+                
+                // Get parent commit
+                string parentCommitId = null;
+                if (commit.Parents.Any())
+                {
+                    parentCommitId = repo.Hasher.ToHex(commit.Parents.First());
+                }
+                
+                if (string.IsNullOrEmpty(parentCommitId)) return null;
+                
+                // Compare with parent to get changes
+                var diffEngine = new DiffEngine(repo.Store);
+                var changes = diffEngine.CompareCommits(parentCommitId, stash.CommitId);
+                
+                if (changes.Count == 0) return null;
+                
+                var added = changes.Count(c => c.Type == ChangeType.Added);
+                var modified = changes.Count(c => c.Type == ChangeType.Modified);
+                var deleted = changes.Count(c => c.Type == ChangeType.Deleted);
+                var renamed = changes.Count(c => c.Type == ChangeType.Renamed || c.Type == ChangeType.Copied);
+                
+                // Categorize changes by file type
+                var packages = changes.Where(c => 
+                    (c.Path.Contains("Packages/") || c.Path.Contains("manifest.json")) &&
+                    (c.Type == ChangeType.Added || c.Type == ChangeType.Modified)).Count();
+                var scenes = changes.Where(c => 
+                    (c.Type == ChangeType.Modified || c.Type == ChangeType.Added) && 
+                    c.Path.EndsWith(".unity", System.StringComparison.OrdinalIgnoreCase)).Count();
+                var prefabs = changes.Where(c => 
+                    (c.Type == ChangeType.Modified || c.Type == ChangeType.Added) && 
+                    c.Path.EndsWith(".prefab", System.StringComparison.OrdinalIgnoreCase)).Count();
+                var scripts = changes.Where(c => 
+                    (c.Type == ChangeType.Modified || c.Type == ChangeType.Added) && 
+                    (c.Path.EndsWith(".cs", System.StringComparison.OrdinalIgnoreCase) || 
+                     c.Path.EndsWith(".js", System.StringComparison.OrdinalIgnoreCase))).Count();
+                var configs = changes.Where(c => 
+                    c.Type == ChangeType.Modified && (
+                    c.Path.Contains("ProjectSettings/") || 
+                    c.Path.Contains("manifest.json") ||
+                    c.Path.Contains("settings.json"))).Count();
+                
+                var summaryParts = new System.Collections.Generic.List<string>();
+                
+                // Show file counts
+                if (added > 0) summaryParts.Add($"+{added}");
+                if (modified > 0) summaryParts.Add($"~{modified}");
+                if (deleted > 0) summaryParts.Add($"-{deleted}");
+                if (renamed > 0) summaryParts.Add($"→{renamed}");
+                
+                // Show notable types
+                if (packages > 0) summaryParts.Add($"pkg:{packages}");
+                if (scenes > 0) summaryParts.Add($"scene:{scenes}");
+                if (prefabs > 0) summaryParts.Add($"prefab:{prefabs}");
+                if (scripts > 0) summaryParts.Add($"script:{scripts}");
+                if (configs > 0) summaryParts.Add($"config:{configs}");
+                
+                if (summaryParts.Count > 0)
+                {
+                    return $"[{string.Join(" ", summaryParts)}]";
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Package Guardian] Failed to get diff summary for stash: {ex.Message}");
+            }
+            
+            return null;
         }
         
         private void ApplyStash(global::PackageGuardian.Core.Repository.StashEntry stash)

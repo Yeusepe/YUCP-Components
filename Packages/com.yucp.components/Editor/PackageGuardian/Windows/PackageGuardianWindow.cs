@@ -529,10 +529,19 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                     string oldTreeOid = null;
                     if (!string.IsNullOrEmpty(headCommit))
                     {
-                        var head = repo.Store.ReadObject(headCommit) as Commit;
-                        if (head != null)
+                        try
                         {
-                            oldTreeOid = repo.Hasher.ToHex(head.TreeId);
+                            var head = repo.Store.ReadObject(headCommit) as Commit;
+                            if (head != null)
+                            {
+                                oldTreeOid = repo.Hasher.ToHex(head.TreeId);
+                            }
+                        }
+                        catch (System.IO.InvalidDataException ex)
+                        {
+                            // Object integrity check failed - log warning but continue
+                            // This allows the UI to still function even if some objects are corrupted
+                            UnityEngine.Debug.LogWarning($"[Package Guardian] Corrupted object in HEAD: {ex.Message}. Proceeding with empty baseline.");
                         }
                     }
                     
