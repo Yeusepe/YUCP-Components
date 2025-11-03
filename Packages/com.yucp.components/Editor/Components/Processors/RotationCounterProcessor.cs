@@ -222,6 +222,18 @@ namespace YUCP.Components.Editor
             controller.AddParameter("RotationCounter_FwdArmed", AnimatorControllerParameterType.Bool);
             controller.AddParameter("RotationCounter_RevArmed", AnimatorControllerParameterType.Bool);
             
+            // Step progress parameters (counts traversed zones by direction)
+            controller.AddParameter("RotationCounter_StepProgressCW", AnimatorControllerParameterType.Int);
+            controller.AddParameter("RotationCounter_StepProgressCCW", AnimatorControllerParameterType.Int);
+
+            // One-shot gates to prevent repeated counting while resting
+            controller.AddParameter("RotationCounter_GateUp", AnimatorControllerParameterType.Bool);
+            controller.AddParameter("RotationCounter_GateDown", AnimatorControllerParameterType.Bool);
+
+            // Step pulses to detect a fresh step this frame
+            controller.AddParameter("RotationCounter_StepPulseCW", AnimatorControllerParameterType.Bool);
+            controller.AddParameter("RotationCounter_StepPulseCCW", AnimatorControllerParameterType.Bool);
+            
             // Add debug test parameter to verify zone transitions
             string testZoneParameterName = "RotationCounter_TestZone";
             controller.AddParameter(testZoneParameterName, AnimatorControllerParameterType.Int);
@@ -247,6 +259,10 @@ namespace YUCP.Components.Editor
 
             // Create zone states
             var zoneStates = new List<AnimatorState>();
+            // Router state for initial entry into the correct zone based on angle
+            var routerState = stateMachine.AddState("Router", new Vector3(50, -50, 0));
+            routerState.motion = null;
+            routerState.writeDefaultValues = false;
             for (int i = 0; i < numZones; i++)
             {
                 float zoneStart = i * zoneSize;
@@ -262,11 +278,11 @@ namespace YUCP.Components.Editor
                     ("RotationCounter_TestZone", 0, (float)i, 0f) // Set test zone to zone index
                 });
 
-                // Add transition from Any State to this zone
-                var toZone = stateMachine.AddAnyStateTransition(zoneState);
-                toZone.duration = 0f;
-                toZone.hasExitTime = false;
-                toZone.canTransitionToSelf = true;
+                // Add transition from Router to this zone
+                var routerToZone = routerState.AddTransition(zoneState);
+                routerToZone.duration = 0f;
+                routerToZone.hasExitTime = false;
+                routerToZone.canTransitionToSelf = true;
 
                 // Conditions: angle must be in this zone's range
                 // BUT: For first and last zones, exclude wraparound ranges to avoid conflicts
@@ -279,44 +295,27 @@ namespace YUCP.Components.Editor
                     // If angle is < nearZeroThreshold, we want wraparound detection, not direct zone entry
                     // So only enter Zone0 if angle is between nearZeroThreshold and zoneEnd
                     float minAngle = data.nearZeroThreshold;
-                    toZone.AddCondition(AnimatorConditionMode.Greater, minAngle + epsilon, data.angleParameterName);
-                    toZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
+                    routerToZone.AddCondition(AnimatorConditionMode.Greater, minAngle + epsilon, data.angleParameterName);
+                    routerToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
                 }
                 else if (i == numZones - 1)
                 {
                     // Last zone: zoneStart to nearMaxThreshold (exclude wraparound range)
                     // If angle is > nearMaxThreshold, we're wrapping, let wraparound handle it
                     float maxAngle = data.nearMaxThreshold;
-                    toZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
-                    toZone.AddCondition(AnimatorConditionMode.Less, maxAngle - epsilon, data.angleParameterName);
+                    routerToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
+                    routerToZone.AddCondition(AnimatorConditionMode.Less, maxAngle - epsilon, data.angleParameterName);
                 }
                 else
                 {
                     // Middle zones: standard range
-                    toZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
-                    toZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
+                    routerToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
+                    routerToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
                 }
             }
 
-            // Set default state to zone 0
-            stateMachine.defaultState = zoneStates[0];
-
-            // Create wraparound detection states
-            var incrementState = stateMachine.AddState("IncrementRotation", new Vector3(100, 200, 0));
-            incrementState.motion = null;
-            incrementState.writeDefaultValues = false;
-            AddParameterDriver(incrementState, new (string, int, float, float)[] {
-                (data.rotationIndexParameterName, 1, -1f, 0f), // Add -1 to RotationIndex (flip direction)
-                ("RotationCounter_TestZone", 0, 999f, 0f) // Set test zone to 999 to verify increment triggered
-            });
-
-            var decrementState = stateMachine.AddState("DecrementRotation", new Vector3(100, 300, 0));
-            decrementState.motion = null;
-            decrementState.writeDefaultValues = false;
-            AddParameterDriver(decrementState, new (string, int, float, float)[] {
-                (data.rotationIndexParameterName, 1, 1f, 0f), // Add +1 to RotationIndex (flip direction)
-                ("RotationCounter_TestZone", 0, 888f, 0f) // Set test zone to 888 to verify decrement triggered
-            });
+            // Set default state to Router (routes into the correct zone based on angle)
+            stateMachine.defaultState = routerState;
 
             // Create transitions for wraparound detection
             int lastZoneIndex = numZones - 1;
@@ -325,6 +324,100 @@ namespace YUCP.Components.Editor
             // Calculate last zone start once for use in multiple places
             var lastZoneStart = lastZoneIndex * zoneSize;
             
+            // Create shared step states
+            var stepForward = stateMachine.AddState("StepForward", new Vector3(100, 500, 0));
+            stepForward.writeDefaultValues = false;
+            AddParameterDriver(stepForward, new (string,int,float,float)[] {
+                ("RotationCounter_StepProgressCW", 1, 1f, 0f),
+                ("RotationCounter_StepProgressCCW", 0, 0f, 0f),
+                ("RotationCounter_StepPulseCW", 0, 1f, 0f),
+                ("RotationCounter_StepPulseCCW", 0, 0f, 0f)
+            });
+            var stepReverse = stateMachine.AddState("StepReverse", new Vector3(100, 600, 0));
+            stepReverse.writeDefaultValues = false;
+            AddParameterDriver(stepReverse, new (string,int,float,float)[] {
+                ("RotationCounter_StepProgressCCW", 1, 1f, 0f),
+                ("RotationCounter_StepProgressCW", 0, 0f, 0f),
+                ("RotationCounter_StepPulseCCW", 0, 1f, 0f),
+                ("RotationCounter_StepPulseCW", 0, 0f, 0f)
+            });
+
+            // ClearPulse state resets pulses when we are clearly outside boundary bands
+            var clearPulse = stateMachine.AddState("ClearPulse", new Vector3(100, 400, 0));
+            clearPulse.writeDefaultValues = false;
+            AddParameterDriver(clearPulse, new (string,int,float,float)[] {
+                ("RotationCounter_StepPulseCW", 0, 0f, 0f),
+                ("RotationCounter_StepPulseCCW", 0, 0f, 0f)
+            });
+
+            // Any State band-based detectors for steps and pulse clear
+            float band = Mathf.Max(0.001f, data.hysteresisEpsilon);
+            for (int k = 0; k < numZones; k++)
+            {
+                float boundary = k * zoneSize;
+                float fwdMin = boundary + 0.0005f;
+                float fwdMax = Mathf.Min(1f, boundary + band);
+                float revMin = Mathf.Max(0f, boundary - band);
+                float revMax = boundary - 0.0005f;
+
+                // Any State → StepForward for post-boundary band
+                var anyToStepFwd = stateMachine.AddAnyStateTransition(stepForward);
+                anyToStepFwd.duration = 0f;
+                anyToStepFwd.hasExitTime = false;
+                anyToStepFwd.canTransitionToSelf = true;
+                anyToStepFwd.AddCondition(AnimatorConditionMode.Greater, fwdMin, data.angleParameterName);
+                anyToStepFwd.AddCondition(AnimatorConditionMode.Less, fwdMax, data.angleParameterName);
+                anyToStepFwd.AddCondition(AnimatorConditionMode.IfNot, 0f, "RotationCounter_StepPulseCW");
+
+                // Any State → StepReverse for pre-boundary band
+                var anyToStepRev = stateMachine.AddAnyStateTransition(stepReverse);
+                anyToStepRev.duration = 0f;
+                anyToStepRev.hasExitTime = false;
+                anyToStepRev.canTransitionToSelf = true;
+                // Special case for boundary 0: pre-boundary band wraps at 1.0
+                if (k == 0)
+                {
+                    anyToStepRev.AddCondition(AnimatorConditionMode.Greater, 1f - band, data.angleParameterName);
+                    anyToStepRev.AddCondition(AnimatorConditionMode.Less, 1f - 0.0005f, data.angleParameterName);
+                }
+                else
+                {
+                    anyToStepRev.AddCondition(AnimatorConditionMode.Greater, revMin, data.angleParameterName);
+                    anyToStepRev.AddCondition(AnimatorConditionMode.Less, revMax, data.angleParameterName);
+                }
+                anyToStepRev.AddCondition(AnimatorConditionMode.IfNot, 0f, "RotationCounter_StepPulseCCW");
+
+                // Any State → ClearPulse for interior of zone (away from both bands)
+                float interiorStart = boundary + band;
+                float interiorEnd = (k + 1) * zoneSize - band;
+                if (interiorEnd > interiorStart)
+                {
+                    var anyToClear = stateMachine.AddAnyStateTransition(clearPulse);
+                    anyToClear.duration = 0f;
+                    anyToClear.hasExitTime = false;
+                    anyToClear.canTransitionToSelf = true;
+                    anyToClear.AddCondition(AnimatorConditionMode.Greater, interiorStart, data.angleParameterName);
+                    anyToClear.AddCondition(AnimatorConditionMode.Less, interiorEnd, data.angleParameterName);
+                }
+            }
+
+            // Count states in the same layer: perform the increment/decrement immediately on step threshold
+            int sections = Mathf.Max(1, Mathf.Min(data.sectionsPerCount, numZones));
+            var countUp = stateMachine.AddState("CountUp", new Vector3(300, 500, 0));
+            countUp.writeDefaultValues = false;
+            float addUp = data.clockwiseIsPositive ? 1f : -1f;
+            AddParameterDriver(countUp, new (string,int,float,float)[] {
+                (data.rotationIndexParameterName, 1, addUp, 0f),
+                ("RotationCounter_StepProgressCW", 1, -sections, 0f)
+            });
+            var countDown = stateMachine.AddState("CountDown", new Vector3(300, 600, 0));
+            countDown.writeDefaultValues = false;
+            float addDown = data.clockwiseIsPositive ? -1f : 1f;
+            AddParameterDriver(countDown, new (string,int,float,float)[] {
+                (data.rotationIndexParameterName, 1, addDown, 0f),
+                ("RotationCounter_StepProgressCCW", 1, -sections, 0f)
+            });
+
             // Add transitions between adjacent zones (normal rotation, no wraparound)
             // These handle all normal zone-to-zone transitions
             for (int i = 0; i < numZones; i++)
@@ -332,8 +425,8 @@ namespace YUCP.Components.Editor
                 int nextZone = (i + 1) % numZones;
                 int prevZone = (i - 1 + numZones) % numZones;
 
-                // Forward rotation: i → nextZone
-                var forwardTransition = zoneStates[i].AddTransition(zoneStates[nextZone]);
+                // Forward rotation: i → StepForward (then StepForward → nextZone)
+                var forwardTransition = zoneStates[i].AddTransition(stepForward);
                 forwardTransition.duration = 0f;
                 forwardTransition.hasExitTime = false;
                 forwardTransition.canTransitionToSelf = false;
@@ -343,7 +436,9 @@ namespace YUCP.Components.Editor
                 {
                     // Don't create direct last → first transition
                     // Wraparound detection will handle this case
-                    continue;
+                    // For step counting, we still route via stepForward using first zone range
+                    forwardTransition.AddCondition(AnimatorConditionMode.Greater, data.nearZeroThreshold, data.angleParameterName);
+                    forwardTransition.AddCondition(AnimatorConditionMode.Less, zoneSize, data.angleParameterName);
                 }
                 else
                 {
@@ -354,8 +449,8 @@ namespace YUCP.Components.Editor
                     forwardTransition.AddCondition(AnimatorConditionMode.Greater, nextZoneThreshold, data.angleParameterName);
                 }
 
-                // Reverse rotation: i → prevZone
-                var reverseTransition = zoneStates[i].AddTransition(zoneStates[prevZone]);
+                // Reverse rotation: i → StepReverse (then StepReverse → prevZone)
+                var reverseTransition = zoneStates[i].AddTransition(stepReverse);
                 reverseTransition.duration = 0f;
                 reverseTransition.hasExitTime = false;
                 reverseTransition.canTransitionToSelf = false;
@@ -365,7 +460,8 @@ namespace YUCP.Components.Editor
                 {
                     // Don't create direct first → last transition  
                     // Wraparound detection will handle this case
-                    continue;
+                    reverseTransition.AddCondition(AnimatorConditionMode.Greater, lastZoneStart, data.angleParameterName);
+                    reverseTransition.AddCondition(AnimatorConditionMode.Less, data.nearMaxThreshold, data.angleParameterName);
                 }
                 else
                 {
@@ -375,176 +471,86 @@ namespace YUCP.Components.Editor
                 }
             }
             
-            // Forward wraparound: Last zone → Increment → First zone
-            // When angle crosses from high (last zone) to low (< nearZeroThreshold), increment counter
-            var lastToIncrement = zoneStates[lastZoneIndex].AddTransition(incrementState);
-            lastToIncrement.duration = 0f;
-            lastToIncrement.hasExitTime = false;
-            lastToIncrement.canTransitionToSelf = false;
-            // Transition fires when angle wraps to low range (< nearZeroThreshold)
-            // This means we've completed a full rotation forward
-            // We're already in last zone state, so we just need to check if angle is in wraparound range
-            lastToIncrement.AddCondition(AnimatorConditionMode.Less, data.nearZeroThreshold, data.angleParameterName);
-            
-            // Return from increment to first zone
-            var incrementToFirst = incrementState.AddTransition(zoneStates[firstZoneIndex]);
-            incrementToFirst.duration = 0f;
-            incrementToFirst.hasExitTime = false;
-            incrementToFirst.canTransitionToSelf = false;
-            // Transition to first zone when angle is in first zone range (after wraparound)
-            incrementToFirst.AddCondition(AnimatorConditionMode.Greater, data.nearZeroThreshold - 0.001f, data.angleParameterName);
-            incrementToFirst.AddCondition(AnimatorConditionMode.Less, zoneSize, data.angleParameterName);
-            
-            // Direct last → first transition for normal (non-wraparound) forward rotation
-            // Only fires when angle is in normal first zone range (> nearZeroThreshold)
-            var lastToFirstNormal = zoneStates[lastZoneIndex].AddTransition(zoneStates[firstZoneIndex]);
-            lastToFirstNormal.duration = 0f;
-            lastToFirstNormal.hasExitTime = false;
-            lastToFirstNormal.canTransitionToSelf = false;
-            // Normal last → first: angle is in normal first zone range (not wraparound)
-            // This handles the case where angle goes from high in last zone to high in first zone
-            lastToFirstNormal.AddCondition(AnimatorConditionMode.Greater, data.nearZeroThreshold, data.angleParameterName);
-            lastToFirstNormal.AddCondition(AnimatorConditionMode.Less, zoneSize, data.angleParameterName);
-            
-            // Reverse wraparound: First zone → Decrement → Last zone
-            // When angle crosses from low (first zone) to high (> nearMaxThreshold), decrement counter
-            var firstToDecrement = zoneStates[firstZoneIndex].AddTransition(decrementState);
-            firstToDecrement.duration = 0f;
-            firstToDecrement.hasExitTime = false;
-            firstToDecrement.canTransitionToSelf = false;
-            // Transition fires when angle wraps to high range (> nearMaxThreshold)
-            // This means we've completed a full rotation backward
-            // We're already in first zone state, so we just need to check if angle is in wraparound range
-            firstToDecrement.AddCondition(AnimatorConditionMode.Greater, data.nearMaxThreshold, data.angleParameterName);
-            
-            // Return from decrement to last zone
-            var decrementToLast = decrementState.AddTransition(zoneStates[lastZoneIndex]);
-            decrementToLast.duration = 0f;
-            decrementToLast.hasExitTime = false;
-            decrementToLast.canTransitionToSelf = false;
-            // Transition to last zone when angle is in last zone range (after wraparound)
-            decrementToLast.AddCondition(AnimatorConditionMode.Greater, lastZoneStart - 0.001f, data.angleParameterName);
-            decrementToLast.AddCondition(AnimatorConditionMode.Less, data.nearMaxThreshold + 0.001f, data.angleParameterName);
-            
-            // Direct first → last transition for normal (non-wraparound) reverse rotation
-            // Only fires when angle is in normal last zone range (< nearMaxThreshold)
-            var firstToLastNormal = zoneStates[firstZoneIndex].AddTransition(zoneStates[lastZoneIndex]);
-            firstToLastNormal.duration = 0f;
-            firstToLastNormal.hasExitTime = false;
-            firstToLastNormal.canTransitionToSelf = false;
-            // Normal first → last: angle is in normal last zone range (not wraparound)
-            // This handles the case where angle goes from low in first zone to low in last zone
-            firstToLastNormal.AddCondition(AnimatorConditionMode.Greater, lastZoneStart, data.angleParameterName);
-            firstToLastNormal.AddCondition(AnimatorConditionMode.Less, data.nearMaxThreshold, data.angleParameterName);
-
-            // ---------------- Detector layer (arming/trigger with hysteresis) ----------------
-            var detectorLayer = new AnimatorControllerLayer
+            // From stepForward/stepReverse, route to the appropriate zone based on current angle range
+            for (int i = 0; i < numZones; i++)
             {
-                name = "RotationDetector",
-                blendingMode = AnimatorLayerBlendingMode.Override,
-                defaultWeight = 1f,
-                stateMachine = new AnimatorStateMachine()
-            };
-            var layers = new List<AnimatorControllerLayer>(controller.layers) { detectorLayer };
-            controller.layers = layers.ToArray();
+                float zoneStart = i * zoneSize;
+                float zoneEnd = (i + 1) * zoneSize;
+                float epsilon = 0.001f;
+                float zoneStartThreshold = zoneStart > epsilon ? zoneStart - epsilon : -0.001f;
 
-            var detSM = detectorLayer.stateMachine;
-            float eps = Mathf.Clamp01(data.hysteresisEpsilon);
-            float nearZeroArm = Mathf.Max(0f, data.nearZeroThreshold - eps);
-            float nearZeroDisarm = Mathf.Min(1f, data.nearZeroThreshold + eps);
-            float nearMaxArm = Mathf.Min(1f, data.nearMaxThreshold + eps);
-            float nearMaxDisarm = Mathf.Max(0f, data.nearMaxThreshold - eps);
+                var stepFwdToZone = stepForward.AddTransition(zoneStates[i]);
+                stepFwdToZone.duration = 0f;
+                stepFwdToZone.hasExitTime = false;
+                stepFwdToZone.canTransitionToSelf = false;
+                if (i == 0)
+                {
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Greater, data.nearZeroThreshold, data.angleParameterName);
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCW");
+                }
+                else if (i == numZones - 1)
+                {
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, data.nearMaxThreshold, data.angleParameterName);
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCW");
+                }
+                else
+                {
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
+                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCW");
+                }
 
-            var idle = detSM.AddState("Detector_Idle", new Vector3(50, 50, 0));
-            idle.writeDefaultValues = false;
-            detSM.defaultState = idle;
+                // If threshold reached on this step, go to CountUp instead of zone
+                var stepFwdToCount = stepForward.AddTransition(countUp);
+                stepFwdToCount.duration = 0f;
+                stepFwdToCount.hasExitTime = false;
+                stepFwdToCount.canTransitionToSelf = false;
+                stepFwdToCount.AddCondition(AnimatorConditionMode.Greater, sections - 0.5f, "RotationCounter_StepProgressCW");
+ 
+                var stepRevToZone = stepReverse.AddTransition(zoneStates[i]);
+                stepRevToZone.duration = 0f;
+                stepRevToZone.hasExitTime = false;
+                stepRevToZone.canTransitionToSelf = false;
+                if (i == 0)
+                {
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Greater, data.nearZeroThreshold, data.angleParameterName);
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCCW");
+                }
+                else if (i == numZones - 1)
+                {
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, data.nearMaxThreshold, data.angleParameterName);
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCCW");
+                }
+                else
+                {
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
+                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCCW");
+                }
 
-            var fwdArmed = detSM.AddState("Detector_FwdArmed", new Vector3(250, 0, 0));
-            fwdArmed.writeDefaultValues = false;
-            AddParameterDriver(fwdArmed, new (string,int,float,float)[] {
-                ("RotationCounter_FwdArmed", 0, 1f, 0f)
-            });
+                var stepRevToCount = stepReverse.AddTransition(countDown);
+                stepRevToCount.duration = 0f;
+                stepRevToCount.hasExitTime = false;
+                stepRevToCount.canTransitionToSelf = false;
+                stepRevToCount.AddCondition(AnimatorConditionMode.Greater, sections - 0.5f, "RotationCounter_StepProgressCCW");
+            }
 
-            var fwdTrigger = detSM.AddState("Detector_FwdTrigger", new Vector3(450, 0, 0));
-            fwdTrigger.writeDefaultValues = false;
-            // Clockwise increases per user; add mapping based on clockwiseIsPositive in processor later? Not accessible here; use two states with both adds? We'll use +1 for CW and -1 for CCW by branching via two drivers
-            float fwdAdd = data.clockwiseIsPositive ? 1f : -1f;
-            AddParameterDriver(fwdTrigger, new (string,int,float,float)[] {
-                (data.rotationIndexParameterName, 1, fwdAdd, 0f),
-                ("RotationCounter_FwdArmed", 0, 0f, 0f),
-                ("RotationCounter_TestZone", 0, 999f, 0f)
-            });
+            // After counting, route back to router to land in the correct zone based on current angle
+            var countUpToRouter = countUp.AddTransition(routerState);
+            countUpToRouter.duration = 0f;
+            countUpToRouter.hasExitTime = true;
+            countUpToRouter.exitTime = 0f;
+            countUpToRouter.canTransitionToSelf = false;
 
-            var revArmed = detSM.AddState("Detector_RevArmed", new Vector3(250, 150, 0));
-            revArmed.writeDefaultValues = false;
-            AddParameterDriver(revArmed, new (string,int,float,float)[] {
-                ("RotationCounter_RevArmed", 0, 1f, 0f)
-            });
-
-            var revTrigger = detSM.AddState("Detector_RevTrigger", new Vector3(450, 150, 0));
-            revTrigger.writeDefaultValues = false;
-            float revAdd = data.clockwiseIsPositive ? -1f : 1f;
-            AddParameterDriver(revTrigger, new (string,int,float,float)[] {
-                (data.rotationIndexParameterName, 1, revAdd, 0f),
-                ("RotationCounter_RevArmed", 0, 0f, 0f),
-                ("RotationCounter_TestZone", 0, 888f, 0f)
-            });
-
-            // Idle → FwdArmed: angle > nearMax + eps
-            var idleToFwdArmed = idle.AddTransition(fwdArmed);
-            idleToFwdArmed.duration = 0f;
-            idleToFwdArmed.hasExitTime = false;
-            idleToFwdArmed.canTransitionToSelf = false;
-            idleToFwdArmed.AddCondition(AnimatorConditionMode.Greater, nearMaxArm, data.angleParameterName);
-
-            // FwdArmed → FwdTrigger: angle < nearZero - eps
-            var fwdArmedToTrigger = fwdArmed.AddTransition(fwdTrigger);
-            fwdArmedToTrigger.duration = 0f;
-            fwdArmedToTrigger.hasExitTime = false;
-            fwdArmedToTrigger.canTransitionToSelf = false;
-            fwdArmedToTrigger.AddCondition(AnimatorConditionMode.Less, nearZeroArm, data.angleParameterName);
-
-            // FwdArmed → Idle (disarm): angle < nearMax - eps (fell out)
-            var fwdArmedToIdle = fwdArmed.AddTransition(idle);
-            fwdArmedToIdle.duration = 0f;
-            fwdArmedToIdle.hasExitTime = false;
-            fwdArmedToIdle.canTransitionToSelf = false;
-            fwdArmedToIdle.AddCondition(AnimatorConditionMode.Less, nearMaxDisarm, data.angleParameterName);
-
-            // FwdTrigger → Idle: unconditional quick return
-            var fwdTriggerToIdle = fwdTrigger.AddTransition(idle);
-            fwdTriggerToIdle.duration = 0f;
-            fwdTriggerToIdle.hasExitTime = true;
-            fwdTriggerToIdle.exitTime = 0.0f;
-            fwdTriggerToIdle.canTransitionToSelf = false;
-
-            // Idle → RevArmed: angle < nearZero - eps
-            var idleToRevArmed = idle.AddTransition(revArmed);
-            idleToRevArmed.duration = 0f;
-            idleToRevArmed.hasExitTime = false;
-            idleToRevArmed.canTransitionToSelf = false;
-            idleToRevArmed.AddCondition(AnimatorConditionMode.Less, nearZeroArm, data.angleParameterName);
-
-            // RevArmed → RevTrigger: angle > nearMax + eps
-            var revArmedToTrigger = revArmed.AddTransition(revTrigger);
-            revArmedToTrigger.duration = 0f;
-            revArmedToTrigger.hasExitTime = false;
-            revArmedToTrigger.canTransitionToSelf = false;
-            revArmedToTrigger.AddCondition(AnimatorConditionMode.Greater, nearMaxArm, data.angleParameterName);
-
-            // RevArmed → Idle (disarm): angle > nearZero + eps (fell out)
-            var revArmedToIdle = revArmed.AddTransition(idle);
-            revArmedToIdle.duration = 0f;
-            revArmedToIdle.hasExitTime = false;
-            revArmedToIdle.canTransitionToSelf = false;
-            revArmedToIdle.AddCondition(AnimatorConditionMode.Greater, nearZeroDisarm, data.angleParameterName);
-
-            // RevTrigger → Idle: unconditional quick return
-            var revTriggerToIdle = revTrigger.AddTransition(idle);
-            revTriggerToIdle.duration = 0f;
-            revTriggerToIdle.hasExitTime = true;
-            revTriggerToIdle.exitTime = 0.0f;
-            revTriggerToIdle.canTransitionToSelf = false;
+            var countDownToRouter = countDown.AddTransition(routerState);
+            countDownToRouter.duration = 0f;
+            countDownToRouter.hasExitTime = true;
+            countDownToRouter.exitTime = 0f;
+            countDownToRouter.canTransitionToSelf = false;
         }
 
         /// <summary>

@@ -181,7 +181,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             viewMenu.AddToClassList("pg-button");
             rightSection.Add(viewMenu);
             
-            var settingsButton = new Button(() => UnityEditor.SettingsService.OpenProjectSettings("Project/PackageGuardianSettings"));
+            var settingsButton = new Button(() => UnityEditor.SettingsService.OpenProjectSettings("Project/Package Guardian"));
             settingsButton.text = "Settings";
             settingsButton.AddToClassList("pg-button");
             rightSection.Add(settingsButton);

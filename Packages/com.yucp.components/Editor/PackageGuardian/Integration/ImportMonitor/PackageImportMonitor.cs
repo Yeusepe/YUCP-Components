@@ -200,11 +200,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 if (moved.Length > 0)
                     description += $", {moved.Length} moved";
                 
-                using (var scope = new ImportTransactionScope("Import", description))
-                {
-                    // Stash is created automatically on scope creation
-                    // Scope will dispose automatically at end of using block
-                }
+                // Run stash creation asynchronously to keep editor responsive
+                var service = RepositoryService.Instance;
+                service.CreateAutoStashAsync($"After Import: {description}");
             }
             catch (Exception ex)
             {

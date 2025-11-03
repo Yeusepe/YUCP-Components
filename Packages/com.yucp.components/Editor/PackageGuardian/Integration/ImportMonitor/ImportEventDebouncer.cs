@@ -10,9 +10,10 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
     public sealed class ImportEventDebouncer
     {
         private readonly float _debounceSeconds;
-        private double _lastEventTime;
         private readonly List<string> _pendingAssets = new List<string>();
         private Action _pendingCallback;
+        private double _executeAtTime = -1f;
+        private bool _updateSubscribed;
         
         public ImportEventDebouncer(float debounceSeconds = 0.5f)
         {
@@ -24,34 +25,54 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         /// </summary>
         public void QueueEvent(string[] assets, Action callback)
         {
-            _lastEventTime = EditorApplication.timeSinceStartup;
-            _pendingAssets.AddRange(assets);
+            var now = EditorApplication.timeSinceStartup;
+            _executeAtTime = now + _debounceSeconds; // coalesce: push deadline forward on each event
+
+            if (assets != null && assets.Length > 0)
+                _pendingAssets.AddRange(assets);
+
+            // Always keep the latest callback (caller already filters significance)
             _pendingCallback = callback;
-            
-            // Schedule check
-            EditorApplication.delayCall += CheckExecute;
-        }
-        
-        private void CheckExecute()
-        {
-            double elapsed = EditorApplication.timeSinceStartup - _lastEventTime;
-            
-            if (elapsed >= _debounceSeconds)
+
+            if (!_updateSubscribed)
             {
-                // Debounce period has passed, execute
-                if (_pendingCallback != null)
-                {
-                    var callback = _pendingCallback;
-                    _pendingCallback = null;
-                    _pendingAssets.Clear();
-                    
-                    callback?.Invoke();
-                }
+                _updateSubscribed = true;
+                EditorApplication.update += OnEditorUpdate;
             }
-            else
+        }
+
+        private void OnEditorUpdate()
+        {
+            // Avoid executing during heavy editor states; lightly reschedule
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
-                // Still within debounce period, check again
-                EditorApplication.delayCall += CheckExecute;
+                _executeAtTime = EditorApplication.timeSinceStartup + 0.2f;
+                return;
+            }
+
+            if (_executeAtTime < 0)
+                return;
+
+            var now = EditorApplication.timeSinceStartup;
+            if (now < _executeAtTime)
+                return;
+
+            // Time reached: unsubscribe first to minimize time on main thread
+            EditorApplication.update -= OnEditorUpdate;
+            _updateSubscribed = false;
+
+            var callback = _pendingCallback;
+            _pendingCallback = null;
+            _executeAtTime = -1f;
+            _pendingAssets.Clear();
+
+            try
+            {
+                callback?.Invoke();
+            }
+            catch (Exception)
+            {
+                // Swallow to avoid breaking editor loop; callers handle logging
             }
         }
     }

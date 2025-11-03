@@ -81,6 +81,9 @@ namespace YUCP.Components.Editor.UI
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("nearMaxThreshold"), 
                     new GUIContent("Near Max Threshold", "Angle above this value is considered near 360° for wraparound detection"));
                 
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("sectionsPerCount"), 
+                    new GUIContent("Sections Per Count", "How many zones to traverse per +/−1 on RotationIndex. 1 = every zone, up to numberOfZones = full rotation."));
+                
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("clockwiseIsPositive"), 
                     new GUIContent("Clockwise Increases", "If enabled, clockwise rotation increments RotationIndex; otherwise decrements."));
                 

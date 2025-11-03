@@ -14,6 +14,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
     {
         private static RepositoryService _instance;
         private static readonly object _lock = new object();
+        private readonly object _ioLock = new object();
         
         private Repository _repository;
         private readonly string _projectRoot;
@@ -218,6 +219,34 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             string author = $"{settings.authorName} <{settings.authorEmail}>";
             
             return _repository.Stash.CreateAutoStash(message, author);
+        }
+        
+        /// <summary>
+        /// Create an auto-stash off the main thread to avoid editor stalls.
+        /// </summary>
+        public void CreateAutoStashAsync(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                throw new ArgumentNullException(nameof(message));
+
+            // Capture author on main thread (accesses Unity-backed settings)
+            var settings = Settings.PackageGuardianSettings.Instance;
+            string author = $"{settings.authorName} <{settings.authorEmail}>";
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    lock (_ioLock)
+                    {
+                        _repository.Stash.CreateAutoStash(message, author);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Package Guardian] CreateAutoStashAsync failed: {ex.Message}");
+                }
+            });
         }
         
         /// <summary>

@@ -30,6 +30,10 @@ namespace YUCP.Components
         [Range(0.5f, 1f)]
         public float nearMaxThreshold = 0.9f;
 
+        [Tooltip("Number of zones to traverse for one count increment. 1 = every zone boundary, up to numberOfZones = full rotation.")]
+        [Range(1, 32)]
+        public int sectionsPerCount = 4;
+
         [Tooltip("If true, clockwise rotation increments RotationIndex; otherwise decrements.")]
         public bool clockwiseIsPositive = true;
 
