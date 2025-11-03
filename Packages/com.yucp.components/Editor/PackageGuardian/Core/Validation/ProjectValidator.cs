@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.Compilation;
 using PackageGuardian.Core.Diff;
@@ -48,6 +50,78 @@ namespace PackageGuardian.Core.Validation
             issues.AddRange(CheckSceneIntegrity());
             issues.AddRange(CheckProjectSettings());
             issues.AddRange(CheckDependencyIntegrity());
+            
+            return issues;
+        }
+        
+        /// <summary>
+        /// Validates the current project state asynchronously with progress callbacks.
+        /// </summary>
+        public async Task<List<ValidationIssue>> ValidateProjectAsync(
+            System.Action<float, string> progressCallback = null,
+            CancellationToken cancellationToken = default)
+        {
+            var issues = new List<ValidationIssue>();
+            
+            // Phase 1: Compilation errors (5%)
+            progressCallback?.Invoke(0.05f, "Checking compilation errors...");
+            issues.AddRange(await Task.Run(() => CheckCompilationErrors(), cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 2: Package conflicts (10%)
+            progressCallback?.Invoke(0.10f, "Checking package conflicts...");
+            issues.AddRange(await Task.Run(() => CheckPackageConflicts(), cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 3: Broken references - scan all prefabs/scenes (20%)
+            progressCallback?.Invoke(0.20f, "Scanning prefabs and scenes for broken references...");
+            issues.AddRange(await CheckBrokenReferencesAsync(progressCallback, cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 4: Missing meta files - full recursive scan (30%)
+            progressCallback?.Invoke(0.30f, "Checking for missing .meta files...");
+            issues.AddRange(await CheckMissingMetaFilesAsync(progressCallback, cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 5: Duplicate GUIDs - scan all .meta files (45%)
+            progressCallback?.Invoke(0.45f, "Checking for duplicate GUIDs...");
+            issues.AddRange(await CheckDuplicateGUIDsAsync(progressCallback, cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 6: Invalid file names - full scan (55%)
+            progressCallback?.Invoke(0.55f, "Checking for invalid file names...");
+            issues.AddRange(await CheckInvalidFileNamesAsync(progressCallback, cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 7: Shader compilation - all shaders (65%)
+            progressCallback?.Invoke(0.65f, "Checking shader compilation...");
+            issues.AddRange(await CheckShaderCompilationAsync(progressCallback, cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 8: Memory usage check (70%)
+            progressCallback?.Invoke(0.70f, "Checking memory usage...");
+            issues.AddRange(await Task.Run(() => CheckMemoryUsage(), cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 9: Unity API compatibility (75%)
+            progressCallback?.Invoke(0.75f, "Checking Unity API compatibility...");
+            issues.AddRange(await Task.Run(() => CheckUnityAPICompatibility(), cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 10: Scene integrity (85%)
+            progressCallback?.Invoke(0.85f, "Validating scene integrity...");
+            issues.AddRange(await Task.Run(() => CheckSceneIntegrity(), cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Phase 11: Project settings + dependency integrity (95%)
+            progressCallback?.Invoke(0.95f, "Checking project settings and dependencies...");
+            issues.AddRange(await Task.Run(() => CheckProjectSettings(), cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            issues.AddRange(await Task.Run(() => CheckDependencyIntegrity(), cancellationToken));
+            if (cancellationToken.IsCancellationRequested) return issues;
+            
+            // Complete (100%)
+            progressCallback?.Invoke(1.0f, "Validation complete");
             
             return issues;
         }
@@ -256,6 +330,87 @@ namespace PackageGuardian.Core.Validation
             }
             
             return issues;
+        }
+        
+        private async Task<List<ValidationIssue>> CheckBrokenReferencesAsync(
+            System.Action<float, string> progressCallback, CancellationToken cancellationToken)
+        {
+            return await Task.Run(() =>
+            {
+                var issues = new List<ValidationIssue>();
+                
+                try
+                {
+                    // Find all prefabs and scenes (unlimited)
+                    var prefabs = AssetDatabase.FindAssets("t:Prefab")
+                        .Select(guid => AssetDatabase.GUIDToAssetPath(guid))
+                        .ToList();
+                    
+                    var scenes = AssetDatabase.FindAssets("t:Scene")
+                        .Select(guid => AssetDatabase.GUIDToAssetPath(guid))
+                        .ToList();
+                    
+                    var brokenAssets = new List<string>();
+                    int total = prefabs.Count + scenes.Count;
+                    int processed = 0;
+                    
+                    foreach (var prefabPath in prefabs)
+                    {
+                        if (cancellationToken.IsCancellationRequested) return issues;
+                        
+                        var prefab = AssetDatabase.LoadAssetAtPath<UnityEngine.GameObject>(prefabPath);
+                        if (prefab != null)
+                        {
+                            var components = prefab.GetComponentsInChildren<UnityEngine.Component>(true);
+                            bool hasMissing = components.Any(c => c == null);
+                            
+                            if (hasMissing)
+                            {
+                                brokenAssets.Add(prefabPath);
+                            }
+                        }
+                        
+                        processed++;
+                        if (processed % 100 == 0)
+                        {
+                            progressCallback?.Invoke(0.20f + (0.10f * processed / total), 
+                                $"Scanning prefabs... ({processed}/{total})");
+                        }
+                    }
+                    
+                    foreach (var scenePath in scenes)
+                    {
+                        if (cancellationToken.IsCancellationRequested) return issues;
+                        
+                        var scene = AssetDatabase.LoadAssetAtPath<UnityEditor.SceneAsset>(scenePath);
+                        if (scene != null)
+                        {
+                            // For scenes, we need to load them to check for missing scripts
+                            // Skip for now to avoid loading all scenes
+                        }
+                        
+                        processed++;
+                    }
+                    
+                    if (brokenAssets.Count > 0)
+                    {
+                        issues.Add(new ValidationIssue(
+                            IssueSeverity.Warning,
+                            IssueCategory.BrokenReference,
+                            "Missing script references",
+                            $"Found {brokenAssets.Count} asset(s) with missing script references. These may cause errors.",
+                            brokenAssets.Take(100).ToArray(), // Limit displayed paths
+                            "Fix or remove missing script references before creating a snapshot."
+                        ));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to check broken references: {ex.Message}");
+                }
+                
+                return issues;
+            }, cancellationToken);
         }
         
         private List<ValidationIssue> CheckDangerousDeletions(List<FileChange> changes)
@@ -494,6 +649,7 @@ namespace PackageGuardian.Core.Validation
                 
                 if (missingMeta.Count > 0)
                 {
+                    var pathsToFix = missingMeta.ToList(); // Capture list for autofix
                     issues.Add(new ValidationIssue(
                         IssueSeverity.Error,
                         IssueCategory.MissingMetaFile,
@@ -502,11 +658,25 @@ namespace PackageGuardian.Core.Validation
                         missingMeta.Take(20).ToArray(),
                         "Reimport the affected assets or let Unity regenerate the meta files.",
                         () => {
-                            foreach (var path in missingMeta)
+                            int fixedCount = 0;
+                            foreach (var path in pathsToFix)
                             {
-                                AssetDatabase.ImportAsset(path.Replace(_projectRoot + Path.DirectorySeparatorChar, ""), ImportAssetOptions.ForceUpdate);
+                                string relativePath = path.Replace(_projectRoot + Path.DirectorySeparatorChar, "").Replace('\\', '/');
+                                if (!string.IsNullOrEmpty(relativePath))
+                                {
+                                    try
+                                    {
+                                        AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate);
+                                        fixedCount++;
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to reimport {relativePath}: {ex.Message}");
+                                    }
+                                }
                             }
-                            AssetDatabase.Refresh();
+                            AssetDatabase.SaveAssets();
+                            UnityEngine.Debug.Log($"[Package Guardian] Auto-fixed {fixedCount} missing meta files");
                         }
                     ));
                 }
@@ -545,6 +715,112 @@ namespace PackageGuardian.Core.Validation
                             missingMeta.Add(dir);
                         }
                         CheckDirectoryForMissingMeta(dir, missingMeta);
+                    }
+                }
+            }
+            catch
+            {
+                // Skip directories we can't access
+            }
+        }
+        
+        private async Task<List<ValidationIssue>> CheckMissingMetaFilesAsync(
+            System.Action<float, string> progressCallback, CancellationToken cancellationToken)
+        {
+            return await Task.Run(() =>
+            {
+                var issues = new List<ValidationIssue>();
+                var missingMeta = new List<string>();
+                
+                try
+                {
+                    var assetsPath = Path.Combine(_projectRoot, "Assets");
+                    var packagesPath = Path.Combine(_projectRoot, "Packages");
+                    
+                    if (Directory.Exists(assetsPath))
+                    {
+                        CheckDirectoryForMissingMetaRecursive(assetsPath, missingMeta, cancellationToken);
+                    }
+                    if (cancellationToken.IsCancellationRequested) return issues;
+                    
+                    if (Directory.Exists(packagesPath))
+                    {
+                        CheckDirectoryForMissingMetaRecursive(packagesPath, missingMeta, cancellationToken);
+                    }
+                    
+                    if (missingMeta.Count > 0)
+                    {
+                        var pathsToShow = missingMeta.Take(100).ToArray();
+                        var allPaths = missingMeta.ToList(); // Capture full list for autofix
+                        issues.Add(new ValidationIssue(
+                            IssueSeverity.Error,
+                            IssueCategory.MissingMetaFile,
+                            "Missing .meta files detected",
+                            $"Found {missingMeta.Count} asset file(s) without corresponding .meta files. This can cause GUID conflicts and asset corruption.",
+                            pathsToShow,
+                            "Reimport the affected assets or let Unity regenerate the meta files.",
+                            () => {
+                                int fixedCount = 0;
+                                foreach (var path in allPaths)
+                                {
+                                    string relativePath = path.Replace(_projectRoot + Path.DirectorySeparatorChar, "").Replace('\\', '/');
+                                    if (!string.IsNullOrEmpty(relativePath))
+                                    {
+                                        try
+                                        {
+                                            AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate);
+                                            fixedCount++;
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to reimport {relativePath}: {ex.Message}");
+                                        }
+                                    }
+                                }
+                                AssetDatabase.SaveAssets();
+                                UnityEngine.Debug.Log($"[Package Guardian] Auto-fixed {fixedCount} missing meta files");
+                            }
+                        ));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to check meta files: {ex.Message}");
+                }
+                
+                return issues;
+            }, cancellationToken);
+        }
+        
+        private void CheckDirectoryForMissingMetaRecursive(string directory, List<string> missingMeta, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var files = Directory.GetFiles(directory);
+                foreach (var file in files)
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+                    if (!file.EndsWith(".meta"))
+                    {
+                        var metaFile = file + ".meta";
+                        if (!File.Exists(metaFile))
+                        {
+                            missingMeta.Add(file);
+                        }
+                    }
+                }
+                
+                foreach (var dir in Directory.GetDirectories(directory))
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+                    if (!dir.Contains(".git") && !dir.Contains("Library") && !dir.Contains("Temp"))
+                    {
+                        var metaFile = dir + ".meta";
+                        if (!File.Exists(metaFile))
+                        {
+                            missingMeta.Add(dir);
+                        }
+                        CheckDirectoryForMissingMetaRecursive(dir, missingMeta, cancellationToken);
                     }
                 }
             }
@@ -610,11 +886,14 @@ namespace PackageGuardian.Core.Validation
                                 // Auto-fix: Reimport all but the first file
                                 for (int i = 1; i < duplicate.Value.Count; i++)
                                 {
-                                    var assetPath = duplicate.Value[i].Replace(_projectRoot + Path.DirectorySeparatorChar, "");
-                                    AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                                    string relativePath = duplicate.Value[i].Replace(_projectRoot + Path.DirectorySeparatorChar, "").Replace('\\', '/');
+                                    if (!string.IsNullOrEmpty(relativePath))
+                                    {
+                                        AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                                    }
                                 }
                             }
-                            AssetDatabase.Refresh();
+                            AssetDatabase.SaveAssets();
                         }
                     ));
                 }
@@ -625,6 +904,93 @@ namespace PackageGuardian.Core.Validation
             }
             
             return issues;
+        }
+        
+        private async Task<List<ValidationIssue>> CheckDuplicateGUIDsAsync(
+            System.Action<float, string> progressCallback, CancellationToken cancellationToken)
+        {
+            return await Task.Run(() =>
+            {
+                var issues = new List<ValidationIssue>();
+                var guidMap = new Dictionary<string, List<string>>();
+                
+                try
+                {
+                    // Scan all meta files (unlimited)
+                    var metaFiles = Directory.GetFiles(_projectRoot, "*.meta", SearchOption.AllDirectories)
+                        .Where(f => !f.Contains("Library") && !f.Contains("Temp") && !f.Contains(".git"))
+                        .ToList();
+                    
+                    int processed = 0;
+                    foreach (var metaFile in metaFiles)
+                    {
+                        if (cancellationToken.IsCancellationRequested) return issues;
+                        
+                        try
+                        {
+                            var content = File.ReadAllText(metaFile);
+                            var guidMatch = Regex.Match(content, @"guid:\s*([a-f0-9]{32})");
+                            
+                            if (guidMatch.Success)
+                            {
+                                var guid = guidMatch.Groups[1].Value;
+                                if (!guidMap.ContainsKey(guid))
+                                {
+                                    guidMap[guid] = new List<string>();
+                                }
+                                guidMap[guid].Add(metaFile.Replace(".meta", ""));
+                            }
+                        }
+                        catch
+                        {
+                            // Skip files we can't read
+                        }
+                        
+                        processed++;
+                        if (processed % 500 == 0)
+                        {
+                            progressCallback?.Invoke(0.45f + (0.10f * processed / metaFiles.Count), 
+                                $"Checking GUIDs... ({processed}/{metaFiles.Count})");
+                        }
+                    }
+                    
+                    var duplicates = guidMap.Where(kvp => kvp.Value.Count > 1).ToList();
+                    
+                    if (duplicates.Count > 0)
+                    {
+                        var affectedFiles = duplicates.SelectMany(d => d.Value).Take(100).ToArray();
+                        
+                        issues.Add(new ValidationIssue(
+                            IssueSeverity.Critical,
+                            IssueCategory.DuplicateGUID,
+                            "Duplicate GUIDs detected",
+                            $"Found {duplicates.Count} GUID(s) used by multiple assets. This WILL cause asset corruption and data loss!",
+                            affectedFiles,
+                            "Delete and reimport duplicate assets, or use Unity's 'Reimport' to regenerate GUIDs.",
+                            () => {
+                                foreach (var duplicate in duplicates)
+                                {
+                                    for (int i = 1; i < duplicate.Value.Count; i++)
+                                    {
+                                        string relativePath = duplicate.Value[i].Replace(_projectRoot + Path.DirectorySeparatorChar, "").Replace('\\', '/');
+                                        if (!string.IsNullOrEmpty(relativePath))
+                                        {
+                                            AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                                        }
+                                    }
+                                }
+                                AssetDatabase.SaveAssets();
+                            }
+                        ));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to check duplicate GUIDs: {ex.Message}");
+                }
+                
+                return issues;
+            }, cancellationToken);
         }
         
         /// <summary>
@@ -690,6 +1056,67 @@ namespace PackageGuardian.Core.Validation
             return issues;
         }
         
+        private async Task<List<ValidationIssue>> CheckInvalidFileNamesAsync(
+            System.Action<float, string> progressCallback, CancellationToken cancellationToken)
+        {
+            return await Task.Run(() =>
+            {
+                var issues = new List<ValidationIssue>();
+                var invalidFiles = new List<string>();
+                
+                try
+                {
+                    var invalidChars = new[] { '~', '#', '%', '&', '{', '}', '\\', '<', '>', '*', '?', '/', '$', '!', '\'', '"', ':', '@', '+', '`', '|', '=' };
+                    var invalidPatterns = new[] { "..", "  " };
+                    
+                    // Scan all files (unlimited)
+                    var files = Directory.GetFiles(_projectRoot, "*.*", SearchOption.AllDirectories)
+                        .Where(f => !f.Contains("Library") && !f.Contains("Temp") && !f.Contains(".git"))
+                        .ToList();
+                    
+                    int processed = 0;
+                    foreach (var file in files)
+                    {
+                        if (cancellationToken.IsCancellationRequested) return issues;
+                        
+                        var fileName = Path.GetFileName(file);
+                        
+                        if (invalidChars.Any(c => fileName.Contains(c)) || 
+                            invalidPatterns.Any(p => fileName.Contains(p)) || 
+                            fileName != fileName.Trim())
+                        {
+                            invalidFiles.Add(file);
+                        }
+                        
+                        processed++;
+                        if (processed % 1000 == 0)
+                        {
+                            progressCallback?.Invoke(0.55f + (0.10f * processed / files.Count), 
+                                $"Checking file names... ({processed}/{files.Count})");
+                        }
+                    }
+                    
+                    if (invalidFiles.Count > 0)
+                    {
+                        issues.Add(new ValidationIssue(
+                            IssueSeverity.Warning,
+                            IssueCategory.InvalidFileName,
+                            "Invalid file names detected",
+                            $"Found {invalidFiles.Count} file(s) with names that may cause issues in Unity or on different platforms.",
+                            invalidFiles.Take(100).ToArray(),
+                            "Rename files to use only alphanumeric characters, underscores, hyphens, and dots."
+                        ));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to check file names: {ex.Message}");
+                }
+                
+                return issues;
+            }, cancellationToken);
+        }
+        
         /// <summary>
         /// Checks for shader compilation errors
         /// </summary>
@@ -738,6 +1165,62 @@ namespace PackageGuardian.Core.Validation
             }
             
             return issues;
+        }
+        
+        private async Task<List<ValidationIssue>> CheckShaderCompilationAsync(
+            System.Action<float, string> progressCallback, CancellationToken cancellationToken)
+        {
+            return await Task.Run(() =>
+            {
+                var issues = new List<ValidationIssue>();
+                
+                try
+                {
+                    // Find all shaders (unlimited)
+                    var shaders = AssetDatabase.FindAssets("t:Shader")
+                        .Select(guid => AssetDatabase.GUIDToAssetPath(guid))
+                        .ToList();
+                    
+                    var brokenShaders = new List<string>();
+                    
+                    int processed = 0;
+                    foreach (var shaderPath in shaders)
+                    {
+                        if (cancellationToken.IsCancellationRequested) return issues;
+                        
+                        var shader = AssetDatabase.LoadAssetAtPath<UnityEngine.Shader>(shaderPath);
+                        if (shader != null && !shader.isSupported)
+                        {
+                            brokenShaders.Add(shaderPath);
+                        }
+                        
+                        processed++;
+                        if (processed % 100 == 0)
+                        {
+                            progressCallback?.Invoke(0.65f + (0.05f * processed / shaders.Count), 
+                                $"Checking shaders... ({processed}/{shaders.Count})");
+                        }
+                    }
+                    
+                    if (brokenShaders.Count > 0)
+                    {
+                        issues.Add(new ValidationIssue(
+                            IssueSeverity.Error,
+                            IssueCategory.ShaderCompilationError,
+                            "Shader compilation errors",
+                            $"Found {brokenShaders.Count} shader(s) that failed to compile or are not supported on this platform.",
+                            brokenShaders.Take(100).ToArray(),
+                            "Check the Console for shader compilation errors and fix shader code."
+                        ));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to check shaders: {ex.Message}");
+                }
+                
+                return issues;
+            }, cancellationToken);
         }
         
         /// <summary>
@@ -906,10 +1389,7 @@ namespace PackageGuardian.Core.Validation
                         "Company name not set",
                         "The company name in Project Settings is not configured. This is used for application data paths.",
                         null,
-                        "Set your company name in Edit > Project Settings > Player > Company Name.",
-                        () => {
-                            // Can't auto-fix this as we don't know what it should be
-                        }
+                        "Set your company name in Edit > Project Settings > Player > Company Name."
                     ));
                 }
                 

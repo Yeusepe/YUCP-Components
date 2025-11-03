@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using YUCP.Components.Editor.UI;
 using YUCP.Components.PackageGuardian.Editor.Services;
 using YUCP.Components.PackageGuardian.Editor.Windows.Graph;
 using global::PackageGuardian.Core.Objects;
@@ -44,7 +46,11 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         private string _selectedFilePath;
         private string _currentSearchText = "";
 
-        [MenuItem("Tools/YUCP/Package Guardian")]
+        // Async loading state
+        private bool _isLoadingPendingChanges;
+        private YUCPProgressWindow _progressWindow;
+
+		[MenuItem("Tools/Package Guardian/Dashboard")]
         public static void ShowWindow()
         {
             var window = GetWindow<PackageGuardianWindow>();
@@ -82,11 +88,16 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             mainContainer.Add(contentContainer);
             root.Add(mainContainer);
 
-            // Initial refresh
-            RefreshDashboard();
-            
-            // Show snapshot panel by default
+            // Set initial status and show snapshot panel without blocking
+            _statusLabel.text = "Initializing...";
             ShowSnapshotPanel();
+            
+            // Load pending changes asynchronously with progress
+            LoadPendingChangesAsync();
+
+            // Responsive: toggle compact layout based on window width
+            root.RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
+            UpdateResponsiveClass(root.layout.width);
         }
 
         /// <summary>
@@ -155,6 +166,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             _searchField.style.maxWidth = 200;
             _searchField.style.marginLeft = 8;
             _searchField.style.marginRight = 8;
+            _searchField.tooltip = "Search commits and files";
             _searchField.RegisterValueChangedCallback(evt => OnSearchChanged(evt.newValue));
             rightSection.Add(_searchField);
 
@@ -281,6 +293,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             _snapshotMessageField.value = "";
             _snapshotMessageField.style.minHeight = 80;
             _snapshotMessageField.style.flexShrink = 0;
+            _snapshotMessageField.AddToClassList("pg-input");
+            _snapshotMessageField.tooltip = "Describe what changed in this snapshot";
             messageSection.Add(_snapshotMessageField);
 
             var hint = new Label("Describe what changed in this snapshot");
@@ -467,83 +481,157 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         /// </summary>
         private void LoadPendingChanges()
         {
+            // Switch to non-blocking async load
             _pendingChangesView.Clear();
+            _pendingChangesCount.text = "Loading...";
+            _createSnapshotButton.SetEnabled(false);
+            LoadPendingChangesAsync();
+        }
+        
+        private void LoadPendingChangesAsync()
+        {
+            if (_isLoadingPendingChanges)
+                return;
             
+            _isLoadingPendingChanges = true;
+            _progressWindow = YUCPProgressWindow.Create();
+            SafeProgress(0.05f, "Preparing Package Guardian...");
+            
+            RepositoryService service = null;
             try
             {
-                var service = RepositoryService.Instance;
-                var repo = service.Repository;
-
-                if (repo == null)
-                {
-                    _pendingChangesCount.text = "Repository not initialized";
-                    _createSnapshotButton.SetEnabled(false);
-                    return;
-                }
-
-                var currentTreeOid = repo.Snapshots.BuildTreeFromDisk(repo.Root, new List<string> { "Assets", "Packages" });
-                var headCommit = repo.Refs.ResolveHead();
-                string oldTreeOid = null;
-                
-                if (!string.IsNullOrEmpty(headCommit))
-                {
-                    var commit = repo.Store.ReadObject(headCommit) as Commit;
-                    if (commit != null)
-                    {
-                        oldTreeOid = repo.Hasher.ToHex(commit.TreeId);
-                    }
-                }
-
-                var diffEngine = new DiffEngine(repo.Store);
-                var fileChanges = diffEngine.CompareTrees("", oldTreeOid, currentTreeOid);
-
-                _pendingChangesCount.text = $"{fileChanges.Count} files changed";
-                _createSnapshotButton.SetEnabled(fileChanges.Count > 0);
-
-                if (!fileChanges.Any())
-                {
-                    var emptyLabel = new Label("No pending changes");
-                    emptyLabel.AddToClassList("pg-label-secondary");
-                    emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
-                    emptyLabel.style.paddingTop = 40;
-                    _pendingChangesView.Add(emptyLabel);
-                    return;
-                }
-
-                // Group by type
-                var grouped = GroupFilesByType(fileChanges);
-
-                foreach (var group in grouped)
-                {
-                    var groupContainer = new VisualElement();
-                    groupContainer.AddToClassList("pg-file-group");
-
-                    var groupHeader = new VisualElement();
-                    groupHeader.AddToClassList("pg-file-group-header");
-
-                    var groupTitle = new Label(group.Key);
-                    groupTitle.AddToClassList("pg-file-group-title");
-                    groupHeader.Add(groupTitle);
-
-                    var groupCount = new Label($"({group.Value.Count})");
-                    groupCount.AddToClassList("pg-file-group-count");
-                    groupHeader.Add(groupCount);
-
-                    groupContainer.Add(groupHeader);
-
-                    foreach (var change in group.Value.OrderBy(c => c.Path))
-                    {
-                        groupContainer.Add(CreatePendingChangeItem(change));
-                    }
-
-                    _pendingChangesView.Add(groupContainer);
-                }
+                // Ensure repository is available (main thread)
+                service = RepositoryService.Instance;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[Package Guardian] Error loading pending changes: {ex.Message}");
-                _pendingChangesCount.text = "Error loading changes";
+                Debug.LogError($"[Package Guardian] Failed to initialize repository: {ex.Message}");
+                _pendingChangesCount.text = "Repository initialization failed";
                 _createSnapshotButton.SetEnabled(false);
+                CloseProgress();
+                _isLoadingPendingChanges = false;
+                return;
+            }
+            
+            var repo = service.Repository;
+            
+            Task.Run(() =>
+            {
+                try
+                {
+                    // Stage 1: Scan filesystem for current tree
+                    ScheduleProgress(0.20f, "Scanning project files (Assets, Packages)...");
+                    var currentTreeOid = repo.Snapshots.BuildTreeFromDisk(repo.Root, new List<string> { "Assets", "Packages" });
+                    
+                    // Stage 2: Load HEAD state
+                    ScheduleProgress(0.60f, "Loading repository state...");
+                    var headCommit = repo.Refs.ResolveHead();
+                    string oldTreeOid = null;
+                    if (!string.IsNullOrEmpty(headCommit))
+                    {
+                        var head = repo.Store.ReadObject(headCommit) as Commit;
+                        if (head != null)
+                        {
+                            oldTreeOid = repo.Hasher.ToHex(head.TreeId);
+                        }
+                    }
+                    
+                    // Stage 3: Compute diffs
+                    ScheduleProgress(0.85f, "Calculating diffs...");
+                    var diffEngine = new DiffEngine(repo.Store);
+                    var fileChanges = diffEngine.CompareTrees("", oldTreeOid, currentTreeOid);
+                    
+                    // Finish on main thread: populate UI
+                    EditorApplication.delayCall += () =>
+                    {
+                        try
+                        {
+                            _pendingChangesCount.text = $"{fileChanges.Count} files changed";
+                            _createSnapshotButton.SetEnabled(fileChanges.Count > 0);
+                            _pendingChangesView.Clear();
+                            
+                            if (!fileChanges.Any())
+                            {
+                                var emptyLabel = new Label("No pending changes");
+                                emptyLabel.AddToClassList("pg-label-secondary");
+                                emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                                emptyLabel.style.paddingTop = 40;
+                                _pendingChangesView.Add(emptyLabel);
+                            }
+                            else
+                            {
+                                var grouped = GroupFilesByType(fileChanges);
+                                foreach (var group in grouped)
+                                {
+                                    var groupContainer = new VisualElement();
+                                    groupContainer.AddToClassList("pg-file-group");
+                                    
+                                    var groupHeader = new VisualElement();
+                                    groupHeader.AddToClassList("pg-file-group-header");
+                                    
+                                    var groupTitle = new Label(group.Key);
+                                    groupTitle.AddToClassList("pg-file-group-title");
+                                    groupHeader.Add(groupTitle);
+                                    
+                                    var groupCount = new Label($"({group.Value.Count})");
+                                    groupCount.AddToClassList("pg-file-group-count");
+                                    groupHeader.Add(groupCount);
+                                    
+                                    groupContainer.Add(groupHeader);
+                                    
+                                    foreach (var change in group.Value.OrderBy(c => c.Path))
+                                    {
+                                        groupContainer.Add(CreatePendingChangeItem(change));
+                                    }
+                                    
+                                    _pendingChangesView.Add(groupContainer);
+                                }
+                            }
+                            
+                            _statusLabel.text = "Ready";
+                        }
+                        finally
+                        {
+                            CloseProgress();
+                            _isLoadingPendingChanges = false;
+                            // Update overall dashboard once initial data is ready
+                            RefreshDashboard();
+                        }
+                    };
+                }
+                catch (Exception ex)
+                {
+                    EditorApplication.delayCall += () =>
+                    {
+                        Debug.LogError($"[Package Guardian] Error loading pending changes: {ex.Message}");
+                        _pendingChangesCount.text = "Error loading changes";
+                        _createSnapshotButton.SetEnabled(false);
+                        CloseProgress();
+                        _isLoadingPendingChanges = false;
+                    };
+                }
+            });
+        }
+        
+        private void ScheduleProgress(float t, string info)
+        {
+            EditorApplication.delayCall += () => SafeProgress(t, info);
+        }
+        
+        private void SafeProgress(float t, string info)
+        {
+            if (_progressWindow != null)
+            {
+                _progressWindow.Progress(Mathf.Clamp01(t), info);
+            }
+        }
+        
+        private void CloseProgress()
+        {
+            if (_progressWindow != null)
+            {
+                _progressWindow.CloseWindow();
+                _progressWindow = null;
             }
         }
         
@@ -1159,6 +1247,25 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             {
                 Debug.LogError($"[Package Guardian] Error refreshing dashboard: {ex.Message}");
                 _statusLabel.text = "Error";
+            }
+        }
+
+        private void OnGeometryChanged(GeometryChangedEvent evt)
+        {
+            UpdateResponsiveClass(evt.newRect.width);
+        }
+
+        private void UpdateResponsiveClass(float width)
+        {
+            var root = rootVisualElement;
+            bool compact = width < 1000f;
+            if (compact)
+            {
+                root.AddToClassList("pg-compact");
+            }
+            else
+            {
+                root.RemoveFromClassList("pg-compact");
             }
         }
     }

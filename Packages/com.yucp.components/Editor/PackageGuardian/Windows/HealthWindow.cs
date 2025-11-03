@@ -23,7 +23,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         private void CreateGUI()
         {
             var root = rootVisualElement;
-            root.AddToClassList("pg-window");
+            root.style.backgroundColor = new StyleColor(new Color(0.09f, 0.09f, 0.09f));
             
             // Load stylesheet
             var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
@@ -33,20 +33,14 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                 root.styleSheets.Add(styleSheet);
             }
             
-            var container = new VisualElement();
-            container.AddToClassList("pg-container");
-            container.style.flexGrow = 1;
-            
             _healthTab = new HealthTab();
-            container.Add(_healthTab);
-            
-            root.Add(container);
+            root.Add(_healthTab);
         }
         
         private void OnFocus()
         {
-            // Refresh when window gains focus
-            _healthTab?.Refresh();
+            // Light refresh when window gains focus - don't re-run full scan
+            // User must click "Full Scan" to trigger async validation
         }
     }
 }

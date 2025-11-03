@@ -178,6 +178,15 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         }
         
         /// <summary>
+        /// Opens the Health & Safety window
+        /// </summary>
+		[MenuItem("Tools/Package Guardian/Health & Safety", priority = 1)]
+        public static void OpenHealthWindow()
+        {
+            Windows.HealthWindow.ShowWindow();
+        }
+        
+        /// <summary>
         /// Forces an immediate health check
         /// </summary>
         [MenuItem("Tools/Package Guardian/Run Health Check", priority = 100)]
@@ -203,4 +212,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         }
     }
 }
+
+
+
 

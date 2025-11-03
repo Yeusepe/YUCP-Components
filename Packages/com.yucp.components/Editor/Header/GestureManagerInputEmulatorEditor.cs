@@ -572,8 +572,8 @@ namespace YUCP.Components.Editor.UI
             
             // Plug-and-play controller axis options (works with any controller)
             options.AddRange(new string[] {
-                "Left Stick X", "Left Stick Y",
-                "Right Stick X", "Right Stick Y"
+                "Left Stick X", "Left Stick Y", "Left Stick Angle",
+                "Right Stick X", "Right Stick Y", "Right Stick Angle"
             });
             
             return options.ToArray();

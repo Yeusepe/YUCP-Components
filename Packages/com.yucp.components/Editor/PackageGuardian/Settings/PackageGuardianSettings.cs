@@ -16,8 +16,14 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
         [Tooltip("Automatically create snapshots when files are saved")]
         public bool autoSnapshotOnSave = false;
         
-        [Tooltip("Automatically create snapshots when Unity Package Manager events occur")]
-        public bool autoSnapshotOnUPM = true;
+        [Tooltip("Automatically create stashes when Unity Package Manager events occur")]
+        public bool autoStashOnUPM = true;
+        
+        [Tooltip("Automatically create stashes after .unitypackage or asset imports")]
+        public bool autoStashOnAssetImport = true;
+        
+        [Tooltip("Automatically create a stash when a scene is saved")]
+        public bool autoStashOnSceneSave = true;
         
         [Header("Author Information")]
         [Tooltip("Author name for commits")]
@@ -99,7 +105,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             // Create new settings with safe defaults
             var newSettings = CreateInstance<PackageGuardianSettings>();
             newSettings.autoSnapshotOnSave = false; // Disabled by default to avoid import loops
-            newSettings.autoSnapshotOnUPM = true; // Enabled by default to track package changes
+            newSettings.autoStashOnUPM = true; // Enabled by default to track package changes
+            newSettings.autoStashOnAssetImport = true; // Enabled to stash after imports
+            newSettings.autoStashOnSceneSave = true; // Enabled to stash on scene save
             newSettings.authorName = "Unity User";
             newSettings.authorEmail = "user@unity.com";
             

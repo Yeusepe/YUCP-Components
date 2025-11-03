@@ -597,18 +597,45 @@
 
 .pg-search-input {
     flex-grow: 1;
-    background-color: transparent;
-    border-width: 0;
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
     color: #ffffff;
     font-size: 12px;
     min-width: 150px;
+    padding-left: 8px;
+    padding-right: 8px;
+    height: 28px;
 }
 
-.pg-search-input:focus {
+.pg-search-input:focus, .pg-search-input:focus-within {
+    border-color: #36BFB1;
+}
+
+.pg-search-input .unity-text-field__input {
+    background-color: transparent;
     border-width: 0;
+    color: #ffffff;
+    padding: 0;
 }
 
-TextField .unity-text-field__input {
+/* Generic styled input for text areas and regular fields */
+.pg-input {
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    color: #ffffff;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.pg-input:focus, .pg-input:focus-within {
+    border-color: #36BFB1;
+}
+
+.pg-input .unity-text-field__input {
     background-color: transparent;
     border-width: 0;
     color: #ffffff;
@@ -769,4 +796,33 @@ TextField .unity-text-field__input {
 .pg-modal-footer {
     flex-direction: row;
     justify-content: flex-end;
+}
+
+/* ============================================================================
+   RESPONSIVE - COMPACT LAYOUT
+   ============================================================================ */
+.pg-compact .pg-content-container {
+    flex-direction: column;
+}
+
+.pg-compact .pg-left-pane {
+    width: 100%;
+    min-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+}
+
+.pg-compact .pg-top-bar {
+    flex-wrap: wrap;
+}
+
+.pg-compact .pg-top-bar-center {
+    width: 100%;
+    margin-top: 8px;
+}
+
+.pg-compact .pg-search-input {
+    max-width: none;
+    width: 100%;
 }

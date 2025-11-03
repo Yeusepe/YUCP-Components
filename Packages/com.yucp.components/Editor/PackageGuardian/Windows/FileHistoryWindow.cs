@@ -27,7 +27,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         private string _currentFilePath;
         private List<FileVersion> _versions;
         
-        [MenuItem("Tools/YUCP/Package Guardian/File History")]
+		[MenuItem("Tools/Package Guardian/File History")]
         public static void ShowWindow()
         {
             var window = GetWindow<FileHistoryWindow>();

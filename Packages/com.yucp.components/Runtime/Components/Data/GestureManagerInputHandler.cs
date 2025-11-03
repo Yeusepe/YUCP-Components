@@ -204,7 +204,19 @@ namespace YUCP.Components
 
         private float GetControllerAxisValue(string axisName)
         {
+            
             if (string.IsNullOrEmpty(axisName) || axisName == "None") return 0f;
+            
+            // Check if this is an angle axis that needs calculation from X/Y
+            string axisLower = axisName.ToLower();
+            if (axisLower == "left stick angle" || axisLower == "ls angle")
+            {
+                return GetStickAngle("Horizontal", "Vertical");
+            }
+            else if (axisLower == "right stick angle" || axisLower == "rs angle")
+            {
+                return GetStickAngle("Mouse X", "Mouse Y");
+            }
             
             string standardAxis = MapToStandardAxis(axisName);
             
@@ -222,6 +234,32 @@ namespace YUCP.Components
             catch (System.ArgumentException)
             {
                 // Axis not configured in Input Manager - silently return 0
+                return 0f;
+            }
+        }
+        
+        private float GetStickAngle(string xAxis, string yAxis)
+        {
+            try
+            {
+                float x = Input.GetAxisRaw(xAxis);
+                float y = Input.GetAxisRaw(yAxis);
+                
+                // Check deadzone
+                float magnitude = Mathf.Sqrt(x * x + y * y);
+                if (magnitude < controllerDeadzone)
+                {
+                    return 0f;
+                }
+                
+                // Calculate angle in degrees (0-360)
+                float angle = Mathf.Atan2(y, x) * Mathf.Rad2Deg;
+                if (angle < 0) angle += 360f;
+                
+                return angle;
+            }
+            catch (System.ArgumentException)
+            {
                 return 0f;
             }
         }
@@ -545,10 +583,44 @@ namespace YUCP.Components
                     return inputValue > 0.5f ? mapping.activeValue : mapping.inactiveValue;
 
                 case ParameterType.Float:
-                    return Mathf.Lerp(mapping.minValue, mapping.maxValue, (inputValue + 1f) / 2f);
+                    // Check if this is an angle axis (0-360 range) vs regular axis (-1 to 1 range)
+                    bool isAngleAxis = mapping.inputType == InputType.ControllerAxis && 
+                                      !string.IsNullOrEmpty(mapping.controllerAxis) &&
+                                      (mapping.controllerAxis.ToLower().Contains("angle"));
+                    
+                    float normalizedValue;
+                    if (isAngleAxis)
+                    {
+                        // Normalize angle from 0-360 to 0-1
+                        normalizedValue = Mathf.Clamp01(inputValue / 360f);
+                    }
+                    else
+                    {
+                        // Normalize regular axis from -1 to 1 to 0-1
+                        normalizedValue = (inputValue + 1f) / 2f;
+                    }
+                    
+                    return Mathf.Lerp(mapping.minValue, mapping.maxValue, normalizedValue);
 
                 case ParameterType.Int:
-                    return Mathf.RoundToInt(Mathf.Lerp(mapping.minValue, mapping.maxValue, (inputValue + 1f) / 2f));
+                    // Check if this is an angle axis (0-360 range) vs regular axis (-1 to 1 range)
+                    bool isAngleAxisInt = mapping.inputType == InputType.ControllerAxis && 
+                                         !string.IsNullOrEmpty(mapping.controllerAxis) &&
+                                         (mapping.controllerAxis.ToLower().Contains("angle"));
+                    
+                    float normalizedValueInt;
+                    if (isAngleAxisInt)
+                    {
+                        // Normalize angle from 0-360 to 0-1
+                        normalizedValueInt = Mathf.Clamp01(inputValue / 360f);
+                    }
+                    else
+                    {
+                        // Normalize regular axis from -1 to 1 to 0-1
+                        normalizedValueInt = (inputValue + 1f) / 2f;
+                    }
+                    
+                    return Mathf.RoundToInt(Mathf.Lerp(mapping.minValue, mapping.maxValue, normalizedValueInt));
 
                 default:
                     return inputValue;

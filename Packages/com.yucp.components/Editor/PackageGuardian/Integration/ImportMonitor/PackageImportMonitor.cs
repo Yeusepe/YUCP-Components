@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using YUCP.Components.PackageGuardian.Editor.Services;
 using YUCP.Components.PackageGuardian.Editor.Settings;
+using global::PackageGuardian.Core.Diff;
 
 namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
 {
@@ -16,6 +17,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
     public class PackageImportMonitor : AssetPostprocessor
     {
         private static readonly ImportEventDebouncer _debouncer = new ImportEventDebouncer(0.5f);
+        private static double _lastUpmEventTime;
         private static bool _isInitialized = false;
         
         static PackageImportMonitor()
@@ -37,6 +39,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
             #if UNITY_2020_1_OR_NEWER
             UnityEditor.PackageManager.Events.registeredPackages += OnPackagesRegistered;
             #endif
+            
+            // Hook .unitypackage import completion
+            AssetDatabase.importPackageCompleted += OnUnityPackageImported;
             
             // Check for standalone guardian and offer migration
             CheckForStandaloneGuardian();
@@ -63,8 +68,12 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 return;
             }
             
-            // Only auto-stash if enabled in settings
-            if (settings == null || !settings.autoSnapshotOnSave)
+            // VPM: manifest or lockfile changed -> stash with summary
+            if (TryCreateVpmStash(importedAssets, deletedAssets, movedAssets))
+                return;
+            
+            // Only auto-stash if enabled in settings for general asset imports
+            if (settings == null || !settings.autoStashOnAssetImport)
                 return;
             
             // Check if there are significant changes
@@ -86,6 +95,75 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
             {
                 CreateImportStash(significantImports, significantDeletes, significantMoves);
             });
+        }
+
+        private static bool TryCreateVpmStash(string[] imported, string[] deleted, string[] moved)
+        {
+            try
+            {
+                bool manifestChanged = (imported?.Any(p => p == "Packages/manifest.json" || p == "Packages/packages-lock.json") ?? false)
+                    || (deleted?.Any(p => p == "Packages/manifest.json" || p == "Packages/packages-lock.json") ?? false)
+                    || (moved?.Any(p => p == "Packages/manifest.json" || p == "Packages/packages-lock.json") ?? false);
+                
+                if (!manifestChanged)
+                    return false;
+                
+                string summary = ComputeChangeSummary();
+                var service = RepositoryService.Instance;
+                service.CreateAutoStash($"After VPM change: {summary}");
+                Debug.Log($"[Package Guardian] Auto-stash created for VPM change: {summary}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Package Guardian] Failed to create VPM stash: {ex.Message}");
+                return false;
+            }
+        }
+        
+        private static string ComputeChangeSummary()
+        {
+            try
+            {
+                var repo = RepositoryService.Instance.Repository;
+                var currentTreeOid = repo.Snapshots.BuildTreeFromDisk(repo.Root, new List<string> { "Assets", "Packages" });
+                var headCommit = repo.Refs.ResolveHead();
+                string oldTreeOid = null;
+                if (!string.IsNullOrEmpty(headCommit))
+                {
+                    var commit = repo.Store.ReadObject(headCommit) as global::PackageGuardian.Core.Objects.Commit;
+                    if (commit != null) oldTreeOid = repo.Hasher.ToHex(commit.TreeId);
+                }
+                var diffEngine = new DiffEngine(repo.Store);
+                var changes = diffEngine.CompareTrees("", oldTreeOid, currentTreeOid);
+                int added = changes.Count(c => c.Type == global::PackageGuardian.Core.Diff.ChangeType.Added);
+                int modified = changes.Count(c => c.Type == global::PackageGuardian.Core.Diff.ChangeType.Modified);
+                int deleted = changes.Count(c => c.Type == global::PackageGuardian.Core.Diff.ChangeType.Deleted);
+                return $"{changes.Count} file(s) changed (+{added} ~{modified} -{deleted})";
+            }
+            catch
+            {
+                return "changes recorded";
+            }
+        }
+        
+        private static void OnUnityPackageImported(string packageName)
+        {
+            try
+            {
+                var settings = PackageGuardianSettings.Instance;
+                if (settings == null || !settings.autoStashOnAssetImport)
+                    return;
+                
+                var service = RepositoryService.Instance;
+                string message = $"After Import: {packageName} (.unitypackage)";
+                service.CreateAutoStash(message);
+                Debug.Log($"[Package Guardian] Auto-stash created: {message}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Package Guardian] Failed to create stash after package import: {ex.Message}");
+            }
         }
         
         private static bool IsSignificantAsset(string assetPath)
@@ -143,7 +221,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
             try
             {
                 settings = PackageGuardianSettings.Instance;
-                Debug.Log($"[Package Guardian] Settings loaded - autoSnapshotOnUPM: {settings.autoSnapshotOnUPM}");
+                Debug.Log($"[Package Guardian] Settings loaded - autoStashOnUPM: {settings.autoStashOnUPM}");
             }
             catch (Exception ex)
             {
@@ -152,14 +230,23 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
             }
             
             // Only auto-stash if enabled in settings
-            if (!settings.autoSnapshotOnUPM)
+            if (!settings.autoStashOnUPM)
             {
-                Debug.Log("[Package Guardian] Auto-snapshot on UPM is disabled");
+                Debug.Log("[Package Guardian] Auto-stash on UPM is disabled");
                 return;
             }
             
             try
             {
+                // Debounce UPM events occurring in quick succession
+                double now = EditorApplication.timeSinceStartup;
+                if (now - _lastUpmEventTime < 1.0f)
+                {
+                    _lastUpmEventTime = now;
+                    return;
+                }
+                _lastUpmEventTime = now;
+                
                 int addedCount = args.added != null ? args.added.Count : 0;
                 int removedCount = args.removed != null ? args.removed.Count : 0;
                 int changedCount = args.changedFrom != null && args.changedTo != null ? 1 : 0;
@@ -184,7 +271,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                     var names = new List<string>();
                     foreach (var pkg in args.added)
                     {
-                        names.Add(pkg.name);
+                        names.Add($"{pkg.name}@{pkg.version}");
                         Debug.Log($"[Package Guardian] Added package: {pkg.name} v{pkg.version}");
                     }
                     var packageNames = string.Join(", ", names);
@@ -196,7 +283,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                     var names = new List<string>();
                     foreach (var pkg in args.removed)
                     {
-                        names.Add(pkg.name);
+                        names.Add($"{pkg.name}@{pkg.version}");
                         Debug.Log($"[Package Guardian] Removed package: {pkg.name} v{pkg.version}");
                     }
                     var packageNames = string.Join(", ", names);
@@ -217,12 +304,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                     description = $"Updated package: {packageName}";
                 }
                 
-                Debug.Log($"[Package Guardian] Creating auto-stash: {reason} - {description}");
-                
-                using (var scope = new ImportTransactionScope(reason, description))
-                {
-                    // Stash is created automatically
-                }
+                Debug.Log($"[Package Guardian] Creating auto-stash: After {reason} - {description}");
+                var service = RepositoryService.Instance;
+                service.CreateAutoStash($"After {reason}: {description}");
                 
                 Debug.Log($"[Package Guardian] Auto-stash created successfully");
             }

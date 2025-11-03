@@ -76,7 +76,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.UnifiedDashboard
                     emptyTitle.AddToClassList("pg-empty-state-title");
                     empty.Add(emptyTitle);
                     
-                    var emptyDesc = new Label("Stashes are created automatically before imports");
+                    var emptyDesc = new Label("Stashes are created automatically after imports and package changes");
                     emptyDesc.AddToClassList("pg-empty-state-description");
                     empty.Add(emptyDesc);
                     

@@ -52,6 +52,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.UnifiedDashboard
             _messageField.multiline = true;
             _messageField.value = "Manual snapshot";
             _messageField.style.minHeight = 80;
+			_messageField.AddToClassList("pg-input");
             messageSection.Add(_messageField);
             
             var buttonRow = new VisualElement();
