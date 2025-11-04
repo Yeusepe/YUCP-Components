@@ -62,6 +62,9 @@
     border-bottom-color: #2a2a2a;
     align-items: center;
     flex-wrap: nowrap;
+    transition-property: flex-wrap;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
 }
 
 .pg-top-bar-left {
@@ -117,11 +120,17 @@
     background-color: #090909;
     border-right-width: 1px;
     border-right-color: #2a2a2a;
+    transition-property: width, opacity;
+    transition-duration: 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out;
 }
 
 .pg-right-pane {
     flex-grow: 1;
     background-color: #090909;
+    transition-property: opacity;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
 }
 
 /* ============================================================================
@@ -799,7 +808,56 @@
 }
 
 /* ============================================================================
-   RESPONSIVE - COMPACT LAYOUT
+   RESPONSIVE - MOBILE MENU TOGGLE
+   ============================================================================ */
+.pg-mobile-toggle {
+    height: 40px;
+    width: 40px;
+    min-width: 40px;
+    background-color: #525252;
+    border-width: 0;
+    border-radius: 0;
+    margin-right: 12px;
+    padding: 0;
+    -unity-text-align: middle-center;
+    font-size: 16px;
+    color: #ffffff;
+    display: none;
+    opacity: 0;
+    scale: 0.8 0.8;
+    transition-property: background-color, opacity, scale;
+    transition-duration: 0.1s, 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.pg-mobile-toggle:hover {
+    background-color: #36BFB1;
+    scale: 1 1;
+}
+
+.pg-mobile-toggle:active {
+    background-color: #2da89c;
+    scale: 0.95 0.95;
+}
+
+.pg-left-pane-overlay {
+    background-color: #090909;
+    border-right-width: 1px;
+    border-right-color: #2a2a2a;
+    transition-property: opacity, left;
+    transition-duration: 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out;
+}
+
+.pg-overlay-backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+    transition-property: opacity;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
+}
+
+/* ============================================================================
+   RESPONSIVE - COMPACT LAYOUT (Medium screens)
    ============================================================================ */
 .pg-compact .pg-content-container {
     flex-direction: column;
@@ -826,3 +884,65 @@
     max-width: none;
     width: 100%;
 }
+
+/* ============================================================================
+   RESPONSIVE BREAKPOINTS
+   ============================================================================ */
+
+.pg-content-container {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Narrow layout (< 700px) - Collapse left pane to overlay */
+.pg-window-narrow .pg-left-pane {
+    display: none;
+    opacity: 0;
+}
+
+.pg-window-narrow .pg-mobile-toggle {
+    display: flex;
+    opacity: 1;
+    scale: 1 1;
+}
+
+.pg-window-narrow .pg-right-pane {
+    width: 100%;
+}
+
+.pg-window-narrow .pg-top-bar {
+    flex-wrap: wrap;
+}
+
+.pg-window-narrow .pg-top-bar-center {
+    width: 100%;
+    margin-top: 8px;
+    order: 3;
+}
+
+.pg-window-narrow .pg-top-bar-left {
+    order: 1;
+}
+
+.pg-window-narrow .pg-top-bar-right {
+    order: 2;
+}
+
+.pg-window-narrow .pg-search-input {
+    max-width: none;
+    width: 100%;
+}
+
+/* Medium layout (700px - 1000px) - Reduce left pane size */
+.pg-window-medium .pg-left-pane {
+    width: 30%;
+    min-width: 250px;
+}
+
+.pg-window-medium .pg-top-bar {
+    flex-wrap: wrap;
+}
+
+/* Wide layout (> 1000px) - Default behavior */
+/* Default styles already handle this case */

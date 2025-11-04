@@ -49,13 +49,21 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         // Async loading state
         private bool _isLoadingPendingChanges;
         private YUCPProgressWindow _progressWindow;
+        
+        // Responsive design elements
+        private Button _mobileToggleButton;
+        private VisualElement _overlayBackdrop;
+        private VisualElement _contentContainer;
+        private VisualElement _leftPane;
+        private bool _isOverlayOpen = false;
+        private bool _leftPaneInOverlayMode = false;
 
 		[MenuItem("Tools/Package Guardian/Dashboard")]
         public static void ShowWindow()
         {
             var window = GetWindow<PackageGuardianWindow>();
             window.titleContent = new GUIContent("Package Guardian");
-            window.minSize = new Vector2(1200, 700);
+            window.minSize = new Vector2(400, 500); // Reduced minimum size for responsive design
         }
 
         private void CreateGUI()
@@ -79,13 +87,27 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             mainContainer.Add(CreateTopBar());
 
             // Content Container (Left + Right Panes)
-            var contentContainer = new VisualElement();
-            contentContainer.AddToClassList("pg-content-container");
+            _contentContainer = new VisualElement();
+            _contentContainer.AddToClassList("pg-content-container");
+            
+            // Create overlay backdrop (for mobile menu)
+            _overlayBackdrop = new VisualElement();
+            _overlayBackdrop.AddToClassList("pg-overlay-backdrop");
+            _overlayBackdrop.RegisterCallback<ClickEvent>(evt => CloseOverlay());
+            _overlayBackdrop.style.display = DisplayStyle.None;
+            _overlayBackdrop.style.visibility = Visibility.Hidden;
+            _contentContainer.Add(_overlayBackdrop);
+            
+            // Create normal left pane
+            _leftPane = CreateLeftPane();
+            _contentContainer.Add(_leftPane);
+            
+            // Note: We'll move the left pane into overlay position instead of duplicating it
+            // This avoids lag from rendering GraphView twice
 
-            contentContainer.Add(CreateLeftPane());
-            contentContainer.Add(CreateRightPane());
+            _contentContainer.Add(CreateRightPane());
 
-            mainContainer.Add(contentContainer);
+            mainContainer.Add(_contentContainer);
             root.Add(mainContainer);
 
             // Set initial status and show snapshot panel without blocking
@@ -97,7 +119,12 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
 
             // Responsive: toggle compact layout based on window width
             root.RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
-            UpdateResponsiveClass(root.layout.width);
+            
+            // Schedule initial responsive check after layout is ready
+            root.schedule.Execute(() => 
+            {
+                UpdateResponsiveClass(rootVisualElement.resolvedStyle.width);
+            }).StartingIn(100);
         }
 
         /// <summary>
@@ -111,6 +138,12 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             // Left: Quick actions
             var leftSection = new VisualElement();
             leftSection.AddToClassList("pg-top-bar-left");
+            
+            // Mobile toggle button (hamburger menu)
+            _mobileToggleButton = new Button(ToggleOverlay);
+            _mobileToggleButton.text = "☰";
+            _mobileToggleButton.AddToClassList("pg-mobile-toggle");
+            leftSection.Add(_mobileToggleButton);
 
             var snapshotButton = new Button(ShowSnapshotPanel);
             snapshotButton.text = "New Snapshot";
@@ -461,6 +494,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             _commitDetailsPanel.style.display = DisplayStyle.Flex;
             
             LoadCommitDetails(node.CommitId);
+            
+            // Close overlay when commit is selected (for mobile)
+            CloseOverlay();
         }
         
         /// <summary>
@@ -1267,15 +1303,158 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         private void UpdateResponsiveClass(float width)
         {
             var root = rootVisualElement;
-            bool compact = width < 1000f;
-            if (compact)
+            
+            // Remove all responsive classes first
+            root.RemoveFromClassList("pg-window-narrow");
+            root.RemoveFromClassList("pg-window-medium");
+            root.RemoveFromClassList("pg-window-wide");
+            root.RemoveFromClassList("pg-compact");
+            
+            // Apply appropriate class based on width
+            if (width < 700f)
             {
-                root.AddToClassList("pg-compact");
+                root.AddToClassList("pg-window-narrow");
+            }
+            else if (width < 1000f)
+            {
+                root.AddToClassList("pg-window-medium");
+                root.AddToClassList("pg-compact"); // Keep compact for backward compatibility
             }
             else
             {
-                root.RemoveFromClassList("pg-compact");
+                root.AddToClassList("pg-window-wide");
             }
+            
+            // Close overlay if window is wide enough
+            if (width >= 700f && _isOverlayOpen)
+            {
+                CloseOverlay();
+            }
+        }
+        
+        // ============================================================================
+        // RESPONSIVE DESIGN METHODS
+        // ============================================================================
+        
+        private void ToggleOverlay()
+        {
+            if (_isOverlayOpen)
+            {
+                CloseOverlay();
+            }
+            else
+            {
+                OpenOverlay();
+            }
+        }
+        
+        private void OpenOverlay()
+        {
+            _isOverlayOpen = true;
+            _leftPaneInOverlayMode = true;
+            
+            // Show backdrop first
+            if (_overlayBackdrop != null)
+            {
+                _overlayBackdrop.style.display = DisplayStyle.Flex;
+                _overlayBackdrop.style.visibility = Visibility.Visible;
+                _overlayBackdrop.style.position = Position.Absolute;
+                _overlayBackdrop.style.left = 0;
+                _overlayBackdrop.style.right = 0;
+                _overlayBackdrop.style.top = 0;
+                _overlayBackdrop.style.bottom = 0;
+                _overlayBackdrop.style.opacity = 0;
+                _overlayBackdrop.BringToFront();
+                
+                // Fade in backdrop
+                _overlayBackdrop.schedule.Execute(() => 
+                {
+                    if (_overlayBackdrop != null)
+                    {
+                        _overlayBackdrop.style.opacity = 1;
+                    }
+                }).StartingIn(10);
+            }
+            
+            // Convert left pane to overlay mode
+            if (_leftPane != null)
+            {
+                // Save original position for restoration
+                _leftPane.RemoveFromClassList("pg-left-pane");
+                _leftPane.AddToClassList("pg-left-pane-overlay");
+                
+                // Force dimensions and positioning with inline styles
+                _leftPane.style.display = DisplayStyle.Flex;
+                _leftPane.style.visibility = Visibility.Visible;
+                _leftPane.style.position = Position.Absolute;
+                _leftPane.style.width = new StyleLength(new Length(35, LengthUnit.Percent));
+                _leftPane.style.minWidth = 300;
+                _leftPane.style.top = 0;
+                _leftPane.style.bottom = 0;
+                _leftPane.style.left = new StyleLength(new Length(-35, LengthUnit.Percent));
+                _leftPane.style.opacity = 0;
+                
+                // Ensure it's in front
+                _leftPane.BringToFront();
+                
+                // Animate to visible position
+                _leftPane.schedule.Execute(() => 
+                {
+                    if (_leftPane != null)
+                    {
+                        _leftPane.style.left = 0;
+                        _leftPane.style.opacity = 1;
+                    }
+                }).StartingIn(10);
+            }
+        }
+        
+        private void CloseOverlay()
+        {
+            _isOverlayOpen = false;
+            
+            if (!_leftPaneInOverlayMode)
+                return;
+                
+            _leftPaneInOverlayMode = false;
+            
+            // Animate overlay out
+            if (_leftPane != null)
+            {
+                _leftPane.style.left = new StyleLength(new Length(-35, LengthUnit.Percent));
+                _leftPane.style.opacity = 0;
+            }
+            
+            // Fade out backdrop
+            if (_overlayBackdrop != null)
+            {
+                _overlayBackdrop.style.opacity = 0;
+            }
+            
+            // Restore normal layout after animation completes (300ms)
+            rootVisualElement.schedule.Execute(() => 
+            {
+                if (_leftPane != null && !_isOverlayOpen)
+                {
+                    // Restore to normal mode
+                    _leftPane.RemoveFromClassList("pg-left-pane-overlay");
+                    _leftPane.AddToClassList("pg-left-pane");
+                    
+                    // Clear inline styles to let CSS take over
+                    _leftPane.style.position = Position.Relative;
+                    _leftPane.style.width = StyleKeyword.Null;
+                    _leftPane.style.minWidth = StyleKeyword.Null;
+                    _leftPane.style.top = StyleKeyword.Null;
+                    _leftPane.style.bottom = StyleKeyword.Null;
+                    _leftPane.style.left = StyleKeyword.Null;
+                    _leftPane.style.opacity = StyleKeyword.Null;
+                }
+                if (_overlayBackdrop != null && !_isOverlayOpen)
+                {
+                    _overlayBackdrop.style.display = DisplayStyle.None;
+                    _overlayBackdrop.style.visibility = Visibility.Hidden;
+                }
+            }).StartingIn(300);
         }
     }
 }
