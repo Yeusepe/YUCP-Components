@@ -94,6 +94,17 @@ namespace YUCP.Components.Editor.UI
                     "Recommended: 8 zones for 45° precision, 16 zones for 22.5° precision.", 
                     MessageType.Info);
             });
+
+            // Stick Center Reset (Arming)
+            DrawSection("Stick Center Reset (Arming)", () => {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("stickXParameterName"), 
+                    new GUIContent("Stick X Param", "Stick X axis parameter used to detect center (−1..1)."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("stickYParameterName"), 
+                    new GUIContent("Stick Y Param", "Stick Y axis parameter used to detect center (−1..1)."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("centerThreshold"), 
+                    new GUIContent("Center Threshold", "Magnitude threshold to consider the stick centered (|X|<=t and |Y|<=t)."));
+                EditorGUILayout.HelpBox("Counts are armed only when the stick is centered (both |X| and |Y| below the threshold). This prevents flip-flopping at boundaries.", MessageType.Info);
+            });
             
             EditorGUILayout.Space(5);
             EditorGUILayout.HelpBox("The rotation counter controller will be generated and automatically integrated via VRCFury FullController at build time. " +

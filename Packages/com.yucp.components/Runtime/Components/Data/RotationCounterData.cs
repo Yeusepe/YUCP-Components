@@ -30,6 +30,15 @@ namespace YUCP.Components
         [Range(0.5f, 1f)]
         public float nearMaxThreshold = 0.9f;
 
+        [Header("Stick Center Reset (Arming)")]
+        [Tooltip("Stick X axis parameter used to detect center (−1..1).")]
+        public string stickXParameterName = "SteamInput/LHand/Stick/X";
+        [Tooltip("Stick Y axis parameter used to detect center (−1..1).")]
+        public string stickYParameterName = "SteamInput/LHand/Stick/Y";
+        [Tooltip("Magnitude threshold to consider the stick centered (|X|<=t and |Y|<=t)." )]
+        [Range(0f, 1f)]
+        public float centerThreshold = 0.2f;
+
         [Tooltip("Number of zones to traverse for one count increment. 1 = every zone boundary, up to numberOfZones = full rotation.")]
         [Range(1, 32)]
         public int sectionsPerCount = 4;

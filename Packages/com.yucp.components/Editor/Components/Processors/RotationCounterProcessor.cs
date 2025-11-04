@@ -161,6 +161,10 @@ namespace YUCP.Components.Editor
                         bool hasTestZone = false;
                         bool hasFwdArmed = false;
                         bool hasRevArmed = false;
+                        bool hasX = false;
+                        bool hasY = false;
+                        bool hasAddArmed = false;
+                        bool hasSubArmed = false;
                         foreach (string param in globalParamsList)
                         {
                             if (param == data.angleParameterName) hasAngle = true;
@@ -168,6 +172,10 @@ namespace YUCP.Components.Editor
                             if (param == "RotationCounter_TestZone") hasTestZone = true;
                             if (param == "RotationCounter_FwdArmed") hasFwdArmed = true;
                             if (param == "RotationCounter_RevArmed") hasRevArmed = true;
+                            if (param == data.stickXParameterName) hasX = true;
+                            if (param == data.stickYParameterName) hasY = true;
+                            if (param == "RotationCounter_CanCW") hasAddArmed = true;
+                            if (param == "RotationCounter_CanCCW") hasSubArmed = true;
                         }
                         
                         if (!hasAngle) globalParamsList.Add(data.angleParameterName);
@@ -175,6 +183,10 @@ namespace YUCP.Components.Editor
                         if (!hasTestZone) globalParamsList.Add("RotationCounter_TestZone");
                         if (!hasFwdArmed) globalParamsList.Add("RotationCounter_FwdArmed");
                         if (!hasRevArmed) globalParamsList.Add("RotationCounter_RevArmed");
+                        if (!hasX) globalParamsList.Add(data.stickXParameterName);
+                        if (!hasY) globalParamsList.Add(data.stickYParameterName);
+                        if (!hasAddArmed) globalParamsList.Add("RotationCounter_CanCW");
+                        if (!hasSubArmed) globalParamsList.Add("RotationCounter_CanCCW");
                     }
                 }
                 
@@ -196,6 +208,10 @@ namespace YUCP.Components.Editor
                 fullController.AddGlobalParam("RotationCounter_TestZone"); // Test parameter for debugging
                 fullController.AddGlobalParam("RotationCounter_FwdArmed");
                 fullController.AddGlobalParam("RotationCounter_RevArmed");
+                fullController.AddGlobalParam(data.stickXParameterName);
+                fullController.AddGlobalParam(data.stickYParameterName);
+                fullController.AddGlobalParam("RotationCounter_CanCW");
+                fullController.AddGlobalParam("RotationCounter_CanCCW");
                 
                 Debug.Log($"[RotationCounterProcessor] Created new VRCFury FullController and added rotation counter controller with global parameters", data);
             }
@@ -217,6 +233,9 @@ namespace YUCP.Components.Editor
             // Add required parameters
             controller.AddParameter(data.angleParameterName, AnimatorControllerParameterType.Float);
             controller.AddParameter(data.rotationIndexParameterName, AnimatorControllerParameterType.Int);
+            // Stick axes (floats in range -1..1)
+            controller.AddParameter(data.stickXParameterName, AnimatorControllerParameterType.Float);
+            controller.AddParameter(data.stickYParameterName, AnimatorControllerParameterType.Float);
             
             // Detector parameters
             controller.AddParameter("RotationCounter_FwdArmed", AnimatorControllerParameterType.Bool);
@@ -233,6 +252,10 @@ namespace YUCP.Components.Editor
             // Step pulses to detect a fresh step this frame
             controller.AddParameter("RotationCounter_StepPulseCW", AnimatorControllerParameterType.Bool);
             controller.AddParameter("RotationCounter_StepPulseCCW", AnimatorControllerParameterType.Bool);
+
+            // Center arming flags to prevent flip-flop near boundaries
+            controller.AddParameter("RotationCounter_CanCW", AnimatorControllerParameterType.Bool);
+            controller.AddParameter("RotationCounter_CanCCW", AnimatorControllerParameterType.Bool);
             
             // Add debug test parameter to verify zone transitions
             string testZoneParameterName = "RotationCounter_TestZone";
@@ -331,7 +354,9 @@ namespace YUCP.Components.Editor
                 ("RotationCounter_StepProgressCW", 1, 1f, 0f),
                 ("RotationCounter_StepProgressCCW", 0, 0f, 0f),
                 ("RotationCounter_StepPulseCW", 0, 1f, 0f),
-                ("RotationCounter_StepPulseCCW", 0, 0f, 0f)
+                ("RotationCounter_StepPulseCCW", 0, 0f, 0f),
+                ("RotationCounter_CanCW", 0, 0f, 0f),
+                ("RotationCounter_CanCCW", 0, 0f, 0f)
             });
             var stepReverse = stateMachine.AddState("StepReverse", new Vector3(100, 600, 0));
             stepReverse.writeDefaultValues = false;
@@ -339,67 +364,31 @@ namespace YUCP.Components.Editor
                 ("RotationCounter_StepProgressCCW", 1, 1f, 0f),
                 ("RotationCounter_StepProgressCW", 0, 0f, 0f),
                 ("RotationCounter_StepPulseCCW", 0, 1f, 0f),
-                ("RotationCounter_StepPulseCW", 0, 0f, 0f)
-            });
-
-            // ClearPulse state resets pulses when we are clearly outside boundary bands
-            var clearPulse = stateMachine.AddState("ClearPulse", new Vector3(100, 400, 0));
-            clearPulse.writeDefaultValues = false;
-            AddParameterDriver(clearPulse, new (string,int,float,float)[] {
                 ("RotationCounter_StepPulseCW", 0, 0f, 0f),
-                ("RotationCounter_StepPulseCCW", 0, 0f, 0f)
+                ("RotationCounter_CanCW", 0, 0f, 0f),
+                ("RotationCounter_CanCCW", 0, 0f, 0f)
             });
-
-            // Any State band-based detectors for steps and pulse clear
-            float band = Mathf.Max(0.001f, data.hysteresisEpsilon);
-            for (int k = 0; k < numZones; k++)
-            {
-                float boundary = k * zoneSize;
-                float fwdMin = boundary + 0.0005f;
-                float fwdMax = Mathf.Min(1f, boundary + band);
-                float revMin = Mathf.Max(0f, boundary - band);
-                float revMax = boundary - 0.0005f;
-
-                // Any State → StepForward for post-boundary band
-                var anyToStepFwd = stateMachine.AddAnyStateTransition(stepForward);
-                anyToStepFwd.duration = 0f;
-                anyToStepFwd.hasExitTime = false;
-                anyToStepFwd.canTransitionToSelf = true;
-                anyToStepFwd.AddCondition(AnimatorConditionMode.Greater, fwdMin, data.angleParameterName);
-                anyToStepFwd.AddCondition(AnimatorConditionMode.Less, fwdMax, data.angleParameterName);
-                anyToStepFwd.AddCondition(AnimatorConditionMode.IfNot, 0f, "RotationCounter_StepPulseCW");
-
-                // Any State → StepReverse for pre-boundary band
-                var anyToStepRev = stateMachine.AddAnyStateTransition(stepReverse);
-                anyToStepRev.duration = 0f;
-                anyToStepRev.hasExitTime = false;
-                anyToStepRev.canTransitionToSelf = true;
-                // Special case for boundary 0: pre-boundary band wraps at 1.0
-                if (k == 0)
-                {
-                    anyToStepRev.AddCondition(AnimatorConditionMode.Greater, 1f - band, data.angleParameterName);
-                    anyToStepRev.AddCondition(AnimatorConditionMode.Less, 1f - 0.0005f, data.angleParameterName);
-                }
-                else
-                {
-                    anyToStepRev.AddCondition(AnimatorConditionMode.Greater, revMin, data.angleParameterName);
-                    anyToStepRev.AddCondition(AnimatorConditionMode.Less, revMax, data.angleParameterName);
-                }
-                anyToStepRev.AddCondition(AnimatorConditionMode.IfNot, 0f, "RotationCounter_StepPulseCCW");
-
-                // Any State → ClearPulse for interior of zone (away from both bands)
-                float interiorStart = boundary + band;
-                float interiorEnd = (k + 1) * zoneSize - band;
-                if (interiorEnd > interiorStart)
-                {
-                    var anyToClear = stateMachine.AddAnyStateTransition(clearPulse);
-                    anyToClear.duration = 0f;
-                    anyToClear.hasExitTime = false;
-                    anyToClear.canTransitionToSelf = true;
-                    anyToClear.AddCondition(AnimatorConditionMode.Greater, interiorStart, data.angleParameterName);
-                    anyToClear.AddCondition(AnimatorConditionMode.Less, interiorEnd, data.angleParameterName);
-                }
-            }
+            // Center state: when in the middle of any zone, arm both directions to allow next step
+            var centerState = stateMachine.AddState("Center", new Vector3(100, 400, 0));
+            centerState.writeDefaultValues = false;
+            AddParameterDriver(centerState, new (string,int,float,float)[] {
+                ("RotationCounter_StepPulseCW", 0, 0f, 0f),
+                ("RotationCounter_StepPulseCCW", 0, 0f, 0f),
+                ("RotationCounter_CanCW", 0, 1f, 0f),
+                ("RotationCounter_CanCCW", 0, 1f, 0f)
+            });
+            // Any State → Center when stick is centered: |X| <= t and |Y| <= t
+            float t = Mathf.Clamp01(data.centerThreshold);
+            var anyToCenter = stateMachine.AddAnyStateTransition(centerState);
+            anyToCenter.duration = 0f;
+            anyToCenter.hasExitTime = false;
+            anyToCenter.canTransitionToSelf = true;
+            // |X| <= t -> (-t <= X) AND (X <= t)
+            anyToCenter.AddCondition(AnimatorConditionMode.Greater, -t, data.stickXParameterName);
+            anyToCenter.AddCondition(AnimatorConditionMode.Less, t, data.stickXParameterName);
+            // |Y| <= t
+            anyToCenter.AddCondition(AnimatorConditionMode.Greater, -t, data.stickYParameterName);
+            anyToCenter.AddCondition(AnimatorConditionMode.Less, t, data.stickYParameterName);
 
             // Count states in the same layer: perform the increment/decrement immediately on step threshold
             int sections = Mathf.Max(1, Mathf.Min(data.sectionsPerCount, numZones));
@@ -430,6 +419,7 @@ namespace YUCP.Components.Editor
                 forwardTransition.duration = 0f;
                 forwardTransition.hasExitTime = false;
                 forwardTransition.canTransitionToSelf = false;
+                forwardTransition.AddCondition(AnimatorConditionMode.If, 0f, "RotationCounter_CanCW");
                 
                 // Skip last zone → first zone transition - wraparound detection handles it
                 if (i == lastZoneIndex)
@@ -454,6 +444,7 @@ namespace YUCP.Components.Editor
                 reverseTransition.duration = 0f;
                 reverseTransition.hasExitTime = false;
                 reverseTransition.canTransitionToSelf = false;
+                reverseTransition.AddCondition(AnimatorConditionMode.If, 0f, "RotationCounter_CanCCW");
                 
                 // Skip first zone → last zone transition - wraparound detection handles it
                 if (i == firstZoneIndex)
