@@ -161,11 +161,17 @@ namespace YUCP.Components.Editor
 				var index = parC.AddSource(src);
 				if (targets[s].keepTransforms)
 				{
-					// Built-ins: use symmetric base offsets for both sides
+					// Built-ins: use symmetric base offsets with X-only mirroring for opposite side
 					if (!targets[s].isCustom && baseSide != null)
 					{
-						parC.SetTranslationOffset(index, baseLocalPos);
-						parC.SetRotationOffset(index, baseLocalRot.eulerAngles);
+						Vector3 posOff = baseLocalPos;
+						if (targets[s].t != baseSide)
+						{
+							posOff.x = -posOff.x; // mirror only X
+						}
+						parC.SetTranslationOffset(index, posOff);
+						var rotOff = (targets[s].t == baseSide) ? baseLocalRot : MirrorLocalRotationX(baseLocalRot);
+						parC.SetRotationOffset(index, rotOff.eulerAngles);
 					}
 					else
 					{
@@ -274,6 +280,14 @@ namespace YUCP.Components.Editor
 			{
 				localRot = Quaternion.LookRotation(forward, upwards);
 			}
+		}
+
+		private static Quaternion MirrorLocalRotationX(Quaternion q)
+		{
+			var R = Matrix4x4.Rotate(q);
+			var S = Matrix4x4.Scale(new Vector3(-1f, 1f, 1f));
+			var Rp = S * R * S;
+			return Rp.rotation;
 		}
 
 		private static void ClearSources(ParentConstraint c)

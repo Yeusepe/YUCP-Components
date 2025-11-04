@@ -253,15 +253,18 @@ namespace YUCP.Components.Editor
 				{
 					// Calculate local offset relative to the base side
 					ComputeLocalOffset(objRoot, baseSide, out var localPos, out var localRot);
+					// Mirror ONLY X component in base-side local space
+					var mirroredLocalPos = new Vector3(-localPos.x, localPos.y, localPos.z);
+					var mirroredLocalRot = MirrorLocalRotationX(localRot);
 					// Build preview matrix per constraint mode
 					Matrix4x4 GetPreviewMatrixParent()
 					{
-						var m = Matrix4x4.TRS(localPos, localRot, Vector3.one);
+						var m = Matrix4x4.TRS(mirroredLocalPos, mirroredLocalRot, Vector3.one);
 						return mirrorSide.localToWorldMatrix * m;
 					}
 					Matrix4x4 GetPreviewMatrixPosition()
 					{
-						var pos = mirrorSide.TransformPoint(localPos);
+						var pos = mirrorSide.TransformPoint(mirroredLocalPos);
 						return Matrix4x4.TRS(pos, objRoot.rotation, Vector3.one);
 					}
 					Matrix4x4 GetPreviewMatrixRotation()
@@ -473,6 +476,15 @@ namespace YUCP.Components.Editor
 			var rot = Quaternion.LookRotation(z, y);
 			var pos = new Vector3(m.m03, m.m13, m.m23);
 			return Matrix4x4.TRS(pos, rot, desiredScale);
+		}
+
+		private static Quaternion MirrorLocalRotationX(Quaternion q)
+		{
+			// Implement R' = S R S where S = diag(-1,1,1) in local space
+			var R = Matrix4x4.Rotate(q);
+			var S = Matrix4x4.Scale(new Vector3(-1f, 1f, 1f));
+			var Rp = S * R * S;
+			return Rp.rotation;
 		}
 	}
 }
