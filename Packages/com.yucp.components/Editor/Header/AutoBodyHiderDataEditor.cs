@@ -73,6 +73,12 @@ namespace YUCP.Components.Editor
         {
             serializedObject.Update();
             
+            // Show beta warning if present
+            BetaWarningHelper.DrawBetaWarningIMGUI(typeof(AutoBodyHiderData));
+            
+            // Show support banner if present
+            SupportBannerHelper.DrawSupportBannerIMGUI(typeof(AutoBodyHiderData));
+            
             // Show integration banner if VRCFury Toggle is present
             var vrcFuryComponents = data.GetComponents<Component>();
             Component vrcFuryToggle = null;

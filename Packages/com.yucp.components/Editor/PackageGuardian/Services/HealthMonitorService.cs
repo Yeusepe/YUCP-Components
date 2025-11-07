@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using PackageGuardian.Core.Validation;
+using YUCP.Components.PackageGuardian.Editor.Settings;
 
 namespace YUCP.Components.PackageGuardian.Editor.Services
 {
@@ -35,6 +36,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         private static void OnEditorUpdate()
         {
             if (!_enabled) return;
+            
+            // Check if Package Guardian is enabled
+            if (!PackageGuardianSettings.IsEnabled()) return;
             
             // Check if it's time for a health check
             if (EditorApplication.timeSinceStartup - _lastCheckTime >= _checkInterval)

@@ -31,6 +31,13 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
             if (_isInitialized)
                 return;
             
+            // Check if Package Guardian is enabled
+            if (!PackageGuardianSettings.IsEnabled())
+            {
+                Debug.Log("[Package Guardian] Import Monitor disabled (Package Guardian is disabled in settings)");
+                return;
+            }
+            
             _isInitialized = true;
             
             Debug.Log("[Package Guardian] Import Monitor initialized");
@@ -52,6 +59,10 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         /// </summary>
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
+            // Skip if Package Guardian is disabled
+            if (!PackageGuardianSettings.IsEnabled())
+                return;
+            
             // Skip during compilation or updating
             if (UnityEditor.EditorApplication.isUpdating || UnityEditor.EditorApplication.isCompiling)
                 return;
@@ -151,6 +162,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         {
             try
             {
+                if (!PackageGuardianSettings.IsEnabled())
+                    return;
+                    
                 var settings = PackageGuardianSettings.Instance;
                 if (settings == null || !settings.autoStashOnAssetImport)
                     return;
@@ -214,6 +228,13 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         private static void OnPackagesRegistered(UnityEditor.PackageManager.PackageRegistrationEventArgs args)
         {
             Debug.Log("[Package Guardian] OnPackagesRegistered called");
+            
+            // Skip if Package Guardian is disabled
+            if (!PackageGuardianSettings.IsEnabled())
+            {
+                Debug.Log("[Package Guardian] Package Guardian is disabled - skipping UPM monitoring");
+                return;
+            }
             
             PackageGuardianSettings settings = null;
             try

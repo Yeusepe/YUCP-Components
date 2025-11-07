@@ -32,6 +32,10 @@ namespace YUCP.Components.Editor
         
         // Store original bone rotations for proper restoration
         private static Dictionary<HumanBodyBones, Quaternion> originalBoneRotations = new Dictionary<HumanBodyBones, Quaternion>();
+        
+        // Store last valid IK solutions to prevent unnatural folding
+        private static Dictionary<HumanBodyBones, Quaternion> lastValidLeftRotations = new Dictionary<HumanBodyBones, Quaternion>();
+        private static Dictionary<HumanBodyBones, Quaternion> lastValidRightRotations = new Dictionary<HumanBodyBones, Quaternion>();
 
         [InitializeOnLoadMethod]
         private static void InitPreviewSystem()
@@ -200,6 +204,80 @@ namespace YUCP.Components.Editor
                 Undo.RecordObject(data, "Reset Finger Positions");
                 ResetAllFingerPositions();
                 EditorUtility.SetDirty(data);
+            }
+
+            // Reset manual tips to calculated snapped positions (ignores manual seeds)
+            if (GUILayout.Button("Set Manual Tips From Calculated Surface", GUILayout.Height(22)))
+            {
+                var sceneAnimator = FindAnimator();
+                if (sceneAnimator == null)
+                {
+                    Debug.LogWarning("[AutoGrip Editor] No Animator found to compute snapped tips");
+                }
+                else if (data.grippedObject == null)
+                {
+                    Debug.LogWarning("[AutoGrip Editor] Assign a Gripped Object before resetting tips");
+                }
+                else
+                {
+                    Undo.RecordObject(data, "Set Manual Tips From Calculated Surface");
+
+                    void ApplySnapped(bool isLeftHand)
+                    {
+                        // Always compute from defaults and snap to actual surface
+                        var snapped = GripGenerator.ComputeSnappedDefaultTargets(sceneAnimator, data, isLeftHand, out var _);
+
+                        // Store as LOCAL positions relative to gripped object
+                        if (isLeftHand)
+                        {
+                            data.leftThumbTip = WorldToLocalPosition(snapped.thumbTip);
+                            data.leftIndexTip = WorldToLocalPosition(snapped.indexTip);
+                            data.leftMiddleTip = WorldToLocalPosition(snapped.middleTip);
+                            data.leftRingTip = WorldToLocalPosition(snapped.ringTip);
+                            data.leftLittleTip = WorldToLocalPosition(snapped.littleTip);
+
+                            data.leftThumbRotation = snapped.thumbRotation;
+                            data.leftIndexRotation = snapped.indexRotation;
+                            data.leftMiddleRotation = snapped.middleRotation;
+                            data.leftRingRotation = snapped.ringRotation;
+                            data.leftLittleRotation = snapped.littleRotation;
+                        }
+                        else
+                        {
+                            data.rightThumbTip = WorldToLocalPosition(snapped.thumbTip);
+                            data.rightIndexTip = WorldToLocalPosition(snapped.indexTip);
+                            data.rightMiddleTip = WorldToLocalPosition(snapped.middleTip);
+                            data.rightRingTip = WorldToLocalPosition(snapped.ringTip);
+                            data.rightLittleTip = WorldToLocalPosition(snapped.littleTip);
+
+                            data.rightThumbRotation = snapped.thumbRotation;
+                            data.rightIndexRotation = snapped.indexRotation;
+                            data.rightMiddleRotation = snapped.middleRotation;
+                            data.rightRingRotation = snapped.ringRotation;
+                            data.rightLittleRotation = snapped.littleRotation;
+                        }
+                    }
+
+                    switch (data.targetHand)
+                    {
+                        case HandTarget.Left:
+                            ApplySnapped(true);
+                            break;
+                        case HandTarget.Right:
+                            ApplySnapped(false);
+                            break;
+                        case HandTarget.Both:
+                        case HandTarget.Closest:
+                            ApplySnapped(true);
+                            ApplySnapped(false);
+                            break;
+                    }
+
+                    EditorUtility.SetDirty(data);
+                    SceneView.RepaintAll();
+                    Repaint();
+                    Debug.Log("[AutoGrip Editor] Manual tips updated from calculated surface positions");
+                }
             }
         }
         
@@ -480,23 +558,47 @@ namespace YUCP.Components.Editor
             string hand = isLeftHand ? "Left" : "Right";
             Debug.Log($"[AutoGrip Preview] Generating IK grip for {hand} hand...");
             
-            // Get finger tip targets from data
-            var fingerTargets = GetFingerTargets(isLeftHand);
+            // Compute snapped fingertip targets from manual gizmo positions
+            var snappedTargets = GripGenerator.GetSnappedTargets(animator, data, isLeftHand, out var contacts);
+
+            // If all snapped targets are zero (no user positions and no good surface), try initializing defaults once
+            bool allZeroSnapped = snappedTargets.thumbTip == Vector3.zero &&
+                                  snappedTargets.indexTip == Vector3.zero &&
+                                  snappedTargets.middleTip == Vector3.zero &&
+                                  snappedTargets.ringTip == Vector3.zero &&
+                                  snappedTargets.littleTip == Vector3.zero;
+            if (allZeroSnapped && data.grippedObject != null)
+            {
+                var defaults = FingerTipSolver.InitializeFingerTips(data.grippedObject, isLeftHand);
+                var handUp = (animator.GetBoneTransform(isLeftHand ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand)?.up) ?? Vector3.up;
+                contacts = new List<GripGenerator.ContactPoint>();
+                // Fallback is simple: set positions to defaults so IK can attempt a pose
+                snappedTargets.thumbTip = defaults.thumbTip;
+                snappedTargets.indexTip = defaults.indexTip;
+                snappedTargets.middleTip = defaults.middleTip;
+                snappedTargets.ringTip = defaults.ringTip;
+                snappedTargets.littleTip = defaults.littleTip;
+                snappedTargets.thumbRotation = Quaternion.LookRotation(Vector3.forward, handUp);
+                snappedTargets.indexRotation = Quaternion.LookRotation(Vector3.forward, handUp);
+                snappedTargets.middleRotation = Quaternion.LookRotation(Vector3.forward, handUp);
+                snappedTargets.ringRotation = Quaternion.LookRotation(Vector3.forward, handUp);
+                snappedTargets.littleRotation = Quaternion.LookRotation(Vector3.forward, handUp);
+            }
             
-            // Debug: Log the finger tip positions and rotations being used
-            Debug.Log($"[AutoGrip Preview] {hand} hand finger targets - " +
-                    $"Thumb: {fingerTargets.thumbTip} (rot: {fingerTargets.thumbRotation.eulerAngles}), " +
-                    $"Index: {fingerTargets.indexTip} (rot: {fingerTargets.indexRotation.eulerAngles}), " +
-                    $"Middle: {fingerTargets.middleTip} (rot: {fingerTargets.middleRotation.eulerAngles}), " +
-                    $"Ring: {fingerTargets.ringTip} (rot: {fingerTargets.ringRotation.eulerAngles}), " +
-                    $"Little: {fingerTargets.littleTip} (rot: {fingerTargets.littleRotation.eulerAngles})");
+            // Debug: Log the snapped finger tip positions and rotations being used
+            Debug.Log($"[AutoGrip Preview] {hand} snapped targets - " +
+                    $"Thumb: {snappedTargets.thumbTip} (rot: {snappedTargets.thumbRotation.eulerAngles}), " +
+                    $"Index: {snappedTargets.indexTip} (rot: {snappedTargets.indexRotation.eulerAngles}), " +
+                    $"Middle: {snappedTargets.middleTip} (rot: {snappedTargets.middleRotation.eulerAngles}), " +
+                    $"Ring: {snappedTargets.ringTip} (rot: {snappedTargets.ringRotation.eulerAngles}), " +
+                    $"Little: {snappedTargets.littleTip} (rot: {snappedTargets.littleRotation.eulerAngles})");
             
             // Check if all finger positions are zero (no preset applied)
-            bool allZero = fingerTargets.thumbTip == Vector3.zero && 
-                          fingerTargets.indexTip == Vector3.zero && 
-                          fingerTargets.middleTip == Vector3.zero && 
-                          fingerTargets.ringTip == Vector3.zero && 
-                          fingerTargets.littleTip == Vector3.zero;
+            bool allZero = snappedTargets.thumbTip == Vector3.zero && 
+                          snappedTargets.indexTip == Vector3.zero && 
+                          snappedTargets.middleTip == Vector3.zero && 
+                          snappedTargets.ringTip == Vector3.zero && 
+                          snappedTargets.littleTip == Vector3.zero;
             
             if (allZero)
             {
@@ -505,8 +607,8 @@ namespace YUCP.Components.Editor
                 return null;
             }
             
-            // Use FingerTipSolver to solve IK and get bone rotations
-            var solverResult = FingerTipSolver.SolveFingerTips(animator, fingerTargets, isLeftHand);
+            // Use FingerTipSolver to solve IK based on snapped targets with collision detection
+            var solverResult = FingerTipSolver.SolveFingerTips(animator, snappedTargets, isLeftHand, data.grippedObject);
             
             if (!solverResult.success)
             {
@@ -514,15 +616,51 @@ namespace YUCP.Components.Editor
                 return null;
             }
             
+            // Validate the solution - if invalid, keep the last valid pose
+            var validRotations = solverResult.solvedRotations;
+            if (!solverResult.isValidPose)
+            {
+                Debug.LogWarning($"[AutoGrip Preview] {hand} hand pose is invalid (mesh penetration detected) - keeping last valid pose");
+                
+                // Use last valid rotations if available
+                var lastValidDict = isLeftHand ? lastValidLeftRotations : lastValidRightRotations;
+                if (lastValidDict.Count > 0)
+                {
+                    validRotations = lastValidDict;
+                }
+                else
+                {
+                    // No previous valid pose - use the current one anyway but warn
+                    Debug.LogWarning($"[AutoGrip Preview] No previous valid pose for {hand} hand - using current pose anyway");
+                }
+            }
+            else
+            {
+                // Update last valid pose
+                var lastValidDict = isLeftHand ? lastValidLeftRotations : lastValidRightRotations;
+                lastValidDict.Clear();
+                foreach (var kvp in solverResult.solvedRotations)
+                {
+                    lastValidDict[kvp.Key] = kvp.Value;
+                }
+                Debug.Log($"[AutoGrip Preview] {hand} hand pose is valid - stored for future reference");
+            }
+            
             // Create a GripResult with the IK solution (bone rotations, not muscles)
             var gripResult = new GripGenerator.GripResult
             {
                 muscleValues = new Dictionary<string, float>(), // Empty for preview
-                contactPoints = new List<GripGenerator.ContactPoint>() // Empty for IK preview
+                contactPoints = new List<GripGenerator.ContactPoint>() // Will be filled from contacts
             };
             
-            // Store the solved rotations for preview (we'll apply these directly to bones)
-            gripResult.solvedRotations = solverResult.solvedRotations;
+            // Store the validated rotations for preview (we'll apply these directly to bones)
+            gripResult.solvedRotations = validRotations;
+            
+            // Populate contact points for gizmos using snapped contacts
+            if (contacts != null)
+            {
+                gripResult.contactPoints.AddRange(contacts);
+            }
             
             Debug.Log($"[AutoGrip Preview] {hand} hand IK solved - Bone rotations: {gripResult.solvedRotations.Count}");
             
@@ -626,7 +764,8 @@ namespace YUCP.Components.Editor
                 var boneTransform = animator.GetBoneTransform(bone);
                 if (boneTransform != null)
                 {
-                    originalBoneRotations[bone] = boneTransform.rotation;
+                    // Save LOCAL rotation to restore consistently via Animator API
+                    originalBoneRotations[bone] = boneTransform.localRotation;
                 }
             }
             
@@ -646,11 +785,21 @@ namespace YUCP.Components.Editor
                     var boneTransform = animator.GetBoneTransform(boneRotation.Key);
                     if (boneTransform != null)
                     {
-                        boneTransform.rotation = boneRotation.Value;
-                        Debug.Log($"[AutoGrip Preview] Set {boneRotation.Key} rotation = {boneRotation.Value}");
+                        // Convert target world rotation to local, then damp and write via Animator
+                        Quaternion parentWorld = boneTransform.parent != null ? boneTransform.parent.rotation : Quaternion.identity;
+                        Quaternion targetLocal = Quaternion.Inverse(parentWorld) * boneRotation.Value;
+                        Quaternion currentLocal = boneTransform.localRotation;
+                        Quaternion nextLocal = Quaternion.Slerp(currentLocal, targetLocal, 0.25f);
+                        if (Application.isPlaying)
+                        {
+                            animator.SetBoneLocalRotation(boneRotation.Key, nextLocal);
+                        }
+                        else
+                        {
+                            boneTransform.localRotation = nextLocal; // editor preview
+                        }
                     }
                 }
-                Debug.Log($"[AutoGrip Preview] Applied {previewGripLeft.solvedRotations.Count} left hand bone rotations");
             }
             
             // Apply right hand bone rotations
@@ -661,11 +810,20 @@ namespace YUCP.Components.Editor
                     var boneTransform = animator.GetBoneTransform(boneRotation.Key);
                     if (boneTransform != null)
                     {
-                        boneTransform.rotation = boneRotation.Value;
-                        Debug.Log($"[AutoGrip Preview] Set {boneRotation.Key} rotation = {boneRotation.Value}");
+                        Quaternion parentWorld = boneTransform.parent != null ? boneTransform.parent.rotation : Quaternion.identity;
+                        Quaternion targetLocal = Quaternion.Inverse(parentWorld) * boneRotation.Value;
+                        Quaternion currentLocal = boneTransform.localRotation;
+                        Quaternion nextLocal = Quaternion.Slerp(currentLocal, targetLocal, 0.25f);
+                        if (Application.isPlaying)
+                        {
+                            animator.SetBoneLocalRotation(boneRotation.Key, nextLocal);
+                        }
+                        else
+                        {
+                            boneTransform.localRotation = nextLocal; // editor preview
+                        }
                     }
                 }
-                Debug.Log($"[AutoGrip Preview] Applied {previewGripRight.solvedRotations.Count} right hand bone rotations");
             }
         }
         
@@ -749,7 +907,15 @@ namespace YUCP.Components.Editor
                 var boneTransform = animator.GetBoneTransform(boneRotation.Key);
                 if (boneTransform != null)
                 {
-                    boneTransform.rotation = boneRotation.Value;
+                    // Restore saved LOCAL rotation (Animator API only in play mode)
+                    if (Application.isPlaying)
+                    {
+                        animator.SetBoneLocalRotation(boneRotation.Key, boneRotation.Value);
+                    }
+                    else
+                    {
+                        boneTransform.localRotation = boneRotation.Value;
+                    }
                 }
             }
             
@@ -1450,8 +1616,17 @@ namespace YUCP.Components.Editor
             DrawFingerGizmo(ringTip, ringRot, new Color(0.212f, 0.749f, 0.694f), "Ring", isLeftHand);
             DrawFingerGizmo(littleTip, littleRot, new Color(0.212f, 0.749f, 0.694f), "Little", isLeftHand);
             
-            // Draw lines from hand to finger tips
-            DrawHandToFingerLines(handPosition, thumbTip, indexTip, middleTip, ringTip, littleTip);
+            // Calculate palm center (midpoint between wrist and middle finger tip)
+            var middleDistal = animator?.GetBoneTransform(isLeftHand ? HumanBodyBones.LeftMiddleDistal : HumanBodyBones.RightMiddleDistal);
+            Vector3 palmCenter = handPosition; // Default to wrist if no middle finger
+            if (middleDistal != null)
+            {
+                Vector3 middleFingerTipPos = middleDistal.position + middleDistal.forward * 0.02f;
+                palmCenter = (handPosition + middleFingerTipPos) * 0.5f;
+            }
+            
+            // Draw lines from palm center to finger tips
+            DrawHandToFingerLines(palmCenter, thumbTip, indexTip, middleTip, ringTip, littleTip);
         }
         
         /// <summary>

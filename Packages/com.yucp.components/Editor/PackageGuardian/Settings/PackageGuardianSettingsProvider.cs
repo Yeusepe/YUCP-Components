@@ -15,6 +15,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
         private SerializedObject _serializedSettings;
         
         // UI Elements
+        private Toggle _enabledToggle;
         private Toggle _autoSnapshotToggle;
         private Toggle _autoStashUPMToggle;
         private Toggle _autoStashAssetToggle;
@@ -76,6 +77,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
 
             scrollView.Add(header);
 
+            // Enable/Disable Section (most prominent)
+            scrollView.Add(CreateEnableDisableSection());
+
             // Automatic Snapshots Section
             scrollView.Add(CreateAutomaticSnapshotsSection());
 
@@ -98,6 +102,64 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             scrollView.Add(CreateActionsSection());
 
             root.Add(scrollView);
+        }
+
+        private VisualElement CreateEnableDisableSection()
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pg-section");
+            section.style.backgroundColor = new Color(0.2f, 0.2f, 0.2f, 0.5f);
+            section.style.paddingTop = 16;
+            section.style.paddingBottom = 16;
+            section.style.paddingLeft = 16;
+            section.style.paddingRight = 16;
+            section.style.marginBottom = 20;
+
+            var container = new VisualElement();
+            container.style.flexDirection = FlexDirection.Row;
+            container.style.alignItems = Align.Center;
+
+            _enabledToggle = new Toggle("Enable Package Guardian");
+            _enabledToggle.value = _settings.enabled;
+            _enabledToggle.tooltip = "When disabled, all Package Guardian features are turned off. You can re-enable it anytime.";
+            _enabledToggle.style.fontSize = 16;
+            _enabledToggle.style.marginRight = 12;
+            
+            var statusLabel = new Label(_settings.enabled ? "Active" : "Disabled");
+            statusLabel.style.color = _settings.enabled ? new Color(0.3f, 0.8f, 0.3f) : new Color(0.8f, 0.3f, 0.3f);
+            statusLabel.style.fontSize = 14;
+            statusLabel.style.marginLeft = 8;
+            
+            _enabledToggle.RegisterValueChangedCallback(evt =>
+            {
+                _settings.enabled = evt.newValue;
+                _settings.Save();
+                
+                statusLabel.text = evt.newValue ? "Active" : "Disabled";
+                statusLabel.style.color = evt.newValue ? new Color(0.3f, 0.8f, 0.3f) : new Color(0.8f, 0.3f, 0.3f);
+                
+                if (evt.newValue)
+                {
+                    Debug.Log("[Package Guardian] Package Guardian has been enabled");
+                }
+                else
+                {
+                    Debug.Log("[Package Guardian] Package Guardian has been disabled. All monitoring and protection features are now off.");
+                }
+            });
+            
+            container.Add(_enabledToggle);
+            container.Add(statusLabel);
+            section.Add(container);
+
+            var description = new Label("When disabled, Package Guardian will not monitor imports, create stashes, or perform any automatic operations. You can still manually use Package Guardian features if needed.");
+            description.AddToClassList("pg-label-small");
+            description.style.whiteSpace = WhiteSpace.Normal;
+            description.style.marginTop = 12;
+            description.style.color = new Color(0.7f, 0.7f, 0.7f);
+            section.Add(description);
+
+            return section;
         }
 
         private VisualElement CreateAutomaticSnapshotsSection()
@@ -435,32 +497,43 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             var section = new VisualElement();
             section.AddToClassList("pg-section");
 
-            var sectionTitle = new Label("FIRST IMPORT WARNING");
+            var sectionTitle = new Label("FIRST IMPORT WELCOME MESSAGE");
             sectionTitle.AddToClassList("pg-section-title");
             section.Add(sectionTitle);
 
-            var sectionDesc = new Label("Configure the warning shown when importing Package Guardian for the first time.");
+            var sectionDesc = new Label("Configure the welcome message shown when importing Package Guardian for the first time.");
             sectionDesc.AddToClassList("pg-label-small");
             sectionDesc.style.whiteSpace = WhiteSpace.Normal;
             sectionDesc.style.marginBottom = 12;
             section.Add(sectionDesc);
 
+            _showFirstImportToggle = new Toggle("Show welcome message on first import");
+            _showFirstImportToggle.value = _settings.showFirstImportWarning;
+            _showFirstImportToggle.tooltip = "When enabled, shows a friendly welcome message when Package Guardian is first imported";
+            _showFirstImportToggle.RegisterValueChangedCallback(evt =>
+            {
+                _settings.showFirstImportWarning = evt.newValue;
+                _settings.Save();
+            });
+            section.Add(_showFirstImportToggle);
+
             var statusLabel = new Label();
             statusLabel.AddToClassList("pg-label");
+            statusLabel.style.marginTop = 12;
             bool hasShown = EditorPrefs.GetBool("YUCP.Components.FirstImportWarningShown", false);
-            statusLabel.text = hasShown ? "Status: First import warning has been shown" : "Status: First import warning has not been shown yet";
+            statusLabel.text = hasShown ? "Status: Welcome message has been shown" : "Status: Welcome message has not been shown yet";
             statusLabel.style.marginBottom = 8;
             section.Add(statusLabel);
 
             var resetBtn = new Button(() =>
             {
                 EditorPrefs.DeleteKey("YUCP.Components.FirstImportWarningShown");
-                statusLabel.text = "Status: First import warning has not been shown yet";
-                Debug.Log("First import warning has been reset. It will show again on next Unity restart.");
+                statusLabel.text = "Status: Welcome message has not been shown yet";
+                Debug.Log("First import welcome message has been reset. It will show again on next Unity restart if enabled.");
             });
-            resetBtn.text = "Reset First Import Warning";
+            resetBtn.text = "Reset Welcome Message";
             resetBtn.AddToClassList("pg-button");
-            resetBtn.tooltip = "Reset the warning so it shows again on next Unity launch";
+            resetBtn.tooltip = "Reset the welcome message so it shows again on next Unity launch (if enabled)";
             section.Add(resetBtn);
 
             return section;
@@ -488,6 +561,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
                     "Cancel"))
                 {
                     // Reset to defaults
+                    _settings.enabled = true;
                     _settings.autoSnapshotOnSave = false;
                     _settings.autoStashOnUPM = true;
                     _settings.autoStashOnAssetImport = true;
@@ -498,6 +572,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
                     _settings.enableLargeFileSupport = false;
                     _settings.largeFileThreshold = 52428800;
                     _settings.enableFsync = false;
+                    _settings.showFirstImportWarning = true;
                     _settings.Save();
 
                     // Refresh UI
@@ -526,6 +601,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
 
         private void RefreshAllFields()
         {
+            if (_enabledToggle != null) _enabledToggle.value = _settings.enabled;
             if (_autoSnapshotToggle != null) _autoSnapshotToggle.value = _settings.autoSnapshotOnSave;
             if (_autoStashUPMToggle != null) _autoStashUPMToggle.value = _settings.autoStashOnUPM;
             if (_autoStashAssetToggle != null) _autoStashAssetToggle.value = _settings.autoStashOnAssetImport;
@@ -535,6 +611,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             if (_largeFileToggle != null) _largeFileToggle.value = _settings.enableLargeFileSupport;
             if (_largeFileThresholdField != null) _largeFileThresholdField.value = (_settings.largeFileThreshold / 1048576).ToString("F1");
             if (_fsyncToggle != null) _fsyncToggle.value = _settings.enableFsync;
+            if (_showFirstImportToggle != null) _showFirstImportToggle.value = _settings.showFirstImportWarning;
         }
 
         [SettingsProvider]

@@ -39,10 +39,15 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.Graph
             if (selected)
             {
                 AddToClassList("pg-graph-item-selected");
+                style.backgroundColor = new Color(0.15f, 0.2f, 0.3f);
+                style.borderLeftWidth = 3;
+                style.borderLeftColor = new Color(0.36f, 0.64f, 1.0f);
             }
             else
             {
                 RemoveFromClassList("pg-graph-item-selected");
+                style.backgroundColor = new Color(0.1f, 0.1f, 0.1f);
+                style.borderLeftWidth = 0;
             }
         }
         
@@ -50,15 +55,44 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.Graph
         {
             style.flexDirection = FlexDirection.Row;
             style.alignItems = Align.Center;
+            style.flexShrink = 0;
+            style.minHeight = 60;
+            style.paddingTop = 10;
+            style.paddingBottom = 10;
+            style.paddingLeft = 12;
+            style.paddingRight = 12;
+            style.marginBottom = 2;
+            style.backgroundColor = new Color(0.1f, 0.1f, 0.1f);
+            style.borderTopLeftRadius = 0;
+            style.borderTopRightRadius = 0;
+            style.borderBottomLeftRadius = 0;
+            style.borderBottomRightRadius = 0;
             
-            // Lanes + Commit Node
+            RegisterCallback<MouseEnterEvent>(evt => {
+                if (!_isSelected)
+                {
+                    style.backgroundColor = new Color(0.13f, 0.13f, 0.13f);
+                }
+            });
+            RegisterCallback<MouseLeaveEvent>(evt => {
+                if (!_isSelected)
+                {
+                    style.backgroundColor = new Color(0.1f, 0.1f, 0.1f);
+                }
+            });
+            
             var lanesContainer = new VisualElement();
             lanesContainer.AddToClassList("pg-graph-lanes");
-            lanesContainer.style.width = 80;
-            lanesContainer.style.height = 50;
+            lanesContainer.style.width = 60;
+            lanesContainer.style.minWidth = 60;
+            lanesContainer.style.maxWidth = 60;
+            lanesContainer.style.height = 40;
+            lanesContainer.style.flexShrink = 0;
             lanesContainer.style.flexDirection = FlexDirection.Row;
             lanesContainer.style.alignItems = Align.Center;
             lanesContainer.style.justifyContent = Justify.Center;
+            lanesContainer.style.marginRight = 8;
+            lanesContainer.style.alignSelf = Align.Center;
             
             // Draw lanes with commit node
             for (int i = 0; i < 5; i++)
@@ -101,59 +135,84 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.Graph
             
             Add(lanesContainer);
             
-            // Commit Type Icon
             var iconContainer = new VisualElement();
             iconContainer.AddToClassList("pg-graph-commit-icon");
+            iconContainer.style.width = 28;
+            iconContainer.style.height = 28;
+            iconContainer.style.minWidth = 28;
+            iconContainer.style.maxWidth = 28;
+            iconContainer.style.flexShrink = 0;
+            iconContainer.style.marginRight = 8;
+            iconContainer.style.borderTopLeftRadius = 3;
+            iconContainer.style.borderTopRightRadius = 3;
+            iconContainer.style.borderBottomLeftRadius = 3;
+            iconContainer.style.borderBottomRightRadius = 3;
+            iconContainer.style.unityTextAlign = TextAnchor.MiddleCenter;
+            iconContainer.style.justifyContent = Justify.Center;
+            iconContainer.style.alignItems = Align.Center;
+            iconContainer.style.alignSelf = Align.Center;
             
             string iconText;
-            string iconClass;
+            Color iconBgColor;
+            Color iconTextColor;
             
-            // Determine icon based on commit type
             if (_node.IsStash)
             {
                 iconText = "S";
-                iconClass = "pg-icon-auto";
+                iconBgColor = new Color(0.55f, 0.36f, 0.96f, 0.2f);
+                iconTextColor = new Color(0.75f, 0.65f, 0.95f);
             }
             else if (_node.Message.Contains("UPM:") || _node.Message.Contains("Package"))
             {
                 iconText = "P";
-                iconClass = "pg-icon-package";
+                iconBgColor = new Color(0.36f, 0.64f, 1.0f, 0.2f);
+                iconTextColor = new Color(0.36f, 0.64f, 1.0f);
             }
             else if (_node.ParentCount > 1)
             {
                 iconText = "M";
-                iconClass = "pg-icon-merge";
+                iconBgColor = new Color(0.89f, 0.65f, 0.29f, 0.2f);
+                iconTextColor = new Color(0.89f, 0.65f, 0.29f);
             }
             else if (_node.Message.Contains("Manual"))
             {
                 iconText = "U";
-                iconClass = "pg-icon-manual";
+                iconBgColor = new Color(0.21f, 0.75f, 0.69f, 0.2f);
+                iconTextColor = new Color(0.21f, 0.75f, 0.69f);
             }
             else
             {
                 iconText = "A";
-                iconClass = "pg-icon-auto";
+                iconBgColor = new Color(0.5f, 0.5f, 0.5f, 0.2f);
+                iconTextColor = new Color(0.7f, 0.7f, 0.7f);
             }
             
+            iconContainer.style.backgroundColor = iconBgColor;
+            
             var icon = new Label(iconText);
-            icon.style.fontSize = 12;
+            icon.style.fontSize = 11;
+            icon.style.unityFontStyleAndWeight = FontStyle.Bold;
             icon.style.unityTextAlign = TextAnchor.MiddleCenter;
+            icon.style.color = iconTextColor;
             iconContainer.Add(icon);
-            iconContainer.AddToClassList(iconClass);
             
             Add(iconContainer);
             
-            // Commit Info
             var infoContainer = new VisualElement();
             infoContainer.AddToClassList("pg-graph-commit-info");
+            infoContainer.style.flexGrow = 1;
+            infoContainer.style.flexShrink = 1;
+            infoContainer.style.flexDirection = FlexDirection.Column;
+            infoContainer.style.minWidth = 0;
+            infoContainer.style.justifyContent = Justify.Center;
             
-            // First line: Refs + Message
             var firstLine = new VisualElement();
             firstLine.style.flexDirection = FlexDirection.Row;
             firstLine.style.alignItems = Align.Center;
             firstLine.style.marginBottom = 4;
+            firstLine.style.flexWrap = Wrap.Wrap;
+            firstLine.style.minWidth = 0;
             
-            // Refs (branches/tags)
             if (_node.Refs.Count > 0)
             {
                 foreach (var refName in _node.Refs)
@@ -169,34 +228,59 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.Graph
                     refBadge.style.borderTopRightRadius = 3;
                     refBadge.style.borderBottomLeftRadius = 3;
                     refBadge.style.borderBottomRightRadius = 3;
-                    refBadge.style.fontSize = 10;
+                    refBadge.style.fontSize = 9;
                     refBadge.style.marginRight = 6;
+                    refBadge.style.marginBottom = 2;
+                    refBadge.style.flexShrink = 0;
                     firstLine.Add(refBadge);
                 }
             }
             
-            // Message
             var message = new Label(TruncateMessage(_node.Message));
             message.AddToClassList("pg-graph-commit-message");
+            message.style.fontSize = 13;
+            message.style.unityFontStyleAndWeight = FontStyle.Normal;
+            message.style.color = new Color(0.95f, 0.95f, 0.95f);
+            message.style.flexGrow = 1;
+            message.style.flexShrink = 1;
+            message.style.whiteSpace = WhiteSpace.Normal;
+            message.style.overflow = Overflow.Hidden;
+            message.style.textOverflow = TextOverflow.Ellipsis;
+            message.style.marginBottom = 2;
+            message.style.minWidth = 0;
             firstLine.Add(message);
             
             infoContainer.Add(firstLine);
             
-            // Second line: Meta info
             var meta = new VisualElement();
             meta.AddToClassList("pg-graph-commit-meta");
+            meta.style.flexDirection = FlexDirection.Row;
+            meta.style.alignItems = Align.Center;
+            meta.style.flexWrap = Wrap.Wrap;
+            meta.style.minWidth = 0;
             
-            var author = new Label(_node.Author);
-            author.AddToClassList("pg-graph-commit-author");
-            meta.Add(author);
+            if (!string.IsNullOrEmpty(_node.Author))
+            {
+                var author = new Label(_node.Author);
+                author.style.fontSize = 10;
+                author.style.color = new Color(0.69f, 0.69f, 0.69f);
+                author.style.marginRight = 8;
+                author.style.flexShrink = 0;
+                meta.Add(author);
+            }
             
             var dt = DateTimeOffset.FromUnixTimeSeconds(_node.Timestamp);
             var time = new Label(FormatTimeAgo(dt));
-            time.AddToClassList("pg-graph-commit-time");
+            time.style.fontSize = 10;
+            time.style.color = new Color(0.5f, 0.5f, 0.5f);
+            time.style.marginRight = 8;
+            time.style.flexShrink = 0;
             meta.Add(time);
             
             var hash = new Label(_node.CommitId.Substring(0, 8));
-            hash.AddToClassList("pg-graph-commit-hash");
+            hash.style.fontSize = 9;
+            hash.style.color = new Color(0.5f, 0.5f, 0.5f);
+            hash.style.flexShrink = 0;
             meta.Add(hash);
             
             infoContainer.Add(meta);

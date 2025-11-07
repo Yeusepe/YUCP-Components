@@ -9,6 +9,7 @@ using System.Threading;
 using UnityEditor;
 using UnityEngine;
 using PackageGuardian.Core.Transactions;
+using YUCP.Components.PackageGuardian.Editor.Settings;
 
 namespace YUCP.Components.PackageGuardian.Editor.Services
 {
@@ -34,6 +35,13 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         {
             try
             {
+                // Check if Package Guardian is enabled
+                if (!PackageGuardianSettings.IsEnabled())
+                {
+                    Debug.Log("[Import Protection] Package Guardian is disabled - skipping import protection");
+                    return;
+                }
+                
                 if (CircuitBreakerService.IsCircuitBroken())
                 {
                     Debug.LogWarning("[Import Protection] Circuit breaker active - skipping automatic protection");
@@ -572,6 +580,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         }
     }
 }
+
+
+
 
 
 

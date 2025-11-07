@@ -18,9 +18,10 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
     {
         private global::PackageGuardian.Core.Diff.FileChange _fileChange;
         private string _commitId;
-        private ScrollView _diffContainer;
+        private ListView _diffListView;
         private Label _filePathLabel;
         private VisualElement _statsBar;
+        private List<DiffLineData> _diffLines;
         
         public static void ShowWindow(global::PackageGuardian.Core.Diff.FileChange fileChange, string commitId)
         {
@@ -78,15 +79,17 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             
             root.Add(header);
             
-            // Diff content
-            _diffContainer = new ScrollView();
-            _diffContainer.AddToClassList("pg-scrollview");
-            _diffContainer.style.flexGrow = 1;
-            _diffContainer.style.paddingTop = 16;
-            _diffContainer.style.paddingBottom = 16;
-            _diffContainer.style.paddingLeft = 16;
-            _diffContainer.style.paddingRight = 16;
-            root.Add(_diffContainer);
+            // Diff content with virtualization
+            _diffLines = new List<DiffLineData>();
+            _diffListView = new ListView();
+            _diffListView.AddToClassList("pg-scrollview");
+            _diffListView.style.flexGrow = 1;
+            _diffListView.fixedItemHeight = 20; // Fixed height enables virtualization
+            _diffListView.makeItem = MakeDiffLineItem;
+            _diffListView.bindItem = BindDiffLineItem;
+            _diffListView.itemsSource = _diffLines;
+            _diffListView.selectionType = SelectionType.None;
+            root.Add(_diffListView);
             
             // Footer
             var footer = new VisualElement();
@@ -113,7 +116,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             if (_fileChange == null) return;
             
             _filePathLabel.text = _fileChange.Path;
-            _diffContainer.Clear();
+            _diffLines.Clear();
             _statsBar.Clear();
             
             try
@@ -162,7 +165,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                 deletedLabel.AddToClassList("pg-file-stats-deleted");
                 _statsBar.Add(deletedLabel);
                 
-                // Render simple side-by-side diff
+                // Build diff line data for virtualization
                 int maxLines = Math.Max(oldLines.Length, newLines.Length);
                 for (int i = 0; i < maxLines; i++)
                 {
@@ -174,47 +177,119 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                         if (i < oldLines.Length && i >= newLines.Length)
                         {
                             // Deleted line
-                            var line = CreateDiffLineSimple(oldLine, i + 1, true, false);
-                            _diffContainer.Add(line);
+                            _diffLines.Add(new DiffLineData
+                            {
+                                Content = oldLine,
+                                OldLineNumber = i + 1,
+                                NewLineNumber = 0,
+                                IsDeleted = true,
+                                IsAdded = false
+                            });
                         }
                         else if (i >= oldLines.Length && i < newLines.Length)
                         {
                             // Added line
-                            var line = CreateDiffLineSimple(newLine, i + 1, false, true);
-                            _diffContainer.Add(line);
+                            _diffLines.Add(new DiffLineData
+                            {
+                                Content = newLine,
+                                OldLineNumber = 0,
+                                NewLineNumber = i + 1,
+                                IsDeleted = false,
+                                IsAdded = true
+                            });
                         }
                         else
                         {
                             // Modified line - show both
-                            var oldLineElem = CreateDiffLineSimple(oldLine, i + 1, true, false);
-                            _diffContainer.Add(oldLineElem);
-                            var newLineElem = CreateDiffLineSimple(newLine, i + 1, false, true);
-                            _diffContainer.Add(newLineElem);
+                            _diffLines.Add(new DiffLineData
+                            {
+                                Content = oldLine,
+                                OldLineNumber = i + 1,
+                                NewLineNumber = 0,
+                                IsDeleted = true,
+                                IsAdded = false
+                            });
+                            _diffLines.Add(new DiffLineData
+                            {
+                                Content = newLine,
+                                OldLineNumber = 0,
+                                NewLineNumber = i + 1,
+                                IsDeleted = false,
+                                IsAdded = true
+                            });
                         }
                     }
                     else
                     {
                         // Unchanged line
-                        var line = CreateDiffLineSimple(newLine, i + 1, false, false);
-                        _diffContainer.Add(line);
+                        _diffLines.Add(new DiffLineData
+                        {
+                            Content = newLine,
+                            OldLineNumber = i + 1,
+                            NewLineNumber = i + 1,
+                            IsDeleted = false,
+                            IsAdded = false
+                        });
                     }
                 }
+                
+                // Update list view
+                _diffListView.itemsSource = _diffLines;
+                _diffListView.Rebuild();
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[Package Guardian] Error loading diff: {ex.Message}");
-                var errorLabel = new Label($"Error loading diff: {ex.Message}");
-                errorLabel.style.color = new Color(0.89f, 0.29f, 0.29f);
-                _diffContainer.Add(errorLabel);
+                _diffLines.Clear();
+                _diffLines.Add(new DiffLineData
+                {
+                    Content = $"Error loading diff: {ex.Message}",
+                    OldLineNumber = 0,
+                    NewLineNumber = 0,
+                    IsDeleted = false,
+                    IsAdded = false,
+                    IsError = true
+                });
+                _diffListView.itemsSource = _diffLines;
+                _diffListView.Rebuild();
             }
         }
         
-        private VisualElement CreateDiffLineSimple(string content, int lineNum, bool isDeleted, bool isAdded)
+        private VisualElement MakeDiffLineItem()
+        {
+            return new VisualElement();
+        }
+        
+        private void BindDiffLineItem(VisualElement element, int index)
+        {
+            if (index < 0 || index >= _diffLines.Count)
+                return;
+                
+            var lineData = _diffLines[index];
+            element.Clear();
+            
+            var line = CreateDiffLineSimple(
+                lineData.Content,
+                lineData.OldLineNumber,
+                lineData.NewLineNumber,
+                lineData.IsDeleted,
+                lineData.IsAdded,
+                lineData.IsError
+            );
+            
+            element.Add(line);
+        }
+        
+        private VisualElement CreateDiffLineSimple(string content, int oldLineNum, int newLineNum, bool isDeleted, bool isAdded, bool isError = false)
         {
             var container = new VisualElement();
             container.AddToClassList("pg-diff-line");
             
-            if (isAdded)
+            if (isError)
+            {
+                container.style.backgroundColor = new Color(0.3f, 0.0f, 0.0f, 0.3f);
+            }
+            else if (isAdded)
             {
                 container.AddToClassList("pg-diff-line-added");
             }
@@ -223,16 +298,49 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                 container.AddToClassList("pg-diff-line-deleted");
             }
             
-            var lineNumber = new Label(lineNum.ToString());
-            lineNumber.AddToClassList("pg-diff-line-number");
-            container.Add(lineNumber);
+            // Line numbers
+            var lineNumberContainer = new VisualElement();
+            lineNumberContainer.style.width = 100;
+            lineNumberContainer.style.flexDirection = FlexDirection.Row;
+            lineNumberContainer.style.marginRight = 12;
             
-            var contentLabel = new Label(content);
+            var oldLineLabel = new Label(oldLineNum > 0 ? oldLineNum.ToString() : "");
+            oldLineLabel.style.width = 45;
+            oldLineLabel.style.unityTextAlign = TextAnchor.MiddleRight;
+            oldLineLabel.AddToClassList("pg-diff-line-number");
+            lineNumberContainer.Add(oldLineLabel);
+            
+            var newLineLabel = new Label(newLineNum > 0 ? newLineNum.ToString() : "");
+            newLineLabel.style.width = 45;
+            newLineLabel.style.unityTextAlign = TextAnchor.MiddleRight;
+            newLineLabel.AddToClassList("pg-diff-line-number");
+            lineNumberContainer.Add(newLineLabel);
+            
+            container.Add(lineNumberContainer);
+            
+            // Content with prefix
+            string prefix = isAdded ? "+" : isDeleted ? "-" : " ";
+            var contentLabel = new Label($"{prefix} {content}");
             contentLabel.AddToClassList("pg-diff-line-content");
             contentLabel.style.whiteSpace = WhiteSpace.Normal;
+            contentLabel.style.fontSize = 11;
+            if (isError)
+            {
+                contentLabel.style.color = new Color(0.89f, 0.29f, 0.29f);
+            }
             container.Add(contentLabel);
             
             return container;
+        }
+        
+        private class DiffLineData
+        {
+            public string Content { get; set; }
+            public int OldLineNumber { get; set; }
+            public int NewLineNumber { get; set; }
+            public bool IsDeleted { get; set; }
+            public bool IsAdded { get; set; }
+            public bool IsError { get; set; }
         }
     }
 }

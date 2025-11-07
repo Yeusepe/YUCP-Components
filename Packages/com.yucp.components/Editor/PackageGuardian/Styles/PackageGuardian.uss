@@ -111,26 +111,42 @@
    ============================================================================ */
 .pg-content-container {
     flex-grow: 1;
+    display: flex;
     flex-direction: row;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
 }
 
 .pg-left-pane {
     width: 35%;
     min-width: 300px;
+    max-width: 400px;
+    flex-shrink: 0;
     background-color: #090909;
     border-right-width: 1px;
     border-right-color: #2a2a2a;
     transition-property: width, opacity;
     transition-duration: 0.3s, 0.3s;
     transition-timing-function: ease-out, ease-out;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .pg-right-pane {
     flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    min-height: 0;
     background-color: #090909;
     transition-property: opacity;
     transition-duration: 0.3s;
     transition-timing-function: ease-out;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 /* ============================================================================
@@ -847,9 +863,17 @@
     transition-property: opacity, left;
     transition-duration: 0.3s, 0.3s;
     transition-timing-function: ease-out, ease-out;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .pg-overlay-backdrop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
     background-color: rgba(0, 0, 0, 0.5);
     transition-property: opacity;
     transition-duration: 0.3s;
@@ -889,16 +913,20 @@
    RESPONSIVE BREAKPOINTS
    ============================================================================ */
 
-.pg-content-container {
+/* Narrow layout (< 700px) - Collapse left pane to overlay */
+.pg-window-narrow .pg-content-container {
+    flex-direction: row;
     position: relative;
-    min-width: 0;
-    overflow: hidden;
 }
 
-/* Narrow layout (< 700px) - Collapse left pane to overlay */
 .pg-window-narrow .pg-left-pane {
-    display: none;
+    display: none !important;
+    visibility: hidden !important;
     opacity: 0;
+    width: 0;
+    min-width: 0;
+    max-width: 0;
+    flex-shrink: 0;
 }
 
 .pg-window-narrow .pg-mobile-toggle {
@@ -909,40 +937,299 @@
 
 .pg-window-narrow .pg-right-pane {
     width: 100%;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .pg-window-narrow .pg-top-bar {
     flex-wrap: wrap;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    min-height: auto;
+}
+
+.pg-window-narrow .pg-top-bar-left {
+    width: 100%;
+    margin-bottom: 8px;
+    margin-right: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+
+.pg-window-narrow .pg-top-bar-left .pg-mobile-toggle {
+    flex: 0 0 auto;
+    margin-right: 8px;
+    margin-bottom: 0;
+}
+
+.pg-window-narrow .pg-top-bar-left .pg-top-bar-action-button {
+    margin: 2px;
+    flex: 1 1 48%;
+    min-width: 100px;
+}
+
+.pg-window-narrow .pg-top-bar-right {
+    width: 100%;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+
+.pg-window-narrow .pg-top-bar-right Button {
+    margin: 2px;
+    flex: 1 1 48%;
+    min-width: 80px;
 }
 
 .pg-window-narrow .pg-top-bar-center {
     width: 100%;
-    margin-top: 8px;
-    order: 3;
+    margin-top: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
 }
 
-.pg-window-narrow .pg-top-bar-left {
-    order: 1;
-}
-
-.pg-window-narrow .pg-top-bar-right {
-    order: 2;
+.pg-window-narrow .pg-top-bar-center Label {
+    margin: 2px;
+    margin-right: 8px;
 }
 
 .pg-window-narrow .pg-search-input {
     max-width: none;
     width: 100%;
+    margin: 2px 0;
 }
 
-/* Medium layout (700px - 1000px) - Reduce left pane size */
+.pg-window-narrow .pg-overview-section {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.pg-window-narrow .pg-stat-card {
+    min-width: 70px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+.pg-window-narrow .pg-stat-card Label {
+    font-size: 18px;
+}
+
+.pg-window-medium .pg-overview-section {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: 14px;
+    padding-right: 14px;
+}
+
+.pg-window-medium .pg-stat-card {
+    min-width: 75px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+.pg-window-medium .pg-content-container {
+    flex-direction: row;
+}
+
 .pg-window-medium .pg-left-pane {
-    width: 30%;
-    min-width: 250px;
+    width: 35%;
+    min-width: 280px;
+    max-width: 350px;
+    flex-shrink: 0;
+}
+
+.pg-window-medium .pg-right-pane {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
 }
 
 .pg-window-medium .pg-top-bar {
     flex-wrap: wrap;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.pg-window-medium .pg-top-bar {
+    flex-wrap: wrap;
+    min-height: auto;
+}
+
+.pg-window-medium .pg-top-bar-left {
+    flex-wrap: wrap;
+    margin-right: 12px;
+}
+
+.pg-window-medium .pg-top-bar-left Button {
+    margin: 2px;
+    font-size: 11px;
+    padding-left: 10px;
+    padding-right: 10px;
+    flex: 0 1 auto;
+}
+
+.pg-window-medium .pg-top-bar-right {
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.pg-window-medium .pg-top-bar-right Button {
+    margin: 2px;
+    font-size: 11px;
+    padding-left: 8px;
+    padding-right: 8px;
+    flex: 0 1 auto;
+}
+
+.pg-window-medium .pg-top-bar-center {
+    flex-wrap: wrap;
+}
+
+.pg-window-medium .pg-top-bar-center Label {
+    margin: 2px;
+    margin-right: 8px;
+    font-size: 10px;
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.pg-window-medium .pg-search-input {
+    min-width: 120px;
+    max-width: 180px;
+}
+
+.pg-window-medium .pg-graph-lanes {
+    width: 50px;
+    min-width: 50px;
+    max-width: 50px;
+    margin-right: 6px;
+}
+
+.pg-window-medium .pg-graph-commit-icon {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    max-width: 24px;
+    margin-right: 6px;
+}
+
+.pg-window-medium .pg-graph-commit-message {
+    font-size: 12px;
+}
+
+.pg-window-medium .pg-graph-commit-meta {
+    font-size: 9px;
+}
+
+.pg-window-medium .pg-graph-item {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+.pg-window-narrow .pg-graph-item {
+    flex-direction: column;
+    align-items: flex-start;
+    min-height: auto;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: 10px;
+    padding-right: 10px;
+    position: relative;
+}
+
+.pg-window-narrow .pg-graph-lanes {
+    width: 100%;
+    height: 28px;
+    margin-bottom: 6px;
+    margin-right: 0;
+    min-width: auto;
+    max-width: none;
+}
+
+.pg-window-narrow .pg-graph-commit-icon {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    max-width: 22px;
+    margin-right: 0;
+}
+
+.pg-window-narrow .pg-graph-commit-info {
+    width: 100%;
+    margin-top: 2px;
+    padding-right: 35px;
+}
+
+.pg-window-narrow .pg-graph-commit-message {
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.pg-window-narrow .pg-graph-commit-meta {
+    font-size: 9px;
+    margin-top: 2px;
+}
+
+.pg-window-narrow .pg-commit-group-header {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.pg-window-narrow .pg-commit-group-content {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 4px;
+    padding-bottom: 8px;
 }
 
 /* Wide layout (> 1000px) - Default behavior */
 /* Default styles already handle this case */
+
+/* ============================================================================
+   COMMIT GROUPS - Organized commit history
+   ============================================================================ */
+.pg-commit-group {
+    margin-bottom: 8px;
+    background-color: #090909;
+}
+
+.pg-commit-group-header {
+    cursor: pointer;
+    transition-property: background-color;
+    transition-duration: 0.15s;
+}
+
+.pg-commit-group-header:hover {
+    background-color: #1a1a1a;
+}
+
+.pg-commit-group-content {
+    background-color: #090909;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.pg-commit-group-content .pg-graph-item {
+    margin-left: 0;
+    margin-right: 0;
+    border-left-width: 0;
+}
+
+.pg-commit-group-content .pg-graph-item-selected {
+    border-left-width: 3px;
+}

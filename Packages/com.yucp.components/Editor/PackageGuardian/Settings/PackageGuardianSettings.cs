@@ -47,12 +47,19 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
         [Tooltip("Enable fsync for critical writes (slower but safer)")]
         public bool enableFsync = false;
         
+        [Header("Package Guardian")]
+        [Tooltip("Enable or disable Package Guardian entirely. When disabled, all monitoring and protection features are turned off.")]
+        public bool enabled = true;
+        
         [Header("UI")]
         [Tooltip("Theme for Package Guardian windows")]
         public Theme themeOverride = Theme.FollowUnity;
         
         [Tooltip("Language for UI")]
         public Language language = Language.English;
+        
+        [Tooltip("Show the first import welcome message")]
+        public bool showFirstImportWarning = true;
         
         public enum Theme
         {
@@ -82,6 +89,22 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             }
         }
         
+        /// <summary>
+        /// Check if Package Guardian is enabled. Returns false if settings can't be loaded.
+        /// </summary>
+        public static bool IsEnabled()
+        {
+            try
+            {
+                return Instance.enabled;
+            }
+            catch
+            {
+                // If settings can't be loaded, default to enabled for safety
+                return true;
+            }
+        }
+        
         private static PackageGuardianSettings LoadOrCreate()
         {
             // Try to load JSON settings from ProjectSettings
@@ -104,12 +127,14 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             
             // Create new settings with safe defaults
             var newSettings = CreateInstance<PackageGuardianSettings>();
+            newSettings.enabled = true; // Enabled by default
             newSettings.autoSnapshotOnSave = false; // Disabled by default to avoid import loops
             newSettings.autoStashOnUPM = true; // Enabled by default to track package changes
             newSettings.autoStashOnAssetImport = true; // Enabled to stash after imports
             newSettings.autoStashOnSceneSave = true; // Enabled to stash on scene save
             newSettings.authorName = "Unity User";
             newSettings.authorEmail = "user@unity.com";
+            newSettings.showFirstImportWarning = true; // Show welcome message by default
             
             // Try to save defaults
             try

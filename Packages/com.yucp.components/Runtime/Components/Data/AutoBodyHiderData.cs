@@ -26,6 +26,7 @@ namespace YUCP.Components
         HiddenToggle
     }
 
+    [SupportBanner]
     [AddComponentMenu("YUCP/Auto Body Hider")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     [DisallowMultipleComponent]

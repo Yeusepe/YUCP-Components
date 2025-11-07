@@ -21,6 +21,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         {
             try
             {
+                if (!PackageGuardianSettings.IsEnabled())
+                    return;
+                    
                 var settings = PackageGuardianSettings.Instance;
                 if (settings == null || !settings.autoStashOnSceneSave)
                     return;
@@ -71,3 +74,6 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         }
     }
 }
+
+
+

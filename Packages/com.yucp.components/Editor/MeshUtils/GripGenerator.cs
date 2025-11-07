@@ -36,7 +36,465 @@ namespace YUCP.Components.Editor.MeshUtils
         {
             Debug.Log($"[GripGenerator] Starting grip generation for {(isLeftHand ? "left" : "right")} hand using finger tip gizmos");
             
-            return GenerateGripFromFingerTips(animator, data, isLeftHand);
+            return GenerateCurlGripFromFingerTips(animator, grippedObject, data, isLeftHand);
+        }
+
+        /// <summary>
+        /// One-call bake: generates a grip and returns an AnimationClip with baked muscle curves.
+        /// If saveAssetPath is provided, the clip is saved/overwritten at that path.
+        /// </summary>
+        public static AnimationClip BakeGripClip(
+            Animator animator,
+            Transform grippedObject,
+            AutoGripData data,
+            bool isLeftHand,
+            string saveAssetPath = null)
+        {
+            var result = GenerateGrip(animator, grippedObject, data, isLeftHand);
+            if (result == null || result.animation == null)
+            {
+                Debug.LogError("[GripGenerator] BakeGripClip failed - no animation produced");
+                return null;
+            }
+
+            var clip = result.animation;
+            clip.name = $"AutoGrip_{(isLeftHand ? "Left" : "Right")}";
+
+#if UNITY_EDITOR
+            if (!string.IsNullOrEmpty(saveAssetPath))
+            {
+                // Ensure extension
+                if (!saveAssetPath.EndsWith(".anim")) saveAssetPath += ".anim";
+
+                var existing = AssetDatabase.LoadAssetAtPath<AnimationClip>(saveAssetPath);
+                if (existing == null)
+                {
+                    AssetDatabase.CreateAsset(clip, saveAssetPath);
+                    Debug.Log($"[GripGenerator] Baked grip saved to {saveAssetPath}");
+                }
+                else
+                {
+                    // Overwrite by copying curves
+                    EditorUtility.CopySerialized(clip, existing);
+                    AssetDatabase.SaveAssets();
+                    clip = existing;
+                    Debug.Log($"[GripGenerator] Baked grip overwritten at {saveAssetPath}");
+                }
+            }
+#endif
+
+            return clip;
+        }
+
+        /// <summary>
+        /// Collision-aware baker using capsule samples and a raycast distance field.
+        /// Produces a baked AnimationClip of muscles without IK look-at.
+        /// </summary>
+        public static AnimationClip BakeGripClipCollisionAware(
+            Animator animator,
+            Transform grippedObject,
+            AutoGripData data,
+            bool isLeftHand,
+            string saveAssetPath = null)
+        {
+            if (animator == null || grippedObject == null)
+            {
+                Debug.LogError("[GripGenerator] BakeGripClipCollisionAware requires animator and grippedObject");
+                return null;
+            }
+
+            // Build combined distance field: object + avatar proxy (if present)
+            int objectMask = 1 << grippedObject.gameObject.layer;
+            int avatarMask = LayerMask.NameToLayer("AvatarProxy");
+            int avatarMaskBits = avatarMask >= 0 ? (1 << avatarMask) : 0;
+            var objectDF = new RaycastDistanceField(objectMask, 0.0015f);
+            var df = avatarMaskBits != 0
+                ? (IDistanceField)new CombinedDistanceField(objectDF, new RaycastDistanceField(avatarMaskBits, 0.0015f))
+                : (IDistanceField)objectDF;
+
+            var snapped = GetSnappedTargets(animator, data, isLeftHand, out _);
+
+            CollisionAwareFingerSolver.Capsule MakeCaps(Transform a, Transform b)
+            {
+                var cap = new CollisionAwareFingerSolver.Capsule
+                {
+                    bone = a,
+                    p0Local = Vector3.zero,
+                    p1Local = a.InverseTransformPoint(b.position),
+                    radius = 0.008f
+                };
+                return cap;
+            }
+
+            void SolveOne(string finger, HumanBodyBones mcpB, HumanBodyBones pipB, HumanBodyBones dipB, Vector3 tip)
+            {
+                if (tip == Vector3.zero) return;
+                var mcp = animator.GetBoneTransform(mcpB);
+                var pip = animator.GetBoneTransform(pipB);
+                var dip = animator.GetBoneTransform(dipB);
+                if (mcp == null || pip == null || dip == null) return;
+                var caps = new[] { MakeCaps(mcp, pip), MakeCaps(pip, dip) };
+                var lim = CollisionAwareFingerSolver.FingerLimits.Defaults();
+                // Safety padding per finger (default 1.5 mm); can be tuned per finger type later
+                const float safetyPadding = 0.0015f;
+                CollisionAwareFingerSolver.CloseFinger(mcp, pip, dip, caps, lim, df, 0.0015f, safetyPadding, 40);
+            }
+
+            if (isLeftHand)
+            {
+                SolveOne("Thumb", HumanBodyBones.LeftThumbProximal, HumanBodyBones.LeftThumbIntermediate, HumanBodyBones.LeftThumbDistal, snapped.thumbTip);
+                SolveOne("Index", HumanBodyBones.LeftIndexProximal, HumanBodyBones.LeftIndexIntermediate, HumanBodyBones.LeftIndexDistal, snapped.indexTip);
+                SolveOne("Middle", HumanBodyBones.LeftMiddleProximal, HumanBodyBones.LeftMiddleIntermediate, HumanBodyBones.LeftMiddleDistal, snapped.middleTip);
+                SolveOne("Ring", HumanBodyBones.LeftRingProximal, HumanBodyBones.LeftRingIntermediate, HumanBodyBones.LeftRingDistal, snapped.ringTip);
+                SolveOne("Little", HumanBodyBones.LeftLittleProximal, HumanBodyBones.LeftLittleIntermediate, HumanBodyBones.LeftLittleDistal, snapped.littleTip);
+            }
+            else
+            {
+                SolveOne("Thumb", HumanBodyBones.RightThumbProximal, HumanBodyBones.RightThumbIntermediate, HumanBodyBones.RightThumbDistal, snapped.thumbTip);
+                SolveOne("Index", HumanBodyBones.RightIndexProximal, HumanBodyBones.RightIndexIntermediate, HumanBodyBones.RightIndexDistal, snapped.indexTip);
+                SolveOne("Middle", HumanBodyBones.RightMiddleProximal, HumanBodyBones.RightMiddleIntermediate, HumanBodyBones.RightMiddleDistal, snapped.middleTip);
+                SolveOne("Ring", HumanBodyBones.RightRingProximal, HumanBodyBones.RightRingIntermediate, HumanBodyBones.RightRingDistal, snapped.ringTip);
+                SolveOne("Little", HumanBodyBones.RightLittleProximal, HumanBodyBones.RightLittleIntermediate, HumanBodyBones.RightLittleDistal, snapped.littleTip);
+            }
+
+            var solved = new System.Collections.Generic.Dictionary<HumanBodyBones, Quaternion>();
+            void AddRot(HumanBodyBones b) { var t = animator.GetBoneTransform(b); if (t != null) solved[b] = t.localRotation; }
+            if (isLeftHand)
+            {
+                AddRot(HumanBodyBones.LeftThumbProximal); AddRot(HumanBodyBones.LeftThumbIntermediate); AddRot(HumanBodyBones.LeftThumbDistal);
+                AddRot(HumanBodyBones.LeftIndexProximal); AddRot(HumanBodyBones.LeftIndexIntermediate); AddRot(HumanBodyBones.LeftIndexDistal);
+                AddRot(HumanBodyBones.LeftMiddleProximal); AddRot(HumanBodyBones.LeftMiddleIntermediate); AddRot(HumanBodyBones.LeftMiddleDistal);
+                AddRot(HumanBodyBones.LeftRingProximal); AddRot(HumanBodyBones.LeftRingIntermediate); AddRot(HumanBodyBones.LeftRingDistal);
+                AddRot(HumanBodyBones.LeftLittleProximal); AddRot(HumanBodyBones.LeftLittleIntermediate); AddRot(HumanBodyBones.LeftLittleDistal);
+            }
+            else
+            {
+                AddRot(HumanBodyBones.RightThumbProximal); AddRot(HumanBodyBones.RightThumbIntermediate); AddRot(HumanBodyBones.RightThumbDistal);
+                AddRot(HumanBodyBones.RightIndexProximal); AddRot(HumanBodyBones.RightIndexIntermediate); AddRot(HumanBodyBones.RightIndexDistal);
+                AddRot(HumanBodyBones.RightMiddleProximal); AddRot(HumanBodyBones.RightMiddleIntermediate); AddRot(HumanBodyBones.RightMiddleDistal);
+                AddRot(HumanBodyBones.RightRingProximal); AddRot(HumanBodyBones.RightRingIntermediate); AddRot(HumanBodyBones.RightRingDistal);
+                AddRot(HumanBodyBones.RightLittleProximal); AddRot(HumanBodyBones.RightLittleIntermediate); AddRot(HumanBodyBones.RightLittleDistal);
+            }
+
+            var muscles = BoneRotationToMuscle.ConvertFingerRotationsToMuscles(animator, isLeftHand, solved);
+            var clip = CreateAnimationClip(muscles, isLeftHand);
+
+#if UNITY_EDITOR
+            if (!string.IsNullOrEmpty(saveAssetPath))
+            {
+                if (!saveAssetPath.EndsWith(".anim")) saveAssetPath += ".anim";
+                var existing = UnityEditor.AssetDatabase.LoadAssetAtPath<AnimationClip>(saveAssetPath);
+                if (existing == null) UnityEditor.AssetDatabase.CreateAsset(clip, saveAssetPath);
+                else { UnityEditor.EditorUtility.CopySerialized(clip, existing); UnityEditor.AssetDatabase.SaveAssets(); clip = existing; }
+            }
+#endif
+
+            return clip;
+        }
+
+        /// <summary>
+        /// Get snapped finger tip targets from manually positioned gizmos.
+        /// Converts stored positions to world space and returns them with default rotations.
+        /// </summary>
+        public static FingerTipSolver.FingerTipTarget GetSnappedTargets(Animator animator, AutoGripData data, bool isLeftHand, out List<ContactPoint> contactPoints)
+        {
+			contactPoints = new List<ContactPoint>();
+			var contacts = new List<ContactPoint>();
+			var result = new FingerTipSolver.FingerTipTarget();
+			if (data == null || data.grippedObject == null) { contactPoints = contacts; return result; }
+
+			// Utilities
+			var colliders = SurfaceQuery.GetAllColliders(data.grippedObject);
+			var renderers = SurfaceQuery.GetAllRenderers(data.grippedObject);
+			Vector3 center = renderers != null && renderers.Length > 0 ? SurfaceQuery.GetBounds(renderers).center : data.grippedObject.position;
+			var handT = animator.GetBoneTransform(isLeftHand ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+			Vector3 handUp = handT != null ? handT.up : Vector3.up;
+            // Build world triangles for robust closest-point snapping (works on thin meshes)
+            var worldTris = GetObjectMeshTriangles(data.grippedObject);
+
+			// Auto-detect whether stored tip is local-to-object or already world, then return world
+			Vector3 ToWorldSmart(Vector3 stored)
+			{
+				if (stored == Vector3.zero) return Vector3.zero;
+				Vector3 asLocalWorld = data.grippedObject.TransformPoint(stored);
+				float distLocal = (asLocalWorld - center).sqrMagnitude;
+				float distWorld = (stored - center).sqrMagnitude;
+				return distWorld < distLocal ? stored : asLocalWorld;
+			}
+
+			// List of already chosen positions for spacing penalty
+			var chosenPositions = new List<Vector3>();
+
+			// Ring-based snap: sample K candidates, score them, pick best
+			void Snap(string label, Vector3 worldPos, HumanBodyBones distalBone, ref Vector3 outPos, ref Quaternion outRot)
+			{
+				if (worldPos == Vector3.zero) return;
+				var distal = animator.GetBoneTransform(distalBone);
+				// Use stable origin from intended world position to avoid feedback with IK-updated bones
+				Vector3 tipOrigin = worldPos;
+				
+				// Build finger frame
+				Vector3 inward = (center - tipOrigin).sqrMagnitude > 1e-6f ? (center - tipOrigin).normalized : Vector3.forward;
+				// Use purely inward direction to stabilize frame across frames
+				Vector3 frameZ = inward;
+				Vector3 spreadAxis = isLeftHand ? -handT.right : handT.right;
+				Vector3 frameX = Vector3.ProjectOnPlane(spreadAxis, frameZ).normalized;
+				if (frameX.sqrMagnitude < 1e-6f) frameX = Vector3.right;
+				Vector3 frameY = Vector3.Cross(frameZ, frameX).normalized;
+				
+				// Sample ring candidates
+				const int K = 16;
+				const float ringRadius = 0.018f;
+				var candidates = SampleRingCandidates(tipOrigin, frameX, frameY, ringRadius, K, worldTris, center);
+				
+				// Score each candidate
+				for (int i = 0; i < candidates.Count; i++)
+				{
+					var cand = candidates[i];
+					var neighborNormals = new List<Vector3>();
+					if (i > 0) neighborNormals.Add(candidates[i - 1].normal);
+					if (i < candidates.Count - 1) neighborNormals.Add(candidates[i + 1].normal);
+					
+					cand.score = ScoreCandidate(cand, distal, center, chosenPositions, neighborNormals, worldTris);
+					candidates[i] = cand;
+				}
+				
+				// Pick best
+				RingCandidate best = candidates[0];
+				for (int i = 1; i < candidates.Count; i++)
+				{
+					if (candidates[i].score > best.score)
+						best = candidates[i];
+				}
+				
+				// Set output
+				outPos = best.position + best.normal * 0.002f;
+				Vector3 fwd = (best.position - tipOrigin).sqrMagnitude > 1e-8f ? (best.position - tipOrigin).normalized : (distal != null ? distal.forward : best.normal);
+				Vector3 up = Vector3.ProjectOnPlane(handUp, fwd).normalized;
+				if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
+				outRot = Quaternion.LookRotation(fwd, up);
+				
+				contacts.Add(new ContactPoint { position = outPos, normal = best.normal, fingerName = label, segment = 3 });
+				chosenPositions.Add(best.position);
+			}
+
+			if (isLeftHand)
+			{
+				Snap("Left Thumb", ToWorldSmart(data.leftThumbTip), HumanBodyBones.LeftThumbDistal, ref result.thumbTip, ref result.thumbRotation);
+				Snap("Left Index", ToWorldSmart(data.leftIndexTip), HumanBodyBones.LeftIndexDistal, ref result.indexTip, ref result.indexRotation);
+				Snap("Left Middle", ToWorldSmart(data.leftMiddleTip), HumanBodyBones.LeftMiddleDistal, ref result.middleTip, ref result.middleRotation);
+				Snap("Left Ring", ToWorldSmart(data.leftRingTip), HumanBodyBones.LeftRingDistal, ref result.ringTip, ref result.ringRotation);
+				Snap("Left Little", ToWorldSmart(data.leftLittleTip), HumanBodyBones.LeftLittleDistal, ref result.littleTip, ref result.littleRotation);
+			}
+			else
+			{
+				Snap("Right Thumb", ToWorldSmart(data.rightThumbTip), HumanBodyBones.RightThumbDistal, ref result.thumbTip, ref result.thumbRotation);
+				Snap("Right Index", ToWorldSmart(data.rightIndexTip), HumanBodyBones.RightIndexDistal, ref result.indexTip, ref result.indexRotation);
+				Snap("Right Middle", ToWorldSmart(data.rightMiddleTip), HumanBodyBones.RightMiddleDistal, ref result.middleTip, ref result.middleRotation);
+				Snap("Right Ring", ToWorldSmart(data.rightRingTip), HumanBodyBones.RightRingDistal, ref result.ringTip, ref result.ringRotation);
+				Snap("Right Little", ToWorldSmart(data.rightLittleTip), HumanBodyBones.RightLittleDistal, ref result.littleTip, ref result.littleRotation);
+			}
+			contactPoints = contacts;
+			// Enforce minimal lateral spacing to avoid fingertips piling together
+			if (handT != null)
+			{
+				Vector3 spreadAxis = isLeftHand ? -handT.right : handT.right;
+				float minSep = 0.015f; // 1.5 cm
+				void Separate(ref Vector3 a, ref Vector3 b)
+				{
+					float sa = Vector3.Dot(a, spreadAxis);
+					float sb = Vector3.Dot(b, spreadAxis);
+					float delta = (sb - sa);
+					if (Mathf.Abs(delta) < minSep)
+					{
+						float corr = 0.5f * (minSep - Mathf.Abs(delta));
+						Vector3 off = spreadAxis.normalized * corr;
+						if (delta >= 0f) { a += -off; b += off; } else { a += off; b += -off; }
+					}
+				}
+				// Apply on neighbors: index-middle, middle-ring, ring-little
+				Separate(ref result.indexTip, ref result.middleTip);
+				Separate(ref result.middleTip, ref result.ringTip);
+				Separate(ref result.ringTip, ref result.littleTip);
+			}
+
+			return result;
+        }
+
+        /// <summary>
+        /// Compute default finger tip positions by initializing from object and returning them.
+        /// Used when resetting grip or when no manual positions are set.
+        /// </summary>
+        public static FingerTipSolver.FingerTipTarget ComputeSnappedDefaultTargets(Animator animator, AutoGripData data, bool isLeftHand, out List<ContactPoint> contactPoints)
+        {
+            contactPoints = new List<ContactPoint>();
+            var contacts = new List<ContactPoint>();
+            var outTarget = new FingerTipSolver.FingerTipTarget();
+            if (data == null || data.grippedObject == null) { contactPoints = contacts; return outTarget; }
+
+            var colliders = SurfaceQuery.GetAllColliders(data.grippedObject);
+            var renderers = SurfaceQuery.GetAllRenderers(data.grippedObject);
+            Vector3 center = renderers != null && renderers.Length > 0 ? SurfaceQuery.GetBounds(renderers).center : data.grippedObject.position;
+            var handT = animator != null ? animator.GetBoneTransform(isLeftHand ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand) : null;
+            Vector3 handUp = handT != null ? handT.up : Vector3.up;
+
+            // Seed default world positions around the object
+            var seed = FingerTipSolver.InitializeFingerTips(data.grippedObject, isLeftHand);
+            var worldTris = GetObjectMeshTriangles(data.grippedObject);
+            var chosenPositions = new List<Vector3>();
+
+            void SnapWorld(string label, Vector3 worldPos, Transform distal, ref Vector3 outPos, ref Quaternion outRot)
+            {
+                if (worldPos == Vector3.zero) return;
+                // Use stable origin from the seed world position to avoid feedback with IK-updated bones
+                Vector3 tipOrigin = worldPos;
+                
+                // Build finger frame (stable): purely inward-based frame, not dependent on current bone forward
+                Vector3 inward = (center - tipOrigin).sqrMagnitude > 1e-6f ? (center - tipOrigin).normalized : Vector3.forward;
+                Vector3 frameZ = inward;
+                Vector3 spreadAxis = isLeftHand ? -handT.right : handT.right;
+                Vector3 frameX = Vector3.ProjectOnPlane(spreadAxis, frameZ).normalized;
+                if (frameX.sqrMagnitude < 1e-6f) frameX = Vector3.right;
+                Vector3 frameY = Vector3.Cross(frameZ, frameX).normalized;
+                
+                // Sample ring candidates
+                const int K = 16;
+                const float ringRadius = 0.018f;
+                var candidates = SampleRingCandidates(tipOrigin, frameX, frameY, ringRadius, K, worldTris, center);
+                
+                // Score each candidate
+                for (int i = 0; i < candidates.Count; i++)
+                {
+                    var cand = candidates[i];
+                    var neighborNormals = new List<Vector3>();
+                    if (i > 0) neighborNormals.Add(candidates[i - 1].normal);
+                    if (i < candidates.Count - 1) neighborNormals.Add(candidates[i + 1].normal);
+                    
+                    cand.score = ScoreCandidate(cand, distal, center, chosenPositions, neighborNormals, worldTris);
+                    candidates[i] = cand;
+                }
+                
+                // Pick best
+                RingCandidate best = candidates[0];
+                for (int i = 1; i < candidates.Count; i++)
+                {
+                    if (candidates[i].score > best.score)
+                        best = candidates[i];
+                }
+                
+                // Set output
+                outPos = best.position + best.normal * 0.002f;
+                Vector3 fwd = (best.position - tipOrigin).sqrMagnitude > 1e-8f ? (best.position - tipOrigin).normalized : (distal != null ? distal.forward : best.normal);
+                Vector3 up = Vector3.ProjectOnPlane(handUp, fwd).normalized;
+                if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
+                outRot = Quaternion.LookRotation(fwd, up);
+                
+                contacts.Add(new ContactPoint { position = outPos, normal = best.normal, fingerName = label, segment = 3 });
+                chosenPositions.Add(best.position);
+            }
+
+            Transform Distal(bool left, HumanBodyBones l, HumanBodyBones r) => animator != null ? animator.GetBoneTransform(left ? l : r) : null;
+            bool L = isLeftHand;
+            SnapWorld(L?"Left Thumb":"Right Thumb", seed.thumbTip, Distal(L, HumanBodyBones.LeftThumbDistal, HumanBodyBones.RightThumbDistal), ref outTarget.thumbTip, ref outTarget.thumbRotation);
+            SnapWorld(L?"Left Index":"Right Index", seed.indexTip, Distal(L, HumanBodyBones.LeftIndexDistal, HumanBodyBones.RightIndexDistal), ref outTarget.indexTip, ref outTarget.indexRotation);
+            SnapWorld(L?"Left Middle":"Right Middle", seed.middleTip, Distal(L, HumanBodyBones.LeftMiddleDistal, HumanBodyBones.RightMiddleDistal), ref outTarget.middleTip, ref outTarget.middleRotation);
+            SnapWorld(L?"Left Ring":"Right Ring", seed.ringTip, Distal(L, HumanBodyBones.LeftRingDistal, HumanBodyBones.RightRingDistal), ref outTarget.ringTip, ref outTarget.ringRotation);
+            SnapWorld(L?"Left Little":"Right Little", seed.littleTip, Distal(L, HumanBodyBones.LeftLittleDistal, HumanBodyBones.RightLittleDistal), ref outTarget.littleTip, ref outTarget.littleRotation);
+
+            contactPoints = contacts;
+            return outTarget;
+        }
+
+        /// <summary>
+        /// New FK curl-driven solver path: compute muscle values by solving a natural curl amount per finger.
+        /// Guarantees 0-100 degree joint limits by construction and avoids unnatural tip rotations.
+        /// </summary>
+        private static GripResult GenerateCurlGripFromFingerTips(Animator animator, Transform grippedObject, AutoGripData data, bool isLeftHand)
+        {
+            var result = new GripResult();
+            if (animator == null)
+            {
+                Debug.LogError("[GripGenerator] Animator is null");
+                return result;
+            }
+
+            // Use snapped targets (world space) as contact intentions
+            var snapped = GetSnappedTargets(animator, data, isLeftHand, out var contacts);
+            result.contactPoints = contacts;
+
+            string side = isLeftHand ? "Left" : "Right";
+            // Compute muscles directly from curl t per finger (stable, directionally correct)
+            Transform B(HumanBodyBones b) => animator.GetBoneTransform(b);
+
+            void SolveFingerMuscles(string finger, HumanBodyBones prox, HumanBodyBones inter, HumanBodyBones dist, Vector3 tipTarget)
+            {
+                if (tipTarget == Vector3.zero) return;
+                var tProx = B(prox); var tInter = B(inter); var tDist = B(dist);
+                if (tProx == null || tInter == null || tDist == null) return;
+
+                float L1 = Vector3.Distance(tProx.position, tInter.position);
+                float L2 = Vector3.Distance(tInter.position, tDist.position);
+                float L3 = 0.018f;
+                Vector3 basePos = tProx.position;
+                float reach = Vector3.Distance(basePos, tipTarget);
+                float straight = Mathf.Max(0.01f, L1 + L2 + L3);
+                reach = Mathf.Clamp(reach, 0.02f, straight);
+
+                float tLow = 0f, tHigh = 1f;
+                for (int it = 0; it < 18; it++)
+                {
+                    float t = 0.5f * (tLow + tHigh);
+                    float a1 = t * 100f * Mathf.Deg2Rad;
+                    float a2 = 0.7f * t * 100f * Mathf.Deg2Rad;
+                    float a3 = 0.66f * (0.7f * t * 100f) * Mathf.Deg2Rad;
+                    float d = L1 * Mathf.Cos(a1) + L2 * Mathf.Cos(a1 + a2) + L3 * Mathf.Cos(a1 + a2 + a3);
+                    if (d > reach) tLow = t; else tHigh = t;
+                }
+                float tFinal = tHigh;
+
+                // Map to Human muscle values (stretched negative when curled)
+                float maxCurl = -0.8f;
+                float m1 = maxCurl * Mathf.Clamp01(tFinal);
+                float m2 = maxCurl * (0.7f * Mathf.Clamp01(tFinal));
+                float m3 = maxCurl * (0.66f * 0.7f * Mathf.Clamp01(tFinal));
+
+                string mName1 = GetFingerMuscleName(side, finger, 1);
+                string mName2 = GetFingerMuscleName(side, finger, 2);
+                string mName3 = GetFingerMuscleName(side, finger, 3);
+                if (!string.IsNullOrEmpty(mName1)) result.muscleValues[mName1] = m1;
+                if (!string.IsNullOrEmpty(mName2)) result.muscleValues[mName2] = m2;
+                if (!string.IsNullOrEmpty(mName3)) result.muscleValues[mName3] = m3;
+            }
+
+            SolveFingerMuscles("Thumb",
+                isLeftHand ? HumanBodyBones.LeftThumbProximal : HumanBodyBones.RightThumbProximal,
+                isLeftHand ? HumanBodyBones.LeftThumbIntermediate : HumanBodyBones.RightThumbIntermediate,
+                isLeftHand ? HumanBodyBones.LeftThumbDistal : HumanBodyBones.RightThumbDistal,
+                snapped.thumbTip);
+            SolveFingerMuscles("Index",
+                isLeftHand ? HumanBodyBones.LeftIndexProximal : HumanBodyBones.RightIndexProximal,
+                isLeftHand ? HumanBodyBones.LeftIndexIntermediate : HumanBodyBones.RightIndexIntermediate,
+                isLeftHand ? HumanBodyBones.LeftIndexDistal : HumanBodyBones.RightIndexDistal,
+                snapped.indexTip);
+            SolveFingerMuscles("Middle",
+                isLeftHand ? HumanBodyBones.LeftMiddleProximal : HumanBodyBones.RightMiddleProximal,
+                isLeftHand ? HumanBodyBones.LeftMiddleIntermediate : HumanBodyBones.RightMiddleIntermediate,
+                isLeftHand ? HumanBodyBones.LeftMiddleDistal : HumanBodyBones.RightMiddleDistal,
+                snapped.middleTip);
+            SolveFingerMuscles("Ring",
+                isLeftHand ? HumanBodyBones.LeftRingProximal : HumanBodyBones.RightRingProximal,
+                isLeftHand ? HumanBodyBones.LeftRingIntermediate : HumanBodyBones.RightRingIntermediate,
+                isLeftHand ? HumanBodyBones.LeftRingDistal : HumanBodyBones.RightRingDistal,
+                snapped.ringTip);
+            SolveFingerMuscles("Little",
+                isLeftHand ? HumanBodyBones.LeftLittleProximal : HumanBodyBones.RightLittleProximal,
+                isLeftHand ? HumanBodyBones.LeftLittleIntermediate : HumanBodyBones.RightLittleIntermediate,
+                isLeftHand ? HumanBodyBones.LeftLittleDistal : HumanBodyBones.RightLittleDistal,
+                snapped.littleTip);
+
+            AddSpreadValues(result, side, 0f);
+            result.animation = CreateAnimationClip(result.muscleValues, isLeftHand);
+            return result;
         }
 
         private static GripResult GenerateGripFromFingerTips(Animator animator, AutoGripData data, bool isLeftHand)
@@ -475,6 +933,213 @@ namespace YUCP.Components.Editor.MeshUtils
             }
 
             return false;
+        }
+
+        // Compute closest point on a triangle in world space
+        private static Vector3 ClosestPointOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
+        {
+            // From "Real-Time Collision Detection" (Christer Ericson)
+            Vector3 ab = b - a; Vector3 ac = c - a; Vector3 ap = p - a;
+            float d1 = Vector3.Dot(ab, ap);
+            float d2 = Vector3.Dot(ac, ap);
+            if (d1 <= 0f && d2 <= 0f) return a;
+
+            Vector3 bp = p - b;
+            float d3 = Vector3.Dot(ab, bp);
+            float d4 = Vector3.Dot(ac, bp);
+            if (d3 >= 0f && d4 <= d3) return b;
+
+            float vc = d1 * d4 - d3 * d2;
+            if (vc <= 0f && d1 >= 0f && d3 <= 0f)
+            {
+                float v = d1 / (d1 - d3);
+                return a + v * ab;
+            }
+
+            Vector3 cp = p - c;
+            float d5 = Vector3.Dot(ab, cp);
+            float d6 = Vector3.Dot(ac, cp);
+            if (d6 >= 0f && d5 <= d6) return c;
+
+            float vb = d5 * d2 - d1 * d6;
+            if (vb <= 0f && d2 >= 0f && d6 <= 0f)
+            {
+                float w = d2 / (d2 - d6);
+                return a + w * ac;
+            }
+
+            float va = d3 * d6 - d5 * d4;
+            if (va <= 0f && (d4 - d3) >= 0f && (d5 - d6) >= 0f)
+            {
+                float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+                return b + w * (c - b);
+            }
+
+            float denom = 1f / (va + vb + vc);
+            float v2 = vb * denom; float w2 = vc * denom; float u2 = 1f - v2 - w2;
+            return u2 * a + v2 * b + w2 * c;
+        }
+
+        private struct RingCandidate
+        {
+            public Vector3 position;
+            public Vector3 normal;
+            public float score;
+        }
+
+        /// <summary>
+        /// Sample K candidates on a tangential ring around origin, project to mesh surface.
+        /// </summary>
+        private static List<RingCandidate> SampleRingCandidates(
+            Vector3 origin,
+            Vector3 frameX,
+            Vector3 frameY,
+            float radius,
+            int K,
+            List<Triangle> triangles,
+            Vector3 objectCenter)
+        {
+            var candidates = new List<RingCandidate>();
+            float angleStep = 360f / K;
+            
+            for (int i = 0; i < K; i++)
+            {
+                float angle = i * angleStep * Mathf.Deg2Rad;
+                Vector3 ringPoint = origin + radius * (Mathf.Cos(angle) * frameX + Mathf.Sin(angle) * frameY);
+                
+                // Find closest point on mesh triangles
+                Vector3 bestPt = ringPoint;
+                Vector3 bestN = Vector3.up;
+                float bestD2 = float.MaxValue;
+                
+                foreach (var tri in triangles)
+                {
+                    Vector3 cp = ClosestPointOnTriangle(ringPoint, tri.v0, tri.v1, tri.v2);
+                    float d2 = (cp - ringPoint).sqrMagnitude;
+                    if (d2 < bestD2)
+                    {
+                        bestD2 = d2;
+                        bestPt = cp;
+                        bestN = Vector3.Cross(tri.v1 - tri.v0, tri.v2 - tri.v0).normalized;
+                    }
+                }
+                
+                // Ensure outward normal
+                if (Vector3.Dot(bestN, (bestPt - objectCenter)) < 0f)
+                    bestN = -bestN;
+                
+                candidates.Add(new RingCandidate
+                {
+                    position = bestPt,
+                    normal = bestN,
+                    score = 0f
+                });
+            }
+            
+            return candidates;
+        }
+
+        /// <summary>
+        /// Estimate local thickness at a point by probing along ±normal.
+        /// </summary>
+        private static float FindThickness(Vector3 point, Vector3 normal, List<Triangle> triangles, float probeDistance)
+        {
+            Vector3 probeOut = point + normal * probeDistance;
+            Vector3 probeIn = point - normal * probeDistance;
+            
+            float distOut = probeDistance;
+            float distIn = probeDistance;
+            
+            // Find closest triangle distance from each probe
+            foreach (var tri in triangles)
+            {
+                Vector3 cpOut = ClosestPointOnTriangle(probeOut, tri.v0, tri.v1, tri.v2);
+                Vector3 cpIn = ClosestPointOnTriangle(probeIn, tri.v0, tri.v1, tri.v2);
+                
+                float dOut = Vector3.Distance(probeOut, cpOut);
+                float dIn = Vector3.Distance(probeIn, cpIn);
+                
+                if (dOut < distOut) distOut = dOut;
+                if (dIn < distIn) distIn = dIn;
+            }
+            
+            return distOut + distIn;
+        }
+
+        /// <summary>
+        /// Estimate curvature by comparing normal to neighbors.
+        /// </summary>
+        private static float EstimateCurvature(Vector3 normal, List<Vector3> neighborNormals)
+        {
+            if (neighborNormals.Count == 0) return 0f;
+            
+            float maxDelta = 0f;
+            foreach (var n in neighborNormals)
+            {
+                float delta = Vector3.Angle(normal, n);
+                if (delta > maxDelta) maxDelta = delta;
+            }
+            
+            return maxDelta;
+        }
+
+        /// <summary>
+        /// Score a contact candidate based on multiple criteria.
+        /// </summary>
+        private static float ScoreCandidate(
+            RingCandidate candidate,
+            Transform distalBone,
+            Vector3 objectCenter,
+            List<Vector3> alreadyChosen,
+            List<Vector3> neighborNormals,
+            List<Triangle> triangles)
+        {
+            const float wThin = 3.0f;
+            const float wCurv = 2.0f;
+            const float wAlign = 1.5f;
+            const float wFlat = 1.0f;
+            const float wSpace = -4.0f;
+            const float minSpacing = 0.015f;
+            const float thickThresh = 0.008f;
+            
+            float score = 0f;
+            
+            // Thin bonus
+            float thickness = FindThickness(candidate.position, candidate.normal, triangles, 0.005f);
+            if (thickness < thickThresh)
+            {
+                score += wThin * (1f - thickness / thickThresh);
+            }
+            
+            // Curvature
+            float curvature = EstimateCurvature(candidate.normal, neighborNormals);
+            score += wCurv * (curvature / 180f);
+            
+            // Approach alignment
+            if (distalBone != null)
+            {
+                float alignment = -Vector3.Dot(candidate.normal, distalBone.forward);
+                if (alignment > 0f)
+                    score += wAlign * alignment;
+            }
+            
+            // Anti-flat
+            Vector3 toCenter = (objectCenter - candidate.position).normalized;
+            float flatness = Mathf.Abs(Vector3.Dot(candidate.normal, toCenter));
+            if (flatness < 0.3f)
+                score += wFlat * (0.3f - flatness);
+            
+            // Spacing penalty
+            foreach (var chosen in alreadyChosen)
+            {
+                float dist = Vector3.Distance(candidate.position, chosen);
+                if (dist < minSpacing)
+                {
+                    score += wSpace * (1f - dist / minSpacing);
+                }
+            }
+            
+            return score;
         }
 
         private static bool IsPartOfObject(Transform hit, Transform target)
