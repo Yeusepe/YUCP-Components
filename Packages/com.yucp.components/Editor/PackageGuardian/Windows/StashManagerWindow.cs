@@ -71,10 +71,22 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             
             header.Add(titleSection);
             
+            var buttonContainer = new VisualElement();
+            buttonContainer.style.flexDirection = FlexDirection.Row;
+            
+            var cleanupButton = new Button(ShowCleanupDialog);
+            cleanupButton.text = "Cleanup Stashes";
+            cleanupButton.AddToClassList("pg-button");
+            cleanupButton.AddToClassList("pg-button-danger");
+            cleanupButton.style.marginRight = 8;
+            buttonContainer.Add(cleanupButton);
+            
             var refreshButton = new Button(Refresh);
             refreshButton.text = "Refresh";
             refreshButton.AddToClassList("pg-button");
-            header.Add(refreshButton);
+            buttonContainer.Add(refreshButton);
+            
+            header.Add(buttonContainer);
             
             root.Add(header);
             
@@ -102,9 +114,20 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             footer.style.borderTopColor = new Color(0.16f, 0.16f, 0.16f);
             footer.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f);
             
+            var infoContainer = new VisualElement();
+            infoContainer.style.flexDirection = FlexDirection.Column;
+            
             var infoLabel = new Label("Stashes are automatically created before major operations");
             infoLabel.AddToClassList("pg-label-secondary");
-            footer.Add(infoLabel);
+            infoContainer.Add(infoLabel);
+            
+            var countLabel = new Label();
+            countLabel.name = "stashCountLabel";
+            countLabel.AddToClassList("pg-label-small");
+            countLabel.style.marginTop = 4;
+            infoContainer.Add(countLabel);
+            
+            footer.Add(infoContainer);
             
             var closeButton = new Button(Close);
             closeButton.text = "Close";
@@ -131,9 +154,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                     return;
                 }
                 
-                Debug.Log("[Package Guardian] Fetching stashes...");
                 var stashes = repo.Stash.List();
-                Debug.Log($"[Package Guardian] Found {stashes.Count} stashes");
+                
+                UpdateStashCount(stashes.Count);
                 
                 if (stashes.Count == 0)
                 {
@@ -142,11 +165,34 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                     return;
                 }
                 
-                foreach (var stash in stashes)
+                if (stashes.Count > 100)
                 {
-                    Debug.Log($"[Package Guardian] Stash: {stash.RefName} - {stash.Message} - {stash.CommitId}");
-                    var stashItem = CreateStashItem(stash);
-                    _stashList.Add(stashItem);
+                    Debug.Log($"[Package Guardian] Loading {stashes.Count} stashes (showing first 100 in UI for performance)...");
+                    // Limit UI display to first 100 for performance
+                    foreach (var stash in stashes.Take(100))
+                    {
+                        var stashItem = CreateStashItem(stash);
+                        _stashList.Add(stashItem);
+                    }
+                    
+                    var warningLabel = new Label($"Note: Showing first 100 of {stashes.Count} stashes. Use Cleanup to reduce the number of stashes.");
+                    warningLabel.style.color = new Color(0.89f, 0.65f, 0.29f);
+                    warningLabel.style.paddingTop = 12;
+                    warningLabel.style.paddingBottom = 12;
+                    warningLabel.style.paddingLeft = 16;
+                    warningLabel.style.paddingRight = 16;
+                    warningLabel.style.marginTop = 12;
+                    warningLabel.style.backgroundColor = new Color(0.2f, 0.15f, 0.1f);
+                    warningLabel.style.whiteSpace = WhiteSpace.Normal;
+                    _stashList.Add(warningLabel);
+                }
+                else
+                {
+                    foreach (var stash in stashes)
+                    {
+                        var stashItem = CreateStashItem(stash);
+                        _stashList.Add(stashItem);
+                    }
                 }
             }
             catch (Exception ex)
@@ -155,6 +201,254 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                 _stashList.Add(errorState);
                 Debug.LogError($"[Package Guardian] Error loading stashes: {ex}");
                 Debug.LogException(ex);
+            }
+        }
+        
+        private void UpdateStashCount(int count)
+        {
+            var countLabel = rootVisualElement.Q<Label>("stashCountLabel");
+            if (countLabel != null)
+            {
+                countLabel.text = $"Total stashes: {count}";
+                if (count > 100)
+                {
+                    countLabel.style.color = new Color(0.89f, 0.65f, 0.29f);
+                }
+                else
+                {
+                    countLabel.style.color = new Color(0.69f, 0.69f, 0.69f);
+                }
+            }
+        }
+        
+        private void ShowCleanupDialog()
+        {
+            try
+            {
+                var service = RepositoryService.Instance;
+                var repo = service.Repository;
+                
+                if (repo == null)
+                {
+                    EditorUtility.DisplayDialog("Error", "Repository not initialized.", "OK");
+                    return;
+                }
+                
+                int totalStashes = repo.Stash.GetStashCount();
+                
+                if (totalStashes == 0)
+                {
+                    EditorUtility.DisplayDialog("Cleanup Stashes", "No stashes to clean up.", "OK");
+                    return;
+                }
+                
+                string message = $"You have {totalStashes} stashes. This can slow down Unity.\n\n" +
+                              "Choose a cleanup option:\n\n" +
+                              "• Keep only recent stashes (recommended)\n" +
+                              "• Delete old stashes by age\n\n" +
+                              "Note: Deleting stash refs does NOT delete the commit data. " +
+                              "The changes are preserved in the repository, but you won't be able to " +
+                              "easily access them through the stash system.";
+                
+                int option = EditorUtility.DisplayDialogComplex(
+                    "Cleanup Stashes",
+                    message,
+                    "Keep Recent",
+                    "Delete Old",
+                    "Cancel"
+                );
+                
+                if (option == 0) // Keep Recent
+                {
+                    ShowKeepRecentDialog(totalStashes);
+                }
+                else if (option == 1) // Delete Old
+                {
+                    ShowDeleteOldDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.DisplayDialog("Error", $"Failed to show cleanup dialog: {ex.Message}", "OK");
+                Debug.LogError($"[Package Guardian] Error in cleanup dialog: {ex}");
+            }
+        }
+        
+        private void ShowKeepRecentDialog(int totalStashes)
+        {
+            int input = EditorUtility.DisplayDialogComplex(
+                "Keep Recent Stashes",
+                $"You have {totalStashes} stashes.\n\n" +
+                "How many of the most recent stashes would you like to keep?\n\n" +
+                "Recommended: 50-100 stashes",
+                "Keep 50",
+                "Keep 100",
+                "Keep 200"
+            );
+            
+            int keepCount = 0;
+            
+            if (input == 0) // Keep 50
+            {
+                keepCount = 50;
+            }
+            else if (input == 1) // Keep 100
+            {
+                keepCount = 100;
+            }
+            else if (input == 2) // Keep 200
+            {
+                keepCount = 200;
+            }
+            else
+            {
+                return;
+            }
+            
+            if (keepCount > totalStashes)
+            {
+                keepCount = totalStashes;
+            }
+            
+            int toDelete = totalStashes - keepCount;
+            
+            if (toDelete <= 0)
+            {
+                EditorUtility.DisplayDialog("Cleanup Stashes", 
+                    "No stashes need to be deleted.", "OK");
+                return;
+            }
+            
+            if (!EditorUtility.DisplayDialog("Confirm Cleanup",
+                $"This will delete {toDelete} old stashes, keeping only the {keepCount} most recent ones.\n\n" +
+                "The commit data will be preserved, but you won't be able to access these stashes through the stash manager.\n\n" +
+                "Continue?",
+                "Delete", "Cancel"))
+            {
+                return;
+            }
+            
+            PerformCleanupKeepRecent(keepCount);
+        }
+        
+        private void ShowDeleteOldDialog()
+        {
+            int input = EditorUtility.DisplayDialogComplex(
+                "Delete Old Stashes",
+                "Delete stashes older than how many days?\n\n" +
+                "Recommended: 30-90 days",
+                "30 days",
+                "90 days",
+                "180 days"
+            );
+            
+            int days = 0;
+            
+            if (input == 0) // 30 days
+            {
+                days = 30;
+            }
+            else if (input == 1) // 90 days
+            {
+                days = 90;
+            }
+            else if (input == 2) // 180 days
+            {
+                days = 180;
+            }
+            else
+            {
+                return;
+            }
+            
+            try
+            {
+                var service = RepositoryService.Instance;
+                var repo = service.Repository;
+                
+                var allStashes = repo.Stash.List();
+                long cutoffTimestamp = DateTimeOffset.UtcNow.AddDays(-days).ToUnixTimeSeconds();
+                int toDelete = allStashes.Count(s => s.Timestamp < cutoffTimestamp);
+                
+                if (toDelete == 0)
+                {
+                    EditorUtility.DisplayDialog("Cleanup Stashes", 
+                        $"No stashes are older than {days} days.", "OK");
+                    return;
+                }
+                
+                if (!EditorUtility.DisplayDialog("Confirm Cleanup",
+                    $"This will delete {toDelete} stashes older than {days} days.\n\n" +
+                    "The commit data will be preserved, but you won't be able to access these stashes through the stash manager.\n\n" +
+                    "Continue?",
+                    "Delete", "Cancel"))
+                {
+                    return;
+                }
+                
+                PerformCleanupOld(days);
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.DisplayDialog("Error", $"Failed to calculate stashes to delete: {ex.Message}", "OK");
+                Debug.LogError($"[Package Guardian] Error in delete old dialog: {ex}");
+            }
+        }
+        
+        private void PerformCleanupKeepRecent(int keepCount)
+        {
+            try
+            {
+                EditorUtility.DisplayProgressBar("Package Guardian", "Cleaning up stashes...", 0.5f);
+                
+                var service = RepositoryService.Instance;
+                var repo = service.Repository;
+                
+                int deleted = repo.Stash.CleanupKeepRecent(keepCount);
+                
+                EditorUtility.ClearProgressBar();
+                
+                EditorUtility.DisplayDialog("Cleanup Complete", 
+                    $"Successfully deleted {deleted} old stashes.\n\n" +
+                    $"Kept {keepCount} most recent stashes.", "OK");
+                
+                Debug.Log($"[Package Guardian] Cleaned up {deleted} stashes, kept {keepCount} most recent");
+                
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.ClearProgressBar();
+                EditorUtility.DisplayDialog("Error", $"Failed to clean up stashes: {ex.Message}", "OK");
+                Debug.LogError($"[Package Guardian] Error cleaning up stashes: {ex}");
+            }
+        }
+        
+        private void PerformCleanupOld(int days)
+        {
+            try
+            {
+                EditorUtility.DisplayProgressBar("Package Guardian", "Cleaning up old stashes...", 0.5f);
+                
+                var service = RepositoryService.Instance;
+                var repo = service.Repository;
+                
+                int deleted = repo.Stash.CleanupOldStashes(days);
+                
+                EditorUtility.ClearProgressBar();
+                
+                EditorUtility.DisplayDialog("Cleanup Complete", 
+                    $"Successfully deleted {deleted} stashes older than {days} days.", "OK");
+                
+                Debug.Log($"[Package Guardian] Cleaned up {deleted} stashes older than {days} days");
+                
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.ClearProgressBar();
+                EditorUtility.DisplayDialog("Error", $"Failed to clean up stashes: {ex.Message}", "OK");
+                Debug.LogError($"[Package Guardian] Error cleaning up stashes: {ex}");
             }
         }
         

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 using PackageGuardian.Core.Validation;
@@ -18,6 +19,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         private static List<ValidationIssue> _lastKnownIssues = new List<ValidationIssue>();
         private static bool _enabled = true;
         private static bool _showNotifications = true;
+        private static Task<List<ValidationIssue>> _runningTask;
         
         static HealthMonitorService()
         {
@@ -44,7 +46,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             if (EditorApplication.timeSinceStartup - _lastCheckTime >= _checkInterval)
             {
                 _lastCheckTime = EditorApplication.timeSinceStartup;
-                PerformHealthCheck();
+                QueueHealthCheck();
             }
         }
         
@@ -53,64 +55,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         /// </summary>
         public static void PerformHealthCheck()
         {
-            try
-            {
-                var service = RepositoryService.Instance;
-                var issues = new List<ValidationIssue>();
-                
-                // Get project validation issues
-                issues.AddRange(service.ValidateProject());
-                
-                // Check for new critical issues
-                var newCriticalIssues = issues.FindAll(i => 
-                    i.Severity == IssueSeverity.Critical && 
-                    !_lastKnownIssues.Exists(old => old.Title == i.Title));
-                
-                if (newCriticalIssues.Count > 0 && _showNotifications)
-                {
-                    // Show notification for new critical issues
-                    foreach (var issue in newCriticalIssues)
-                    {
-                        Debug.LogError($"[Package Guardian] CRITICAL: {issue.Title} - {issue.Description}");
-                    }
-                    
-                    if (EditorUtility.DisplayDialog(
-                        "Package Guardian - Critical Issues Detected",
-                        $"Found {newCriticalIssues.Count} new critical issue(s) that require immediate attention!\n\nWould you like to view them now?",
-                        "View Issues",
-                        "Dismiss"))
-                    {
-                        Windows.HealthWindow.ShowWindow();
-                    }
-                }
-                
-                // Check for new errors
-                var newErrors = issues.FindAll(i => 
-                    i.Severity == IssueSeverity.Error && 
-                    !_lastKnownIssues.Exists(old => old.Title == i.Title));
-                
-                if (newErrors.Count > 0 && _showNotifications)
-                {
-                    Debug.LogWarning($"[Package Guardian] Found {newErrors.Count} new error(s). Run health check for details.");
-                }
-                
-                // Update last known issues
-                _lastKnownIssues = issues;
-                
-                // Log summary
-                if (issues.Count > 0)
-                {
-                    var critical = issues.FindAll(i => i.Severity == IssueSeverity.Critical).Count;
-                    var errors = issues.FindAll(i => i.Severity == IssueSeverity.Error).Count;
-                    var warnings = issues.FindAll(i => i.Severity == IssueSeverity.Warning).Count;
-                    
-                    Debug.Log($"[Package Guardian] Health check complete: {critical} critical, {errors} errors, {warnings} warnings");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[Package Guardian] Health check failed: {ex.Message}");
-            }
+            QueueHealthCheck(force: true);
         }
         
         /// <summary>
@@ -199,6 +144,90 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             Debug.Log("[Package Guardian] Running manual health check...");
             PerformHealthCheck();
             Windows.HealthWindow.ShowWindow();
+        }
+        
+        private static void QueueHealthCheck(bool force = false)
+        {
+            if (!force && _runningTask != null && !_runningTask.IsCompleted)
+                return;
+            
+            _runningTask = GuardianTaskRunner.Run("Health Check", ct =>
+            {
+                var service = RepositoryService.Instance;
+                var issues = new List<ValidationIssue>();
+                
+                // Lite check to avoid blocking main thread; full check available via manual command.
+                issues.AddRange(service.ValidatePendingChanges());
+                return issues;
+            });
+            _runningTask.ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    Debug.LogError($"[Package Guardian] Health check failed: {t.Exception?.GetBaseException().Message}");
+                    _runningTask = null;
+                    return;
+                }
+                
+                var issues = t.Result ?? new List<ValidationIssue>();
+                EditorApplication.delayCall += () =>
+                {
+                    ApplyHealthResults(issues);
+                    _runningTask = null;
+                };
+            });
+        }
+        
+        private static void ApplyHealthResults(List<ValidationIssue> issues)
+        {
+            try
+            {
+                // Check for new critical issues
+                var newCriticalIssues = issues.FindAll(i =>
+                    i.Severity == IssueSeverity.Critical &&
+                    !_lastKnownIssues.Exists(old => old.Title == i.Title));
+                
+                if (newCriticalIssues.Count > 0 && _showNotifications)
+                {
+                    foreach (var issue in newCriticalIssues)
+                    {
+                        Debug.LogError($"[Package Guardian] CRITICAL: {issue.Title} - {issue.Description}");
+                    }
+                    
+                    if (EditorUtility.DisplayDialog(
+                        "Package Guardian - Critical Issues Detected",
+                        $"Found {newCriticalIssues.Count} new critical issue(s) that require immediate attention!\n\nWould you like to view them now?",
+                        "View Issues",
+                        "Dismiss"))
+                    {
+                        Windows.HealthWindow.ShowWindow();
+                    }
+                }
+                
+                var newErrors = issues.FindAll(i =>
+                    i.Severity == IssueSeverity.Error &&
+                    !_lastKnownIssues.Exists(old => old.Title == i.Title));
+                
+                if (newErrors.Count > 0 && _showNotifications)
+                {
+                    Debug.LogWarning($"[Package Guardian] Found {newErrors.Count} new error(s). Run health check for details.");
+                }
+                
+                _lastKnownIssues = issues;
+                
+                if (issues.Count > 0)
+                {
+                    var critical = issues.FindAll(i => i.Severity == IssueSeverity.Critical).Count;
+                    var errors = issues.FindAll(i => i.Severity == IssueSeverity.Error).Count;
+                    var warnings = issues.FindAll(i => i.Severity == IssueSeverity.Warning).Count;
+                    
+                    Debug.Log($"[Package Guardian] Health check complete: {critical} critical, {errors} errors, {warnings} warnings");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Package Guardian] Health result handling failed: {ex.Message}");
+            }
         }
         
         private static void LoadPreferences()

@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
+using UnityEditor.Animations;
+using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase.Editor.BuildPipeline;
 using com.vrcfury.api;
 using YUCP.Components;
@@ -23,6 +26,25 @@ namespace YUCP.Components.Editor
 
         // Track previous tangents for smoothing across blendshape samples
         private Dictionary<string, Vector3> previousTangents = new Dictionary<string, Vector3>();
+
+        private static readonly Dictionary<string, int> VisemeNameToIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Viseme_Sil", 0 },
+            { "Viseme_PP", 1 },
+            { "Viseme_FF", 2 },
+            { "Viseme_TH", 3 },
+            { "Viseme_DD", 4 },
+            { "Viseme_KK", 5 },
+            { "Viseme_CH", 6 },
+            { "Viseme_SS", 7 },
+            { "Viseme_NN", 8 },
+            { "Viseme_RR", 9 },
+            { "Viseme_AA", 10 },
+            { "Viseme_E_Eh", 11 },
+            { "Viseme_IH_EE", 12 },
+            { "Viseme_OH", 13 },
+            { "Viseme_OU", 14 }
+        };
 
         public bool OnPreprocessAvatar(GameObject avatarRoot)
         {
@@ -187,6 +209,12 @@ namespace YUCP.Components.Editor
             if (data.createDirectAnimations || data.debugSaveAnimations)
             {
                 SaveAnimationClips(data, generatedAnimations);
+            }
+
+            if (data.trackingMode == BlendshapeTrackingMode.VisemsOnly &&
+                data.autoCreateVisemeFxLayer)
+            {
+                GenerateVisemeFxLayer(data, generatedAnimations);
             }
 
             // Step 6: Set build statistics
@@ -530,6 +558,186 @@ namespace YUCP.Components.Editor
                      $"Manual setup gives you full control over how blendshapes drive the attachment.", data);
         }
 
+        private void GenerateVisemeFxLayer(
+            AttachToBlendshapeData data,
+            List<BlendshapeAnimationData> animations)
+        {
+            if (animations == null || animations.Count == 0)
+            {
+                return;
+            }
+
+            var visemeClips = new List<(int index, string name, AnimationClip clip)>();
+
+            foreach (var anim in animations)
+            {
+                if (!VisemeNameToIndex.TryGetValue(anim.blendshapeName, out int visemeIndex))
+                {
+                    continue;
+                }
+
+                var staticClip = CreateStaticPoseClip(anim.animationClip);
+                if (staticClip == null)
+                {
+                    continue;
+                }
+
+                staticClip.name = $"YUCP_Viseme_{SanitizeFileName(anim.blendshapeName)}";
+                visemeClips.Add((visemeIndex, anim.blendshapeName, staticClip));
+            }
+
+            if (visemeClips.Count == 0)
+            {
+                Debug.LogWarning($"[AttachToBlendshapeProcessor] Viseme FX layer enabled but no viseme animations were generated for '{data.name}'", data);
+                return;
+            }
+
+            string controllerDir = "Assets/Generated/AttachToBlendshape/Controllers";
+            Directory.CreateDirectory(controllerDir);
+
+            string controllerPath = $"{controllerDir}/{GetSafeObjectIdentifier(data)}_Viseme.controller";
+            controllerPath = controllerPath.Replace("\\", "/");
+
+            var existingController = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            if (existingController != null)
+            {
+                AssetDatabase.DeleteAsset(controllerPath);
+            }
+
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+
+            if (!controller.parameters.Any(p => p.name == "Viseme"))
+            {
+                controller.AddParameter("Viseme", AnimatorControllerParameterType.Int);
+            }
+
+            AnimatorControllerLayer layer;
+            AnimatorStateMachine stateMachine;
+
+            if (controller.layers.Length > 0)
+            {
+                layer = controller.layers[0];
+                stateMachine = layer.stateMachine ?? new AnimatorStateMachine();
+            }
+            else
+            {
+                stateMachine = new AnimatorStateMachine();
+                layer = new AnimatorControllerLayer { stateMachine = stateMachine };
+            }
+
+            layer.name = $"YUCP_AttachBlendshape_{data.gameObject.name}";
+            layer.defaultWeight = 1f;
+            layer.blendingMode = AnimatorLayerBlendingMode.Override;
+
+            stateMachine = layer.stateMachine ?? new AnimatorStateMachine();
+            ClearStateMachine(stateMachine);
+
+            var idleState = stateMachine.AddState("Idle");
+            idleState.writeDefaultValues = false;
+            stateMachine.defaultState = idleState;
+
+            foreach (var entry in visemeClips.OrderBy(v => v.index))
+            {
+                AssetDatabase.AddObjectToAsset(entry.clip, controller);
+                entry.clip.hideFlags = HideFlags.HideInHierarchy;
+
+                var state = stateMachine.AddState(entry.name);
+                state.motion = entry.clip;
+                state.writeDefaultValues = false;
+
+                var enterTransition = stateMachine.AddAnyStateTransition(state);
+                enterTransition.hasExitTime = false;
+                enterTransition.hasFixedDuration = true;
+                enterTransition.duration = 0f;
+                enterTransition.canTransitionToSelf = false;
+                enterTransition.AddCondition(AnimatorConditionMode.Equals, entry.index, "Viseme");
+
+                var exitTransition = state.AddTransition(idleState);
+                exitTransition.hasExitTime = false;
+                exitTransition.hasFixedDuration = true;
+                exitTransition.duration = 0f;
+                exitTransition.AddCondition(AnimatorConditionMode.NotEqual, entry.index, "Viseme");
+            }
+
+            layer.stateMachine = stateMachine;
+            controller.layers = new[] { layer };
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.ImportAsset(controllerPath);
+
+            var fullController = FuryComponents.CreateFullController(data.gameObject);
+            fullController.AddController(controller, VRCAvatarDescriptor.AnimLayerType.FX);
+            fullController.AddGlobalParam("Viseme");
+
+            Debug.Log($"[AttachToBlendshapeProcessor] Created viseme FX layer with {visemeClips.Count} states at '{controllerPath}'", data);
+        }
+
+        private AnimationClip CreateStaticPoseClip(AnimationClip source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            var staticClip = new AnimationClip();
+
+            var bindings = AnimationUtility.GetCurveBindings(source);
+            foreach (var binding in bindings)
+            {
+                var curve = AnimationUtility.GetEditorCurve(source, binding);
+                if (curve == null || curve.keys.Length == 0)
+                {
+                    continue;
+                }
+
+                float lastTime = curve.keys[curve.keys.Length - 1].time;
+                float value = curve.Evaluate(lastTime);
+
+                var staticCurve = new AnimationCurve(new Keyframe(0f, value));
+                AnimationUtility.SetEditorCurve(staticClip, binding, staticCurve);
+            }
+
+            staticClip.EnsureQuaternionContinuity();
+            return staticClip;
+        }
+
+        private void ClearStateMachine(AnimatorStateMachine stateMachine)
+        {
+            foreach (var childState in stateMachine.states.ToArray())
+            {
+                stateMachine.RemoveState(childState.state);
+            }
+
+            foreach (var childMachine in stateMachine.stateMachines.ToArray())
+            {
+                stateMachine.RemoveStateMachine(childMachine.stateMachine);
+            }
+
+            foreach (var transition in stateMachine.anyStateTransitions.ToArray())
+            {
+                stateMachine.RemoveAnyStateTransition(transition);
+            }
+        }
+
+        private string GetSafeObjectIdentifier(AttachToBlendshapeData data)
+        {
+            string relative = GetRelativePath(data.transform, data.transform.root);
+            string baseName = string.IsNullOrEmpty(relative) ? data.gameObject.name : relative.Replace("/", "_");
+            return SanitizeFileName(baseName);
+        }
+
+        private string SanitizeFileName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return "AttachBlendshape";
+            }
+
+            var invalid = Path.GetInvalidFileNameChars();
+            var chars = name.Select(c => invalid.Contains(c) ? '_' : c).ToArray();
+            return new string(chars);
+        }
+
         private int CountKeyframes(AnimationClip clip)
         {
             if (clip == null) return 0;
@@ -676,4 +884,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-

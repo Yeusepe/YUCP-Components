@@ -9,54 +9,57 @@ namespace YUCP.Components
     [BetaWarning("This component is in BETA. Rotation counting is experimental and may require tuning.")]
     public class RotationCounterData : MonoBehaviour
     {
-        [Header("Angle Input")]
-        [Tooltip("Name of the angle parameter (Float, 0-1 representing 0-360 degrees). Must be set by Gesture Manager Input Emulator or other system.")]
-        public string angleParameterName = "StickAngle";
+        [Header("Required Parameters")]
+        [Tooltip("Float (0-1) angle parameter coming from your input source.")]
+        public string angle01ParameterName = "Angle01";
 
-        [Header("Rotation Output")]
-        [Tooltip("Name of the rotation index parameter (Int) that will be incremented on each full rotation")]
-        public string rotationIndexParameterName = "RotationIndex";
+        [Tooltip("Float (0-1) stick magnitude parameter.")]
+        public string magnitudeParameterName = "Mag";
 
-        [Header("Rotation Detection")]
-        [Tooltip("Number of zones to divide the angle range (8 = 45° each, 16 = 22.5° each, etc.). More zones = more accurate but more states.")]
-        [Range(4, 32)]
-        public int numberOfZones = 8;
+        [Tooltip("Int parameter that accumulates your rotation count.")]
+        public string rotationIndexParameterName = "Index";
 
-        [Tooltip("Threshold for detecting near-zero angle (0-1 range). Angle below this is considered near 0°.")]
-        [Range(0f, 0.5f)]
-        public float nearZeroThreshold = 0.1f;
+        [Tooltip("Int parameter reporting the most recent flick direction (1, -1, 0 idle).")]
+        public string directionParameterName = "Direction";
 
-        [Tooltip("Threshold for detecting near-maximum angle (0-1 range). Angle above this is considered near 360°.")]
-        [Range(0.5f, 1f)]
-        public float nearMaxThreshold = 0.9f;
 
-        [Header("Stick Center Reset (Arming)")]
-        [Tooltip("Stick X axis parameter used to detect center (−1..1).")]
-        public string stickXParameterName = "SteamInput/LHand/Stick/X";
-        [Tooltip("Stick Y axis parameter used to detect center (−1..1).")]
-        public string stickYParameterName = "SteamInput/LHand/Stick/Y";
-        [Tooltip("Magnitude threshold to consider the stick centered (|X|<=t and |Y|<=t)." )]
+
+        [Tooltip("Enable DebugPhase parameter driver updates for troubleshooting.")]
+        public bool createDebugPhaseParameter = true;
+
+        [Tooltip("Optional Int parameter that tracks the active phase (0 idle, 1/2 CW, 3/4 CCW, 5 cooldown).")]
+        public string debugPhaseParameterName = "DebugPhase";
+
+        [Header("Spin Flick Detection")]
+        [Tooltip("Number of 360° sectors. Use 12 for 30° wide slices.")]
+        [Range(4, 24)]
+        public int numberOfSectors = 12;
+
+        [Tooltip("Margin kept inside each sector to prevent rapid toggling on boundaries (hysteresis).")]
+        [Range(0f, 0.05f)]
+        public float sectorHysteresis = 0.02f;
+
+        [Tooltip("Minimum stick magnitude required to track rotation changes.")]
         [Range(0f, 1f)]
-        public float centerThreshold = 0.2f;
+        public float magnitudeThreshold = 0.5f;
 
-        [Tooltip("Number of zones to traverse for one count increment. 1 = every zone boundary, up to numberOfZones = full rotation.")]
-        [Range(1, 32)]
-        public int sectionsPerCount = 4;
-
-        [Tooltip("If true, clockwise rotation increments RotationIndex; otherwise decrements.")]
-        public bool clockwiseIsPositive = true;
-
-        [Tooltip("Hysteresis epsilon to stabilize arming/trigger thresholds (0-1)." )]
-        [Range(0f, 0.1f)]
-        public float hysteresisEpsilon = 0.005f;
+        [Tooltip("Name of the animator layer that hosts the generated graph.")]
+        public string layerName = "SpinFlick_New";
 
         [Header("Build Statistics")]
-        [Tooltip("Number of zones created in generated controller")]
-        public int generatedZonesCount = 0;
+        [Tooltip("Number of sectors created in the most recent generated controller.")]
+        public int generatedSectorCount = 0;
 
         [Tooltip("Controller generation status")]
         public bool controllerGenerated = false;
     }
 }
+
+
+
+
+
+
+
 
 

@@ -3,6 +3,7 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using YUCP.Components.PackageGuardian.Editor.Services;
 using YUCP.Components.PackageGuardian.Editor.Settings;
 using global::PackageGuardian.Core.Diff;
@@ -121,8 +122,17 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 
                 string summary = ComputeChangeSummary();
                 var service = RepositoryService.Instance;
-                service.CreateAutoStash($"After VPM change: {summary}");
-                Debug.Log($"[Package Guardian] Auto-stash created for VPM change: {summary}");
+                _ = service.CreateAutoStashAsync($"After VPM change: {summary}").ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        Debug.LogWarning($"[Package Guardian] Failed to queue VPM stash: {t.Exception?.GetBaseException().Message}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[Package Guardian] Auto-stash queued for VPM change: {summary}");
+                    }
+                });
                 return true;
             }
             catch (Exception ex)
@@ -171,8 +181,18 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 
                 var service = RepositoryService.Instance;
                 string message = $"After Import: {packageName} (.unitypackage)";
-                service.CreateAutoStash(message);
-                Debug.Log($"[Package Guardian] Auto-stash created: {message}");
+                
+                _ = service.CreateAutoStashAsync(message).ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        Debug.LogWarning($"[Package Guardian] Failed to queue unitypackage stash: {t.Exception?.GetBaseException().Message}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[Package Guardian] Auto-stash queued: {message}");
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -325,9 +345,17 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 
                 Debug.Log($"[Package Guardian] Creating auto-stash: After {reason} - {description}");
                 var service = RepositoryService.Instance;
-                service.CreateAutoStash($"After {reason}: {description}");
-                
-                Debug.Log($"[Package Guardian] Auto-stash created successfully");
+                _ = service.CreateAutoStashAsync($"After {reason}: {description}").ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        Debug.LogWarning($"[Package Guardian] Failed to queue UPM stash: {t.Exception?.GetBaseException().Message}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[Package Guardian] Auto-stash queued successfully");
+                    }
+                });
             }
             catch (Exception ex)
             {

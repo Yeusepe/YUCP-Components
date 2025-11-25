@@ -51,6 +51,8 @@ namespace YUCP.Components
 			public bool keepTransforms = true;
 			[Tooltip("If enabled, this toggle uses Exclusive Off State within the exclusive group")]
 			public bool exclusiveOffState = false;
+			[Tooltip("Optional animation clip to play when this toggle is activated")]
+			public AnimationClip animationClip;
 		}
 
 		[Header("Symmetric Part (Built-ins)")]
@@ -64,6 +66,8 @@ namespace YUCP.Components
 		[Tooltip("Toggle starts ON by default (Right)")] public bool rightDefaultOn = false;
 		[Tooltip("If enabled, the Left toggle uses Exclusive Off State within the exclusive group")] public bool leftExclusiveOffState = false;
 		[Tooltip("If enabled, the Right toggle uses Exclusive Off State within the exclusive group")] public bool rightExclusiveOffState = false;
+		[Tooltip("Optional animation clip to play when Left toggle is activated")] public AnimationClip leftAnimation;
+		[Tooltip("Optional animation clip to play when Right toggle is activated")] public AnimationClip rightAnimation;
 
 		[Header("Custom Options (Unlimited)")]
 		public List<CustomTarget> customTargets = new List<CustomTarget>();

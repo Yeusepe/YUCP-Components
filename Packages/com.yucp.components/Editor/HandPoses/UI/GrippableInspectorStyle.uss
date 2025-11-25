@@ -1,0 +1,143 @@
+/* ============================================================================
+   YUCP Grippable Inspector Styling - YUCP Design System
+   Consistent with Package Exporter
+   ============================================================================ */
+
+.grippable-inspector {
+    background-color: #090909;
+    padding: 20px;
+}
+
+.yucp-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+}
+
+.section-header {
+    font-size: 11px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-top: 16px;
+    margin-bottom: 12px;
+}
+
+.primary-button {
+    background-color: #36BFB1;
+    color: #ffffff;
+    height: 50px;
+    font-size: 14px;
+    -unity-font-style: normal;
+    border-radius: 0;
+    border-width: 0;
+    margin: 4px;
+    padding-left: 16px;
+    padding-right: 16px;
+}
+
+.primary-button:hover {
+    background-color: #48d1c3;
+}
+
+.primary-button:active {
+    background-color: #2da89c;
+}
+
+.secondary-button {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    height: 40px;
+    font-size: 12px;
+    -unity-font-style: normal;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    margin: 4px;
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.secondary-button:hover {
+    background-color: #2a2a2a;
+}
+
+.info-box {
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin: 12px 0;
+}
+
+.info-label {
+    color: #ffffff;
+    font-size: 12px;
+    margin: 4px 0;
+}
+
+.warning-box {
+    background-color: rgba(226, 74, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E24A4A;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+    color: #E24A4A;
+}
+
+.success-box {
+    background-color: rgba(54, 191, 177, 0.1);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+    color: #36BFB1;
+}
+
+.hand-tabs {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.hand-tab {
+    background-color: #1a1a1a;
+    color: #b0b0b0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 8px 16px;
+    flex-grow: 1;
+    margin-right: 4px;
+}
+
+.hand-tab:hover {
+    background-color: #2a2a2a;
+}
+
+.hand-tab-selected {
+    background-color: #2a2a2a;
+    border-left-color: #36BFB1;
+    border-left-width: 3px;
+    color: #ffffff;
+}
+
+.finger-control-group {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+.finger-label {
+    color: #ffffff;
+    font-size: 13px;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+}
+

@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -34,8 +35,18 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 string message = string.IsNullOrEmpty(scenePath)
                     ? $"After Scene Save: {summary}"
                     : $"After Scene Save: {scenePath} - {summary}";
-                service.CreateAutoStash(message);
-                Debug.Log($"[Package Guardian] Auto-stash created for scene save: {message}");
+                
+                _ = service.CreateAutoStashAsync(message).ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        Debug.LogWarning($"[Package Guardian] Failed to create scene save stash: {t.Exception?.GetBaseException().Message}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[Package Guardian] Auto-stash queued for scene save: {message}");
+                    }
+                });
             }
             catch (Exception ex)
             {

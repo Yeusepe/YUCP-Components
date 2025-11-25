@@ -16,6 +16,20 @@ namespace PackageGuardian.Core.Storage
         string WriteObject(PgObject obj, out byte[] serializedData);
 
         /// <summary>
+        /// Stage an object for writing without touching the filesystem yet.
+        /// </summary>
+        /// <param name="obj">Object to serialize</param>
+        /// <returns>Handle describing the staged write</returns>
+        StagedObjectWrite StageObject(PgObject obj);
+
+        /// <summary>
+        /// Flush a staged object write to disk.
+        /// </summary>
+        /// <param name="staged">Staged write handle</param>
+        /// <returns>Object ID</returns>
+        string CommitStagedObject(StagedObjectWrite staged);
+
+        /// <summary>
         /// Read object from storage by ID.
         /// </summary>
         /// <param name="oid">Object ID (hex string)</param>

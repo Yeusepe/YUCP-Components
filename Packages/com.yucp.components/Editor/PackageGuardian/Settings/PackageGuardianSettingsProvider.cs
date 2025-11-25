@@ -561,7 +561,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
                     "Cancel"))
                 {
                     // Reset to defaults
-                    _settings.enabled = true;
+                    _settings.enabled = false;
                     _settings.autoSnapshotOnSave = false;
                     _settings.autoStashOnUPM = true;
                     _settings.autoStashOnAssetImport = true;

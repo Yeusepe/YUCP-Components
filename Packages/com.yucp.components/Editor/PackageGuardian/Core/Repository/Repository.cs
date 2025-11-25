@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using PackageGuardian.Core.Hashing;
 using PackageGuardian.Core.Ignore;
 using PackageGuardian.Core.Storage;
@@ -186,18 +188,40 @@ namespace PackageGuardian.Core.Repository
         /// </summary>
         public string CreateSnapshot(string message, string author, string committer = null)
         {
+            var options = new SnapshotOptions
+            {
+                Committer = committer,
+                IncludeRoots = new List<string> { "Assets", "Packages" }
+            };
+            return CreateSnapshot(message, author, options);
+        }
+
+        public string CreateSnapshot(string message, string author, SnapshotOptions options)
+        {
             if (string.IsNullOrWhiteSpace(message))
                 throw new ArgumentNullException(nameof(message));
             if (string.IsNullOrWhiteSpace(author))
                 throw new ArgumentNullException(nameof(author));
+            options ??= new SnapshotOptions();
             
-            // Get current HEAD commit as parent
             string parentCommitId = Refs.ResolveHead();
+            string committer = string.IsNullOrWhiteSpace(options.Committer) ? author : options.Committer;
+            var roots = options.IncludeRoots ?? new List<string> { "Assets", "Packages" };
             
-            // Build snapshot
-            string commitId = Snapshots.BuildSnapshotCommit(message, author, committer ?? author, parentCommitId);
+            if (options.CancellationToken != CancellationToken.None)
+            {
+                Snapshots.ConfigureExecution(options.CancellationToken);
+            }
+
+            if (options.Progress != null)
+            {
+                Snapshots.OnProgress = options.Progress;
+            }
+
+            string commitId = Snapshots.BuildSnapshotCommit(message, author, committer, parentCommitId, roots);
             
-            // Update HEAD
+            Snapshots.OnProgress = null;
+            
             string headRef = Refs.HeadRef;
             if (headRef.StartsWith("refs/"))
             {
@@ -205,7 +229,6 @@ namespace PackageGuardian.Core.Repository
             }
             else
             {
-                // Detached HEAD, update directly
                 Refs.SetHeadTo(commitId);
             }
             

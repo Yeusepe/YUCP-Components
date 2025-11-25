@@ -49,7 +49,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
         
         [Header("Package Guardian")]
         [Tooltip("Enable or disable Package Guardian entirely. When disabled, all monitoring and protection features are turned off.")]
-        public bool enabled = true;
+        public bool enabled = false;
         
         [Header("UI")]
         [Tooltip("Theme for Package Guardian windows")]
@@ -100,8 +100,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             }
             catch
             {
-                // If settings can't be loaded, default to enabled for safety
-                return true;
+                // If settings can't be loaded, default to disabled
+                return false;
             }
         }
         
@@ -127,7 +127,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             
             // Create new settings with safe defaults
             var newSettings = CreateInstance<PackageGuardianSettings>();
-            newSettings.enabled = true; // Enabled by default
+            newSettings.enabled = false; // Disabled by default
             newSettings.autoSnapshotOnSave = false; // Disabled by default to avoid import loops
             newSettings.autoStashOnUPM = true; // Enabled by default to track package changes
             newSettings.autoStashOnAssetImport = true; // Enabled to stash after imports

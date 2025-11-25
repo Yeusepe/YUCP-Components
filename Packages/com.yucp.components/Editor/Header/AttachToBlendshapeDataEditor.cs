@@ -30,6 +30,8 @@ namespace YUCP.Components.Resources
         private bool showBuildStats = false;
         
         private Vector2 blendshapeScrollPos;
+        private Vector2 previewSliderScrollPos;
+        private Mesh previewBakeMesh;
 
         // Cache to prevent recalculation spam
         private List<string> cachedDetectedVisemes;
@@ -44,6 +46,12 @@ namespace YUCP.Components.Resources
         private void OnDisable()
         {
             SaveFoldoutStates();
+            if (data != null)
+            {
+                RestorePreviewBlendshapes();
+                RestorePreviewTransform();
+            }
+            ReleasePreviewBakeMesh();
         }
 
         private void LoadFoldoutStates()
@@ -284,6 +292,21 @@ namespace YUCP.Components.Resources
                     EditorGUILayout.HelpBox("Animations will be saved to Assets/Generated/AttachToBlendshape/\n\n" +
                         "You'll need to manually wire these to your FX layer or use VRCFury's Direct Tree Controller.", MessageType.Info);
                     GUI.backgroundColor = infoColor;
+                }
+
+                if (data.trackingMode == BlendshapeTrackingMode.VisemsOnly)
+                {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("autoCreateVisemeFxLayer"),
+                        new GUIContent("Auto Viseme FX Layer", "Generate a VRCFury FX layer that reacts to the avatar Viseme parameter."));
+
+                    if (data.autoCreateVisemeFxLayer)
+                    {
+                        var visemeInfoColor = GUI.backgroundColor;
+                        GUI.backgroundColor = new Color(0.5f, 1f, 0.7f, 0.2f);
+                        EditorGUILayout.HelpBox("When enabled, a controller asset is created in Assets/Generated/AttachToBlendshape/Controllers\n" +
+                            "and automatically hooked up through VRCFury so the attachment follows live visemes.", MessageType.None);
+                        GUI.backgroundColor = visemeInfoColor;
+                    }
                 }
                 
                 EditorGUILayout.Space(5);
@@ -602,6 +625,11 @@ namespace YUCP.Components.Resources
                 {
                     EditorGUILayout.LabelField($"  (Too many to display - {data.previewBlendshapes.Count} total)", EditorStyles.miniLabel);
                 }
+
+                if (data.previewBlendshapes.Count > 0)
+                {
+                    DrawPreviewBlendshapeSliders();
+                }
                 
                 EditorGUILayout.EndVertical();
             }
@@ -651,6 +679,416 @@ namespace YUCP.Components.Resources
             GUI.enabled = true;
             
             EditorGUILayout.EndHorizontal();
+        }
+        
+        private void DrawPreviewBlendshapeSliders()
+        {
+            EnsurePreviewBlendshapeCaches();
+
+            EditorGUILayout.Space(6);
+            EditorGUILayout.LabelField("Blendshape Preview Sliders", EditorStyles.boldLabel);
+
+            float height = Mathf.Clamp(data.previewBlendshapes.Count * 24f, 80f, 220f);
+            previewSliderScrollPos = EditorGUILayout.BeginScrollView(previewSliderScrollPos, GUILayout.Height(height));
+
+            foreach (string blendshape in data.previewBlendshapes)
+            {
+                float current = data.previewBlendshapeWeights.TryGetValue(blendshape, out var cachedValue)
+                    ? cachedValue
+                    : GetCurrentBlendshapeWeight(blendshape);
+
+                EditorGUI.BeginChangeCheck();
+                float newValue = EditorGUILayout.Slider(blendshape, current, 0f, 100f);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    ApplyPreviewBlendshapeWeight(blendshape, newValue);
+                }
+            }
+
+            EditorGUILayout.EndScrollView();
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Reset to Original"))
+            {
+                RestorePreviewBlendshapes();
+            }
+            if (GUILayout.Button("Zero All", GUILayout.Width(120)))
+            {
+                ZeroPreviewBlendshapes();
+            }
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void EnsurePreviewBlendshapeCaches()
+        {
+            if (data.previewBlendshapeWeights == null)
+            {
+                data.previewBlendshapeWeights = new Dictionary<string, float>();
+            }
+
+            if (data.previewOriginalWeights == null)
+            {
+                data.previewOriginalWeights = new Dictionary<string, float>();
+            }
+
+            foreach (string blendshape in data.previewBlendshapes)
+            {
+                if (!data.previewBlendshapeWeights.ContainsKey(blendshape))
+                {
+                    float current = GetCurrentBlendshapeWeight(blendshape);
+                    data.previewBlendshapeWeights[blendshape] = current;
+                }
+
+                if (!data.previewOriginalWeights.ContainsKey(blendshape))
+                {
+                    data.previewOriginalWeights[blendshape] = GetCurrentBlendshapeWeight(blendshape);
+                }
+            }
+        }
+
+        private float GetCurrentBlendshapeWeight(string name)
+        {
+            if (data.targetMesh == null || data.targetMesh.sharedMesh == null)
+            {
+                return 0f;
+            }
+
+            int index = data.targetMesh.sharedMesh.GetBlendShapeIndex(name);
+            if (index < 0)
+            {
+                return 0f;
+            }
+
+            return data.targetMesh.GetBlendShapeWeight(index);
+        }
+
+        private void ApplyPreviewBlendshapeWeight(string name, float value)
+        {
+            if (data.targetMesh == null || data.targetMesh.sharedMesh == null)
+            {
+                return;
+            }
+
+            int index = data.targetMesh.sharedMesh.GetBlendShapeIndex(name);
+            if (index < 0)
+            {
+                return;
+            }
+
+            data.targetMesh.SetBlendShapeWeight(index, value);
+            data.previewBlendshapeWeights[name] = value;
+            SceneView.RepaintAll();
+            EditorApplication.QueuePlayerLoopUpdate();
+            UpdatePreviewAttachmentPose();
+        }
+
+        private void RestorePreviewBlendshapes()
+        {
+            if (data.previewOriginalWeights == null || data.previewOriginalWeights.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var kvp in data.previewOriginalWeights)
+            {
+                ApplyPreviewBlendshapeWeight(kvp.Key, kvp.Value);
+            }
+
+            data.previewBlendshapeWeights?.Clear();
+            UpdatePreviewAttachmentPose();
+        }
+
+        private void ZeroPreviewBlendshapes()
+        {
+            EnsurePreviewBlendshapeCaches();
+            foreach (string blendshape in data.previewBlendshapes)
+            {
+                ApplyPreviewBlendshapeWeight(blendshape, 0f);
+            }
+        }
+
+        private void CapturePreviewBlendshapeWeights()
+        {
+            if (data.targetMesh == null || data.targetMesh.sharedMesh == null)
+            {
+                return;
+            }
+
+            data.previewBlendshapeWeights = new Dictionary<string, float>();
+            data.previewOriginalWeights = new Dictionary<string, float>();
+
+            foreach (string blendshape in data.previewBlendshapes)
+            {
+                int index = data.targetMesh.sharedMesh.GetBlendShapeIndex(blendshape);
+                if (index < 0) continue;
+
+                float current = data.targetMesh.GetBlendShapeWeight(index);
+                data.previewBlendshapeWeights[blendshape] = current;
+                if (!data.previewOriginalWeights.ContainsKey(blendshape))
+                {
+                    data.previewOriginalWeights[blendshape] = current;
+                }
+            }
+        }
+
+        private void CapturePreviewBasePose()
+        {
+            if (data.previewCluster == null || data.targetMesh == null || data.targetMesh.sharedMesh == null)
+            {
+                return;
+            }
+
+            if (!data.previewOriginalTransformCaptured)
+            {
+                data.previewOriginalLocalPosition = data.transform.localPosition;
+                data.previewOriginalLocalRotation = data.transform.localRotation;
+                data.previewOriginalTransformCaptured = true;
+            }
+
+            var originalWeights = SaveAllBlendshapeWeights();
+            var bakeMesh = GetPreviewBakeMesh();
+            data.targetMesh.BakeMesh(bakeMesh);
+
+            SurfaceClusterDetector.EvaluateCluster(
+                data.previewCluster,
+                bakeMesh.vertices,
+                bakeMesh.triangles,
+                out data.previewBasePosition,
+                out data.previewBaseNormal,
+                out data.previewBaseTangent);
+
+            data.previewBaseCaptured = true;
+            data.previewHasLastTangent = false;
+
+            RestoreAllBlendshapeWeights(originalWeights);
+        }
+
+        private float[] SaveAllBlendshapeWeights()
+        {
+            if (data.targetMesh == null || data.targetMesh.sharedMesh == null)
+            {
+                return null;
+            }
+
+            Mesh mesh = data.targetMesh.sharedMesh;
+            int count = mesh.blendShapeCount;
+            float[] weights = new float[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                weights[i] = data.targetMesh.GetBlendShapeWeight(i);
+                data.targetMesh.SetBlendShapeWeight(i, 0f);
+            }
+
+            return weights;
+        }
+
+        private void RestoreAllBlendshapeWeights(float[] weights)
+        {
+            if (weights == null || data.targetMesh == null || data.targetMesh.sharedMesh == null)
+            {
+                return;
+            }
+
+            int count = Mathf.Min(weights.Length, data.targetMesh.sharedMesh.blendShapeCount);
+            for (int i = 0; i < count; i++)
+            {
+                data.targetMesh.SetBlendShapeWeight(i, weights[i]);
+            }
+        }
+
+        private void UpdatePreviewAttachmentPose()
+        {
+            if (data == null ||
+                !data.previewGenerated ||
+                data.previewCluster == null ||
+                data.targetMesh == null ||
+                data.targetMesh.sharedMesh == null)
+            {
+                return;
+            }
+
+            if (!data.previewBaseCaptured)
+            {
+                CapturePreviewBasePose();
+                if (!data.previewBaseCaptured)
+                {
+                    return;
+                }
+            }
+
+            var bakeMesh = GetPreviewBakeMesh();
+            data.targetMesh.BakeMesh(bakeMesh);
+
+            SurfaceClusterDetector.EvaluateCluster(
+                data.previewCluster,
+                bakeMesh.vertices,
+                bakeMesh.triangles,
+                out Vector3 clusterPosition,
+                out Vector3 clusterNormal,
+                out Vector3 clusterTangent);
+
+            Vector3? previousTangent = data.previewHasLastTangent ? data.previewLastTangent : (Vector3?)null;
+            Vector3 savedLocalPos = data.transform.localPosition;
+            Quaternion savedLocalRot = data.transform.localRotation;
+
+            if (data.previewOriginalTransformCaptured)
+            {
+                data.transform.localPosition = data.previewOriginalLocalPosition;
+                data.transform.localRotation = data.previewOriginalLocalRotation;
+            }
+
+            var result = SolveClusterPose(clusterPosition, clusterNormal, clusterTangent, previousTangent);
+
+            data.transform.localPosition = savedLocalPos;
+            data.transform.localRotation = savedLocalRot;
+
+            if (result.success)
+            {
+                Vector3 finalPos;
+                Quaternion finalRot;
+
+                if (data.previewHasBaseSolver)
+                {
+                    finalPos = result.position + data.previewPositionOffset;
+                    if (data.alignRotationToSurface)
+                    {
+                        finalRot = result.rotation * data.previewRotationOffset;
+                    }
+                    else
+                    {
+                        finalRot = data.previewOriginalLocalRotation;
+                    }
+                }
+                else
+                {
+                    finalPos = data.previewOriginalLocalPosition;
+                    finalRot = data.previewOriginalLocalRotation;
+                }
+
+                data.transform.localPosition = finalPos;
+                data.transform.localRotation = finalRot;
+            }
+            else if (data.previewOriginalTransformCaptured)
+            {
+                data.transform.localPosition = data.previewOriginalLocalPosition;
+                data.transform.localRotation = data.previewOriginalLocalRotation;
+            }
+
+            data.previewLastTangent = clusterTangent;
+            data.previewHasLastTangent = true;
+        }
+
+        private BlendshapeSolver.SolverResult SolveClusterPose(
+            Vector3 clusterPosition,
+            Vector3 clusterNormal,
+            Vector3 clusterTangent,
+            Vector3? previousTangent)
+        {
+            switch (data.solverMode)
+            {
+                case SolverMode.Rigid:
+                    return BlendshapeSolver.SolveRigid(
+                        clusterPosition,
+                        clusterNormal,
+                        clusterTangent,
+                        data.transform,
+                        data.targetMesh.transform,
+                        data.alignRotationToSurface,
+                        previousTangent,
+                        data.rotationSmoothingFactor);
+
+                case SolverMode.RigidNormalOffset:
+                    return BlendshapeSolver.SolveRigidNormalOffset(
+                        clusterPosition,
+                        clusterNormal,
+                        clusterTangent,
+                        data.transform,
+                        data.targetMesh.transform,
+                        data.alignRotationToSurface,
+                        data.normalOffset,
+                        previousTangent,
+                        data.rotationSmoothingFactor);
+
+                case SolverMode.Affine:
+                    return BlendshapeSolver.SolveAffine(
+                        clusterPosition,
+                        clusterNormal,
+                        clusterTangent,
+                        data.transform,
+                        data.targetMesh.transform,
+                        data.previewBasePosition,
+                        data.previewBaseNormal,
+                        data.previewBaseTangent,
+                        data.alignRotationToSurface,
+                        previousTangent,
+                        data.rotationSmoothingFactor);
+
+                case SolverMode.CageRBF:
+                    return BlendshapeSolver.SolveRigid(
+                        clusterPosition,
+                        clusterNormal,
+                        clusterTangent,
+                        data.transform,
+                        data.targetMesh.transform,
+                        data.alignRotationToSurface,
+                        previousTangent,
+                        data.rotationSmoothingFactor);
+
+                default:
+                    return BlendshapeSolver.SolveRigid(
+                        clusterPosition,
+                        clusterNormal,
+                        clusterTangent,
+                        data.transform,
+                        data.targetMesh.transform,
+                        data.alignRotationToSurface,
+                        previousTangent,
+                        data.rotationSmoothingFactor);
+            }
+        }
+
+        private void RestorePreviewTransform()
+        {
+            if (data == null)
+            {
+                return;
+            }
+
+            if (data.previewOriginalTransformCaptured)
+            {
+                data.transform.localPosition = data.previewOriginalLocalPosition;
+                data.transform.localRotation = data.previewOriginalLocalRotation;
+            }
+
+            data.previewOriginalTransformCaptured = false;
+            data.previewBaseCaptured = false;
+            data.previewHasLastTangent = false;
+        }
+
+        private Mesh GetPreviewBakeMesh()
+        {
+            if (previewBakeMesh == null)
+            {
+                previewBakeMesh = new Mesh { name = "AttachToBlendshapePreviewBake" };
+            }
+            return previewBakeMesh;
+        }
+
+        private void ReleasePreviewBakeMesh()
+        {
+            if (previewBakeMesh == null) return;
+
+            if (Application.isPlaying)
+            {
+                UnityEngine.Object.Destroy(previewBakeMesh);
+            }
+            else
+            {
+                UnityEngine.Object.DestroyImmediate(previewBakeMesh);
+            }
+
+            previewBakeMesh = null;
         }
 
         private void DrawSpecificBlendshapesList()
@@ -889,8 +1327,12 @@ namespace YUCP.Components.Resources
                         break;
                 }
 
+                CapturePreviewBlendshapeWeights();
+
                 data.previewGenerated = true;
                 data.showPreview = true;
+                CapturePreviewBasePose();
+                UpdatePreviewAttachmentPose();
 
                 SceneView.RepaintAll();
                 Repaint();
@@ -907,8 +1349,18 @@ namespace YUCP.Components.Resources
 
         private void ClearPreview()
         {
+            RestorePreviewBlendshapes();
+            RestorePreviewTransform();
             data.previewCluster = null;
             data.previewBlendshapes.Clear();
+            data.previewBlendshapeWeights?.Clear();
+            data.previewOriginalWeights?.Clear();
+            data.previewBaseCaptured = false;
+            data.previewOriginalTransformCaptured = false;
+            data.previewHasLastTangent = false;
+            data.previewHasBaseSolver = false;
+            data.previewPositionOffset = Vector3.zero;
+            data.previewRotationOffset = Quaternion.identity;
             data.previewGenerated = false;
             data.showPreview = false;
 
@@ -1004,4 +1456,3 @@ namespace YUCP.Components.Resources
         }
     }
 }
-

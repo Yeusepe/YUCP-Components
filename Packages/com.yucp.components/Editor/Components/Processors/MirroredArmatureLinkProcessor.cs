@@ -60,7 +60,7 @@ namespace YUCP.Components.Editor
 		private void ProcessOne(MirroredArmatureLinkData data, Animator animator)
 		{
 			// Resolve all targets (Left/Right/custom)
-			var targets = new List<(string name, Transform t, bool defaultOn, string globalParam, bool keepTransforms, bool isCustom)>();
+			var targets = new List<(string name, Transform t, bool defaultOn, string globalParam, bool keepTransforms, bool isCustom, AnimationClip animation)>();
 			var usedParams = new HashSet<string>();
 			var usedMenuNames = new HashSet<string>();
 
@@ -72,12 +72,12 @@ namespace YUCP.Components.Editor
 			{
 					if (data.includeLeft)
 				{
-						leftResolved = animator.GetBoneTransform(leftBone);
-						leftResolved = ApplyOffset(leftResolved, data.offset);
-						if (leftResolved != null)
+					leftResolved = animator.GetBoneTransform(leftBone);
+					leftResolved = ApplyOffset(leftResolved, data.offset);
+					if (leftResolved != null)
 					{
 					var gp = EnsureUniqueParam(EnsureParamOrDefault(data.leftParam, data, "Left"), usedParams);
-							targets.Add(("Left", leftResolved, data.leftDefaultOn, gp, true, false));
+							targets.Add(("Left", leftResolved, data.leftDefaultOn, gp, true, false, data.leftAnimation));
 					}
 					else
 					{
@@ -86,12 +86,12 @@ namespace YUCP.Components.Editor
 				}
 					if (data.includeRight)
 				{
-						rightResolved = animator.GetBoneTransform(rightBone);
-						rightResolved = ApplyOffset(rightResolved, data.offset);
-						if (rightResolved != null)
+					rightResolved = animator.GetBoneTransform(rightBone);
+					rightResolved = ApplyOffset(rightResolved, data.offset);
+					if (rightResolved != null)
 					{
 					var gp = EnsureUniqueParam(EnsureParamOrDefault(data.rightParam, data, "Right"), usedParams);
-							targets.Add(("Right", rightResolved, data.rightDefaultOn, gp, true, false));
+							targets.Add(("Right", rightResolved, data.rightDefaultOn, gp, true, false, data.rightAnimation));
 					}
 					else
 					{
@@ -124,7 +124,7 @@ namespace YUCP.Components.Editor
 				}
 				var name = MakeUniqueMenuName(string.IsNullOrEmpty(ct.displayName) ? "Custom" : ct.displayName, usedMenuNames);
 				var gparam = EnsureUniqueParam(EnsureParamOrDefault(ct.globalBoolParam, data, name), usedParams);
-				targets.Add((name, resolved, ct.defaultOn, gparam, ct.keepTransforms, true));
+				targets.Add((name, resolved, ct.defaultOn, gparam, ct.keepTransforms, true, ct.animationClip));
 			}
 
 			if (targets.Count == 0)
@@ -251,6 +251,11 @@ namespace YUCP.Components.Editor
 				toggle.SetGlobalParameter(target.globalParam);
 				var actions = toggle.GetActions();
 				actions.AddAnimationClip(clip);
+				// Add custom animation clip if provided
+				if (target.animation != null)
+				{
+					actions.AddAnimationClip(target.animation);
+				}
 			}
 
 			if (data.debugMode)

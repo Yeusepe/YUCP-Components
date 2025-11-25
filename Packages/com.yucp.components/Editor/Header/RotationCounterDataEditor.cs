@@ -51,59 +51,40 @@ namespace YUCP.Components.Editor.UI
 
             EditorGUILayout.Space(5);
 
-            // Angle Input Section
-            DrawSection("Angle Input", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("angleParameterName"), 
-                    new GUIContent("Angle Parameter Name", "Name of the angle parameter (Float, 0-1 representing 0-360 degrees)"));
-                
-                EditorGUILayout.HelpBox("This parameter must be set by Gesture Manager Input Emulator or another system that provides angle input (0-1 range).", 
-                    MessageType.Info);
+            DrawSection("Required Parameters", () => {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("angle01ParameterName"),
+                    new GUIContent("Angle01 Parameter", "Float (0-1) angle from your input source."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("magnitudeParameterName"),
+                    new GUIContent("Magnitude Parameter", "Float (0-1) stick magnitude gate."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("rotationIndexParameterName"),
+                    new GUIContent("Index Parameter", "Int counter incremented/decremented on each sector crossing."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("directionParameterName"),
+                    new GUIContent("Direction Parameter", "Int reporting last movement direction (1, -1, 0 idle)."));
+                EditorGUILayout.HelpBox("Ensure these parameters already exist (usually as FX animator parameters) or are created by your controller tooling before build.", MessageType.Info);
             });
 
-            // Rotation Output Section
-            DrawSection("Rotation Output", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("rotationIndexParameterName"), 
-                    new GUIContent("Rotation Index Parameter Name", "Name of the Int parameter that will be incremented on each full rotation"));
-                
-                EditorGUILayout.HelpBox("This parameter will be incremented (+1) on forward rotations and decremented (-1) on reverse rotations. " +
-                    "Use this parameter to drive animations or other behaviors based on cumulative rotation count.", 
-                    MessageType.Info);
+            DrawSection("Debugging", () => {
+                var debugProp = serializedObject.FindProperty("createDebugPhaseParameter");
+                EditorGUILayout.PropertyField(debugProp,
+                    new GUIContent("Create DebugPhase", "Adds a DebugPhase Int parameter and updates it per sector."));
+                if (debugProp.boolValue)
+                {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("debugPhaseParameterName"),
+                        new GUIContent("DebugPhase Parameter", "Int value that reports the current sector index."));
+                }
+                EditorGUILayout.HelpBox("Enable DebugPhase to visualize which sector the rotation counter currently occupies.", MessageType.None);
             });
 
-            // Rotation Detection Section
-            DrawSection("Rotation Detection", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("numberOfZones"), 
-                    new GUIContent("Number of Zones", "Number of zones to divide the angle range (8 = 45° each, 16 = 22.5° each, etc.)"));
-                
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("nearZeroThreshold"), 
-                    new GUIContent("Near Zero Threshold", "Angle below this value is considered near 0° for wraparound detection"));
-                
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("nearMaxThreshold"), 
-                    new GUIContent("Near Max Threshold", "Angle above this value is considered near 360° for wraparound detection"));
-                
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("sectionsPerCount"), 
-                    new GUIContent("Sections Per Count", "How many zones to traverse per +/−1 on RotationIndex. 1 = every zone, up to numberOfZones = full rotation."));
-                
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("clockwiseIsPositive"), 
-                    new GUIContent("Clockwise Increases", "If enabled, clockwise rotation increments RotationIndex; otherwise decrements."));
-                
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("hysteresisEpsilon"), 
-                    new GUIContent("Hysteresis Epsilon", "Small buffer to stabilize arming/trigger thresholds and avoid flicker."));
-                
-                EditorGUILayout.HelpBox("More zones = more accurate tracking but more states in the generated controller. " +
-                    "Recommended: 8 zones for 45° precision, 16 zones for 22.5° precision.", 
-                    MessageType.Info);
-            });
-
-            // Stick Center Reset (Arming)
-            DrawSection("Stick Center Reset (Arming)", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("stickXParameterName"), 
-                    new GUIContent("Stick X Param", "Stick X axis parameter used to detect center (−1..1)."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("stickYParameterName"), 
-                    new GUIContent("Stick Y Param", "Stick Y axis parameter used to detect center (−1..1)."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("centerThreshold"), 
-                    new GUIContent("Center Threshold", "Magnitude threshold to consider the stick centered (|X|<=t and |Y|<=t)."));
-                EditorGUILayout.HelpBox("Counts are armed only when the stick is centered (both |X| and |Y| below the threshold). This prevents flip-flopping at boundaries.", MessageType.Info);
+            DrawSection("Rotation Tracking", () => {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("numberOfSectors"),
+                    new GUIContent("Number of Sectors", "How many slices to divide 360° into (12 = 30° each)."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("sectorHysteresis"),
+                    new GUIContent("Sector Hysteresis", "Margin kept inside each sector to prevent rapid toggling on boundaries."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("magnitudeThreshold"),
+                    new GUIContent("Magnitude Threshold", "Stick magnitude required to track rotation."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("layerName"),
+                    new GUIContent("Layer Name", "Animator layer name used for the generated graph."));
+                EditorGUILayout.HelpBox("The generator builds a sector-based tracking graph. It increments/decrements the Index parameter as you cross sector boundaries.", MessageType.Info);
             });
             
             EditorGUILayout.Space(5);
@@ -117,7 +98,7 @@ namespace YUCP.Components.Editor.UI
                 EditorGUILayout.Space(5);
                 DrawSection("Build Statistics", () => {
                     GUI.enabled = false;
-                    EditorGUILayout.IntField("Generated Zones", data.generatedZonesCount);
+                    EditorGUILayout.IntField("Generated Sectors", data.generatedSectorCount);
                     EditorGUILayout.Toggle("Controller Generated", data.controllerGenerated);
                     GUI.enabled = true;
                 });

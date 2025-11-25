@@ -1,7 +1,7 @@
 using System;
+using System.Threading.Tasks;
 using UnityEngine;
 using YUCP.Components.PackageGuardian.Editor.Services;
-using YUCP.Components.PackageGuardian.Editor.Settings;
 
 namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
 {
@@ -15,7 +15,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         private readonly string _description;
         private readonly bool _snapshotOnExit;
         private bool _disposed;
-        private string _preStashId;
+        private Task<string> _preStashTask;
         
         /// <summary>
         /// Begin an import transaction.
@@ -40,8 +40,18 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 var service = RepositoryService.Instance;
                 string message = $"Auto-stash before {_reason}: {_description}";
                 
-                _preStashId = service.CreateAutoStash(message);
-                Debug.Log($"[Package Guardian] Created auto-stash: {_preStashId}");
+                _preStashTask = service.CreateAutoStashAsync(message);
+                _preStashTask.ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        Debug.LogWarning($"[Package Guardian] Failed to queue pre-stash: {t.Exception?.GetBaseException().Message}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[Package Guardian] Queued auto-stash before {_reason}");
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -59,8 +69,17 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 var service = RepositoryService.Instance;
                 string message = $"Post-{_reason} snapshot: {_description}";
                 
-                string commitId = service.CreateSnapshot(message);
-                Debug.Log($"[Package Guardian] Created post-snapshot: {commitId}");
+                _ = service.CreateSnapshotAsync(message, validateFirst: false).ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        Debug.LogWarning($"[Package Guardian] Failed to queue post-snapshot: {t.Exception?.GetBaseException().Message}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[Package Guardian] Queued post-snapshot for {_reason}");
+                    }
+                });
             }
             catch (Exception ex)
             {

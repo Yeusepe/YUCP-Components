@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using PackageGuardian.Core.Hashing;
 using PackageGuardian.Core.Ignore;
 using PackageGuardian.Core.Objects;
@@ -19,6 +20,9 @@ namespace PackageGuardian.Core.Repository
         private readonly IHasher _hasher;
         private readonly IndexCache _index;
         private readonly IgnoreRules _ignoreRules;
+        private CancellationToken _cancellation;
+        private int _yieldBatchSize = 128;
+        private int _yieldMilliseconds = 1;
         
         // Progress tracking
         private int _totalFiles;
@@ -32,6 +36,13 @@ namespace PackageGuardian.Core.Repository
             _hasher = hasher ?? throw new ArgumentNullException(nameof(hasher));
             _index = index ?? throw new ArgumentNullException(nameof(index));
             _ignoreRules = ignoreRules ?? throw new ArgumentNullException(nameof(ignoreRules));
+        }
+
+        public void ConfigureExecution(CancellationToken cancellationToken, int yieldBatchSize = 128, int yieldMilliseconds = 1)
+        {
+            _cancellation = cancellationToken;
+            _yieldBatchSize = Math.Max(32, yieldBatchSize);
+            _yieldMilliseconds = Math.Max(0, yieldMilliseconds);
         }
 
         /// <summary>
@@ -104,13 +115,12 @@ namespace PackageGuardian.Core.Repository
             // Create root tree
             if (entries.Count == 0)
             {
-                // Empty tree
                 var emptyTree = new Tree(Enumerable.Empty<TreeEntry>());
-                return _store.WriteObject(emptyTree, out _);
+                return WriteObjectBuffered(emptyTree);
             }
             
             var tree = new Tree(entries);
-            return _store.WriteObject(tree, out _);
+            return WriteObjectBuffered(tree);
         }
 
         private string BuildTreeRecursive(string relativePath)
@@ -122,9 +132,9 @@ namespace PackageGuardian.Core.Repository
             
             var entries = new List<TreeEntry>();
             
-            // Process files
-            foreach (string file in Directory.GetFiles(fullPath))
+            foreach (string file in Directory.EnumerateFiles(fullPath))
             {
+                _cancellation.ThrowIfCancellationRequested();
                 string relPath = PathHelper.GetRelativePath(_repositoryRoot, file);
                 
                 // Check ignore rules
@@ -138,11 +148,13 @@ namespace PackageGuardian.Core.Repository
                     string fileName = Path.GetFileName(file);
                     entries.Add(new TreeEntry("100644", fileName, HexToBytes(blobOid)));
                 }
+                
+                MaybeYield();
             }
             
-            // Process subdirectories
-            foreach (string dir in Directory.GetDirectories(fullPath))
+            foreach (string dir in Directory.EnumerateDirectories(fullPath))
             {
+                _cancellation.ThrowIfCancellationRequested();
                 string relPath = PathHelper.GetRelativePath(_repositoryRoot, dir);
                 
                 // Check ignore rules
@@ -155,20 +167,22 @@ namespace PackageGuardian.Core.Repository
                     string dirName = Path.GetFileName(dir);
                     entries.Add(new TreeEntry("040000", dirName, HexToBytes(treeOid)));
                 }
+                
+                MaybeYield();
             }
             
             if (entries.Count == 0)
                 return null; // Empty directory, skip
             
-            // Create tree object
             var tree = new Tree(entries);
-            return _store.WriteObject(tree, out _);
+            return WriteObjectBuffered(tree);
         }
 
         private string HashFile(string fullPath, string relativePath)
         {
             try
             {
+                _cancellation.ThrowIfCancellationRequested();
                 var fileInfo = new FileInfo(fullPath);
                 if (!fileInfo.Exists)
                     return null;
@@ -191,7 +205,7 @@ namespace PackageGuardian.Core.Repository
                 // Read file and create blob
                 byte[] content = File.ReadAllBytes(fullPath);
                 var blob = new Blob(content);
-                string oid = _store.WriteObject(blob, out _);
+                string oid = WriteObjectBuffered(blob);
                 
                 // Update index
                 var entry = new IndexEntry(
@@ -208,6 +222,26 @@ namespace PackageGuardian.Core.Repository
                 // Log error but continue
                 Console.WriteLine($"Error hashing file {relativePath}: {ex.Message}");
                 return null;
+            }
+        }
+
+        private string WriteObjectBuffered(PgObject obj)
+        {
+            var staged = _store.StageObject(obj);
+            return _store.CommitStagedObject(staged);
+        }
+
+        private void MaybeYield()
+        {
+            if (_yieldMilliseconds <= 0)
+                return;
+            
+            if (_processedFiles <= 0)
+                return;
+            
+            if (_processedFiles % _yieldBatchSize == 0)
+            {
+                Thread.Sleep(_yieldMilliseconds);
             }
         }
 

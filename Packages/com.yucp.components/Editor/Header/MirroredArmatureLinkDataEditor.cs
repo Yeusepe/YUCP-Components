@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEditorInternal;
 using UnityEngine.UIElements;
 using UnityEditor.UIElements;
+using YUCP.Components.Editor.Utils;
 
 namespace YUCP.Components.Editor
 {
@@ -26,39 +27,67 @@ namespace YUCP.Components.Editor
 			var so = serializedObject;
 			customList = new ReorderableList(so, so.FindProperty("customTargets"), true, true, true, true);
 			customList.drawHeaderCallback = rect => EditorGUI.LabelField(rect, "Custom Targets");
-				customList.elementHeight = EditorGUIUtility.singleLineHeight * 6 + 22;
+			customList.elementHeight = EditorGUIUtility.singleLineHeight * 8 + 24;
 			customList.drawElementCallback = (rect, index, active, focused) =>
 			{
 				var element = customList.serializedProperty.GetArrayElementAtIndex(index);
 				rect.y += 2;
 				var line = EditorGUIUtility.singleLineHeight + 2;
 
-				EditorGUI.PropertyField(new Rect(rect.x, rect.y, rect.width * 0.5f - 4, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("displayName"));
-				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.5f, rect.y, rect.width * 0.5f, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("globalBoolParam"));
-
+				EditorGUI.LabelField(new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight), $"Custom Target {index + 1}", EditorStyles.boldLabel);
 				var y = rect.y + line;
-				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("targetType"));
+
+				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width * 0.5f - 4, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("displayName"), new GUIContent("Display Name"));
+				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.5f + 2, y, rect.width * 0.5f - 2, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("globalBoolParam"), new GUIContent("Global Param"));
+				y += line;
+
+				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("targetType"), new GUIContent("Target Type"));
 				y += line;
 
 				var typeProp = element.FindPropertyRelative("targetType");
 				switch ((MirroredArmatureLinkData.TargetType)typeProp.enumValueIndex)
 				{
 					case MirroredArmatureLinkData.TargetType.HumanoidBone:
-						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("humanoidBone"));
+						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("humanoidBone"), new GUIContent("Humanoid Bone"));
 						break;
 					case MirroredArmatureLinkData.TargetType.Transform:
-						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("transform"));
+						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("transform"), new GUIContent("Transform"));
 						break;
 					case MirroredArmatureLinkData.TargetType.ArmaturePath:
-						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("armaturePath"));
+						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("armaturePath"), new GUIContent("Armature Path"));
 						break;
 				}
 				y += line;
-				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("offsetPath"));
+				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("offsetPath"), new GUIContent("Offset Path"));
 				y += line;
-				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width * 0.33f - 4, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("defaultOn"));
-				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.33f + 2, y, rect.width * 0.33f - 4, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("keepTransforms"));
-				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.66f + 4, y, rect.width * 0.34f - 4, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("exclusiveOffState"));
+				
+				// Animation clip with Record button
+				var animClipRect = new Rect(rect.x, y, rect.width - 60, EditorGUIUtility.singleLineHeight);
+				var animClipProp = element.FindPropertyRelative("animationClip");
+				EditorGUI.PropertyField(animClipRect, animClipProp, new GUIContent("Animation Clip"));
+				var recordRect = new Rect(rect.x + rect.width - 55, y, 50, EditorGUIUtility.singleLineHeight);
+				if (GUI.Button(recordRect, "Record"))
+				{
+					var data = target as MirroredArmatureLinkData;
+					if (data != null)
+					{
+						// Capture values to avoid GUI state issues
+						var go = data.gameObject;
+						var capturedIndex = index; // Capture index for lambda
+						// Use EditorApplication.delayCall to avoid GUI state issues
+						EditorApplication.delayCall += () =>
+						{
+							var so = new SerializedObject(data);
+							var prop = so.FindProperty("customTargets").GetArrayElementAtIndex(capturedIndex);
+							AnimationClipRecorder.RecordMuscleAnimation(prop.FindPropertyRelative("animationClip"), go, "CustomTargetAnimation");
+						};
+					}
+				}
+				y += line;
+				
+				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width * 0.33f - 2, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("defaultOn"), new GUIContent("Default On"));
+				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.33f + 2, y, rect.width * 0.33f - 2, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("keepTransforms"), new GUIContent("Keep Transforms"));
+				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.66f + 4, y, rect.width * 0.34f - 4, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("exclusiveOffState"), new GUIContent("Exclusive Off"));
 			};
 
 			SceneView.duringSceneGui += OnSceneGUI;
@@ -132,6 +161,28 @@ namespace YUCP.Components.Editor
 					EditorGUILayout.PropertyField(serializedObject.FindProperty("leftParam"), new GUIContent("Left Global Param"));
 					EditorGUILayout.PropertyField(serializedObject.FindProperty("leftDefaultOn"), new GUIContent("Left Default On"));
 					EditorGUILayout.PropertyField(serializedObject.FindProperty("leftExclusiveOffState"), new GUIContent("Left Exclusive Off State"));
+					
+					// Left Animation with Record button
+					EditorGUILayout.BeginHorizontal();
+					var leftAnimProp = serializedObject.FindProperty("leftAnimation");
+					EditorGUILayout.PropertyField(leftAnimProp, new GUIContent("Left Animation Clip"), GUILayout.ExpandWidth(true));
+					if (GUILayout.Button("Record", GUILayout.Width(60)))
+					{
+						var data = target as MirroredArmatureLinkData;
+						if (data != null)
+						{
+							// Capture values to avoid GUI state issues
+							var go = data.gameObject;
+							// Use EditorApplication.delayCall to avoid GUI state issues
+							EditorApplication.delayCall += () =>
+							{
+								var so = new SerializedObject(data);
+								AnimationClipRecorder.RecordMuscleAnimation(so.FindProperty("leftAnimation"), go, "LeftAnimation");
+							};
+						}
+					}
+					EditorGUILayout.EndHorizontal();
+					
 					EditorGUI.indentLevel--;
 				}
 				EditorGUILayout.PropertyField(includeRight, new GUIContent("Include Right"));
@@ -141,6 +192,28 @@ namespace YUCP.Components.Editor
 					EditorGUILayout.PropertyField(serializedObject.FindProperty("rightParam"), new GUIContent("Right Global Param"));
 					EditorGUILayout.PropertyField(serializedObject.FindProperty("rightDefaultOn"), new GUIContent("Right Default On"));
 					EditorGUILayout.PropertyField(serializedObject.FindProperty("rightExclusiveOffState"), new GUIContent("Right Exclusive Off State"));
+					
+					// Right Animation with Record button
+					EditorGUILayout.BeginHorizontal();
+					var rightAnimProp = serializedObject.FindProperty("rightAnimation");
+					EditorGUILayout.PropertyField(rightAnimProp, new GUIContent("Right Animation Clip"), GUILayout.ExpandWidth(true));
+					if (GUILayout.Button("Record", GUILayout.Width(60)))
+					{
+						var data = target as MirroredArmatureLinkData;
+						if (data != null)
+						{
+							// Capture values to avoid GUI state issues
+							var go = data.gameObject;
+							// Use EditorApplication.delayCall to avoid GUI state issues
+							EditorApplication.delayCall += () =>
+							{
+								var so = new SerializedObject(data);
+								AnimationClipRecorder.RecordMuscleAnimation(so.FindProperty("rightAnimation"), go, "RightAnimation");
+							};
+						}
+					}
+					EditorGUILayout.EndHorizontal();
+					
 					EditorGUI.indentLevel--;
 				}
 			});
@@ -206,14 +279,36 @@ namespace YUCP.Components.Editor
 		private void OnSceneGUI(SceneView sceneView)
 		{
 			var data = target as MirroredArmatureLinkData;
-			if (data == null) return;
+			if (data == null || data.gameObject == null) return;
+			// Show preview when this object or a child is selected, or if it's in multi-selection
 			var sel = Selection.activeGameObject;
-			if (sel == null) return;
-			// Only show when this object or a child is selected
-			if (!(sel == data.gameObject || sel.transform.IsChildOf(data.transform))) return;
+			bool shouldShow = false;
+			if (sel != null)
+			{
+				shouldShow = (sel == data.gameObject || sel.transform.IsChildOf(data.transform));
+			}
+			// Check all selected objects (for multi-select and locked inspector scenarios)
+			if (!shouldShow && Selection.gameObjects.Length > 0)
+			{
+				foreach (var go in Selection.gameObjects)
+				{
+					if (go == data.gameObject || go.transform.IsChildOf(data.transform))
+					{
+						shouldShow = true;
+						break;
+					}
+				}
+			}
+			// Show preview if this component is being inspected (works for locked inspector)
+			// The editor is active when the component is selected or inspector is locked on it
+			if (!shouldShow && target != null)
+			{
+				shouldShow = true;
+			}
+			if (!shouldShow) return;
 
 			var animator = data.GetComponentInParent<Animator>();
-			if (animator == null) return;
+			if (animator == null || animator.avatar == null) return;
 
 			EnsurePreviewMaterial();
 
@@ -486,6 +581,7 @@ namespace YUCP.Components.Editor
 			var Rp = S * R * S;
 			return Rp.rotation;
 		}
+
 	}
 }
 

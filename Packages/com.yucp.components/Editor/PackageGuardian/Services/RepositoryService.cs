@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 using PackageGuardian.Core.Repository;
 using PackageGuardian.Core.Validation;
@@ -127,87 +129,45 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         }
         
         /// <summary>
-        /// Create a snapshot with default author from settings.
+        /// Create a snapshot with default author from settings (interactive, runs on main thread).
         /// </summary>
-        /// <param name="message">Commit message</param>
-        /// <param name="validateFirst">If true, validates changes and shows warnings before creating snapshot</param>
-        /// <returns>Commit ID if successful, null if cancelled by user</returns>
         public string CreateSnapshot(string message, bool validateFirst = true)
         {
             var settings = Settings.PackageGuardianSettings.Instance;
             string author = $"{settings.authorName} <{settings.authorEmail}>";
+            var request = BuildSnapshotRequest(message, author, validateFirst);
             
-            try
+            if (request.ValidateFirst && !RunValidation(interactive: true))
+                return null;
+            
+            return ExecuteSnapshotRequest(request, interactive: true, CancellationToken.None);
+        }
+        
+        /// <summary>
+        /// Queue a snapshot to run on the guardian background runner (non-interactive).
+        /// </summary>
+        public Task<string> CreateSnapshotAsync(string message, bool validateFirst = true, CancellationToken token = default)
+        {
+            var settings = Settings.PackageGuardianSettings.Instance;
+            string author = $"{settings.authorName} <{settings.authorEmail}>";
+            var request = BuildSnapshotRequest(message, author, validateFirst);
+            
+            if (request.ValidateFirst && !RunValidation(interactive: false))
+                return Task.FromResult<string>(null);
+            
+            var job = new SnapshotJob(_repository, request, progress =>
             {
-                // Validate if requested
-                if (validateFirst)
+                if (!string.IsNullOrEmpty(progress.Path) && progress.Processed % 250 == 0)
                 {
-                    UnityEditor.EditorUtility.DisplayProgressBar("Package Guardian", "Validating changes...", 0f);
-                    
-                    var projectIssues = ValidateProject();
-                    var changeIssues = ValidatePendingChanges();
-                    var allIssues = new List<ValidationIssue>();
-                    allIssues.AddRange(projectIssues);
-                    allIssues.AddRange(changeIssues);
-                    
-                    // Check for errors or critical issues
-                    var criticalIssues = allIssues.FindAll(i => 
-                        i.Severity == IssueSeverity.Error || i.Severity == IssueSeverity.Critical);
-                    
-                    if (criticalIssues.Count > 0)
-                    {
-                        UnityEditor.EditorUtility.ClearProgressBar();
-                        
-                        string issueList = string.Join("\n\n", criticalIssues.ConvertAll(i => 
-                            $"[{i.Severity}] {i.Title}\n{i.Description}"));
-                        
-                        bool proceed = UnityEditor.EditorUtility.DisplayDialog(
-                            "Package Guardian - Validation Errors",
-                            $"Found {criticalIssues.Count} critical issue(s):\n\n{issueList}\n\nDo you want to create the snapshot anyway?",
-                            "Create Anyway",
-                            "Cancel"
-                        );
-                        
-                        if (!proceed)
-                            return null;
-                    }
-                    else if (allIssues.Count > 0)
-                    {
-                        // Show warnings
-                        var warnings = allIssues.FindAll(i => i.Severity == IssueSeverity.Warning);
-                        if (warnings.Count > 0)
-                        {
-                            UnityEditor.EditorUtility.ClearProgressBar();
-                            
-                            string warningList = string.Join("\n\n", warnings.ConvertAll(w => 
-                                $"{w.Title}\n{w.Description}").ToArray());
-                            
-                            bool proceed = UnityEditor.EditorUtility.DisplayDialog(
-                                "Package Guardian - Warnings",
-                                $"Found {warnings.Count} warning(s):\n\n{warningList}\n\nContinue?",
-                                "Continue",
-                                "Cancel"
-                            );
-                            
-                            if (!proceed)
-                                return null;
-                        }
-                    }
+                    Debug.Log($"[Package Guardian] Snapshot progress: {progress.Processed}/{progress.Total} {progress.Path}");
                 }
-                
-                UnityEditor.EditorUtility.DisplayProgressBar("Package Guardian", "Creating snapshot...", 0f);
-                
-                // Create snapshot
-                string commitId = _repository.CreateSnapshot(message, author);
-                
-                UnityEditor.EditorUtility.DisplayProgressBar("Package Guardian", "Finalizing...", 1f);
-                
-                return commitId;
-            }
-            finally
+            });
+            
+            return GuardianTaskRunner.Run($"Snapshot: {message}", ct =>
             {
-                UnityEditor.EditorUtility.ClearProgressBar();
-            }
+                ct.ThrowIfCancellationRequested();
+                return job.Execute(ct);
+            }, token);
         }
         
         /// <summary>
@@ -217,36 +177,25 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         {
             var settings = Settings.PackageGuardianSettings.Instance;
             string author = $"{settings.authorName} <{settings.authorEmail}>";
-            
-            return _repository.Stash.CreateAutoStash(message, author);
+            return CreateAutoStashInternal(message, author, requireLock: true);
         }
         
         /// <summary>
-        /// Create an auto-stash off the main thread to avoid editor stalls.
+        /// Queue an auto-stash to run on the guardian background runner.
         /// </summary>
-        public void CreateAutoStashAsync(string message)
+        public Task<string> CreateAutoStashAsync(string message, CancellationToken token = default)
         {
             if (string.IsNullOrWhiteSpace(message))
                 throw new ArgumentNullException(nameof(message));
-
-            // Capture author on main thread (accesses Unity-backed settings)
+            
             var settings = Settings.PackageGuardianSettings.Instance;
             string author = $"{settings.authorName} <{settings.authorEmail}>";
-
-            System.Threading.Tasks.Task.Run(() =>
+            
+            return GuardianTaskRunner.Run($"Auto-stash: {message}", ct =>
             {
-                try
-                {
-                    lock (_ioLock)
-                    {
-                        _repository.Stash.CreateAutoStash(message, author);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    UnityEngine.Debug.LogWarning($"[Package Guardian] CreateAutoStashAsync failed: {ex.Message}");
-                }
-            });
+                ct.ThrowIfCancellationRequested();
+                return CreateAutoStashInternal(message, author, requireLock: true);
+            }, token);
         }
         
         /// <summary>
@@ -258,6 +207,133 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             {
                 _instance = null;
             }
+        }
+
+        private SnapshotRequest BuildSnapshotRequest(string message, string author, bool validateFirst)
+        {
+            var settings = Settings.PackageGuardianSettings.Instance;
+            var trackedRoots = settings?.trackedRoots != null && settings.trackedRoots.Count > 0
+                ? settings.trackedRoots
+                : new List<string> { "Assets", "Packages" };
+            
+            return new SnapshotRequest(message, author, trackedRoots, validateFirst);
+        }
+        
+        private string ExecuteSnapshotRequest(SnapshotRequest request, bool interactive, CancellationToken token)
+        {
+            if (interactive)
+            {
+                UnityEditor.EditorUtility.DisplayProgressBar("Package Guardian", "Creating snapshot...", 0f);
+            }
+
+            try
+            {
+                var options = new SnapshotOptions
+                {
+                    Committer = request.Author,
+                    IncludeRoots = request.TrackedRoots,
+                    CancellationToken = token,
+                    Progress = interactive
+                        ? (processed, total, path) =>
+                        {
+                            UnityEditor.EditorUtility.DisplayProgressBar("Package Guardian", $"Processing {path}", total == 0 ? 0f : (float)processed / total);
+                        }
+                        : null
+                };
+                
+                return _repository.CreateSnapshot(request.Message, request.Author, options);
+            }
+            finally
+            {
+                if (interactive)
+                {
+                    UnityEditor.EditorUtility.ClearProgressBar();
+                }
+            }
+        }
+
+        private bool RunValidation(bool interactive)
+        {
+            var projectIssues = ValidateProject();
+            var changeIssues = ValidatePendingChanges();
+            var allIssues = new List<ValidationIssue>();
+            allIssues.AddRange(projectIssues);
+            allIssues.AddRange(changeIssues);
+
+            var criticalIssues = allIssues.FindAll(i =>
+                i.Severity == IssueSeverity.Error || i.Severity == IssueSeverity.Critical);
+
+            if (criticalIssues.Count > 0)
+            {
+                string issueList = string.Join("\n\n", criticalIssues.ConvertAll(i =>
+                    $"[{i.Severity}] {i.Title}\n{i.Description}"));
+
+                if (interactive)
+                {
+                    UnityEditor.EditorUtility.ClearProgressBar();
+                    bool proceed = UnityEditor.EditorUtility.DisplayDialog(
+                        "Package Guardian - Validation Errors",
+                        $"Found {criticalIssues.Count} critical issue(s):\n\n{issueList}\n\nDo you want to create the snapshot anyway?",
+                        "Create Anyway",
+                        "Cancel"
+                    );
+
+                    if (!proceed)
+                        return false;
+                }
+                else
+                {
+                    Debug.LogWarning($"[Package Guardian] Snapshot aborted due to {criticalIssues.Count} critical issue(s).");
+                    return false;
+                }
+            }
+            else if (allIssues.Count > 0)
+            {
+                var warnings = allIssues.FindAll(i => i.Severity == IssueSeverity.Warning);
+                if (warnings.Count > 0)
+                {
+                    string warningList = string.Join("\n\n", warnings.ConvertAll(w =>
+                        $"{w.Title}\n{w.Description}").ToArray());
+
+                    if (interactive)
+                    {
+                        UnityEditor.EditorUtility.ClearProgressBar();
+                        bool proceed = UnityEditor.EditorUtility.DisplayDialog(
+                            "Package Guardian - Warnings",
+                            $"Found {warnings.Count} warning(s):\n\n{warningList}\n\nContinue?",
+                            "Continue",
+                            "Cancel"
+                        );
+
+                        if (!proceed)
+                            return false;
+                    }
+                    else
+                    {
+                        Debug.Log($"[Package Guardian] Snapshot warnings: {warnings.Count} issue(s). Continuing.");
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private string CreateAutoStashInternal(string message, string author, bool requireLock)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                throw new ArgumentNullException(nameof(message));
+            if (string.IsNullOrWhiteSpace(author))
+                throw new ArgumentNullException(nameof(author));
+
+            if (requireLock)
+            {
+                lock (_ioLock)
+                {
+                    return _repository.Stash.CreateAutoStash(message, author);
+                }
+            }
+
+            return _repository.Stash.CreateAutoStash(message, author);
         }
     }
 }

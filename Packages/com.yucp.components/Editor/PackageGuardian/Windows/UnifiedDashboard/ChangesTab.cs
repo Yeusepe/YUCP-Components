@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -14,6 +15,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.UnifiedDashboard
         private ScrollView _filesView;
         private Label _statusLabel;
         private TextField _messageField;
+        private Button _commitButton;
         private List<FileChange> _changes = new List<FileChange>();
         
         public ChangesTab()
@@ -63,6 +65,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.UnifiedDashboard
             commitBtn.text = "Create Snapshot";
             commitBtn.AddToClassList("pg-button");
             commitBtn.AddToClassList("pg-button-primary");
+            _commitButton = commitBtn;
             buttonRow.Add(commitBtn);
             
             var discardBtn = new Button(OnDiscardAll);
@@ -238,23 +241,41 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.UnifiedDashboard
         
         private void OnCommit()
         {
-            try
+            string message = _messageField.value;
+            if (string.IsNullOrWhiteSpace(message)) message = "Manual snapshot";
+            
+            _commitButton?.SetEnabled(false);
+            _statusLabel.text = "Snapshot queued...";
+            
+            var task = RepositoryService.Instance.CreateSnapshotAsync(message);
+            task.ContinueWith(t =>
             {
-                string message = _messageField.value;
-                if (string.IsNullOrWhiteSpace(message)) message = "Manual snapshot";
-                
-                string commitId = RepositoryService.Instance.CreateSnapshot(message);
-                Debug.Log($"[PG] Snapshot created: {commitId}");
-                EditorUtility.DisplayDialog("Success", $"Snapshot created: {commitId.Substring(0, 8)}", "OK");
-                
-                _messageField.value = "Manual snapshot";
-                Refresh();
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[PG] Commit error: {ex}");
-                EditorUtility.DisplayDialog("Error", $"Failed to create snapshot: {ex.Message}", "OK");
-            }
+                EditorApplication.delayCall += () =>
+                {
+                    _commitButton?.SetEnabled(true);
+                    
+                    if (t.IsFaulted)
+                    {
+                        var error = t.Exception?.GetBaseException().Message ?? "Unknown error";
+                        Debug.LogError($"[PG] Commit error: {error}");
+                        EditorUtility.DisplayDialog("Error", $"Failed to create snapshot: {error}", "OK");
+                        return;
+                    }
+                    
+                    string commitId = t.Result;
+                    if (string.IsNullOrEmpty(commitId))
+                    {
+                        EditorUtility.DisplayDialog("Package Guardian", "Snapshot was cancelled due to validation errors.", "OK");
+                        return;
+                    }
+                    
+                    Debug.Log($"[PG] Snapshot created: {commitId}");
+                    EditorUtility.DisplayDialog("Success", $"Snapshot created: {commitId.Substring(0, Math.Min(commitId.Length, 8))}", "OK");
+                    
+                    _messageField.value = "Manual snapshot";
+                    Refresh();
+                };
+            });
         }
         
         private void OnDiscardAll()

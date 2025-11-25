@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.Animations;
@@ -15,6 +16,9 @@ namespace YUCP.Components.Editor
     /// </summary>
     public class RotationCounterProcessor : IVRCSDKPreprocessAvatarCallback
     {
+        private const int DriverSet = 0;
+        private const int DriverAdd = 1;
+
         public int callbackOrder => int.MinValue + 150;
 
         public bool OnPreprocessAvatar(GameObject avatarRoot)
@@ -71,9 +75,15 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            if (string.IsNullOrEmpty(data.angleParameterName))
+            if (string.IsNullOrEmpty(data.angle01ParameterName))
             {
-                Debug.LogError($"[RotationCounterProcessor] Angle parameter name is not set for '{data.name}'", data);
+                Debug.LogError($"[RotationCounterProcessor] Angle01 parameter name is not set for '{data.name}'", data);
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(data.magnitudeParameterName))
+            {
+                Debug.LogError($"[RotationCounterProcessor] Magnitude parameter name is not set for '{data.name}'", data);
                 return false;
             }
 
@@ -83,9 +93,24 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            if (data.numberOfZones < 4 || data.numberOfZones > 32)
+            if (string.IsNullOrEmpty(data.directionParameterName))
             {
-                Debug.LogError($"[RotationCounterProcessor] Number of zones must be between 4 and 32 for '{data.name}'", data);
+                Debug.LogError($"[RotationCounterProcessor] Direction parameter name is not set for '{data.name}'", data);
+                return false;
+            }
+
+
+
+            if (data.numberOfSectors < 4 || data.numberOfSectors > 24)
+            {
+                Debug.LogError($"[RotationCounterProcessor] Number of sectors must be between 4 and 24 for '{data.name}'", data);
+                return false;
+            }
+
+            var sectorWidth = 1f / data.numberOfSectors;
+            if (data.sectorHysteresis >= sectorWidth * 0.5f)
+            {
+                Debug.LogError($"[RotationCounterProcessor] Sector hysteresis is too large for '{data.name}'. Reduce it below half of a sector width.", data);
                 return false;
             }
 
@@ -156,37 +181,30 @@ namespace YUCP.Components.Editor
                     if (globalParamsList != null)
                     {
                         // Add angle parameter if not already present
-                        bool hasAngle = false;
-                        bool hasRotationIndex = false;
-                        bool hasTestZone = false;
-                        bool hasFwdArmed = false;
-                        bool hasRevArmed = false;
-                        bool hasX = false;
-                        bool hasY = false;
-                        bool hasAddArmed = false;
-                        bool hasSubArmed = false;
-                        foreach (string param in globalParamsList)
+                        bool Has(string paramName)
                         {
-                            if (param == data.angleParameterName) hasAngle = true;
-                            if (param == data.rotationIndexParameterName) hasRotationIndex = true;
-                            if (param == "RotationCounter_TestZone") hasTestZone = true;
-                            if (param == "RotationCounter_FwdArmed") hasFwdArmed = true;
-                            if (param == "RotationCounter_RevArmed") hasRevArmed = true;
-                            if (param == data.stickXParameterName) hasX = true;
-                            if (param == data.stickYParameterName) hasY = true;
-                            if (param == "RotationCounter_CanCW") hasAddArmed = true;
-                            if (param == "RotationCounter_CanCCW") hasSubArmed = true;
+                            if (string.IsNullOrEmpty(paramName)) return true;
+                            foreach (string entry in globalParamsList)
+                            {
+                                if (entry == paramName) return true;
+                            }
+                            return false;
                         }
-                        
-                        if (!hasAngle) globalParamsList.Add(data.angleParameterName);
-                        if (!hasRotationIndex) globalParamsList.Add(data.rotationIndexParameterName);
-                        if (!hasTestZone) globalParamsList.Add("RotationCounter_TestZone");
-                        if (!hasFwdArmed) globalParamsList.Add("RotationCounter_FwdArmed");
-                        if (!hasRevArmed) globalParamsList.Add("RotationCounter_RevArmed");
-                        if (!hasX) globalParamsList.Add(data.stickXParameterName);
-                        if (!hasY) globalParamsList.Add(data.stickYParameterName);
-                        if (!hasAddArmed) globalParamsList.Add("RotationCounter_CanCW");
-                        if (!hasSubArmed) globalParamsList.Add("RotationCounter_CanCCW");
+
+                        void AddIfMissing(string paramName)
+                        {
+                            if (string.IsNullOrEmpty(paramName)) return;
+                            if (!Has(paramName)) globalParamsList.Add(paramName);
+                        }
+
+                        AddIfMissing(data.angle01ParameterName);
+                        AddIfMissing(data.magnitudeParameterName);
+                        AddIfMissing(data.rotationIndexParameterName);
+                        AddIfMissing(data.directionParameterName);
+                        if (data.createDebugPhaseParameter)
+                        {
+                            AddIfMissing(data.debugPhaseParameterName);
+                        }
                     }
                 }
                 
@@ -203,345 +221,226 @@ namespace YUCP.Components.Editor
                 fullController.AddController(controller, VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.FX);
                 
                 // Add parameters as global parameters
-                fullController.AddGlobalParam(data.angleParameterName);
+                fullController.AddGlobalParam(data.angle01ParameterName);
+                fullController.AddGlobalParam(data.magnitudeParameterName);
                 fullController.AddGlobalParam(data.rotationIndexParameterName);
-                fullController.AddGlobalParam("RotationCounter_TestZone"); // Test parameter for debugging
-                fullController.AddGlobalParam("RotationCounter_FwdArmed");
-                fullController.AddGlobalParam("RotationCounter_RevArmed");
-                fullController.AddGlobalParam(data.stickXParameterName);
-                fullController.AddGlobalParam(data.stickYParameterName);
-                fullController.AddGlobalParam("RotationCounter_CanCW");
-                fullController.AddGlobalParam("RotationCounter_CanCCW");
+                fullController.AddGlobalParam(data.directionParameterName);
+                if (data.createDebugPhaseParameter && !string.IsNullOrEmpty(data.debugPhaseParameterName))
+                {
+                    fullController.AddGlobalParam(data.debugPhaseParameterName);
+                }
                 
                 Debug.Log($"[RotationCounterProcessor] Created new VRCFury FullController and added rotation counter controller with global parameters", data);
             }
 
             // Mark as generated
             data.controllerGenerated = true;
-            data.generatedZonesCount = data.numberOfZones;
+            data.generatedSectorCount = data.numberOfSectors;
 
-            Debug.Log($"[RotationCounterProcessor] Generated rotation counter controller with {data.numberOfZones} zones and integrated via VRCFury", data);
+            Debug.Log($"[RotationCounterProcessor] Generated rotation counter controller with {data.numberOfSectors} sectors and integrated via VRCFury", data);
         }
 
         private AnimatorController GenerateInMemoryController(RotationCounterData data)
         {
-            // Create controller using Unity's API (creates in memory, will be serialized by VRCFury)
-            // Use a temporary path that won't be saved - VRCFury will handle the actual integration
             string tempPath = "Assets/Temp_RotationCounter.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(tempPath);
             
-            // Add required parameters
-            controller.AddParameter(data.angleParameterName, AnimatorControllerParameterType.Float);
+            controller.AddParameter(data.angle01ParameterName, AnimatorControllerParameterType.Float);
+            controller.AddParameter(data.magnitudeParameterName, AnimatorControllerParameterType.Float);
             controller.AddParameter(data.rotationIndexParameterName, AnimatorControllerParameterType.Int);
-            // Stick axes (floats in range -1..1)
-            controller.AddParameter(data.stickXParameterName, AnimatorControllerParameterType.Float);
-            controller.AddParameter(data.stickYParameterName, AnimatorControllerParameterType.Float);
-            
-            // Detector parameters
-            controller.AddParameter("RotationCounter_FwdArmed", AnimatorControllerParameterType.Bool);
-            controller.AddParameter("RotationCounter_RevArmed", AnimatorControllerParameterType.Bool);
-            
-            // Step progress parameters (counts traversed zones by direction)
-            controller.AddParameter("RotationCounter_StepProgressCW", AnimatorControllerParameterType.Int);
-            controller.AddParameter("RotationCounter_StepProgressCCW", AnimatorControllerParameterType.Int);
+            controller.AddParameter(data.directionParameterName, AnimatorControllerParameterType.Int);
 
-            // One-shot gates to prevent repeated counting while resting
-            controller.AddParameter("RotationCounter_GateUp", AnimatorControllerParameterType.Bool);
-            controller.AddParameter("RotationCounter_GateDown", AnimatorControllerParameterType.Bool);
+            if (data.createDebugPhaseParameter && !string.IsNullOrEmpty(data.debugPhaseParameterName))
+            {
+                controller.AddParameter(data.debugPhaseParameterName, AnimatorControllerParameterType.Int);
+            }
 
-            // Step pulses to detect a fresh step this frame
-            controller.AddParameter("RotationCounter_StepPulseCW", AnimatorControllerParameterType.Bool);
-            controller.AddParameter("RotationCounter_StepPulseCCW", AnimatorControllerParameterType.Bool);
-
-            // Center arming flags to prevent flip-flop near boundaries
-            controller.AddParameter("RotationCounter_CanCW", AnimatorControllerParameterType.Bool);
-            controller.AddParameter("RotationCounter_CanCCW", AnimatorControllerParameterType.Bool);
-            
-            // Add debug test parameter to verify zone transitions
-            string testZoneParameterName = "RotationCounter_TestZone";
-            controller.AddParameter(testZoneParameterName, AnimatorControllerParameterType.Int);
-            
-            // Add test parameters to global params so they're accessible
-            // (We'll add them via FullController later)
-
-            // Generate zone states and transitions
-            GenerateRotationController(controller.layers[0].stateMachine, controller, data);
-
-            // The controller file exists temporarily but VRCFury will integrate it
-            // We could delete it after adding to VRCFury, but it's safer to leave it for debugging
-            // VRCFury will handle the actual build integration
+            GenerateRotationTrackingLayer(controller, data);
 
             return controller;
         }
 
-        private void GenerateRotationController(AnimatorStateMachine stateMachine, AnimatorController controller, RotationCounterData data)
+        private void GenerateRotationTrackingLayer(AnimatorController controller, RotationCounterData data)
         {
-            
-            int numZones = data.numberOfZones;
-            float zoneSize = 1f / numZones;
-
-            // Create zone states
-            var zoneStates = new List<AnimatorState>();
-            // Router state for initial entry into the correct zone based on angle
-            var routerState = stateMachine.AddState("Router", new Vector3(50, -50, 0));
-            routerState.motion = null;
-            routerState.writeDefaultValues = false;
-            for (int i = 0; i < numZones; i++)
+            var layers = controller.layers;
+            if (layers.Length == 0)
             {
-                float zoneStart = i * zoneSize;
-                float zoneEnd = (i + 1) * zoneSize;
-
-                var zoneState = stateMachine.AddState($"Zone{i}", new Vector3(300 + i % 8 * 150, (i / 8) * 100, 0));
-                zoneState.motion = null;
-                zoneState.writeDefaultValues = false;
-                zoneStates.Add(zoneState);
-                
-                // Add VRCParameterDriver to set test zone parameter for debugging
-                AddParameterDriver(zoneState, new (string, int, float, float)[] {
-                    ("RotationCounter_TestZone", 0, (float)i, 0f) // Set test zone to zone index
-                });
-
-                // Add transition from Router to this zone
-                var routerToZone = routerState.AddTransition(zoneState);
-                routerToZone.duration = 0f;
-                routerToZone.hasExitTime = false;
-                routerToZone.canTransitionToSelf = true;
-
-                // Conditions: angle must be in this zone's range
-                // BUT: For first and last zones, exclude wraparound ranges to avoid conflicts
-                float epsilon = 0.001f;
-                float zoneStartThreshold = zoneStart > epsilon ? zoneStart - epsilon : -0.001f;
-                
-                if (i == 0)
+                layers = new[]
                 {
-                    // First zone: 0.0 to zoneSize, BUT exclude near-zero wraparound detection range
-                    // If angle is < nearZeroThreshold, we want wraparound detection, not direct zone entry
-                    // So only enter Zone0 if angle is between nearZeroThreshold and zoneEnd
-                    float minAngle = data.nearZeroThreshold;
-                    routerToZone.AddCondition(AnimatorConditionMode.Greater, minAngle + epsilon, data.angleParameterName);
-                    routerToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
-                }
-                else if (i == numZones - 1)
+                    new AnimatorControllerLayer
+                    {
+                        name = data.layerName,
+                        stateMachine = new AnimatorStateMachine()
+                    }
+                };
+            }
+
+            var layer = layers[0];
+            layer.name = string.IsNullOrEmpty(data.layerName) ? "SpinFlick_New" : data.layerName;
+            var stateMachine = layer.stateMachine ?? new AnimatorStateMachine();
+
+            ClearStateMachine(stateMachine);
+
+            // Calculate layout
+            float sectorWidth = 1f / data.numberOfSectors;
+            
+            // Create states
+            var idleStates = new AnimatorState[data.numberOfSectors];
+            
+            for (int i = 0; i < data.numberOfSectors; i++)
+            {
+                var pos = GetSectorStatePosition(i, 0);
+                var state = stateMachine.AddState($"Sector_{i}_Idle", pos);
+                state.writeDefaultValues = false;
+                // In idle, we just report the phase if debug is on
+                SetStateDriver(state, data, (float)i); 
+                idleStates[i] = state;
+            }
+
+            // Create transitions and intermediate states
+            for (int i = 0; i < data.numberOfSectors; i++)
+            {
+                int next = (i + 1) % data.numberOfSectors;
+                int prev = (i - 1 + data.numberOfSectors) % data.numberOfSectors;
+
+                // INC: i -> next
+                var incState = stateMachine.AddState($"Sector_{i}_Inc", GetSectorStatePosition(i, 1));
+                incState.writeDefaultValues = false;
+                SetStateDriver(incState, data, null,
+                    (data.rotationIndexParameterName, DriverAdd, 1f),
+                    (data.directionParameterName, DriverSet, 1f));
+                
+                var incTrans = incState.AddTransition(idleStates[next]);
+                ConfigureInstantTransition(incTrans);
+
+                // DEC: i -> prev
+                var decState = stateMachine.AddState($"Sector_{i}_Dec", GetSectorStatePosition(i, -1));
+                decState.writeDefaultValues = false;
+                SetStateDriver(decState, data, null,
+                    (data.rotationIndexParameterName, DriverAdd, -1f),
+                    (data.directionParameterName, DriverSet, -1f));
+
+                var decTrans = decState.AddTransition(idleStates[prev]);
+                ConfigureInstantTransition(decTrans);
+
+                // Transitions from Idle
+                // To INC
+                var toInc = idleStates[i].AddTransition(incState);
+                ConfigureInstantTransition(toInc);
+                AddMagnitudeGate(toInc, data);
+                
+                float incThreshold;
+                if (i == data.numberOfSectors - 1) // Last sector -> 0
                 {
-                    // Last zone: zoneStart to nearMaxThreshold (exclude wraparound range)
-                    // If angle is > nearMaxThreshold, we're wrapping, let wraparound handle it
-                    float maxAngle = data.nearMaxThreshold;
-                    routerToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
-                    routerToZone.AddCondition(AnimatorConditionMode.Less, maxAngle - epsilon, data.angleParameterName);
+                    // Wrap around: Angle < Sector 0 width - hysteresis
+                    // Actually, simpler: if we are in last sector (approx 0.9-1.0), and angle is small (approx 0.0-0.1)
+                    // Threshold = 0 + width - hysteresis
+                    incThreshold = sectorWidth - data.sectorHysteresis;
+                    toInc.AddCondition(AnimatorConditionMode.Less, incThreshold, data.angle01ParameterName);
                 }
                 else
                 {
-                    // Middle zones: standard range
-                    routerToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
-                    routerToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
+                    // Normal: Angle > next start + hysteresis
+                    incThreshold = ((i + 1) * sectorWidth) + data.sectorHysteresis;
+                    toInc.AddCondition(AnimatorConditionMode.Greater, incThreshold, data.angle01ParameterName);
+                }
+
+                // To DEC
+                var toDec = idleStates[i].AddTransition(decState);
+                ConfigureInstantTransition(toDec);
+                AddMagnitudeGate(toDec, data);
+
+                float decThreshold;
+                if (i == 0) // Sector 0 -> Last
+                {
+                    // Wrap around: Angle > Last sector start + hysteresis
+                    decThreshold = 1f - sectorWidth + data.sectorHysteresis;
+                    toDec.AddCondition(AnimatorConditionMode.Greater, decThreshold, data.angle01ParameterName);
+                }
+                else
+                {
+                    // Normal: Angle < current start - hysteresis
+                    decThreshold = (i * sectorWidth) - data.sectorHysteresis;
+                    toDec.AddCondition(AnimatorConditionMode.Less, decThreshold, data.angle01ParameterName);
                 }
             }
 
-            // Set default state to Router (routes into the correct zone based on angle)
-            stateMachine.defaultState = routerState;
+            stateMachine.defaultState = idleStates[0];
+            layer.stateMachine = stateMachine;
+            layers[0] = layer;
+            controller.layers = layers;
+        }
 
-            // Create transitions for wraparound detection
-            int lastZoneIndex = numZones - 1;
-            int firstZoneIndex = 0;
-            
-            // Calculate last zone start once for use in multiple places
-            var lastZoneStart = lastZoneIndex * zoneSize;
-            
-            // Create shared step states
-            var stepForward = stateMachine.AddState("StepForward", new Vector3(100, 500, 0));
-            stepForward.writeDefaultValues = false;
-            AddParameterDriver(stepForward, new (string,int,float,float)[] {
-                ("RotationCounter_StepProgressCW", 1, 1f, 0f),
-                ("RotationCounter_StepProgressCCW", 0, 0f, 0f),
-                ("RotationCounter_StepPulseCW", 0, 1f, 0f),
-                ("RotationCounter_StepPulseCCW", 0, 0f, 0f),
-                ("RotationCounter_CanCW", 0, 0f, 0f),
-                ("RotationCounter_CanCCW", 0, 0f, 0f)
-            });
-            var stepReverse = stateMachine.AddState("StepReverse", new Vector3(100, 600, 0));
-            stepReverse.writeDefaultValues = false;
-            AddParameterDriver(stepReverse, new (string,int,float,float)[] {
-                ("RotationCounter_StepProgressCCW", 1, 1f, 0f),
-                ("RotationCounter_StepProgressCW", 0, 0f, 0f),
-                ("RotationCounter_StepPulseCCW", 0, 1f, 0f),
-                ("RotationCounter_StepPulseCW", 0, 0f, 0f),
-                ("RotationCounter_CanCW", 0, 0f, 0f),
-                ("RotationCounter_CanCCW", 0, 0f, 0f)
-            });
-            // Center state: when in the middle of any zone, arm both directions to allow next step
-            var centerState = stateMachine.AddState("Center", new Vector3(100, 400, 0));
-            centerState.writeDefaultValues = false;
-            AddParameterDriver(centerState, new (string,int,float,float)[] {
-                ("RotationCounter_StepPulseCW", 0, 0f, 0f),
-                ("RotationCounter_StepPulseCCW", 0, 0f, 0f),
-                ("RotationCounter_CanCW", 0, 1f, 0f),
-                ("RotationCounter_CanCCW", 0, 1f, 0f)
-            });
-            // Any State → Center when stick is centered: |X| <= t and |Y| <= t
-            float t = Mathf.Clamp01(data.centerThreshold);
-            var anyToCenter = stateMachine.AddAnyStateTransition(centerState);
-            anyToCenter.duration = 0f;
-            anyToCenter.hasExitTime = false;
-            anyToCenter.canTransitionToSelf = true;
-            // |X| <= t -> (-t <= X) AND (X <= t)
-            anyToCenter.AddCondition(AnimatorConditionMode.Greater, -t, data.stickXParameterName);
-            anyToCenter.AddCondition(AnimatorConditionMode.Less, t, data.stickXParameterName);
-            // |Y| <= t
-            anyToCenter.AddCondition(AnimatorConditionMode.Greater, -t, data.stickYParameterName);
-            anyToCenter.AddCondition(AnimatorConditionMode.Less, t, data.stickYParameterName);
+        private void SetStateDriver(AnimatorState state, RotationCounterData data, float? debugPhase, params (string name, int type, float value)[] entries)
+        {
+            var driverEntries = new List<(string, int, float, float)>();
 
-            // Count states in the same layer: perform the increment/decrement immediately on step threshold
-            int sections = Mathf.Max(1, Mathf.Min(data.sectionsPerCount, numZones));
-            var countUp = stateMachine.AddState("CountUp", new Vector3(300, 500, 0));
-            countUp.writeDefaultValues = false;
-            float addUp = data.clockwiseIsPositive ? 1f : -1f;
-            AddParameterDriver(countUp, new (string,int,float,float)[] {
-                (data.rotationIndexParameterName, 1, addUp, 0f),
-                ("RotationCounter_StepProgressCW", 1, -sections, 0f)
-            });
-            var countDown = stateMachine.AddState("CountDown", new Vector3(300, 600, 0));
-            countDown.writeDefaultValues = false;
-            float addDown = data.clockwiseIsPositive ? -1f : 1f;
-            AddParameterDriver(countDown, new (string,int,float,float)[] {
-                (data.rotationIndexParameterName, 1, addDown, 0f),
-                ("RotationCounter_StepProgressCCW", 1, -sections, 0f)
-            });
-
-            // Add transitions between adjacent zones (normal rotation, no wraparound)
-            // These handle all normal zone-to-zone transitions
-            for (int i = 0; i < numZones; i++)
+            foreach (var (name, type, value) in entries)
             {
-                int nextZone = (i + 1) % numZones;
-                int prevZone = (i - 1 + numZones) % numZones;
-
-                // Forward rotation: i → StepForward (then StepForward → nextZone)
-                var forwardTransition = zoneStates[i].AddTransition(stepForward);
-                forwardTransition.duration = 0f;
-                forwardTransition.hasExitTime = false;
-                forwardTransition.canTransitionToSelf = false;
-                forwardTransition.AddCondition(AnimatorConditionMode.If, 0f, "RotationCounter_CanCW");
-                
-                // Skip last zone → first zone transition - wraparound detection handles it
-                if (i == lastZoneIndex)
-                {
-                    // Don't create direct last → first transition
-                    // Wraparound detection will handle this case
-                    // For step counting, we still route via stepForward using first zone range
-                    forwardTransition.AddCondition(AnimatorConditionMode.Greater, data.nearZeroThreshold, data.angleParameterName);
-                    forwardTransition.AddCondition(AnimatorConditionMode.Less, zoneSize, data.angleParameterName);
-                }
-                else
-                {
-                    // Normal forward transitions
-                    float nextZoneStart = nextZone * zoneSize;
-                    float epsilon = 0.001f;
-                    float nextZoneThreshold = nextZoneStart > epsilon ? nextZoneStart - epsilon : -0.001f;
-                    forwardTransition.AddCondition(AnimatorConditionMode.Greater, nextZoneThreshold, data.angleParameterName);
-                }
-
-                // Reverse rotation: i → StepReverse (then StepReverse → prevZone)
-                var reverseTransition = zoneStates[i].AddTransition(stepReverse);
-                reverseTransition.duration = 0f;
-                reverseTransition.hasExitTime = false;
-                reverseTransition.canTransitionToSelf = false;
-                reverseTransition.AddCondition(AnimatorConditionMode.If, 0f, "RotationCounter_CanCCW");
-                
-                // Skip first zone → last zone transition - wraparound detection handles it
-                if (i == firstZoneIndex)
-                {
-                    // Don't create direct first → last transition  
-                    // Wraparound detection will handle this case
-                    reverseTransition.AddCondition(AnimatorConditionMode.Greater, lastZoneStart, data.angleParameterName);
-                    reverseTransition.AddCondition(AnimatorConditionMode.Less, data.nearMaxThreshold, data.angleParameterName);
-                }
-                else
-                {
-                    // Normal reverse transitions
-                    float prevZoneStart = prevZone * zoneSize;
-                    reverseTransition.AddCondition(AnimatorConditionMode.Less, prevZoneStart, data.angleParameterName);
-                }
-            }
-            
-            // From stepForward/stepReverse, route to the appropriate zone based on current angle range
-            for (int i = 0; i < numZones; i++)
-            {
-                float zoneStart = i * zoneSize;
-                float zoneEnd = (i + 1) * zoneSize;
-                float epsilon = 0.001f;
-                float zoneStartThreshold = zoneStart > epsilon ? zoneStart - epsilon : -0.001f;
-
-                var stepFwdToZone = stepForward.AddTransition(zoneStates[i]);
-                stepFwdToZone.duration = 0f;
-                stepFwdToZone.hasExitTime = false;
-                stepFwdToZone.canTransitionToSelf = false;
-                if (i == 0)
-                {
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Greater, data.nearZeroThreshold, data.angleParameterName);
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCW");
-                }
-                else if (i == numZones - 1)
-                {
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, data.nearMaxThreshold, data.angleParameterName);
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCW");
-                }
-                else
-                {
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
-                    stepFwdToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCW");
-                }
-
-                // If threshold reached on this step, go to CountUp instead of zone
-                var stepFwdToCount = stepForward.AddTransition(countUp);
-                stepFwdToCount.duration = 0f;
-                stepFwdToCount.hasExitTime = false;
-                stepFwdToCount.canTransitionToSelf = false;
-                stepFwdToCount.AddCondition(AnimatorConditionMode.Greater, sections - 0.5f, "RotationCounter_StepProgressCW");
- 
-                var stepRevToZone = stepReverse.AddTransition(zoneStates[i]);
-                stepRevToZone.duration = 0f;
-                stepRevToZone.hasExitTime = false;
-                stepRevToZone.canTransitionToSelf = false;
-                if (i == 0)
-                {
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Greater, data.nearZeroThreshold, data.angleParameterName);
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCCW");
-                }
-                else if (i == numZones - 1)
-                {
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, data.nearMaxThreshold, data.angleParameterName);
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCCW");
-                }
-                else
-                {
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Greater, zoneStartThreshold, data.angleParameterName);
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, zoneEnd, data.angleParameterName);
-                    stepRevToZone.AddCondition(AnimatorConditionMode.Less, sections - 0.5f, "RotationCounter_StepProgressCCW");
-                }
-
-                var stepRevToCount = stepReverse.AddTransition(countDown);
-                stepRevToCount.duration = 0f;
-                stepRevToCount.hasExitTime = false;
-                stepRevToCount.canTransitionToSelf = false;
-                stepRevToCount.AddCondition(AnimatorConditionMode.Greater, sections - 0.5f, "RotationCounter_StepProgressCCW");
+                if (string.IsNullOrEmpty(name)) continue;
+                driverEntries.Add((name, type, value, 0f));
             }
 
-            // After counting, route back to router to land in the correct zone based on current angle
-            var countUpToRouter = countUp.AddTransition(routerState);
-            countUpToRouter.duration = 0f;
-            countUpToRouter.hasExitTime = true;
-            countUpToRouter.exitTime = 0f;
-            countUpToRouter.canTransitionToSelf = false;
+            if (debugPhase.HasValue && data.createDebugPhaseParameter && !string.IsNullOrEmpty(data.debugPhaseParameterName))
+            {
+                driverEntries.Add((data.debugPhaseParameterName, DriverSet, debugPhase.Value, 0f));
+            }
 
-            var countDownToRouter = countDown.AddTransition(routerState);
-            countDownToRouter.duration = 0f;
-            countDownToRouter.hasExitTime = true;
-            countDownToRouter.exitTime = 0f;
-            countDownToRouter.canTransitionToSelf = false;
+            if (driverEntries.Count > 0)
+            {
+                AddParameterDriver(state, driverEntries.ToArray());
+            }
+        }
+
+        private Vector3 GetSectorStatePosition(int sector, int type)
+        {
+            // type: 0=Idle, 1=Inc, -1=Dec
+            int column = sector % 6;
+            int row = sector / 6;
+            
+            float baseX = 250f + column * 250f;
+            float baseY = 0f + row * 300f;
+
+            if (type == 0) return new Vector3(baseX, baseY, 0);
+            if (type == 1) return new Vector3(baseX + 80f, baseY + 60f, 0); // Inc to right/down
+            if (type == -1) return new Vector3(baseX - 80f, baseY + 60f, 0); // Dec to left/down
+            
+            return Vector3.zero;
+        }
+
+        private void AddMagnitudeGate(AnimatorStateTransition transition, RotationCounterData data)
+        {
+            if (!string.IsNullOrEmpty(data.magnitudeParameterName) && data.magnitudeThreshold > 0)
+            {
+                transition.AddCondition(AnimatorConditionMode.Greater, data.magnitudeThreshold, data.magnitudeParameterName);
+            }
+        }
+
+        private void ConfigureInstantTransition(AnimatorStateTransition transition)
+        {
+            transition.duration = 0f;
+            transition.hasExitTime = false;
+            transition.hasFixedDuration = true;
+            transition.exitTime = 0f;
+            transition.canTransitionToSelf = false;
+        }
+
+        private void ClearStateMachine(AnimatorStateMachine stateMachine)
+        {
+            foreach (var childState in stateMachine.states.ToArray())
+            {
+                stateMachine.RemoveState(childState.state);
+            }
+
+            foreach (var childMachine in stateMachine.stateMachines.ToArray())
+            {
+                stateMachine.RemoveStateMachine(childMachine.stateMachine);
+            }
+
+            foreach (var transition in stateMachine.anyStateTransitions.ToArray())
+            {
+                stateMachine.RemoveAnyStateTransition(transition);
+            }
         }
 
         /// <summary>

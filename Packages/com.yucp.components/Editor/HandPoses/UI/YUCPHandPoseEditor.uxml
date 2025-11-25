@@ -1,0 +1,73 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <Style src="project://database/Packages/com.yucp.components/Editor/HandPoses/UI/YUCPHandPoseStyle.uss?fileID=7433441132597879392&guid=0000000000000000a000000000000000&type=3" />
+    <ui:VisualElement class="yucp-handpose-window">
+        <ui:VisualElement class="yucp-header">
+            <ui:Label class="yucp-header-title" text="Hand Pose Editor" />
+            <ui:Button name="createPoseButton" class="secondary-button" text="New Pose" />
+            <ui:Button name="duplicatePoseButton" class="secondary-button" text="Duplicate" />
+            <ui:Button name="deletePoseButton" class="secondary-button" text="Delete" />
+        </ui:VisualElement>
+
+        <ui:VisualElement class="editor-grid">
+            <ui:VisualElement class="panel panel-left">
+                <ui:Foldout name="avatarSection" text="Target Avatar" value="true" class="foldout">
+                    <uie:ObjectField name="avatarField" label="VRChat Avatar" />
+                    <ui:Button name="refreshAvatarButton" class="secondary-button" text="Refresh Hands" />
+                    <ui:VisualElement class="info-box" name="avatarInfo">
+                        <ui:Label class="info-label" name="avatarInfoLabel" text="Select a VRChat avatar (Animator with humanoid avatar)." />
+                    </ui:VisualElement>
+                </ui:Foldout>
+
+                <ui:Foldout name="poseSection" text="Hand Poses" value="true" class="foldout">
+                    <ui:VisualElement class="pose-list-container">
+                        <ui:ListView name="poseList" class="pose-list" />
+                    </ui:VisualElement>
+                    <ui:Button name="importPresetsButton" class="secondary-button" text="Import Presets" />
+                </ui:Foldout>
+
+                <ui:Foldout name="presetSection" text="Presets" value="true" class="foldout">
+                    <ui:ListView name="presetList" class="preset-list" />
+                    <ui:Button name="applyPresetButton" class="secondary-button" text="Apply Preset" />
+                </ui:Foldout>
+            </ui:VisualElement>
+
+            <ui:VisualElement class="panel panel-right" name="panelRight">
+                <ui:Foldout name="poseDetailsSection" text="Pose Details" value="true" class="foldout">
+                    <ui:Label class="section-header" text="Pose Summary" />
+                    <ui:VisualElement class="details-grid">
+                        <ui:TextField name="poseNameField" label="Pose Name" />
+                        <uie:EnumField name="poseTypeField" label="Pose Type" />
+                        <ui:Slider name="blendSlider" low-value="0" high-value="1" label="Blend Preview" />
+                        <ui:Label name="blendLabel" class="info-label" text="Blend value: 0" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="button-row">
+                        <ui:Button name="captureOpenLeftButton" class="secondary-button" text="Capture Left (Open)" />
+                        <ui:Button name="captureClosedLeftButton" class="secondary-button" text="Capture Left (Closed)" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="button-row">
+                        <ui:Button name="captureOpenRightButton" class="secondary-button" text="Capture Right (Open)" />
+                        <ui:Button name="captureClosedRightButton" class="secondary-button" text="Capture Right (Closed)" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="button-row">
+                        <ui:Button name="mirrorLeftToRightButton" class="secondary-button" text="Mirror Left ➜ Right" />
+                        <ui:Button name="mirrorRightToLeftButton" class="secondary-button" text="Mirror Right ➜ Left" />
+                    </ui:VisualElement>
+                </ui:Foldout>
+
+                <ui:Foldout name="fingerControlsSection" text="Finger Controls" value="true" class="foldout">
+                    <ui:Label class="section-header" text="Adjust Fingers" />
+                    <ui:VisualElement name="fingerControlsContainer" class="finger-controls" />
+                </ui:Foldout>
+
+                <ui:Foldout name="previewSection" text="Preview" value="true" class="foldout">
+                    <ui:VisualElement class="preview-container">
+                        <ui:IMGUIContainer name="previewIMGUI" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="info-box">
+                        <ui:Label class="info-label" text="Preview applies directly to the selected avatar in the scene." />
+                    </ui:VisualElement>
+                </ui:Foldout>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

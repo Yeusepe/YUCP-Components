@@ -169,11 +169,8 @@ namespace PackageGuardian.Core.Repository
                 ? _refsPath 
                 : Path.Combine(_refsPath, searchPrefix.Replace('/', Path.DirectorySeparatorChar));
             
-            UnityEngine.Debug.Log($"[Package Guardian] ListRefs searching in: {prefixPath}");
-            
             if (!Directory.Exists(prefixPath))
             {
-                UnityEngine.Debug.LogWarning($"[Package Guardian] Directory does not exist: {prefixPath}");
                 return Enumerable.Empty<string>();
             }
             
@@ -185,7 +182,6 @@ namespace PackageGuardian.Core.Repository
                 relativePath = relativePath.Replace(Path.DirectorySeparatorChar, '/');
                 string refName = "refs/" + relativePath;
                 refs.Add(refName);
-                UnityEngine.Debug.Log($"[Package Guardian] Found ref file: {file} -> {refName}");
             }
             
             return refs;

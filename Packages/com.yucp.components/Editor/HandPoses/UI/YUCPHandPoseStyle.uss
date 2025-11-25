@@ -1,0 +1,269 @@
+/* ============================================================================
+   YUCP Hand Pose Editor Styling - YUCP Design System
+   Consistent with Package Exporter
+   ============================================================================ */
+
+.yucp-handpose-window {
+    background-color: #090909;
+    padding: 20px;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.yucp-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 0;
+    padding-bottom: 16px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+    gap: 12px;
+}
+
+.yucp-header-title {
+    font-size: 18px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    margin-right: auto;
+}
+
+.editor-grid {
+    flex-direction: row;
+    gap: 16px;
+}
+
+.panel {
+    background-color: #0f0f0f;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 16px;
+    flex-direction: column;
+    flex-grow: 1;
+    gap: 16px;
+}
+
+.panel-left {
+    max-width: 320px;
+}
+
+.panel-right {
+    flex-grow: 2;
+}
+
+.foldout {
+    background-color: #111111;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+.pose-list-container {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    height: 220px;
+}
+
+.pose-list {
+    height: 100%;
+}
+
+.preset-list {
+    height: 180px;
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+}
+
+.preset-list-item {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+}
+
+.preset-thumbnail {
+    width: 48px;
+    height: 48px;
+}
+
+.details-grid {
+    flex-direction: column;
+    gap: 8px;
+}
+
+.button-row {
+    flex-direction: row;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.finger-controls {
+    flex-direction: column;
+    gap: 12px;
+}
+
+.finger-control {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    gap: 8px;
+}
+
+.finger-control .finger-label {
+    color: #ffffff;
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.segment-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.segment-row Label {
+    color: #b0b0b0;
+    min-width: 90px;
+}
+
+.preview-container {
+    min-height: 240px;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    background-color: #1a1a1a;
+}
+
+.primary-button {
+    background-color: #36BFB1;
+    color: #ffffff;
+    height: 50px;
+    font-size: 14px;
+    -unity-font-style: normal;
+    border-radius: 0;
+    border-width: 0;
+    margin: 4px;
+    padding-left: 16px;
+    padding-right: 16px;
+}
+
+.primary-button:hover {
+    background-color: #48d1c3;
+}
+
+.primary-button:active {
+    background-color: #2da89c;
+}
+
+.secondary-button {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    height: 36px;
+    font-size: 12px;
+    -unity-font-style: normal;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.secondary-button:hover {
+    background-color: #2a2a2a;
+}
+
+.info-box {
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin-top: 12px;
+}
+
+.info-label {
+    color: #ffffff;
+    font-size: 12px;
+    margin: 4px 0;
+}
+
+.section-header {
+    font-size: 11px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
+
+.warning-box {
+    background-color: rgba(226, 74, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E24A4A;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+    color: #E24A4A;
+}
+
+.hand-tabs {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.hand-tab {
+    background-color: #1a1a1a;
+    color: #b0b0b0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 8px 16px;
+    flex-grow: 1;
+    margin-right: 4px;
+}
+
+.hand-tab:hover {
+    background-color: #2a2a2a;
+}
+
+.hand-tab-selected {
+    background-color: #2a2a2a;
+    border-left-color: #36BFB1;
+    border-left-width: 3px;
+    color: #ffffff;
+}
+
+.finger-control-group {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+.finger-label {
+    color: #ffffff;
+    font-size: 13px;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+}
+
+.pose-list-item {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin-bottom: 4px;
+}
+
+.pose-list-item:hover {
+    background-color: #2a2a2a;
+}
+
+.pose-list-item-selected {
+    background-color: #2a2a2a;
+    border-left-color: #36BFB1;
+    border-left-width: 3px;
+}
+

@@ -175,6 +175,11 @@ namespace YUCP.Components
                  "When disabled, animations are temporary (build-time only).")]
         public bool createDirectAnimations = true;
 
+        [Tooltip("Automatically create a viseme FX layer when Tracking Mode = Visemes Only.\n\n" +
+                 "This generates a VRCFury controller that reacts to the avatar's Viseme parameter " +
+                 "and applies the sampled attachment poses for each viseme.")]
+        public bool autoCreateVisemeFxLayer = true;
+
         [Tooltip("Number of sample points per blendshape (2-10).\n\n" +
                  "More samples = smoother animation but larger file size.\n" +
                  "Recommended: 5 for most cases.")]
@@ -213,6 +218,22 @@ namespace YUCP.Components
         [System.NonSerialized] public SurfaceCluster previewCluster;
         [System.NonSerialized] public List<string> previewBlendshapes = new List<string>();
         [System.NonSerialized] public bool previewGenerated = false;
+        [System.NonSerialized] public Dictionary<string, float> previewBlendshapeWeights = new Dictionary<string, float>();
+        [System.NonSerialized] public Dictionary<string, float> previewOriginalWeights = new Dictionary<string, float>();
+        [System.NonSerialized] public Vector3 previewBasePosition;
+        [System.NonSerialized] public Vector3 previewBaseNormal;
+        [System.NonSerialized] public Vector3 previewBaseTangent;
+        [System.NonSerialized] public bool previewBaseCaptured;
+        [System.NonSerialized] public Vector3 previewOriginalLocalPosition;
+        [System.NonSerialized] public Quaternion previewOriginalLocalRotation;
+        [System.NonSerialized] public bool previewOriginalTransformCaptured;
+        [System.NonSerialized] public Vector3 previewLastTangent;
+        [System.NonSerialized] public bool previewHasLastTangent;
+        [System.NonSerialized] public Vector3 previewBaseSolverPosition;
+        [System.NonSerialized] public Quaternion previewBaseSolverRotation;
+        [System.NonSerialized] public bool previewHasBaseSolver;
+        [System.NonSerialized] public Vector3 previewPositionOffset;
+        [System.NonSerialized] public Quaternion previewRotationOffset = Quaternion.identity;
 
         public SurfaceCluster DetectedCluster => detectedCluster;
         public List<string> TrackedBlendshapes => trackedBlendshapes;
@@ -246,6 +267,7 @@ namespace YUCP.Components
             rbfDriverPointCount = 6;
             rbfRadiusMultiplier = 1.5f;
             useGPUAcceleration = true;
+            autoCreateVisemeFxLayer = true;
         }
 
         private void Awake()
@@ -257,4 +279,3 @@ namespace YUCP.Components
         }
     }
 }
-

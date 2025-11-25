@@ -2,6 +2,22 @@
 
 All notable changes to YUCP Components will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Custom Object Sync grouping system: add a Group ID field per component and automatically merge matching components into a single VRLabs Custom Object Sync rig to reduce parameter usage.
+- Group-aware editing: changing the settings on any component automatically propagates the new values to every member of the same group, keeping builds consistent.
+- Parameter budget now reflects the actual number of objects in the current group and surfaces the calculated sync cost plus group size summary.
+
+### Changed
+- Custom Object Sync inspector now uses the standard YUCP styling, refreshed parameter budget card, and an updated grouping section that explains the new workflow.
+- Custom Object Sync inspector flow reorganized with summary + card-based sections for easier tuning.
+- Max Radius control now shows the computed meter range inline and explains the trade-off between coverage and parameter cost.
+- Added an optional Scene view gizmo that visualizes travel radius, precision, and rotation when selecting a Custom Object Sync component.
+- Custom Object Sync grouping is now opt-in via an “Enable Grouping” toggle; leave it off to mirror the original VRLabs per-object workflow, or enable it to share rigs intentionally.
+
+### Removed
+- Auto Grip Generator component, editor tooling, and preprocessing pipeline.
 ## [0.3.0] - 2024-10-31
 
 ### Added
@@ -46,7 +62,6 @@ All notable changes to YUCP Components will be documented in this file.
 
 ### Features
 - Auto Body Hider with GPU-accelerated detection
-- Auto Grip Generator (Beta)
 - Symmetric Armature Auto-Link
 - Closest Bone Auto-Link
 - View Position & Head Auto-Link

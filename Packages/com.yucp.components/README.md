@@ -24,12 +24,6 @@ Advanced VRChat avatar components with VRCFury integration and Pakacage Guardian
   - Poiyomi and FastFur UDIM support with multi-clothing coordination
   - Layered clothing optimization
 
-### Animation Components
-- **Auto Grip Generator** (Beta) - Automatically generate hand grip animations
-  - Contact-based mesh analysis
-  - Multiple grip styles (Wrap, Pinch, Point)
-  - Hand pose generation
-
 ## Installation
 
 ### Via VCC (Recommended)

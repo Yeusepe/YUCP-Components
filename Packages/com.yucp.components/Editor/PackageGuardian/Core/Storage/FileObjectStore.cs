@@ -28,43 +28,49 @@ namespace PackageGuardian.Core.Storage
 
         public string WriteObject(PgObject obj, out byte[] serializedData)
         {
+            var staged = StageObject(obj);
+            serializedData = staged.Payload;
+            return CommitStagedObject(staged);
+        }
+
+        public StagedObjectWrite StageObject(PgObject obj)
+        {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
             
-            // Serialize object
-            serializedData = ObjectSerializer.Serialize(obj);
-            
-            // Compute object ID
+            var serializedData = ObjectSerializer.Serialize(obj);
             string oid = ObjectSerializer.ComputeObjectId(obj, _hasher);
-            
-            // Check if already exists
             string objectPath = GetObjectPath(oid);
+            
             if (File.Exists(objectPath))
-                return oid; // Already exists, no need to write
+                return new StagedObjectWrite(oid, objectPath, Array.Empty<byte>(), true, obj);
             
-            // Compress and write
             byte[] compressed = CompressionHelper.Compress(serializedData);
+            return new StagedObjectWrite(oid, objectPath, compressed, false, obj);
+        }
+
+        public string CommitStagedObject(StagedObjectWrite staged)
+        {
+            if (staged.ExistsAlready)
+                return staged.ObjectId;
             
-            // Ensure directory exists
-            string objectDir = Path.GetDirectoryName(objectPath);
+            string objectDir = Path.GetDirectoryName(staged.TargetPath);
             PathHelper.EnsureDirectoryExists(objectDir);
             
-            // Write atomically via temp file
-            string tempPath = objectPath + ".tmp";
+            string tempPath = staged.TargetPath + ".tmp";
             try
             {
-                File.WriteAllBytes(tempPath, compressed);
+                File.WriteAllBytes(tempPath, staged.Payload);
                 
-                // Atomic rename (or copy+delete on Windows if rename fails)
                 try
                 {
-                    File.Move(tempPath, objectPath);
+                    File.Move(tempPath, staged.TargetPath);
                 }
                 catch
                 {
-                    if (!File.Exists(objectPath))
+                    if (!File.Exists(staged.TargetPath))
                     {
-                        File.Copy(tempPath, objectPath);
+                        File.Copy(tempPath, staged.TargetPath);
                     }
                     File.Delete(tempPath);
                 }
@@ -76,7 +82,7 @@ namespace PackageGuardian.Core.Storage
                 throw;
             }
             
-            return oid;
+            return staged.ObjectId;
         }
 
         public PgObject ReadObject(string oid)

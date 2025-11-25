@@ -8,6 +8,7 @@ using UnityEngine.UIElements;
 using YUCP.Components.Editor.UI;
 using YUCP.Components.PackageGuardian.Editor.Services;
 using YUCP.Components.PackageGuardian.Editor.Windows.Graph;
+using YUCP.Components.PackageGuardian.Editor.Settings;
 using global::PackageGuardian.Core.Objects;
 using global::PackageGuardian.Core.Diff;
 
@@ -126,6 +127,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             mainContainer.Add(_contentContainer);
             root.Add(mainContainer);
 
+            // Check if Package Guardian is disabled and show prompt
+            CheckAndPromptIfDisabled();
+            
             // Set initial status and show snapshot panel without blocking
             _statusLabel.text = "Initializing...";
             ShowSnapshotPanel();
@@ -1779,29 +1783,41 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                 return;
             }
 
-            try
+            var service = RepositoryService.Instance;
+            _createSnapshotButton?.SetEnabled(false);
+            _snapshotPanel?.SetEnabled(false);
+            _statusLabel.text = "Snapshot queued...";
+            
+            var task = service.CreateSnapshotAsync(message);
+            task.ContinueWith(t =>
             {
-                var service = RepositoryService.Instance;
-                string commitId = service.CreateSnapshot(message);
-                Debug.Log($"[Package Guardian] Snapshot created: {commitId}");
-                
-                // Clear the message field
-                _snapshotMessageField.value = "";
-                
-                // Refresh dashboard
-                RefreshDashboard();
-                
-                // Hide snapshot panel
-                _snapshotPanel.style.display = DisplayStyle.None;
-                
-                // Show success message
-                EditorUtility.DisplayDialog("Success", "Snapshot created successfully!", "OK");
-            }
-            catch (Exception ex)
-            {
-                EditorUtility.DisplayDialog("Error", $"Failed to create snapshot: {ex.Message}", "OK");
-                Debug.LogError($"[Package Guardian] Snapshot creation error: {ex}");
-            }
+                EditorApplication.delayCall += () =>
+                {
+                    _createSnapshotButton?.SetEnabled(true);
+                    _snapshotPanel?.SetEnabled(true);
+                    
+                    if (t.IsFaulted)
+                    {
+                        var error = t.Exception?.GetBaseException().Message ?? "Unknown error";
+                        EditorUtility.DisplayDialog("Error", $"Failed to create snapshot: {error}", "OK");
+                        Debug.LogError($"[Package Guardian] Snapshot creation error: {error}");
+                        return;
+                    }
+                    
+                    string commitId = t.Result;
+                    if (string.IsNullOrEmpty(commitId))
+                    {
+                        EditorUtility.DisplayDialog("Package Guardian", "Snapshot was cancelled due to validation errors.", "OK");
+                        return;
+                    }
+                    
+                    Debug.Log($"[Package Guardian] Snapshot created: {commitId}");
+                    _snapshotMessageField.value = "";
+                    RefreshDashboard();
+                    _snapshotPanel.style.display = DisplayStyle.None;
+                    EditorUtility.DisplayDialog("Success", "Snapshot created successfully!", "OK");
+                };
+            });
         }
 
         private void OnRollback()
@@ -1811,20 +1827,28 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
 
         private void OnCreateStash()
         {
-            try
+            var service = RepositoryService.Instance;
+            _statusLabel.text = "Creating manual stash...";
+            
+            var task = service.CreateAutoStashAsync("Manual stash");
+            task.ContinueWith(t =>
             {
-                var service = RepositoryService.Instance;
-                var repo = service.Repository;
-                var settings = Settings.PackageGuardianSettings.Instance;
-                string author = $"{settings.authorName} <{settings.authorEmail}>";
-                string stashId = repo.Stash.CreateAutoStash("Manual stash", author);
-                Debug.Log($"[Package Guardian] Stash created: {stashId}");
-                EditorUtility.DisplayDialog("Success", "Changes stashed successfully!", "OK");
-            }
-            catch (Exception ex)
-            {
-                EditorUtility.DisplayDialog("Error", $"Failed to create stash: {ex.Message}", "OK");
-            }
+                EditorApplication.delayCall += () =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        var error = t.Exception?.GetBaseException().Message ?? "Unknown error";
+                        EditorUtility.DisplayDialog("Error", $"Failed to create stash: {error}", "OK");
+                        Debug.LogWarning($"[Package Guardian] Manual stash failed: {error}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[Package Guardian] Manual stash queued: {t.Result}");
+                        EditorUtility.DisplayDialog("Success", "Changes stashed successfully!", "OK");
+                        RefreshDashboard();
+                    }
+                };
+            });
         }
 
         private void OnSearchChanged(string searchText)
@@ -2128,6 +2152,45 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                     _overlayBackdrop.style.visibility = Visibility.Hidden;
                 }
             }).StartingIn(300);
+        }
+        
+        /// <summary>
+        /// Checks if Package Guardian is disabled and prompts the user to enable it.
+        /// </summary>
+        private void CheckAndPromptIfDisabled()
+        {
+            var settings = PackageGuardianSettings.Instance;
+            if (!settings.enabled)
+            {
+                EditorApplication.delayCall += () =>
+                {
+                    string title = "Package Guardian is Disabled";
+                    string message = "Package Guardian is currently disabled. All monitoring and protection features are turned off.\n\n" +
+                                   "Would you like to enable Package Guardian now?";
+                    
+                    bool enable = EditorUtility.DisplayDialog(
+                        title,
+                        message,
+                        "Enable",
+                        "Keep Disabled"
+                    );
+                    
+                    if (enable)
+                    {
+                        settings.enabled = true;
+                        settings.Save();
+                        Debug.Log("[Package Guardian] Package Guardian has been enabled from window prompt");
+                        
+                        EditorUtility.DisplayDialog(
+                            "Package Guardian Enabled",
+                            "Package Guardian has been enabled. All monitoring and protection features are now active.",
+                            "OK"
+                        );
+                        
+                        RefreshDashboard();
+                    }
+                };
+            }
         }
     }
 }

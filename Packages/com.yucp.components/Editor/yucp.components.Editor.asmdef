@@ -19,6 +19,9 @@
         "VRCSDKBase-Editor.dll",
         "VRCSDK3A.dll",
         "VRCSDK3A-Editor.dll",
+        "VRC.Dynamics.dll",
+        "VRC.SDK3.Dynamics.Constraint.dll",
+        "VRC.SDK3.Dynamics.Contact.dll",
         "Newtonsoft.Json.dll",
         "ICSharpCode.SharpZipLib.dll"
     ],

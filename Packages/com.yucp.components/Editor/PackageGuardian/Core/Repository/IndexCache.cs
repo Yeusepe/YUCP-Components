@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
+using System.Threading;
 
 namespace PackageGuardian.Core.Repository
 {
@@ -12,8 +14,8 @@ namespace PackageGuardian.Core.Repository
     public sealed class IndexCache
     {
         private readonly string _indexPath;
-        private Dictionary<string, IndexEntry> _entries;
-        private readonly object _lock = new object();
+        private readonly ConcurrentDictionary<string, IndexEntry> _entries;
+        private readonly ReaderWriterLockSlim _persistenceLock = new ReaderWriterLockSlim();
 
         public IndexCache(string repositoryRoot)
         {
@@ -22,7 +24,7 @@ namespace PackageGuardian.Core.Repository
             
             string pgDir = Path.Combine(repositoryRoot, ".pg");
             _indexPath = Path.Combine(pgDir, "index.json");
-            _entries = new Dictionary<string, IndexEntry>(StringComparer.OrdinalIgnoreCase);
+            _entries = new ConcurrentDictionary<string, IndexEntry>(StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -30,11 +32,12 @@ namespace PackageGuardian.Core.Repository
         /// </summary>
         public void Load()
         {
-            lock (_lock)
+            _persistenceLock.EnterWriteLock();
+            try
             {
                 if (!File.Exists(_indexPath))
                 {
-                    _entries = new Dictionary<string, IndexEntry>(StringComparer.OrdinalIgnoreCase);
+                    _entries.Clear();
                     return;
                 }
                 
@@ -43,20 +46,25 @@ namespace PackageGuardian.Core.Repository
                     string json = File.ReadAllText(_indexPath);
                     var entries = JsonConvert.DeserializeObject<List<IndexEntry>>(json);
                     
-                    _entries = new Dictionary<string, IndexEntry>(StringComparer.OrdinalIgnoreCase);
-                    if (entries != null)
+                    _entries.Clear();
+                    if (entries == null)
+                        return;
+                    
+                    foreach (var entry in entries)
                     {
-                        foreach (var entry in entries)
-                        {
-                            _entries[entry.Path] = entry;
-                        }
+                        if (entry?.Path == null)
+                            continue;
+                        _entries[entry.Path] = entry;
                     }
                 }
                 catch
                 {
-                    // If index is corrupted, start fresh
-                    _entries = new Dictionary<string, IndexEntry>(StringComparer.OrdinalIgnoreCase);
+                    _entries.Clear();
                 }
+            }
+            finally
+            {
+                _persistenceLock.ExitWriteLock();
             }
         }
 
@@ -65,7 +73,8 @@ namespace PackageGuardian.Core.Repository
         /// </summary>
         public void Save()
         {
-            lock (_lock)
+            _persistenceLock.EnterWriteLock();
+            try
             {
                 var entries = new List<IndexEntry>(_entries.Values);
                 string json = JsonConvert.SerializeObject(entries, Formatting.Indented);
@@ -87,6 +96,10 @@ namespace PackageGuardian.Core.Repository
                     throw;
                 }
             }
+            finally
+            {
+                _persistenceLock.ExitWriteLock();
+            }
         }
 
         /// <summary>
@@ -94,10 +107,7 @@ namespace PackageGuardian.Core.Repository
         /// </summary>
         public bool TryGet(string relativePath, out IndexEntry entry)
         {
-            lock (_lock)
-            {
-                return _entries.TryGetValue(relativePath, out entry);
-            }
+            return _entries.TryGetValue(relativePath, out entry);
         }
 
         /// <summary>
@@ -108,10 +118,7 @@ namespace PackageGuardian.Core.Repository
             if (entry == null)
                 throw new ArgumentNullException(nameof(entry));
             
-            lock (_lock)
-            {
-                _entries[entry.Path] = entry;
-            }
+            _entries[entry.Path] = entry;
         }
 
         /// <summary>
@@ -119,10 +126,7 @@ namespace PackageGuardian.Core.Repository
         /// </summary>
         public void Remove(string relativePath)
         {
-            lock (_lock)
-            {
-                _entries.Remove(relativePath);
-            }
+            _entries.TryRemove(relativePath, out _);
         }
 
         /// <summary>
@@ -130,10 +134,7 @@ namespace PackageGuardian.Core.Repository
         /// </summary>
         public void Clear()
         {
-            lock (_lock)
-            {
-                _entries.Clear();
-            }
+            _entries.Clear();
         }
 
         /// <summary>
@@ -141,10 +142,7 @@ namespace PackageGuardian.Core.Repository
         /// </summary>
         public IEnumerable<string> GetAllPaths()
         {
-            lock (_lock)
-            {
-                return new List<string>(_entries.Keys);
-            }
+            return new List<string>(_entries.Keys);
         }
     }
 }

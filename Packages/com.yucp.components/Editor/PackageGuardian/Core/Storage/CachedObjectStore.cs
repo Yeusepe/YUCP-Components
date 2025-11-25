@@ -68,6 +68,21 @@ namespace PackageGuardian.Core.Storage
             return oid;
         }
 
+        public StagedObjectWrite StageObject(PgObject obj)
+        {
+            return _inner.StageObject(obj);
+        }
+
+        public string CommitStagedObject(StagedObjectWrite staged)
+        {
+            string oid = _inner.CommitStagedObject(staged);
+            if (!_cache.ContainsKey(oid) && _cache.Count < _maxCacheSize && staged.SourceObject != null)
+            {
+                _cache.TryAdd(oid, staged.SourceObject);
+            }
+            return oid;
+        }
+
         public bool Contains(string oid)
         {
             // Check cache first

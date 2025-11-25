@@ -128,20 +128,19 @@ namespace PackageGuardian.Core.Repository
             var stashes = new List<StashEntry>();
             
             var allRefs = _refs.ListRefs("refs/stash/").ToList();
-            UnityEngine.Debug.Log($"[Package Guardian] StashManager.List() found {allRefs.Count} refs under refs/stash/");
+            
+            if (allRefs.Count > 100)
+            {
+                UnityEngine.Debug.Log($"[Package Guardian] Loading {allRefs.Count} stashes (this may take a moment)...");
+            }
             
             foreach (string refName in allRefs)
             {
-                UnityEngine.Debug.Log($"[Package Guardian] Processing stash ref: {refName}");
-                
                 string commitId = _refs.ReadRef(refName);
                 if (string.IsNullOrWhiteSpace(commitId))
                 {
-                    UnityEngine.Debug.LogWarning($"[Package Guardian] Ref {refName} has no commit ID");
                     continue;
                 }
-                
-                UnityEngine.Debug.Log($"[Package Guardian] Ref {refName} -> Commit {commitId}");
                 
                 try
                 {
@@ -149,7 +148,6 @@ namespace PackageGuardian.Core.Repository
                     var commitObj = _store.ReadObject(commitId);
                     if (commitObj is not Commit commit)
                     {
-                        UnityEngine.Debug.LogWarning($"[Package Guardian] Object {commitId} is not a Commit");
                         continue;
                     }
                     
@@ -158,8 +156,6 @@ namespace PackageGuardian.Core.Repository
                         commitId,
                         commit.Timestamp,
                         commit.Message));
-                    
-                    UnityEngine.Debug.Log($"[Package Guardian] Added stash: {commit.Message}");
                 }
                 catch (Exception ex)
                 {
@@ -240,6 +236,112 @@ namespace PackageGuardian.Core.Repository
             // Create branch ref
             string branchRef = $"refs/heads/{branchName}";
             _refs.UpdateRef(branchRef, commitId, $"Branch from stash: {stashRefName}");
+        }
+
+        /// <summary>
+        /// Get the total number of stashes.
+        /// </summary>
+        public int GetStashCount()
+        {
+            return _refs.ListRefs("refs/stash/").Count();
+        }
+
+        /// <summary>
+        /// Clean up old stashes, keeping only those newer than the specified number of days.
+        /// </summary>
+        /// <param name="keepDays">Number of days to keep. Stashes older than this will be deleted.</param>
+        /// <returns>Number of stashes deleted.</returns>
+        public int CleanupOldStashes(int keepDays)
+        {
+            if (keepDays < 0)
+                throw new ArgumentException("keepDays must be non-negative", nameof(keepDays));
+            
+            var allStashes = List();
+            long cutoffTimestamp = DateTimeOffset.UtcNow.AddDays(-keepDays).ToUnixTimeSeconds();
+            
+            int deleted = 0;
+            foreach (var stash in allStashes)
+            {
+                if (stash.Timestamp < cutoffTimestamp)
+                {
+                    try
+                    {
+                        Drop(stash.RefName);
+                        deleted++;
+                    }
+                    catch (Exception ex)
+                    {
+                        UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to delete stash {stash.RefName}: {ex.Message}");
+                    }
+                }
+            }
+            
+            return deleted;
+        }
+
+        /// <summary>
+        /// Clean up stashes, keeping only the N most recent ones.
+        /// </summary>
+        /// <param name="keepCount">Number of most recent stashes to keep.</param>
+        /// <returns>Number of stashes deleted.</returns>
+        public int CleanupKeepRecent(int keepCount)
+        {
+            if (keepCount < 0)
+                throw new ArgumentException("keepCount must be non-negative", nameof(keepCount));
+            
+            var allStashes = List();
+            
+            if (allStashes.Count <= keepCount)
+                return 0;
+            
+            // Sort by timestamp descending (newest first), then skip the first keepCount
+            var toDelete = allStashes.OrderByDescending(s => s.Timestamp).Skip(keepCount).ToList();
+            
+            int deleted = 0;
+            foreach (var stash in toDelete)
+            {
+                try
+                {
+                    Drop(stash.RefName);
+                    deleted++;
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to delete stash {stash.RefName}: {ex.Message}");
+                }
+            }
+            
+            return deleted;
+        }
+
+        /// <summary>
+        /// Drop multiple stashes by ref name.
+        /// </summary>
+        /// <param name="refNames">Collection of stash ref names to delete.</param>
+        /// <returns>Number of stashes successfully deleted.</returns>
+        public int DropMultiple(IEnumerable<string> refNames)
+        {
+            if (refNames == null)
+                throw new ArgumentNullException(nameof(refNames));
+            
+            int deleted = 0;
+            foreach (var refName in refNames)
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(refName) && _refs.RefExists(refName))
+                    {
+                        Drop(refName);
+                        deleted++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to delete stash {refName}: {ex.Message}");
+                }
+            }
+            
+            return deleted;
         }
     }
 }

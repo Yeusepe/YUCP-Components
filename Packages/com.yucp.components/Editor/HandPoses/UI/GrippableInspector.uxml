@@ -1,0 +1,50 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="True">
+    <Style src="project://database/Packages/com.yucp.components/Editor/HandPoses/UI/GrippableInspectorStyle.uss?fileID=7433441132597879392&amp;guid=placeholder&amp;type=3#GrippableInspectorStyle" />
+    <ui:ScrollView horizontal-scroller-visibility="Hidden">
+        <ui:VisualElement name="HandPoseSection" class="section-header" style="margin-top: 10px; margin-right: 5px; margin-bottom: 5px; margin-left: 5px;">
+            <ui:Label tabindex="-1" text="Hand Pose" parse-escape-sequences="true" display-tooltip-when-elided="true" name="HandPoseTitle" style="-unity-font-style: bold; color: rgb(255, 255, 255); font-size: 16px; margin-bottom: 8px;" />
+            
+            <uie:PropertyField name="handPoseAsset" binding-path="handPoseAsset" label="Hand Pose Asset" style="margin-bottom: 12px;" />
+            
+            <ui:Button text="Create New Hand Pose" parse-escape-sequences="true" display-tooltip-when-elided="true" name="CreateHandPoseButton" class="secondary-button" />
+            <ui:Button text="Edit Hand Pose" parse-escape-sequences="true" display-tooltip-when-elided="true" name="EditHandPoseButton" class="secondary-button" />
+            
+            <ui:VisualElement name="HandPoseInfo" class="info-box" style="display: none;">
+                <ui:Label tabindex="-1" text="No hand pose selected" parse-escape-sequences="true" name="HandPoseInfoLabel" class="info-label" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="GripTargetSection" class="section-header" style="margin-top: 10px; margin-right: 5px; margin-bottom: 5px; margin-left: 5px;">
+            <ui:Label tabindex="-1" text="Grip Target" parse-escape-sequences="true" display-tooltip-when-elided="true" name="GripTargetTitle" style="-unity-font-style: bold; color: rgb(255, 255, 255); font-size: 16px; margin-bottom: 8px;" />
+            
+            <uie:PropertyField name="grippedObject" binding-path="grippedObject" label="Gripped Object" style="margin-bottom: 12px;" />
+            <uie:PropertyField name="targetHand" binding-path="targetHand" label="Target Hand" style="margin-bottom: 12px;" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="ToggleSettingsSection" class="section-header" style="margin-top: 10px; margin-right: 5px; margin-bottom: 5px; margin-left: 5px;">
+            <ui:Label tabindex="-1" text="Toggle Settings" parse-escape-sequences="true" display-tooltip-when-elided="true" name="ToggleSettingsTitle" style="-unity-font-style: bold; color: rgb(255, 255, 255); font-size: 16px; margin-bottom: 8px;" />
+            
+            <uie:PropertyField name="menuPath" binding-path="menuPath" label="Menu Path" style="margin-bottom: 8px;" />
+            <uie:PropertyField name="saved" binding-path="saved" label="Saved" style="margin-bottom: 8px;" />
+            <uie:PropertyField name="defaultOn" binding-path="defaultOn" label="Default On" style="margin-bottom: 8px;" />
+            <uie:PropertyField name="globalParameter" binding-path="globalParameter" label="Global Parameter" style="margin-bottom: 12px;" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="BlendPoseSection" class="section-header" style="margin-top: 10px; margin-right: 5px; margin-bottom: 5px; margin-left: 5px; display: none;">
+            <ui:Label tabindex="-1" text="Blend Pose Settings" parse-escape-sequences="true" display-tooltip-when-elided="true" name="BlendPoseTitle" style="-unity-font-style: bold; color: rgb(255, 255, 255); font-size: 16px; margin-bottom: 8px;" />
+            
+            <uie:PropertyField name="blendValue" binding-path="blendValue" label="Blend Value (0 = Open, 1 = Closed)" style="margin-bottom: 12px;" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="DebugSection" class="section-header" style="margin-top: 10px; margin-right: 5px; margin-bottom: 5px; margin-left: 5px;">
+            <ui:Label tabindex="-1" text="Debug" parse-escape-sequences="true" display-tooltip-when-elided="true" name="DebugTitle" style="-unity-font-style: bold; color: rgb(255, 255, 255); font-size: 16px; margin-bottom: 8px;" />
+            
+            <uie:PropertyField name="debugMode" binding-path="debugMode" label="Debug Mode" style="margin-bottom: 12px;" />
+            
+            <ui:VisualElement name="GeneratedInfo" class="info-box" style="display: none;">
+                <ui:Label tabindex="-1" text="" parse-escape-sequences="true" name="GeneratedInfoLabel" class="info-label" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:ScrollView>
+</ui:UXML>
+
