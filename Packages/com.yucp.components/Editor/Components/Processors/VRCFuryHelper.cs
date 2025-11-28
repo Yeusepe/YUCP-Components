@@ -98,17 +98,16 @@ namespace YUCP.Components.Editor
             var content = contentField.GetValue(existingVRCFury);
             if (content == null) return;
             
-            var prmsField = content.GetType().GetField("prms", BindingFlags.Public | BindingFlags.Instance);
-            if (prmsField == null) return;
-            
-            var paramsEntryType = prmsField.FieldType.GetGenericArguments()[0];
-            var entry = System.Activator.CreateInstance(paramsEntryType);
-            paramsEntryType.GetField("parameters").SetValue(entry, parameters);
-            
-            var prmsList = prmsField.GetValue(content) as IList;
-            prmsList?.Add(entry);
-            
-            EditorUtility.SetDirty(existingVRCFury);
+            var addParamsMethod = content.GetType().GetMethod("AddParams", new[] { typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters) });
+            if (addParamsMethod != null)
+            {
+                addParamsMethod.Invoke(content, new object[] { parameters });
+                EditorUtility.SetDirty(existingVRCFury);
+            }
+            else
+            {
+                Debug.LogWarning("[YUCP VRCFuryHelper] Could not find AddParams method on FullController. Parameters may not be added.");
+            }
         }
     }
 }

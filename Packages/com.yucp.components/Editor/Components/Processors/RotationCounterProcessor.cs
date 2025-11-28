@@ -393,7 +393,40 @@ namespace YUCP.Components.Editor
                             transition.AddCondition(AnimatorConditionMode.Greater, sectorStartDeg, data.angleParameterName);
                             transition.AddCondition(AnimatorConditionMode.Less, sectorEndDeg, data.angleParameterName);
                         }
-                        
+                    }
+                }
+            }
+            
+            foreach (int i in Enumerable.Range(0, numSectors))
+            {
+                for (int j = 0; j < numSectors; j++)
+                {
+                    if (i == j) continue;
+                    
+                    int rawStep = j - i;
+                    int correctedStep = rawStep;
+                    
+                    if (rawStep > halfSectors)
+                    {
+                        correctedStep = rawStep - numSectors;
+                    }
+                    else if (rawStep < -halfSectors)
+                    {
+                        correctedStep = rawStep + numSectors;
+                    }
+                    
+                    int rotationStep = 0;
+                    if (correctedStep == 1 || correctedStep == -numSectors + 1)
+                    {
+                        rotationStep = 1;
+                    }
+                    else if (correctedStep == -1 || correctedStep == numSectors - 1)
+                    {
+                        rotationStep = -1;
+                    }
+                    
+                    if (rotationStep != 0)
+                    {
                         SetStateDriver(sectorStates[j], data, null,
                             ("_PrevSector", DriverSet, (float)i),
                             ("_CurrentSector", DriverSet, (float)j),
