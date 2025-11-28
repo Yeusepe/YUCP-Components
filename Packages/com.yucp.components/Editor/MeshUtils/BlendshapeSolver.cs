@@ -179,7 +179,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
         /// <summary>
         /// Solve using Affine mode: allows minor shear/scale.
-        /// Better for wider objects like stickers that need to stretch with skin.
+        /// Suitable for wider objects like stickers that need to stretch with skin.
         /// </summary>
         public static SolverResult SolveAffine(
             Vector3 clusterPosition,

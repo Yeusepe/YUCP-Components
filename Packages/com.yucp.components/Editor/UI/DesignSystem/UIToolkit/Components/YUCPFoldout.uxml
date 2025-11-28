@@ -1,0 +1,9 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPFoldout.uss" />
+    
+    <ui:Foldout name="yucp-foldout" class="yucp-foldout">
+        <ui:Slot />
+    </ui:Foldout>
+</ui:UXML>
+

@@ -1,0 +1,57 @@
+/* YUCP Solver Mode Card Component */
+.yucp-solver-mode-card {
+    border-radius: var(--yucp-radius-card);
+    padding: var(--yucp-spacing-sm);
+    margin-bottom: var(--yucp-spacing-sm);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    background-color: rgba(77, 77, 77, 0.2);
+    flex-direction: column;
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-solver-mode-card:hover {
+    border-color: var(--yucp-border-secondary);
+    scale: 1.005 1.005;
+}
+
+.yucp-solver-mode-card.mode-rigid {
+    background-color: rgba(128, 179, 255, 0.2);
+}
+
+.yucp-solver-mode-card.mode-rigid-normal {
+    background-color: rgba(179, 204, 128, 0.2);
+}
+
+.yucp-solver-mode-card.mode-affine {
+    background-color: rgba(255, 179, 128, 0.2);
+}
+
+.yucp-solver-mode-card.mode-cage-rbf {
+    background-color: rgba(204, 128, 255, 0.2);
+}
+
+.yucp-solver-title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+    margin-bottom: 2px;
+}
+
+.yucp-solver-description {
+    font-size: 10px;
+    color: var(--yucp-text-secondary);
+    white-space: normal;
+    margin-bottom: 2px;
+}
+
+.yucp-solver-good-for {
+    font-size: 10px;
+    color: rgb(179, 230, 179);
+    white-space: normal;
+}
+
+

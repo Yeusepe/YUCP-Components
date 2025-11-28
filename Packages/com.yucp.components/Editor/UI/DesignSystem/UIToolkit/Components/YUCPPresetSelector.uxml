@@ -1,0 +1,18 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPPresetSelector.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPButton.uss" />
+    
+    <ui:VisualElement class="yucp-preset-selector">
+        <ui:VisualElement class="yucp-preset-buttons-row">
+            <ui:Button name="preset-conservative" class="yucp-preset-button" text="Conservative" />
+            <ui:Button name="preset-balanced" class="yucp-preset-button" text="Balanced" />
+        </ui:VisualElement>
+        <ui:VisualElement class="yucp-preset-buttons-row">
+            <ui:Button name="preset-aggressive" class="yucp-preset-button" text="Aggressive" />
+            <ui:Button name="preset-custom" class="yucp-preset-button" text="Custom" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
+
+

@@ -1,0 +1,10 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPProgress.uss" />
+    
+    <ui:VisualElement class="yucp-progress-container">
+        <ui:ProgressBar name="yucp-progress" class="yucp-progress-bar" />
+        <ui:Label name="yucp-progress-label" class="yucp-progress-label" />
+    </ui:VisualElement>
+</ui:UXML>
+

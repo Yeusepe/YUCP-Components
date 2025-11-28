@@ -7,6 +7,7 @@ using UnityEngine.UIElements;
 using YUCP.Components;
 using YUCP.Components.Editor.MeshUtils;
 using YUCP.Components.Editor.UI;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
 {
@@ -18,192 +19,215 @@ namespace YUCP.Components.Editor
 
         public override VisualElement CreateInspectorGUI()
         {
-            var root = new VisualElement();
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("UV Discard Toggle"));
-            
-            var container = new IMGUIContainer(() => {
-                OnInspectorGUIContent();
-            });
-            
-            root.Add(container);
-            return root;
-        }
-        private void OnInspectorGUIContent()
-        {
             serializedObject.Update();
             var data = (UVDiscardToggleData)target;
 
-            // Beta warning
-            BetaWarningHelper.DrawBetaWarningIMGUI(typeof(UVDiscardToggleData));
+            var root = new VisualElement();
+            
+            // Load design system stylesheets
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
+            
+            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("UV Discard Toggle"));
 
-            // Show integration banner if AutoBodyHider is present
             var autoBodyHider = data.clothingMesh != null ? data.clothingMesh.GetComponent<AutoBodyHiderData>() : null;
             if (autoBodyHider != null)
             {
-                EditorGUILayout.Space(5);
-                var originalColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.3f, 0.7f, 1f, 0.4f);
-                EditorGUILayout.HelpBox(
+                root.Add(YUCPUIToolkitHelper.CreateHelpBox(
                     "Auto Body Hider Integration Detected\n\n" +
                     "This UV Discard Toggle will work together with the AutoBodyHider component on the clothing mesh. " +
                     "Both will use the same UDIM tile for coordinated body hiding and clothing toggling.",
-                    MessageType.Info);
-                GUI.backgroundColor = originalColor;
-                EditorGUILayout.Space(5);
+                    YUCPUIToolkitHelper.MessageType.Info));
             }
 
-            // Target Meshes
-            DrawSection("Target Meshes", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("targetBodyMesh"), new GUIContent("Body Mesh"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("clothingMesh"), new GUIContent("Clothing Mesh"));
-            });
+            var targetMeshesCard = YUCPUIToolkitHelper.CreateCard("Target Meshes", "Configure the meshes for UV discard");
+            var targetMeshesContent = YUCPUIToolkitHelper.GetCardContent(targetMeshesCard);
+            targetMeshesContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("targetBodyMesh"), "Body Mesh"));
+            targetMeshesContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("clothingMesh"), "Clothing Mesh"));
+            root.Add(targetMeshesCard);
 
-            // UDIM Settings
-            DrawSection("UDIM Discard Settings", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("udimUVChannel"), new GUIContent("UV Channel"));
-                
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("udimDiscardRow"), new GUIContent("Row"), GUILayout.MinWidth(100));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("udimDiscardColumn"), new GUIContent("Column"), GUILayout.MinWidth(100));
-                EditorGUILayout.EndHorizontal();
-                
-                EditorGUILayout.HelpBox("Avoid row 0 (especially 0,0) as it overlaps with the main texture. Row 3, Column 3 is safest.", MessageType.None);
-            });
+            var udimCard = YUCPUIToolkitHelper.CreateCard("UDIM Discard Settings", "Configure UDIM tile coordinates");
+            var udimContent = YUCPUIToolkitHelper.GetCardContent(udimCard);
+            udimContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimUVChannel"), "UV Channel"));
 
-            // Toggle Settings
-            DrawSection("Toggle Settings", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("menuPath"), new GUIContent("Menu Path"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("globalParameter"), new GUIContent("Global Parameter (Optional)"));
-                
-                // Show parameter mode info
-                var menuPathProp = serializedObject.FindProperty("menuPath");
-                var globalParameterProp = serializedObject.FindProperty("globalParameter");
+            var rowColumnContainer = new VisualElement();
+            rowColumnContainer.style.flexDirection = FlexDirection.Row;
+            rowColumnContainer.style.marginBottom = 5;
+            
+            var rowField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimDiscardRow"), "Row");
+            rowField.style.flexGrow = 1;
+            rowField.style.marginRight = 5;
+            rowColumnContainer.Add(rowField);
+            
+            var columnField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimDiscardColumn"), "Column");
+            columnField.style.flexGrow = 1;
+            rowColumnContainer.Add(columnField);
+            
+            udimContent.Add(rowColumnContainer);
+            udimContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Avoid row 0 (especially 0,0) as it overlaps with the main texture. Row 3, Column 3 is safest.", YUCPUIToolkitHelper.MessageType.None));
+            root.Add(udimCard);
+
+            var toggleCard = YUCPUIToolkitHelper.CreateCard("Toggle Settings", "Configure menu and parameter settings");
+            var toggleContent = YUCPUIToolkitHelper.GetCardContent(toggleCard);
+            toggleContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("menuPath"), "Menu Path"));
+            toggleContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("globalParameter"), "Global Parameter (Optional)"));
+
+            var menuPathProp = serializedObject.FindProperty("menuPath");
+            var globalParameterProp = serializedObject.FindProperty("globalParameter");
+            var dynamicHelpBoxContainer = new VisualElement();
+            toggleContent.Add(dynamicHelpBoxContainer);
+            
+            root.schedule.Execute(() =>
+            {
+                dynamicHelpBoxContainer.Clear();
                 bool hasMenuPath = !string.IsNullOrEmpty(menuPathProp.stringValue);
                 bool hasGlobalParam = !string.IsNullOrEmpty(globalParameterProp.stringValue);
-                
+
+                VisualElement helpBox = null;
                 if (!hasMenuPath && hasGlobalParam)
                 {
-                    EditorGUILayout.HelpBox(
+                    helpBox = YUCPUIToolkitHelper.CreateHelpBox(
                         $"Global Parameter Only: Controlled by '{globalParameterProp.stringValue}' (no menu item).",
-                        MessageType.Info);
+                        YUCPUIToolkitHelper.MessageType.Info);
                 }
                 else if (hasMenuPath && hasGlobalParam)
                 {
-                    EditorGUILayout.HelpBox(
+                    helpBox = YUCPUIToolkitHelper.CreateHelpBox(
                         $"Synced Toggle: Menu controls '{globalParameterProp.stringValue}' (synced across players).",
-                        MessageType.Info);
+                        YUCPUIToolkitHelper.MessageType.Info);
                 }
                 else if (hasMenuPath && !hasGlobalParam)
                 {
-                    EditorGUILayout.HelpBox(
+                    helpBox = YUCPUIToolkitHelper.CreateHelpBox(
                         "Local Toggle: VRCFury auto-generates local parameter (not synced).",
-                        MessageType.Info);
+                        YUCPUIToolkitHelper.MessageType.Info);
                 }
                 else
                 {
-                    EditorGUILayout.HelpBox("Menu path or global parameter is required!", MessageType.Warning);
+                    helpBox = YUCPUIToolkitHelper.CreateHelpBox(
+                        "Menu path or global parameter is required!",
+                        YUCPUIToolkitHelper.MessageType.Warning);
                 }
                 
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("saved"), new GUIContent("Saved"), GUILayout.MinWidth(100));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("defaultOn"), new GUIContent("Default ON"), GUILayout.MinWidth(100));
-                EditorGUILayout.EndHorizontal();
-            });
-
-            // Advanced Toggle Options (Foldout)
-            EditorGUILayout.Space(5);
-            showAdvancedToggle = EditorGUILayout.BeginFoldoutHeaderGroup(showAdvancedToggle, "Advanced Toggle Options");
-            if (showAdvancedToggle)
-            {
-                EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("slider"), new GUIContent("Use Slider"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("holdButton"), new GUIContent("Hold Button"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("securityEnabled"), new GUIContent("Security Enabled"));
-                
-                EditorGUILayout.Space(3);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("enableExclusiveTag"), new GUIContent("Exclusive Tags"));
-                if (serializedObject.FindProperty("enableExclusiveTag").boolValue)
+                if (helpBox != null)
                 {
-                    EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("exclusiveTag"), new GUIContent("Tag Name"));
-                    EditorGUI.indentLevel--;
+                    dynamicHelpBoxContainer.Add(helpBox);
                 }
-                
-                EditorGUILayout.Space(3);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("enableIcon"), new GUIContent("Custom Icon"));
-                if (serializedObject.FindProperty("enableIcon").boolValue)
+            }).Every(100);
+
+            var savedDefaultContainer = new VisualElement();
+            savedDefaultContainer.style.flexDirection = FlexDirection.Row;
+            savedDefaultContainer.style.marginBottom = 5;
+            
+            var savedField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("saved"), "Saved");
+            savedField.style.flexGrow = 1;
+            savedField.style.marginRight = 5;
+            savedDefaultContainer.Add(savedField);
+            
+            var defaultOnField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("defaultOn"), "Default ON");
+            defaultOnField.style.flexGrow = 1;
+            savedDefaultContainer.Add(defaultOnField);
+            toggleContent.Add(savedDefaultContainer);
+            root.Add(toggleCard);
+
+            var advancedFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced Toggle Options", showAdvancedToggle);
+            advancedFoldout.RegisterValueChangedCallback(evt => { showAdvancedToggle = evt.newValue; });
+            root.Add(advancedFoldout);
+
+            var advancedContent = new VisualElement();
+            advancedContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("slider"), "Use Slider"));
+            advancedContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("holdButton"), "Hold Button"));
+            advancedContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("securityEnabled"), "Security Enabled"));
+            
+            YUCPUIToolkitHelper.AddSpacing(advancedContent, 3);
+            
+            var enableExclusiveTagProp = serializedObject.FindProperty("enableExclusiveTag");
+            var exclusiveTagField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("exclusiveTag"), "Tag Name");
+            var exclusiveTagContainer = new VisualElement();
+            exclusiveTagContainer.style.paddingLeft = 15;
+            exclusiveTagContainer.Add(exclusiveTagField);
+            
+            advancedContent.Add(YUCPUIToolkitHelper.CreateField(enableExclusiveTagProp, "Exclusive Tags"));
+            advancedContent.Add(exclusiveTagContainer);
+            
+            root.schedule.Execute(() =>
+            {
+                exclusiveTagField.style.display = enableExclusiveTagProp.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
+            }).Every(100);
+            
+            YUCPUIToolkitHelper.AddSpacing(advancedContent, 3);
+            
+            var enableIconProp = serializedObject.FindProperty("enableIcon");
+            var iconField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("icon"), "Icon Texture");
+            var iconContainer = new VisualElement();
+            iconContainer.style.paddingLeft = 15;
+            iconContainer.Add(iconField);
+            
+            advancedContent.Add(YUCPUIToolkitHelper.CreateField(enableIconProp, "Custom Icon"));
+            advancedContent.Add(iconContainer);
+            
+            root.schedule.Execute(() =>
+            {
+                iconField.style.display = enableIconProp.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
+            }).Every(100);
+            
+            advancedFoldout.Add(advancedContent);
+
+            var debugFoldout = YUCPUIToolkitHelper.CreateFoldout("Debug Options", showDebug);
+            debugFoldout.RegisterValueChangedCallback(evt => { showDebug = evt.newValue; });
+            debugFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugSaveAnimation"), "Save Animation to Assets"));
+            root.Add(debugFoldout);
+
+            YUCPUIToolkitHelper.AddSpacing(root, 10);
+
+            var validationContainer = new VisualElement();
+            validationContainer.name = "validation-container";
+            root.Add(validationContainer);
+
+            root.schedule.Execute(() =>
+            {
+                validationContainer.Clear();
+
+                if (data.targetBodyMesh == null)
                 {
-                    EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("icon"), new GUIContent("Icon Texture"));
-                    EditorGUI.indentLevel--;
+                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Target Body Mesh is required", YUCPUIToolkitHelper.MessageType.Error));
                 }
-                
-                EditorGUI.indentLevel--;
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Debug Options (Foldout)
-            EditorGUILayout.Space(5);
-            showDebug = EditorGUILayout.BeginFoldoutHeaderGroup(showDebug, "Debug Options");
-            if (showDebug)
-            {
-                EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("debugSaveAnimation"), new GUIContent("Save Animation to Assets"));
-                EditorGUI.indentLevel--;
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Validation Errors
-            EditorGUILayout.Space(10);
-            if (data.targetBodyMesh == null)
-                EditorGUILayout.HelpBox("Target Body Mesh is required", MessageType.Error);
-            else if (data.clothingMesh == null)
-                EditorGUILayout.HelpBox("Clothing Mesh is required", MessageType.Error);
-            else if (data.targetBodyMesh.sharedMesh == null)
-                EditorGUILayout.HelpBox("Target Body Mesh has no mesh data", MessageType.Error);
-            else if (data.clothingMesh.sharedMesh == null)
-                EditorGUILayout.HelpBox("Clothing Mesh has no mesh data", MessageType.Error);
-            else if (string.IsNullOrEmpty(data.menuPath) && string.IsNullOrEmpty(data.globalParameter))
-                EditorGUILayout.HelpBox("Either Menu Path or Global Parameter must be set", MessageType.Error);
-            else if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
-            {
-                bool hasPoiyomi = false;
-                foreach (var mat in data.targetBodyMesh.sharedMaterials)
+                else if (data.clothingMesh == null)
                 {
-                    if (UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Clothing Mesh is required", YUCPUIToolkitHelper.MessageType.Error));
+                }
+                else if (data.targetBodyMesh.sharedMesh == null)
+                {
+                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Target Body Mesh has no mesh data", YUCPUIToolkitHelper.MessageType.Error));
+                }
+                else if (data.clothingMesh.sharedMesh == null)
+                {
+                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Clothing Mesh has no mesh data", YUCPUIToolkitHelper.MessageType.Error));
+                }
+                else if (string.IsNullOrEmpty(data.menuPath) && string.IsNullOrEmpty(data.globalParameter))
+                {
+                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Either Menu Path or Global Parameter must be set", YUCPUIToolkitHelper.MessageType.Error));
+                }
+                else if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
+                {
+                    bool hasPoiyomi = false;
+                    foreach (var mat in data.targetBodyMesh.sharedMaterials)
                     {
-                        hasPoiyomi = true;
-                        break;
+                        if (UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                        {
+                            hasPoiyomi = true;
+                            break;
+                        }
+                    }
+                    if (!hasPoiyomi)
+                    {
+                        validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Body mesh needs a Poiyomi or FastFur material with UDIM support", YUCPUIToolkitHelper.MessageType.Warning));
                     }
                 }
-                if (!hasPoiyomi)
-                    EditorGUILayout.HelpBox("Body mesh needs a Poiyomi or FastFur material with UDIM support", MessageType.Warning);
-            }
+            }).Every(100);
 
-            serializedObject.ApplyModifiedProperties();
-        }
+            root.schedule.Execute(() => serializedObject.ApplyModifiedProperties()).Every(100);
 
-        private void DrawSection(string title, System.Action content)
-        {
-            EditorGUILayout.Space(5);
-            
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
-            
-            if (!string.IsNullOrEmpty(title))
-            {
-                var style = new GUIStyle(EditorStyles.boldLabel);
-                style.alignment = TextAnchor.MiddleLeft;
-                EditorGUILayout.LabelField(title, style);
-                EditorGUILayout.Space(3);
-            }
-            
-            content?.Invoke();
-            
-            EditorGUILayout.EndVertical();
+            return root;
         }
     }
 }

@@ -4,9 +4,11 @@ using System.Linq;
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.UIElements;
+using UnityEditor.UIElements;
 using YUCP.Components;
 using YUCP.Components.Editor.MeshUtils;
 using YUCP.Components.Editor.Utils;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Resources
 {
@@ -82,641 +84,460 @@ namespace YUCP.Components.Resources
 
         public override VisualElement CreateInspectorGUI()
         {
-            var root = new VisualElement();
-            root.Add(YUCPComponentHeader.CreateHeaderOverlay("Attach to Blendshape"));
-
-            var container = new IMGUIContainer(() => {
-                OnInspectorGUIContent();
-            });
-
-            root.Add(container);
-            return root;
-        }
-
-        public override void OnInspectorGUI()
-        {
-            OnInspectorGUIContent();
-        }
-
-        private void OnInspectorGUIContent()
-        {
             serializedObject.Update();
             data = (AttachToBlendshapeData)target;
+            
+            var root = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
+            root.Add(YUCPComponentHeader.CreateHeaderOverlay("Attach to Blendshape"));
 
-            // Validation banner at top
-            DrawValidationBanner();
+            // Validation banner (will be updated dynamically)
+            var validationBanner = new VisualElement();
+            validationBanner.name = "validation-banner";
+            root.Add(validationBanner);
+            
+            YUCPUIToolkitHelper.AddSpacing(root, 5);
+            
+            // Target Mesh Configuration Foldout
+            var targetFoldout = YUCPUIToolkitHelper.CreateFoldout("Target Mesh Configuration", showTargetSettings);
+            targetFoldout.RegisterValueChangedCallback(evt => { showTargetSettings = evt.newValue; });
+            
+            targetFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("targetMesh"), "Target Mesh"));
+            
+            var targetMeshHelp = new VisualElement();
+            targetMeshHelp.name = "target-mesh-help";
+            targetFoldout.Add(targetMeshHelp);
+            root.Add(targetFoldout);
 
-            EditorGUILayout.Space(5);
-
-            // Target Mesh Section
-            showTargetSettings = DrawFoldoutSection("Target Mesh Configuration", showTargetSettings, () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("targetMesh"), new GUIContent("Target Mesh"));
-
+            // Blendshape Tracking Foldout
+            var trackingFoldout = YUCPUIToolkitHelper.CreateFoldout("Blendshape Tracking", showBlendshapeTracking);
+            trackingFoldout.RegisterValueChangedCallback(evt => { showBlendshapeTracking = evt.newValue; });
+            
+            var trackingModeSelector = YUCPUIToolkitHelper.CreateTrackingModeSelector(
+                data.trackingMode,
+                (mode) => {
+                    data.trackingMode = mode;
+                    EditorUtility.SetDirty(data);
+                }
+            );
+            trackingFoldout.Add(trackingModeSelector);
+            
+            YUCPUIToolkitHelper.AddSpacing(trackingFoldout, 8);
+            
+            var trackingModeContent = new VisualElement();
+            trackingModeContent.name = "tracking-mode-content";
+            trackingFoldout.Add(trackingModeContent);
+            
+            root.Add(trackingFoldout);
+            
+            // Surface Cluster Settings Foldout
+            var clusterFoldout = YUCPUIToolkitHelper.CreateFoldout("Surface Cluster Settings", showSurfaceCluster);
+            clusterFoldout.RegisterValueChangedCallback(evt => { showSurfaceCluster = evt.newValue; });
+            clusterFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("Surface cluster uses multiple triangles for stable attachment during deformation.", YUCPUIToolkitHelper.MessageType.None));
+            
+            YUCPUIToolkitHelper.AddSpacing(clusterFoldout, 5);
+            clusterFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("clusterTriangleCount"), "Triangle Count"));
+            clusterFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("searchRadius"), "Search Radius"));
+            
+            YUCPUIToolkitHelper.AddSpacing(clusterFoldout, 3);
+            clusterFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("manualTriangleIndex"), "Manual Triangle"));
+            
+            var manualTriangleHelp = new VisualElement();
+            manualTriangleHelp.name = "manual-triangle-help";
+            clusterFoldout.Add(manualTriangleHelp);
+            root.Add(clusterFoldout);
+            
+            // Solver Configuration Foldout
+            var solverFoldout = YUCPUIToolkitHelper.CreateFoldout("Solver Configuration", showSolverConfiguration);
+            solverFoldout.RegisterValueChangedCallback(evt => { showSolverConfiguration = evt.newValue; });
+            solverFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("solverMode"), "Solver Mode"));
+            
+            var solverModeCardContainer = new VisualElement();
+            solverModeCardContainer.name = "solver-mode-card";
+            solverFoldout.Add(solverModeCardContainer);
+            
+            YUCPUIToolkitHelper.AddSpacing(solverFoldout, 5);
+            solverFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("alignRotationToSurface"), "Align to Surface"));
+            
+            var normalOffsetCard = YUCPUIToolkitHelper.CreateCard("Normal Offset Settings", "Configure offset distance");
+            normalOffsetCard.name = "normal-offset-card";
+            var normalOffsetContent = YUCPUIToolkitHelper.GetCardContent(normalOffsetCard);
+            normalOffsetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("normalOffset"), "Offset Distance"));
+            solverFoldout.Add(normalOffsetCard);
+            
+            var rbfCard = YUCPUIToolkitHelper.CreateCard("RBF Deformation Settings", "Configure RBF deformation parameters");
+            rbfCard.name = "rbf-card";
+            var rbfContent = YUCPUIToolkitHelper.GetCardContent(rbfCard);
+            rbfContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rbfDriverPointCount"), "Driver Points"));
+            rbfContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rbfRadiusMultiplier"), "Radius Multiplier"));
+            rbfContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("useGPUAcceleration"), "GPU Acceleration"));
+            solverFoldout.Add(rbfCard);
+            
+            YUCPUIToolkitHelper.AddSpacing(solverFoldout, 5);
+            solverFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rotationSmoothingFactor"), "Rotation Smoothing"));
+            root.Add(solverFoldout);
+            
+            // Bone Attachment Foldout
+            var boneFoldout = YUCPUIToolkitHelper.CreateFoldout("Bone Attachment (Base Positioning)", showBoneAttachment);
+            boneFoldout.RegisterValueChangedCallback(evt => { showBoneAttachment = evt.newValue; });
+            boneFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("attachToClosestBone"), "Enable Bone Attachment"));
+            
+            var boneSettingsCard = YUCPUIToolkitHelper.CreateCard("Bone Detection Settings", "Configure bone detection parameters");
+            boneSettingsCard.name = "bone-settings-card";
+            var boneSettingsContent = YUCPUIToolkitHelper.GetCardContent(boneSettingsCard);
+            boneSettingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("boneSearchRadius"), "Search Radius"));
+            boneSettingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("boneNameFilter"), "Name Filter"));
+            boneSettingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("ignoreHumanoidBones"), "Ignore Humanoid Bones"));
+            boneSettingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("boneOffset"), "Bone Offset Path"));
+            boneFoldout.Add(boneSettingsCard);
+            
+            var boneHelp = new VisualElement();
+            boneHelp.name = "bone-help";
+            boneFoldout.Add(boneHelp);
+            root.Add(boneFoldout);
+            
+            // Animation Generation Foldout
+            var animationFoldout = YUCPUIToolkitHelper.CreateFoldout("Animation Generation", showAnimationSettings);
+            animationFoldout.RegisterValueChangedCallback(evt => { showAnimationSettings = evt.newValue; });
+            animationFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("createDirectAnimations"), "Create Animation Assets"));
+            
+            var directAnimHelp = new VisualElement();
+            directAnimHelp.name = "direct-anim-help";
+            animationFoldout.Add(directAnimHelp);
+            
+            var visemeFxLayerField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoCreateVisemeFxLayer"), "Auto Viseme FX Layer");
+            visemeFxLayerField.name = "viseme-fx-layer";
+            animationFoldout.Add(visemeFxLayerField);
+            
+            var visemeFxHelp = new VisualElement();
+            visemeFxHelp.name = "viseme-fx-help";
+            animationFoldout.Add(visemeFxHelp);
+            
+            YUCPUIToolkitHelper.AddSpacing(animationFoldout, 5);
+            animationFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("samplesPerBlendshape"), "Samples Per Blendshape"));
+            
+            var samplesHelp = new VisualElement();
+            samplesHelp.name = "samples-help";
+            animationFoldout.Add(samplesHelp);
+            root.Add(animationFoldout);
+            
+            // Advanced Options Foldout
+            var advancedFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced Options", showAdvancedOptions);
+            advancedFoldout.RegisterValueChangedCallback(evt => { showAdvancedOptions = evt.newValue; });
+            advancedFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugSaveAnimations"), "Save Animations"));
+            advancedFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Logging"));
+            advancedFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("showPreview"), "Show Preview Gizmos"));
+            root.Add(advancedFoldout);
+            
+            // Preview Tools Section
+            YUCPUIToolkitHelper.AddSpacing(root, 15);
+            root.Add(YUCPUIToolkitHelper.CreateDivider());
+            YUCPUIToolkitHelper.AddSpacing(root, 5);
+            
+            var previewHeader = new Label("PREVIEW & DETECTION");
+            previewHeader.style.fontSize = 13;
+            previewHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+            previewHeader.style.color = new StyleColor(new Color(0.212f, 0.749f, 0.694f));
+            previewHeader.style.marginBottom = 8;
+            root.Add(previewHeader);
+            
+            var previewToolsContainer = new VisualElement();
+            previewToolsContainer.name = "preview-tools-container";
+            root.Add(previewToolsContainer);
+            
+            // Build Statistics Foldout
+            var buildStatsFoldout = YUCPUIToolkitHelper.CreateFoldout("Build Statistics", showBuildStats);
+            buildStatsFoldout.RegisterValueChangedCallback(evt => { showBuildStats = evt.newValue; });
+            buildStatsFoldout.name = "build-stats-foldout";
+            
+            var buildStatsCard = YUCPUIToolkitHelper.CreateCard("Last Build Results", null);
+            var buildStatsContent = YUCPUIToolkitHelper.GetCardContent(buildStatsCard);
+            buildStatsContent.name = "build-stats-content";
+            buildStatsFoldout.Add(buildStatsCard);
+            root.Add(buildStatsFoldout);
+            
+            // Dynamic updates
+            root.schedule.Execute(() =>
+            {
+                serializedObject.Update();
+                
+                validationBanner.Clear();
+                if (!ValidateData())
+                {
+                    validationBanner.Add(YUCPUIToolkitHelper.CreateHelpBox($"Configuration Error\n\n{GetValidationError()}", YUCPUIToolkitHelper.MessageType.Error));
+                }
+                
+                targetMeshHelp.Clear();
                 if (data.targetMesh != null)
                 {
-                    EditorGUILayout.Space(3);
-                    
                     if (!PoseSampler.HasBlendshapes(data.targetMesh))
                     {
-                        var errorColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(1f, 0.3f, 0.3f, 0.3f);
-                        EditorGUILayout.HelpBox("Target mesh has no blendshapes!", MessageType.Error);
-                        GUI.backgroundColor = errorColor;
+                        targetMeshHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Target mesh has no blendshapes!", YUCPUIToolkitHelper.MessageType.Error));
                     }
                     else
                     {
                         int blendshapeCount = data.targetMesh.sharedMesh.blendShapeCount;
-                        var infoColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(0.3f, 0.7f, 1f, 0.2f);
-                        EditorGUILayout.HelpBox($"Found {blendshapeCount} blendshape{(blendshapeCount != 1 ? "s" : "")} on target mesh", MessageType.Info);
-                        GUI.backgroundColor = infoColor;
+                        targetMeshHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"Found {blendshapeCount} blendshape{(blendshapeCount != 1 ? "s" : "")} on target mesh", YUCPUIToolkitHelper.MessageType.Info));
                     }
                 }
                 else
                 {
-                    EditorGUILayout.HelpBox("Select a SkinnedMeshRenderer with blendshapes", MessageType.None);
+                    targetMeshHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Select a SkinnedMeshRenderer with blendshapes", YUCPUIToolkitHelper.MessageType.None));
                 }
-            });
-
-            // Blendshape Tracking Section
-            EditorGUILayout.Space(5);
-            showBlendshapeTracking = DrawFoldoutSection("Blendshape Tracking", showBlendshapeTracking, () => {
-                // Mode selector buttons (visual)
-                DrawTrackingModeSelector();
-
-                EditorGUILayout.Space(8);
-
-                // Mode-specific UI
-                switch (data.trackingMode)
-                {
-                    case BlendshapeTrackingMode.All:
-                        var allColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(0.3f, 0.7f, 1f, 0.2f);
-                        EditorGUILayout.HelpBox("All blendshapes on the target mesh will be tracked.\n\nGood for: Complete facial tracking", MessageType.Info);
-                        GUI.backgroundColor = allColor;
-                        break;
-
-                    case BlendshapeTrackingMode.Specific:
-                        DrawSpecificBlendshapesList();
-                        break;
-
-                    case BlendshapeTrackingMode.VisemsOnly:
-                        var visemeColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(0.5f, 0.8f, 0.5f, 0.2f);
-                        EditorGUILayout.HelpBox("Only VRChat viseme blendshapes will be tracked.\n\nGood for: Lip piercings, mouth jewelry", MessageType.Info);
-                        GUI.backgroundColor = visemeColor;
-                        DrawDetectedVisemes();
-                        break;
-
-                    case BlendshapeTrackingMode.Smart:
-                        var smartColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(0.8f, 0.5f, 1f, 0.2f);
-                        EditorGUILayout.HelpBox("Automatically detects blendshapes that move this attachment.\n\nGood for: Optimal performance, localized areas", MessageType.Info);
-                        GUI.backgroundColor = smartColor;
-                        
-                        EditorGUILayout.Space(3);
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("smartDetectionThreshold"), 
-                            new GUIContent("Detection Threshold", "Minimum displacement in meters"));
-                        break;
-                }
-            });
-
-            // Surface Cluster Section
-            EditorGUILayout.Space(5);
-            showSurfaceCluster = DrawFoldoutSection("Surface Cluster Settings", showSurfaceCluster, () => {
-                EditorGUILayout.HelpBox("Surface cluster uses multiple triangles for stable attachment during deformation.", MessageType.None);
                 
-                EditorGUILayout.Space(5);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("clusterTriangleCount"), 
-                    new GUIContent("Triangle Count", "1-8 triangles, more = more stable"));
-                
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("searchRadius"), 
-                    new GUIContent("Search Radius", "Detection radius in meters, 0 = unlimited"));
-                
-                EditorGUILayout.Space(3);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("manualTriangleIndex"), 
-                    new GUIContent("Manual Triangle", "Leave -1 for auto-detect"));
-
+                manualTriangleHelp.Clear();
                 if (data.manualTriangleIndex >= 0)
                 {
-                    var manualColor = GUI.backgroundColor;
-                    GUI.backgroundColor = new Color(1f, 0.8f, 0.3f, 0.2f);
-                    EditorGUILayout.HelpBox($"Manual mode: Using triangle #{data.manualTriangleIndex} as primary anchor", MessageType.Info);
-                    GUI.backgroundColor = manualColor;
+                    manualTriangleHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"Manual mode: Using triangle #{data.manualTriangleIndex} as primary anchor", YUCPUIToolkitHelper.MessageType.Info));
                 }
-            });
-
-            // Solver Configuration Section
-            EditorGUILayout.Space(5);
-            showSolverConfiguration = DrawFoldoutSection("Solver Configuration", showSolverConfiguration, () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("solverMode"), 
-                    new GUIContent("Solver Mode"));
                 
-                EditorGUILayout.Space(5);
-                DrawSolverModeCard(data.solverMode);
-
-                EditorGUILayout.Space(5);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("alignRotationToSurface"), 
-                    new GUIContent("Align to Surface", "Rotate object with surface normal"));
-
-                // Mode-specific settings
-                if (data.solverMode == SolverMode.RigidNormalOffset)
+                // Update solver mode card
+                var solverCardContainer = root.Q<VisualElement>("solver-mode-card");
+                if (solverCardContainer != null && showSolverConfiguration)
                 {
-                    EditorGUILayout.Space(5);
-                    DrawSubSection("Normal Offset Settings", () => {
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("normalOffset"), 
-                            new GUIContent("Offset Distance", "Distance to push outward"));
-                    });
+                    solverCardContainer.Clear();
+                    var solverCard = YUCPUIToolkitHelper.CreateSolverModeCard(data.solverMode);
+                    solverCardContainer.Add(solverCard);
                 }
-
-                if (data.solverMode == SolverMode.CageRBF)
-                {
-                    EditorGUILayout.Space(5);
-                    DrawSubSection("RBF Deformation Settings", () => {
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("rbfDriverPointCount"), 
-                            new GUIContent("Driver Points", "3-16 points on surface"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("rbfRadiusMultiplier"), 
-                            new GUIContent("Radius Multiplier", "Influence range"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("useGPUAcceleration"), 
-                            new GUIContent("GPU Acceleration", "Faster for large meshes"));
-                    });
-                }
-
-                EditorGUILayout.Space(5);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("rotationSmoothingFactor"), 
-                    new GUIContent("Rotation Smoothing", "Prevents orientation flips"));
-            });
-
-            // Bone Attachment Section
-            EditorGUILayout.Space(5);
-            showBoneAttachment = DrawFoldoutSection("Bone Attachment (Base Positioning)", showBoneAttachment, () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("attachToClosestBone"), 
-                    new GUIContent("Enable Bone Attachment", "Links object to nearest bone"));
-
+                
+                normalOffsetCard.style.display = (data.solverMode == SolverMode.RigidNormalOffset) ? DisplayStyle.Flex : DisplayStyle.None;
+                rbfCard.style.display = (data.solverMode == SolverMode.CageRBF) ? DisplayStyle.Flex : DisplayStyle.None;
+                
+                boneSettingsCard.style.display = data.attachToClosestBone ? DisplayStyle.Flex : DisplayStyle.None;
+                boneHelp.Clear();
                 if (data.attachToClosestBone)
                 {
-                    EditorGUILayout.Space(5);
-                    DrawSubSection("Bone Detection Settings", () => {
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("boneSearchRadius"), 
-                            new GUIContent("Search Radius", "Max distance to bones"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("boneNameFilter"), 
-                            new GUIContent("Name Filter", "Only bones containing text"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("ignoreHumanoidBones"), 
-                            new GUIContent("Ignore Humanoid Bones", "Only use extra bones"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("boneOffset"), 
-                            new GUIContent("Bone Offset Path", "Optional offset string"));
-                    });
-
-                    EditorGUILayout.Space(3);
-                    var boneInfoColor = GUI.backgroundColor;
-                    GUI.backgroundColor = new Color(0.5f, 0.8f, 0.9f, 0.2f);
-                    EditorGUILayout.HelpBox("Bone attachment provides base positioning.\nBlendshape animations are applied relative to the bone.", MessageType.None);
-                    GUI.backgroundColor = boneInfoColor;
+                    boneHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Bone attachment provides base positioning.\nBlendshape animations are applied relative to the bone.", YUCPUIToolkitHelper.MessageType.None));
                 }
                 else
                 {
-                    EditorGUILayout.HelpBox("Bone attachment disabled - object will stay in place without base bone link.", MessageType.Warning);
+                    boneHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Bone attachment disabled - object will stay in place without base bone link.", YUCPUIToolkitHelper.MessageType.Warning));
                 }
-            });
-
-            // Animation Generation Section
-            EditorGUILayout.Space(5);
-            showAnimationSettings = DrawFoldoutSection("Animation Generation", showAnimationSettings, () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("createDirectAnimations"), 
-                    new GUIContent("Create Animation Assets", "Save animations to Assets/Generated"));
                 
+                directAnimHelp.Clear();
                 if (data.createDirectAnimations)
                 {
-                    var infoColor = GUI.backgroundColor;
-                    GUI.backgroundColor = new Color(0.5f, 0.8f, 1f, 0.2f);
-                    EditorGUILayout.HelpBox("Animations will be saved to Assets/Generated/AttachToBlendshape/\n\n" +
-                        "You'll need to manually wire these to your FX layer or use VRCFury's Direct Tree Controller.", MessageType.Info);
-                    GUI.backgroundColor = infoColor;
+                    directAnimHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Animations will be saved to Assets/Generated/AttachToBlendshape/\n\n" +
+                        "You'll need to manually wire these to your FX layer or use VRCFury's Direct Tree Controller.", YUCPUIToolkitHelper.MessageType.Info));
                 }
-
-                if (data.trackingMode == BlendshapeTrackingMode.VisemsOnly)
+                
+                visemeFxLayerField.style.display = (data.trackingMode == BlendshapeTrackingMode.VisemsOnly) ? DisplayStyle.Flex : DisplayStyle.None;
+                visemeFxHelp.Clear();
+                if (data.trackingMode == BlendshapeTrackingMode.VisemsOnly && data.autoCreateVisemeFxLayer)
                 {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("autoCreateVisemeFxLayer"),
-                        new GUIContent("Auto Viseme FX Layer", "Generate a VRCFury FX layer that reacts to the avatar Viseme parameter."));
-
-                    if (data.autoCreateVisemeFxLayer)
-                    {
-                        var visemeInfoColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(0.5f, 1f, 0.7f, 0.2f);
-                        EditorGUILayout.HelpBox("When enabled, a controller asset is created in Assets/Generated/AttachToBlendshape/Controllers\n" +
-                            "and automatically hooked up through VRCFury so the attachment follows live visemes.", MessageType.None);
-                        GUI.backgroundColor = visemeInfoColor;
-                    }
+                    visemeFxHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, a controller asset is created in Assets/Generated/AttachToBlendshape/Controllers\n" +
+                        "and automatically hooked up through VRCFury so the attachment follows live visemes.", YUCPUIToolkitHelper.MessageType.None));
                 }
                 
-                EditorGUILayout.Space(5);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("samplesPerBlendshape"), 
-                    new GUIContent("Samples Per Blendshape", "2-10 keyframes per animation"));
-                
-                EditorGUILayout.Space(3);
+                samplesHelp.Clear();
                 int samples = data.samplesPerBlendshape;
-                int estimatedKeyframes = samples * 7; // position xyz + rotation xyzw
-                var samplingColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.7f, 0.7f, 0.9f, 0.2f);
-                EditorGUILayout.HelpBox($"{samples} samples = ~{estimatedKeyframes} keyframes per blendshape\n" +
-                    $"More samples = smoother animation but larger file size", MessageType.None);
-                GUI.backgroundColor = samplingColor;
-            });
-
-            // Advanced Options Section
-            EditorGUILayout.Space(5);
-            showAdvancedOptions = DrawFoldoutSection("Advanced Options", showAdvancedOptions, () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("debugSaveAnimations"), 
-                    new GUIContent("Save Animations", "Export as .anim files in Assets/Generated"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("debugMode"), 
-                    new GUIContent("Debug Logging", "Detailed console output"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("showPreview"), 
-                    new GUIContent("Show Preview Gizmos", "Visualize in Scene view"));
-            });
-
-            // Preview Tools
-            EditorGUILayout.Space(15);
-            DrawPreviewToolsSection();
-
-            // Build Statistics
-            if (data.TrackedBlendshapes != null && data.TrackedBlendshapes.Count > 0)
-            {
-                EditorGUILayout.Space(5);
-                showBuildStats = DrawFoldoutSection("Build Statistics", showBuildStats, () => {
-                    var statsColor = GUI.backgroundColor;
-                    GUI.backgroundColor = new Color(0.3f, 0.8f, 0.3f, 0.2f);
-                    
-                    EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                    GUI.backgroundColor = statsColor;
-                    
-                    GUI.enabled = false;
-                    EditorGUILayout.LabelField("Last Build Results:", EditorStyles.boldLabel);
-                    EditorGUILayout.Space(3);
-                    
-                    EditorGUILayout.LabelField($"  - Tracked Blendshapes: {data.TrackedBlendshapes.Count}");
-                    EditorGUILayout.LabelField($"  - Generated Animations: {data.GeneratedAnimationCount}");
-                    EditorGUILayout.LabelField($"  - Selected Bone: {(string.IsNullOrEmpty(data.SelectedBonePath) ? "None" : data.SelectedBonePath)}");
-                    
-                    if (data.DetectedCluster != null)
-                    {
-                        EditorGUILayout.LabelField($"  - Cluster Triangles: {data.DetectedCluster.anchors.Count}");
-                        EditorGUILayout.LabelField($"  - Cluster Center: {data.DetectedCluster.centerPosition.ToString("F3")}");
-                    }
-                    
-                    GUI.enabled = true;
-                    EditorGUILayout.EndVertical();
-                });
-            }
-
-            serializedObject.ApplyModifiedProperties();
+                int estimatedKeyframes = samples * 7;
+                samplesHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"{samples} samples = ~{estimatedKeyframes} keyframes per blendshape\n" +
+                    $"More samples = smoother animation but larger file size", YUCPUIToolkitHelper.MessageType.None));
+                
+                // Update tracking mode content
+                UpdateTrackingModeContent(root.Q<VisualElement>("tracking-mode-content"));
+                
+                // Update preview tools
+                UpdatePreviewTools(root.Q<VisualElement>("preview-tools-container"));
+                
+                UpdateBuildStatistics(buildStatsFoldout, buildStatsContent);
+                
+                serializedObject.ApplyModifiedProperties();
+            }).Every(100);
+            
+            return root;
         }
-
-        // ========== UI HELPER METHODS ==========
-
-        private void DrawValidationBanner()
+        
+        private void UpdateBuildStatistics(Foldout foldout, VisualElement content)
         {
-            if (!ValidateData())
+            if (data.TrackedBlendshapes == null || data.TrackedBlendshapes.Count == 0)
             {
-                EditorGUILayout.Space(5);
-                var errorColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(1f, 0.3f, 0.3f);
+                foldout.style.display = DisplayStyle.None;
+                return;
+            }
+            
+            foldout.style.display = DisplayStyle.Flex;
+            content.Clear();
+            
+            var trackedLabel = new Label($"Tracked Blendshapes: {data.TrackedBlendshapes.Count}");
+            trackedLabel.SetEnabled(false);
+            trackedLabel.style.fontSize = 11;
+            trackedLabel.style.marginBottom = 2;
+            content.Add(trackedLabel);
+            
+            var animationsLabel = new Label($"Generated Animations: {data.GeneratedAnimationCount}");
+            animationsLabel.SetEnabled(false);
+            animationsLabel.style.fontSize = 11;
+            animationsLabel.style.marginBottom = 2;
+            content.Add(animationsLabel);
+            
+            var boneLabel = new Label($"Selected Bone: {(string.IsNullOrEmpty(data.SelectedBonePath) ? "None" : data.SelectedBonePath)}");
+            boneLabel.SetEnabled(false);
+            boneLabel.style.fontSize = 11;
+            boneLabel.style.marginBottom = 2;
+            content.Add(boneLabel);
+            
+            if (data.DetectedCluster != null)
+            {
+                var clusterTriLabel = new Label($"Cluster Triangles: {data.DetectedCluster.anchors.Count}");
+                clusterTriLabel.SetEnabled(false);
+                clusterTriLabel.style.fontSize = 11;
+                clusterTriLabel.style.marginBottom = 2;
+                content.Add(clusterTriLabel);
                 
-                EditorGUILayout.HelpBox($"Configuration Error\n\n{GetValidationError()}", MessageType.Error);
-                
-                GUI.backgroundColor = errorColor;
-                EditorGUILayout.Space(5);
+                var clusterCenterLabel = new Label($"Cluster Center: {data.DetectedCluster.centerPosition.ToString("F3")}");
+                clusterCenterLabel.SetEnabled(false);
+                clusterCenterLabel.style.fontSize = 11;
+                content.Add(clusterCenterLabel);
             }
         }
 
-        private bool DrawFoldoutSection(string title, bool foldout, System.Action content)
+        private void UpdateTrackingModeContent(VisualElement container)
         {
-            EditorGUILayout.Space(2);
+            if (container == null || !showBlendshapeTracking) return;
             
-            var rect = EditorGUILayout.GetControlRect(false, 25);
-            var boxRect = new Rect(rect.x - 2, rect.y, rect.width + 4, rect.height);
+            container.Clear();
             
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.2f, 0.2f, 0.2f, 0.5f);
-            GUI.Box(boxRect, "", EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
-            
-            var foldoutRect = new Rect(rect.x + 5, rect.y + 4, rect.width - 10, 16);
-            var style = new GUIStyle(EditorStyles.foldout);
-            style.fontStyle = FontStyle.Bold;
-            style.fontSize = 12;
-            
-            bool newFoldout = EditorGUI.Foldout(foldoutRect, foldout, title, true, style);
-            
-            if (newFoldout)
+            switch (data.trackingMode)
             {
-                EditorGUILayout.Space(2);
-                
-                var contentColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                GUI.backgroundColor = contentColor;
-                
-                EditorGUILayout.Space(5);
-                content?.Invoke();
-                EditorGUILayout.Space(5);
-                
-                EditorGUILayout.EndVertical();
+                case BlendshapeTrackingMode.All:
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("All blendshapes on the target mesh will be tracked.\n\nGood for: Facial tracking", YUCPUIToolkitHelper.MessageType.Info));
+                    break;
+                case BlendshapeTrackingMode.Specific:
+                    var blendshapeEditor = YUCPUIToolkitHelper.CreateBlendshapeListEditor(
+                        data.targetMesh?.sharedMesh,
+                        data.specificBlendshapes,
+                        (list) => {
+                            data.specificBlendshapes = list;
+                            EditorUtility.SetDirty(data);
+                        }
+                    );
+                    container.Add(blendshapeEditor);
+                    break;
+                case BlendshapeTrackingMode.VisemsOnly:
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Only VRChat viseme blendshapes will be tracked.\n\nGood for: Lip piercings, mouth jewelry", YUCPUIToolkitHelper.MessageType.Info));
+                    UpdateDetectedVisemes(container);
+                    break;
+                case BlendshapeTrackingMode.Smart:
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Automatically detects blendshapes that move this attachment.\n\nGood for: Optimal performance, localized areas", YUCPUIToolkitHelper.MessageType.Info));
+                    YUCPUIToolkitHelper.AddSpacing(container, 3);
+                    container.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("smartDetectionThreshold"), "Detection Threshold"));
+                    break;
             }
-            
-            return newFoldout;
         }
-
-        private void DrawSubSection(string title, System.Action content)
+        
+        private void UpdateDetectedVisemes(VisualElement container)
         {
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.15f, 0.15f, 0.15f, 0.5f);
+            if (data.targetMesh == null || data.targetMesh.sharedMesh == null) return;
             
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
+            int currentFrame = Time.frameCount;
+            List<string> detectedVisemes;
             
-            if (!string.IsNullOrEmpty(title))
+            if (cachedDetectedVisemes != null && cachedVisemeFrameCount == currentFrame)
             {
-                var style = new GUIStyle(EditorStyles.label);
-                style.fontStyle = FontStyle.Bold;
-                style.fontSize = 11;
-                EditorGUILayout.LabelField(title, style);
-                EditorGUILayout.Space(3);
-            }
-            
-            content?.Invoke();
-            
-            EditorGUILayout.EndVertical();
-        }
-
-        private void DrawTrackingModeSelector()
-        {
-            EditorGUILayout.LabelField("Select Tracking Mode:", EditorStyles.boldLabel);
-            EditorGUILayout.Space(3);
-            
-            GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
-            buttonStyle.fixedHeight = 35;
-            buttonStyle.wordWrap = true;
-            buttonStyle.alignment = TextAnchor.MiddleCenter;
-            buttonStyle.fontSize = 10;
-            
-            GUIStyle selectedStyle = new GUIStyle(buttonStyle);
-            selectedStyle.fontStyle = FontStyle.Bold;
-            selectedStyle.normal.textColor = Color.white;
-            
-            EditorGUILayout.BeginHorizontal();
-            
-            // All mode
-            var allColor = GUI.backgroundColor;
-            GUI.backgroundColor = data.trackingMode == BlendshapeTrackingMode.All ? new Color(0.212f, 0.749f, 0.694f) : new Color(0.3f, 0.3f, 0.3f);
-            if (GUILayout.Button("All\nBlendshapes", data.trackingMode == BlendshapeTrackingMode.All ? selectedStyle : buttonStyle))
-            {
-                data.trackingMode = BlendshapeTrackingMode.All;
-                EditorUtility.SetDirty(data);
-            }
-            GUI.backgroundColor = allColor;
-            
-            // Specific mode
-            GUI.backgroundColor = data.trackingMode == BlendshapeTrackingMode.Specific ? new Color(1f, 0.7f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
-            if (GUILayout.Button("Specific\nList", data.trackingMode == BlendshapeTrackingMode.Specific ? selectedStyle : buttonStyle))
-            {
-                data.trackingMode = BlendshapeTrackingMode.Specific;
-                EditorUtility.SetDirty(data);
-            }
-            GUI.backgroundColor = allColor;
-            
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.BeginHorizontal();
-            
-            // Visemes mode
-            GUI.backgroundColor = data.trackingMode == BlendshapeTrackingMode.VisemsOnly ? new Color(0.5f, 0.8f, 0.5f) : new Color(0.3f, 0.3f, 0.3f);
-            if (GUILayout.Button("Visemes\nOnly", data.trackingMode == BlendshapeTrackingMode.VisemsOnly ? selectedStyle : buttonStyle))
-            {
-                data.trackingMode = BlendshapeTrackingMode.VisemsOnly;
-                EditorUtility.SetDirty(data);
-            }
-            GUI.backgroundColor = allColor;
-            
-            // Smart mode
-            GUI.backgroundColor = data.trackingMode == BlendshapeTrackingMode.Smart ? new Color(0.8f, 0.5f, 1f) : new Color(0.3f, 0.3f, 0.3f);
-            if (GUILayout.Button("Smart\nDetect", data.trackingMode == BlendshapeTrackingMode.Smart ? selectedStyle : buttonStyle))
-            {
-                data.trackingMode = BlendshapeTrackingMode.Smart;
-                EditorUtility.SetDirty(data);
-            }
-            GUI.backgroundColor = allColor;
-            
-            EditorGUILayout.EndHorizontal();
-        }
-
-        private void DrawSolverModeCard(SolverMode mode)
-        {
-            var cardColor = GUI.backgroundColor;
-            
-            switch (mode)
-            {
-                case SolverMode.Rigid:
-                    GUI.backgroundColor = new Color(0.5f, 0.7f, 1f, 0.2f);
-                    break;
-                case SolverMode.RigidNormalOffset:
-                    GUI.backgroundColor = new Color(0.7f, 0.8f, 0.5f, 0.2f);
-                    break;
-                case SolverMode.Affine:
-                    GUI.backgroundColor = new Color(1f, 0.7f, 0.5f, 0.2f);
-                    break;
-                case SolverMode.CageRBF:
-                    GUI.backgroundColor = new Color(0.8f, 0.5f, 1f, 0.2f);
-                    break;
-            }
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = cardColor;
-            
-            string title = "";
-            string description = "";
-            string goodFor = "";
-            
-            switch (mode)
-            {
-                case SolverMode.Rigid:
-                    title = "Rigid Transform";
-                    description = "Simple rotation + translation";
-                    goodFor = "Piercings, small badges, hard jewelry";
-                    break;
-                case SolverMode.RigidNormalOffset:
-                    title = "Rigid + Normal Offset";
-                    description = "Rigid with outward push along surface normal";
-                    goodFor = "Raised jewelry, studs, embellishments";
-                    break;
-                case SolverMode.Affine:
-                    title = "Affine Transform";
-                    description = "Allows minor shear/scale to match skin stretch";
-                    goodFor = "Stickers, patches, wider decorations";
-                    break;
-                case SolverMode.CageRBF:
-                    title = "Cage/RBF Deformation";
-                    description = "Smooth deformation using driver points (advanced)";
-                    goodFor = "Masks, large patches, complex meshes";
-                    break;
-            }
-            
-            var titleStyle = new GUIStyle(EditorStyles.label);
-            titleStyle.fontStyle = FontStyle.Bold;
-            titleStyle.fontSize = 11;
-            EditorGUILayout.LabelField(title, titleStyle);
-            
-            EditorGUILayout.Space(2);
-            EditorGUILayout.LabelField(description, EditorStyles.wordWrappedMiniLabel);
-            
-            EditorGUILayout.Space(2);
-            var goodForStyle = new GUIStyle(EditorStyles.miniLabel);
-            goodForStyle.normal.textColor = new Color(0.7f, 0.9f, 0.7f);
-            EditorGUILayout.LabelField($"Good for: {goodFor}", goodForStyle);
-            
-            EditorGUILayout.EndVertical();
-        }
-
-        private void DrawPreviewToolsSection()
-        {
-            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
-            EditorGUILayout.Space(5);
-
-            GUIStyle headerStyle = new GUIStyle(EditorStyles.boldLabel);
-            headerStyle.fontSize = 13;
-            headerStyle.normal.textColor = new Color(0.212f, 0.749f, 0.694f);
-            EditorGUILayout.LabelField("PREVIEW & DETECTION", headerStyle);
-            
-            EditorGUILayout.Space(8);
-
-            DrawPreviewStatusBox();
-        }
-
-        private void DrawPreviewStatusBox()
-        {
-            var boxColor = GUI.backgroundColor;
-            
-            if (data.previewGenerated && data.previewCluster != null)
-            {
-                GUI.backgroundColor = new Color(0.3f, 0.8f, 0.3f, 0.2f);
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                GUI.backgroundColor = boxColor;
-                
-                EditorGUILayout.LabelField("Preview Generated", EditorStyles.boldLabel);
-                EditorGUILayout.Space(3);
-                
-                EditorGUILayout.LabelField($"Surface Cluster:", EditorStyles.miniLabel);
-                EditorGUILayout.LabelField($"  - {data.previewCluster.anchors.Count} triangles", EditorStyles.miniLabel);
-                EditorGUILayout.LabelField($"  - Center: {data.previewCluster.centerPosition.ToString("F3")}", EditorStyles.miniLabel);
-                
-                EditorGUILayout.Space(2);
-                EditorGUILayout.LabelField($"Detected Blendshapes: {data.previewBlendshapes.Count}", EditorStyles.miniLabel);
-                
-                if (data.previewBlendshapes.Count > 0 && data.previewBlendshapes.Count <= 20)
-                {
-                    EditorGUILayout.Space(3);
-                    blendshapeScrollPos = EditorGUILayout.BeginScrollView(blendshapeScrollPos, GUILayout.Height(100));
-                    foreach (string name in data.previewBlendshapes)
-                    {
-                        EditorGUILayout.LabelField($"  - {name}", EditorStyles.miniLabel);
-                    }
-                    EditorGUILayout.EndScrollView();
-                }
-                else if (data.previewBlendshapes.Count > 20)
-                {
-                    EditorGUILayout.LabelField($"  (Too many to display - {data.previewBlendshapes.Count} total)", EditorStyles.miniLabel);
-                }
-
-                if (data.previewBlendshapes.Count > 0)
-                {
-                    DrawPreviewBlendshapeSliders();
-                }
-                
-                EditorGUILayout.EndVertical();
+                detectedVisemes = cachedDetectedVisemes;
             }
             else
             {
-                GUI.backgroundColor = new Color(0.5f, 0.5f, 0.5f, 0.2f);
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                GUI.backgroundColor = boxColor;
+                GameObject avatarRoot = null;
+                var avatarDescriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
+                if (avatarDescriptor != null)
+                {
+                    avatarRoot = avatarDescriptor.gameObject;
+                }
                 
-                EditorGUILayout.LabelField("Preview Not Generated", EditorStyles.boldLabel);
-                EditorGUILayout.Space(3);
-                EditorGUILayout.LabelField("Click 'Generate Preview' to:", EditorStyles.miniLabel);
-                EditorGUILayout.LabelField("  - Detect surface cluster", EditorStyles.miniLabel);
-                EditorGUILayout.LabelField("  - Find relevant blendshapes", EditorStyles.miniLabel);
-                EditorGUILayout.LabelField("  - Visualize in Scene view", EditorStyles.miniLabel);
+                detectedVisemes = VRChatVisemeDetector.GetVisemeBlendshapes(data.targetMesh, avatarRoot);
+                cachedDetectedVisemes = detectedVisemes;
+                cachedVisemeFrameCount = currentFrame;
+            }
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 5);
+            
+            if (detectedVisemes.Count > 0)
+            {
+                var card = YUCPUIToolkitHelper.CreateCard($"Detected Visemes ({detectedVisemes.Count})", null);
+                var cardContent = YUCPUIToolkitHelper.GetCardContent(card);
                 
-                EditorGUILayout.EndVertical();
+                int maxDisplay = 15;
+                int displayed = Mathf.Min(detectedVisemes.Count, maxDisplay);
+                
+                var scrollView = new ScrollView();
+                scrollView.style.maxHeight = 150;
+                
+                for (int i = 0; i < displayed; i++)
+                {
+                    var label = new Label($"  - {detectedVisemes[i]}");
+                    label.style.fontSize = 10;
+                    scrollView.Add(label);
+                }
+                
+                if (detectedVisemes.Count > maxDisplay)
+                {
+                    var moreLabel = new Label($"  ... and {detectedVisemes.Count - maxDisplay} more");
+                    moreLabel.style.fontSize = 10;
+                    scrollView.Add(moreLabel);
+                }
+                
+                cardContent.Add(scrollView);
+                container.Add(card);
             }
-            
-            EditorGUILayout.Space(8);
-            
-            // Preview buttons
-            EditorGUILayout.BeginHorizontal();
-            
-            GUI.enabled = ValidateData();
-            var previewBtnColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.3f, 0.9f, 0.4f);
-            
-            GUIStyle btnStyle = new GUIStyle(GUI.skin.button);
-            btnStyle.fontStyle = FontStyle.Bold;
-            btnStyle.fontSize = 11;
-            
-            if (GUILayout.Button("Generate Preview", btnStyle, GUILayout.Height(40)))
+            else
             {
-                GeneratePreview();
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("No viseme blendshapes detected.\nCheck Avatar Descriptor or ensure blendshapes use standard VRChat naming.", YUCPUIToolkitHelper.MessageType.Warning));
             }
-            GUI.backgroundColor = previewBtnColor;
-            GUI.enabled = true;
-            
-            GUI.enabled = data.previewGenerated;
-            GUI.backgroundColor = new Color(1f, 0.5f, 0.3f);
-            if (GUILayout.Button("Clear", btnStyle, GUILayout.Height(40), GUILayout.Width(80)))
-            {
-                ClearPreview();
-            }
-            GUI.backgroundColor = previewBtnColor;
-            GUI.enabled = true;
-            
-            EditorGUILayout.EndHorizontal();
         }
         
-        private void DrawPreviewBlendshapeSliders()
+        private YUCPPreviewTools previewToolsInstance;
+        
+        private void UpdatePreviewTools(VisualElement container)
         {
-            EnsurePreviewBlendshapeCaches();
-
-            EditorGUILayout.Space(6);
-            EditorGUILayout.LabelField("Blendshape Preview Sliders", EditorStyles.boldLabel);
-
-            float height = Mathf.Clamp(data.previewBlendshapes.Count * 24f, 80f, 220f);
-            previewSliderScrollPos = EditorGUILayout.BeginScrollView(previewSliderScrollPos, GUILayout.Height(height));
-
-            foreach (string blendshape in data.previewBlendshapes)
+            if (container == null) return;
+            
+            if (previewToolsInstance == null)
             {
-                float current = data.previewBlendshapeWeights.TryGetValue(blendshape, out var cachedValue)
-                    ? cachedValue
-                    : GetCurrentBlendshapeWeight(blendshape);
-
-                EditorGUI.BeginChangeCheck();
-                float newValue = EditorGUILayout.Slider(blendshape, current, 0f, 100f);
-                if (EditorGUI.EndChangeCheck())
+                var previewData = new YUCPPreviewTools.PreviewData
                 {
-                    ApplyPreviewBlendshapeWeight(blendshape, newValue);
-                }
+                    previewGenerated = data.previewGenerated,
+                    clusterTriangleCount = data.previewCluster?.anchors.Count ?? 0,
+                    clusterCenter = data.previewCluster?.centerPosition ?? Vector3.zero,
+                    blendshapes = data.previewBlendshapes,
+                    blendshapeWeights = data.previewBlendshapeWeights,
+                    originalWeights = data.previewOriginalWeights
+                };
+                
+                previewToolsInstance = YUCPUIToolkitHelper.CreatePreviewTools(
+                    previewData,
+                    () => ValidateData(),
+                    () => GeneratePreview(),
+                    () => ClearPreview(),
+                    (name) => GetCurrentBlendshapeWeight(name),
+                    (name, value) => ApplyPreviewBlendshapeWeight(name, value),
+                    () => RestorePreviewBlendshapes(),
+                    () => ZeroPreviewBlendshapes()
+                );
+                
+                container.Add(previewToolsInstance);
             }
-
-            EditorGUILayout.EndScrollView();
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Reset to Original"))
+            
+            // Update preview data
+            var updatedPreviewData = new YUCPPreviewTools.PreviewData
             {
-                RestorePreviewBlendshapes();
-            }
-            if (GUILayout.Button("Zero All", GUILayout.Width(120)))
-            {
-                ZeroPreviewBlendshapes();
-            }
-            EditorGUILayout.EndHorizontal();
+                previewGenerated = data.previewGenerated,
+                clusterTriangleCount = data.previewCluster?.anchors.Count ?? 0,
+                clusterCenter = data.previewCluster?.centerPosition ?? Vector3.zero,
+                blendshapes = data.previewBlendshapes,
+                blendshapeWeights = data.previewBlendshapeWeights,
+                originalWeights = data.previewOriginalWeights
+            };
+            
+            previewToolsInstance.Data = updatedPreviewData;
+            previewToolsInstance.RefreshSliders();
+        }
+
+        public override void OnInspectorGUI()
+        {
+            // Legacy support - not used anymore
         }
 
         private void EnsurePreviewBlendshapeCaches()
@@ -1091,89 +912,6 @@ namespace YUCP.Components.Resources
             previewBakeMesh = null;
         }
 
-        private void DrawSpecificBlendshapesList()
-        {
-            EditorGUILayout.Space(5);
-            
-            if (data.targetMesh != null && data.targetMesh.sharedMesh != null)
-            {
-                Mesh mesh = data.targetMesh.sharedMesh;
-                
-                var infoColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.5f, 0.7f, 0.9f, 0.2f);
-                EditorGUILayout.HelpBox($"Target mesh has {mesh.blendShapeCount} blendshapes available", MessageType.None);
-                GUI.backgroundColor = infoColor;
-                
-                EditorGUILayout.Space(3);
-                
-                // Add blendshape button
-                var btnColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.4f, 0.8f, 0.5f);
-                if (GUILayout.Button("+ Add Blendshape from List", GUILayout.Height(28)))
-                {
-                    ShowBlendshapeSelectionMenu(mesh);
-                }
-                GUI.backgroundColor = btnColor;
-            }
-            else
-            {
-                EditorGUILayout.HelpBox("Assign target mesh to select blendshapes", MessageType.Warning);
-            }
-
-            EditorGUILayout.Space(5);
-
-            // List current specific blendshapes with styled boxes
-            if (data.specificBlendshapes.Count > 0)
-            {
-                EditorGUILayout.LabelField($"Selected Blendshapes ({data.specificBlendshapes.Count}):", EditorStyles.boldLabel);
-                EditorGUILayout.Space(3);
-                
-                var listColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0f, 0f, 0f, 0.2f);
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                GUI.backgroundColor = listColor;
-                
-                for (int i = 0; i < data.specificBlendshapes.Count; i++)
-                {
-                    EditorGUILayout.BeginHorizontal();
-                    
-                    // Index
-                    var indexStyle = new GUIStyle(EditorStyles.label);
-                    indexStyle.normal.textColor = new Color(0.7f, 0.7f, 0.7f);
-                    EditorGUILayout.LabelField($"{i + 1}.", indexStyle, GUILayout.Width(25));
-                    
-                    // Blendshape name
-                    data.specificBlendshapes[i] = EditorGUILayout.TextField(data.specificBlendshapes[i]);
-                    
-                    // Remove button
-                    var removeColor = GUI.backgroundColor;
-                    GUI.backgroundColor = new Color(1f, 0.3f, 0.3f);
-                    if (GUILayout.Button("×", GUILayout.Width(25), GUILayout.Height(18)))
-                    {
-                        data.specificBlendshapes.RemoveAt(i);
-                        EditorUtility.SetDirty(data);
-                        break;
-                    }
-                    GUI.backgroundColor = removeColor;
-                    
-                    EditorGUILayout.EndHorizontal();
-                    
-                    if (i < data.specificBlendshapes.Count - 1)
-                    {
-                        EditorGUILayout.Space(2);
-                    }
-                }
-                
-                EditorGUILayout.EndVertical();
-            }
-            else
-            {
-                var warningColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(1f, 0.8f, 0.3f, 0.2f);
-                EditorGUILayout.HelpBox("No blendshapes selected.\nClick 'Add Blendshape from List' to choose specific blendshapes to track.", MessageType.Warning);
-                GUI.backgroundColor = warningColor;
-            }
-        }
 
         private void ShowBlendshapeSelectionMenu(Mesh mesh)
         {
@@ -1200,71 +938,6 @@ namespace YUCP.Components.Resources
             menu.ShowAsContext();
         }
 
-        private void DrawDetectedVisemes()
-        {
-            if (data.targetMesh == null || data.targetMesh.sharedMesh == null)
-            {
-                return;
-            }
-
-            EditorGUILayout.Space(5);
-
-            // Cache viseme detection to prevent recalculation every frame
-            int currentFrame = Time.frameCount;
-            List<string> detectedVisemes;
-
-            if (cachedDetectedVisemes != null && cachedVisemeFrameCount == currentFrame)
-            {
-                detectedVisemes = cachedDetectedVisemes;
-            }
-            else
-            {
-                // Try to find avatar root for descriptor-based detection
-                GameObject avatarRoot = null;
-                var avatarDescriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
-                if (avatarDescriptor != null)
-                {
-                    avatarRoot = avatarDescriptor.gameObject;
-                }
-
-                detectedVisemes = VRChatVisemeDetector.GetVisemeBlendshapes(data.targetMesh, avatarRoot);
-                cachedDetectedVisemes = detectedVisemes;
-                cachedVisemeFrameCount = currentFrame;
-            }
-
-            if (detectedVisemes.Count > 0)
-            {
-                var listColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0f, 0f, 0f, 0.15f);
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                GUI.backgroundColor = listColor;
-                
-                EditorGUILayout.LabelField($"Detected Visemes ({detectedVisemes.Count}):", EditorStyles.boldLabel);
-                EditorGUILayout.Space(3);
-                
-                int maxDisplay = 15;
-                int displayed = Mathf.Min(detectedVisemes.Count, maxDisplay);
-                
-                for (int i = 0; i < displayed; i++)
-                {
-                    EditorGUILayout.LabelField($"  - {detectedVisemes[i]}", EditorStyles.miniLabel);
-                }
-                
-                if (detectedVisemes.Count > maxDisplay)
-                {
-                    EditorGUILayout.LabelField($"  ... and {detectedVisemes.Count - maxDisplay} more", EditorStyles.miniLabel);
-                }
-                
-                EditorGUILayout.EndVertical();
-            }
-            else
-            {
-                var warningColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(1f, 0.6f, 0.3f, 0.2f);
-                EditorGUILayout.HelpBox("No viseme blendshapes detected.\nCheck Avatar Descriptor or ensure blendshapes use standard VRChat naming.", MessageType.Warning);
-                GUI.backgroundColor = warningColor;
-            }
-        }
 
 
         private void GeneratePreview()

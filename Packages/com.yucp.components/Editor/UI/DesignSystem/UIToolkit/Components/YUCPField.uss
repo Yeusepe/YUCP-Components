@@ -1,0 +1,27 @@
+/* YUCP Field Component - spotcomponents pattern */
+.yucp-field {
+    margin-bottom: var(--yucp-spacing-xs);
+    flex-direction: column;
+}
+
+.yucp-field-label {
+    font-size: 13px;
+    color: var(--yucp-text-primary);
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-field-input {
+    min-height: 20px;
+}
+
+.yucp-field-error {
+    border-color: var(--yucp-accent-danger);
+    border-width: 1px;
+}
+
+.yucp-field-warning {
+    border-color: var(--yucp-accent-warning);
+    border-width: 1px;
+}
+
+

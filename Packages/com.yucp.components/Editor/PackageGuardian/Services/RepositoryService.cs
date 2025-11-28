@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEditor;
 using PackageGuardian.Core.Repository;
 using PackageGuardian.Core.Validation;
 using PackageGuardian.Core.Diff;
@@ -108,7 +109,25 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 if (string.IsNullOrEmpty(headCommitId))
                 {
                     // No HEAD, first commit - validate all files
-                    return _validator.ValidateProject();
+                    // ValidateProject() uses Unity APIs that require main thread, so skip if on background thread
+                    // Check if we're on the main thread (main thread typically has ManagedThreadId == 1)
+                    if (System.Threading.Thread.CurrentThread.ManagedThreadId == 1)
+                    {
+                        try
+                        {
+                            return _validator.ValidateProject();
+                        }
+                        catch
+                        {
+                            // If Unity API calls fail (e.g., not on main thread), return empty list
+                            return new List<ValidationIssue>();
+                        }
+                    }
+                    else
+                    {
+                        // On background thread, return empty list to avoid Unity API calls
+                        return new List<ValidationIssue>();
+                    }
                 }
                 
                 // Compare working directory to HEAD

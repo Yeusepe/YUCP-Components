@@ -1,0 +1,45 @@
+/* YUCP Slider Component */
+.yucp-slider {
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-slider > .unity-slider__track {
+    height: 4px;
+    background-color: var(--yucp-bg-tertiary);
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+    transition-property: background-color;
+}
+
+.yucp-slider > .unity-slider__track > .unity-slider__fill {
+    background-color: var(--yucp-accent-primary);
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+    transition-property: background-color;
+}
+
+.yucp-slider > .unity-slider__track > .unity-slider__thumb {
+    width: 16px;
+    height: 16px;
+    background-color: var(--yucp-accent-primary);
+    border-radius: 50%;
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+    transition-property: background-color, width, height;
+    cursor: pointer;
+}
+
+.yucp-slider > .unity-slider__track > .unity-slider__thumb:hover {
+    width: 18px;
+    height: 18px;
+    background-color: var(--yucp-accent-primary-hover);
+}
+
+.yucp-slider-value {
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+    margin-left: var(--yucp-spacing-xs);
+    min-width: 40px;
+    -unity-text-align: middle-right;
+}
+

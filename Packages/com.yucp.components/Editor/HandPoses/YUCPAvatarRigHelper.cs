@@ -34,7 +34,6 @@ namespace YUCP.Components.HandPoses
             HumanBodyBones proximalBone;
             HumanBodyBones intermediateBone;
             HumanBodyBones distalBone;
-            HumanBodyBones? metacarpalBone = null;
 
             bool isLeft = handSide == YUCPHandSide.Left;
 

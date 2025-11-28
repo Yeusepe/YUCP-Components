@@ -1,0 +1,14 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPSection.uss" />
+    
+    <ui:VisualElement name="yucp-section" class="yucp-section">
+        <ui:Label name="section-title" class="yucp-section-title" />
+        <ui:Label name="section-subtitle" class="yucp-section-subtitle" />
+        <ui:VisualElement name="section-content" class="yucp-section-content">
+            <ui:Slot />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
+
+

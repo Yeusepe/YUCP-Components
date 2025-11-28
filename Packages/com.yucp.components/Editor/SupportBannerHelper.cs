@@ -1,7 +1,9 @@
 using System;
 using UnityEngine;
 using UnityEditor;
+using UnityEngine.UIElements;
 using YUCP.Components;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
 {
@@ -151,6 +153,75 @@ namespace YUCP.Components.Editor
             EditorGUILayout.EndVertical(); // End outer container
             
             EditorGUILayout.Space(8);
+        }
+        
+        /// <summary>
+        /// Creates a VisualElement support banner container if the component has a SupportBanner attribute.
+        /// Returns null if no banner attribute is present or if it should not be shown.
+        /// Uses UI Toolkit components (no IMGUI).
+        /// </summary>
+        public static VisualElement CreateSupportBannerVisualElement(Type componentType)
+        {
+            var supportAttribute = (SupportBannerAttribute)Attribute.GetCustomAttribute(
+                componentType, 
+                typeof(SupportBannerAttribute)
+            );
+            
+            if (supportAttribute == null)
+                return null;
+            
+            // Check if user has permanently dismissed
+            if (EditorPrefs.GetBool(PrefNeverKey, false)) return null;
+            
+            // Check if dismissed for this session
+            if (SessionState.GetBool(SessionDismissKey, false)) return null;
+
+            // Count inspector draws and check cadence
+            int count = EditorPrefs.GetInt(PrefCounterKey, 0) + 1;
+            EditorPrefs.SetInt(PrefCounterKey, count);
+
+            int cadence = Mathf.Max(1, EditorPrefs.GetInt(PrefCadenceKey, 1000));
+            if (count % cadence != 0) return null;
+            
+            var template = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
+                "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPSupportBanner.uxml");
+            
+            if (template == null)
+                return null;
+            
+            var banner = template.Instantiate();
+            
+            var messageLabel = banner.Q<Label>("support-message");
+            if (messageLabel != null)
+            {
+                messageLabel.text = supportAttribute.Message;
+            }
+            
+            var supportButton = banner.Q<Button>("support-button");
+            if (supportButton != null)
+            {
+                supportButton.clicked += () => Application.OpenURL(SupportUrl);
+            }
+            
+            var closeButton = banner.Q<Button>("support-close");
+            if (closeButton != null)
+            {
+                closeButton.clicked += () => {
+                    SessionState.SetBool(SessionDismissKey, true);
+                    banner.style.display = DisplayStyle.None;
+                };
+            }
+            
+            var neverButton = banner.Q<Button>("support-never");
+            if (neverButton != null)
+            {
+                neverButton.clicked += () => {
+                    EditorPrefs.SetBool(PrefNeverKey, true);
+                    banner.style.display = DisplayStyle.None;
+                };
+            }
+            
+            return banner;
         }
     }
 }

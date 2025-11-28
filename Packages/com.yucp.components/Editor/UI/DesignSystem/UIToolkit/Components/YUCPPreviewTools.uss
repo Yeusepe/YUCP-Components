@@ -1,0 +1,146 @@
+/* YUCP Preview Tools Component */
+.yucp-preview-tools {
+    flex-direction: column;
+    margin-top: var(--yucp-spacing-sm);
+    margin-bottom: var(--yucp-spacing-sm);
+}
+
+.yucp-preview-status {
+    flex-direction: column;
+    margin-bottom: var(--yucp-spacing-sm);
+}
+
+.yucp-preview-status-card {
+    border-radius: var(--yucp-radius-card);
+    padding: var(--yucp-spacing-sm);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    flex-direction: column;
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-preview-status-card:hover {
+    scale: 1.002 1.002;
+}
+
+.yucp-preview-status-card.generated {
+    background-color: rgba(77, 204, 77, 0.2);
+}
+
+.yucp-preview-status-card.not-generated {
+    background-color: rgba(128, 128, 128, 0.2);
+}
+
+.yucp-preview-status-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+    margin-bottom: 3px;
+}
+
+.yucp-preview-status-info {
+    font-size: 10px;
+    color: var(--yucp-text-secondary);
+    margin-bottom: 2px;
+}
+
+.yucp-preview-blendshape-list {
+    max-height: 100px;
+    margin-top: 3px;
+    margin-bottom: 2px;
+}
+
+.yucp-preview-buttons {
+    flex-direction: row;
+    margin-bottom: var(--yucp-spacing-sm);
+}
+
+.yucp-preview-buttons > * {
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-preview-buttons > *.last {
+    margin-right: 0;
+}
+
+.yucp-generate-button {
+    flex-grow: 1;
+    height: 40px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    background-color: rgb(77, 230, 102);
+    transition-property: background-color, scale;
+    transition-duration: 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-generate-button:hover {
+    scale: 1.01 1.01;
+}
+
+.yucp-generate-button:active {
+    scale: 0.99 0.99;
+}
+
+.yucp-clear-button {
+    width: 80px;
+    height: 40px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    background-color: rgb(255, 128, 77);
+    transition-property: background-color, scale;
+    transition-duration: 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-clear-button:hover {
+    scale: 1.01 1.01;
+}
+
+.yucp-clear-button:active {
+    scale: 0.99 0.99;
+}
+
+.yucp-blendshape-sliders {
+    flex-direction: column;
+    margin-top: var(--yucp-spacing-sm);
+}
+
+.yucp-sliders-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-sliders-scroll {
+    max-height: 220px;
+    min-height: 80px;
+}
+
+.yucp-slider-item {
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-slider-buttons {
+    flex-direction: row;
+    margin-top: var(--yucp-spacing-xs);
+}
+
+.yucp-slider-buttons > * {
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-slider-buttons > *.last {
+    margin-right: 0;
+}
+
+.yucp-slider-buttons > .yucp-button {
+    flex-grow: 1;
+}
+

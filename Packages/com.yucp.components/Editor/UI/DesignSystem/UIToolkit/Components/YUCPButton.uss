@@ -1,0 +1,90 @@
+/* YUCP Button Variants - spotcomponents pattern with animations */
+.yucp-button {
+    border-radius: var(--yucp-radius-button);
+    padding: 8px 12px;
+    min-height: 30px;
+    font-size: 13px;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
+    transition-property: background-color, color, scale;
+    border-width: 0;
+    scale: 1 1;
+}
+
+.yucp-button:hover {
+    scale: 1.01 1.01;
+}
+
+.yucp-button:active {
+    scale: 0.99 0.99;
+    transition-duration: 0.1s, 0.1s, 0.1s;
+}
+
+.yucp-button-primary {
+    background-color: var(--yucp-accent-primary);
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+.yucp-button-primary:hover {
+    background-color: var(--yucp-accent-primary-hover);
+    scale: 1.01 1.01;
+}
+
+.yucp-button-primary:active {
+    background-color: var(--yucp-accent-primary-active);
+    scale: 0.99 0.99;
+}
+
+.yucp-button-secondary {
+    background-color: rgb(70, 70, 70);
+    color: var(--yucp-text-primary);
+    -unity-font-style: normal;
+}
+
+.yucp-button-secondary:hover {
+    background-color: rgb(100, 100, 100);
+    scale: 1.01 1.01;
+}
+
+.yucp-button-secondary:active {
+    background-color: rgb(50, 50, 50);
+    scale: 0.99 0.99;
+}
+
+.yucp-button-danger {
+    background-color: var(--yucp-accent-danger);
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+.yucp-button-danger:hover {
+    background-color: rgba(236, 60, 60, 1);
+    scale: 1.01 1.01;
+}
+
+.yucp-button-danger:active {
+    background-color: rgba(200, 40, 40, 1);
+    scale: 0.99 0.99;
+}
+
+.yucp-button-ghost {
+    background-color: transparent;
+    color: var(--yucp-text-secondary);
+    -unity-font-style: normal;
+}
+
+.yucp-button-ghost:hover {
+    background-color: rgba(26, 26, 26, 0.5);
+    color: var(--yucp-text-primary);
+    scale: 1.01 1.01;
+}
+
+.yucp-button-ghost:active {
+    scale: 0.99 0.99;
+}
+
+.yucp-button:disabled {
+    opacity: 0.5;
+    scale: 1 1;
+}

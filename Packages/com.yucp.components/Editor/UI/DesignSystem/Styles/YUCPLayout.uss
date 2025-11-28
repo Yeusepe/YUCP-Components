@@ -1,0 +1,122 @@
+/* ============================================================================
+   YUCP Design System - Layout Utilities
+   Spacing, gaps, and layout helpers
+   ============================================================================ */
+
+/* Spacing Utilities */
+.yucp-spacing-xs {
+    margin: 4px;
+}
+
+.yucp-spacing-sm {
+    margin: 8px;
+}
+
+.yucp-spacing-md {
+    margin: 12px;
+}
+
+.yucp-spacing-lg {
+    margin: 16px;
+}
+
+.yucp-spacing-xl {
+    margin: 20px;
+}
+
+.yucp-spacing-xxl {
+    margin: 24px;
+}
+
+/* Padding Utilities */
+.yucp-padding-xs {
+    padding: 4px;
+}
+
+.yucp-padding-sm {
+    padding: 8px;
+}
+
+.yucp-padding-md {
+    padding: 12px;
+}
+
+.yucp-padding-lg {
+    padding: 16px;
+}
+
+.yucp-padding-xl {
+    padding: 20px;
+}
+
+/* Gap Utilities - Use margin on child elements instead */
+.yucp-gap-xs > * {
+    margin-right: 4px;
+    margin-bottom: 4px;
+}
+
+.yucp-gap-sm > * {
+    margin-right: 8px;
+    margin-bottom: 8px;
+}
+
+.yucp-gap-md > * {
+    margin-right: 12px;
+    margin-bottom: 12px;
+}
+
+.yucp-gap-lg > * {
+    margin-right: 16px;
+    margin-bottom: 16px;
+}
+
+.yucp-gap-xl > * {
+    margin-right: 20px;
+    margin-bottom: 20px;
+}
+
+/* Flex Layouts */
+.yucp-flex-row {
+    flex-direction: row;
+}
+
+.yucp-flex-column {
+    flex-direction: column;
+}
+
+.yucp-flex-center {
+    align-items: center;
+    justify-content: center;
+}
+
+.yucp-flex-start {
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+.yucp-flex-end {
+    align-items: flex-end;
+    justify-content: flex-end;
+}
+
+.yucp-flex-between {
+    justify-content: space-between;
+}
+
+.yucp-flex-wrap {
+    flex-wrap: wrap;
+}
+
+/* Width Utilities */
+.yucp-width-full {
+    width: 100%;
+}
+
+.yucp-width-auto {
+    width: auto;
+}
+
+.yucp-width-fit {
+    width: auto;
+}
+

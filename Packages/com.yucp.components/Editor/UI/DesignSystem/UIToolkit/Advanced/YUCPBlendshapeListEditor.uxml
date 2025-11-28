@@ -1,0 +1,15 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Advanced/YUCPBlendshapeListEditor.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPButton.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPAlert.uss" />
+    
+    <ui:VisualElement class="yucp-blendshape-list-editor">
+        <ui:VisualElement name="mesh-info" class="yucp-blendshape-mesh-info" />
+        <ui:Button name="add-blendshape-button" class="yucp-button yucp-button-primary yucp-add-blendshape-button" text="+ Add Blendshape from List" />
+        <ui:VisualElement name="blendshape-list" class="yucp-blendshape-list" />
+        <ui:VisualElement name="empty-state" class="yucp-blendshape-empty-state" style="display: none;" />
+    </ui:VisualElement>
+</ui:UXML>
+
+

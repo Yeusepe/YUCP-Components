@@ -1,0 +1,12 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPSolverModeCard.uss" />
+    
+    <ui:VisualElement class="yucp-solver-mode-card">
+        <ui:Label name="solver-title" class="yucp-solver-title" />
+        <ui:Label name="solver-description" class="yucp-solver-description" />
+        <ui:Label name="solver-good-for" class="yucp-solver-good-for" />
+    </ui:VisualElement>
+</ui:UXML>
+
+

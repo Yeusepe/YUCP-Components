@@ -4,6 +4,7 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 using VRC.SDK3.Avatars.Components;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
 {
@@ -73,106 +74,327 @@ namespace YUCP.Components.Editor
 
         public override VisualElement CreateInspectorGUI()
         {
-            var root = new VisualElement();
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Custom Object Sync"));
-            var container = new IMGUIContainer(OnInspectorGUIContent);
-            root.Add(container);
-            return root;
-        }
-
-        public override void OnInspectorGUI()
-        {
-            OnInspectorGUIContent();
-        }
-
-        private void OnInspectorGUIContent()
-        {
             serializedObject.Update();
-
-            BetaWarningHelper.DrawBetaWarningIMGUI(typeof(CustomObjectSyncData));
-            SupportBannerHelper.DrawSupportBannerIMGUI(typeof(CustomObjectSyncData));
-
-            DrawCreditBanner();
-            DrawBuildSummary();
-            DrawDescriptorWarnings();
-
-            DrawSummaryCard();
-
-            DrawCard("Sync Strategy", "Decide how this object synchronizes over the network.", () =>
+            
+            var root = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
+            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Custom Object Sync"));
+            
+            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(CustomObjectSyncData));
+            if (betaWarning != null) root.Add(betaWarning);
+            
+            var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(CustomObjectSyncData));
+            if (supportBanner != null) root.Add(supportBanner);
+            
+            // Credit banner (conditional)
+            var creditBanner = new VisualElement();
+            creditBanner.name = "credit-banner";
+            root.Add(creditBanner);
+            
+            // Build summary (conditional)
+            var buildSummary = new VisualElement();
+            buildSummary.name = "build-summary";
+            root.Add(buildSummary);
+            
+            // Descriptor warnings (conditional)
+            var descriptorWarnings = new VisualElement();
+            descriptorWarnings.name = "descriptor-warnings";
+            root.Add(descriptorWarnings);
+            
+            // Summary card
+            var summaryCard = new VisualElement();
+            summaryCard.name = "summary-card";
+            root.Add(summaryCard);
+            
+            // Sync Strategy Card
+            var syncStrategyCard = YUCPUIToolkitHelper.CreateCard("Sync Strategy", "Decide how this object synchronizes over the network.");
+            var syncStrategyContent = YUCPUIToolkitHelper.GetCardContent(syncStrategyCard);
+            syncStrategyContent.Add(YUCPUIToolkitHelper.CreateField(quickSyncProp, "Quick Sync"));
+            
+            var referenceFrameField = YUCPUIToolkitHelper.CreateField(referenceFrameProp, "Reference Frame");
+            referenceFrameField.name = "reference-frame";
+            syncStrategyContent.Add(referenceFrameField);
+            
+            syncStrategyContent.Add(YUCPUIToolkitHelper.CreateField(rotationEnabledProp, "Sync Rotation"));
+            syncStrategyContent.Add(YUCPUIToolkitHelper.CreateField(addDebugProp, "Add Local Debug View"));
+            root.Add(syncStrategyCard);
+            
+            // Precision & Range Card
+            var precisionCard = YUCPUIToolkitHelper.CreateCard("Precision & Range", "Control how far and how precisely motion is captured.");
+            var precisionContent = YUCPUIToolkitHelper.GetCardContent(precisionCard);
+            
+            var radiusContainer = new VisualElement();
+            radiusContainer.name = "radius-container";
+            precisionContent.Add(radiusContainer);
+            
+            var positionPrecisionField = new IntegerField("Position Precision") { bindingPath = "positionPrecision" };
+            positionPrecisionField.AddToClassList("yucp-field-input");
+            // Note: IntegerField doesn't support lowValue/highValue in UI Toolkit
+            // Validation should be handled in the component or via custom validation
+            precisionContent.Add(positionPrecisionField);
+            
+            var rotationPrecisionField = new IntegerField("Rotation Precision") { bindingPath = "rotationPrecision" };
+            rotationPrecisionField.AddToClassList("yucp-field-input");
+            precisionContent.Add(rotationPrecisionField);
+            
+            var bitCountField = new IntegerField("Bits Per Step") { bindingPath = "bitCount" };
+            bitCountField.AddToClassList("yucp-field-input");
+            bitCountField.name = "bit-count";
+            precisionContent.Add(bitCountField);
+            
+            var quickSyncHelp = YUCPUIToolkitHelper.CreateHelpBox("Bit count is disabled while Quick Sync is enabled because floats are sent directly.", YUCPUIToolkitHelper.MessageType.Info);
+            quickSyncHelp.name = "quick-sync-help";
+            precisionContent.Add(quickSyncHelp);
+            root.Add(precisionCard);
+            
+            // Motion Options Card
+            var motionCard = YUCPUIToolkitHelper.CreateCard("Motion Options", "Fine-tune smoothing and animator integration.");
+            var motionContent = YUCPUIToolkitHelper.GetCardContent(motionCard);
+            motionContent.Add(YUCPUIToolkitHelper.CreateField(addDampingProp, "Add Damping Constraint"));
+            
+            var dampingValueField = new Slider("Damping Strength", 0.01f, 1f) { bindingPath = "dampingConstraintValue" };
+            dampingValueField.AddToClassList("yucp-field-input");
+            dampingValueField.name = "damping-value";
+            motionContent.Add(dampingValueField);
+            
+            motionContent.Add(YUCPUIToolkitHelper.CreateField(writeDefaultsProp, "Write Defaults"));
+            motionContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
+            root.Add(motionCard);
+            
+            // Diagnostics & Debug Card
+            var diagnosticsCard = YUCPUIToolkitHelper.CreateCard("Diagnostics & Debug", "Surface build output and logging helpers.");
+            var diagnosticsContent = YUCPUIToolkitHelper.GetCardContent(diagnosticsCard);
+            diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(verboseLoggingProp, "Verbose Logging"));
+            diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(includeCreditsProp, "Include Credits Banner"));
+            root.Add(diagnosticsCard);
+            
+            // Grouping & Collaboration Card
+            var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
+            var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
+            groupingContent.Add(YUCPUIToolkitHelper.CreateField(enableGroupingProp, "Enable Grouping"));
+            
+            var groupIdField = YUCPUIToolkitHelper.CreateField(syncGroupIdProp, "Group ID");
+            groupIdField.name = "group-id";
+            groupingContent.Add(groupIdField);
+            
+            var groupingHelp = new VisualElement();
+            groupingHelp.name = "grouping-help";
+            groupingContent.Add(groupingHelp);
+            root.Add(groupingCard);
+            
+            // Scene Visualization Card
+            var sceneCard = YUCPUIToolkitHelper.CreateCard("Scene Visualization", "Toggle an in-scene gizmo that mirrors your settings for quick spatial feedback.");
+            var sceneContent = YUCPUIToolkitHelper.GetCardContent(sceneCard);
+            sceneContent.Add(YUCPUIToolkitHelper.CreateField(showSceneGizmoProp, "Show Scene Gizmo"));
+            sceneContent.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, selecting this object in the Scene view shows discs for travel radius plus labels for precision and rotation. Use it to size ranges without guessing.", YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(sceneCard);
+            
+            // Help Links
+            YUCPUIToolkitHelper.AddSpacing(root, 6);
+            var helpLinks = new VisualElement();
+            helpLinks.style.flexDirection = FlexDirection.Row;
+            helpLinks.style.marginBottom = 10;
+            
+            var docButton = YUCPUIToolkitHelper.CreateButton("Open Documentation", () => Application.OpenURL(WikiUrl), YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            docButton.style.flexGrow = 1;
+            docButton.style.marginRight = 5;
+            helpLinks.Add(docButton);
+            
+            var discordButton = YUCPUIToolkitHelper.CreateButton("Join VRLabs Discord", () => Application.OpenURL("https://discord.vrlabs.dev/"), YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            discordButton.style.flexGrow = 1;
+            helpLinks.Add(discordButton);
+            root.Add(helpLinks);
+            
+            // Dynamic updates
+            root.schedule.Execute(() =>
             {
-                EditorGUILayout.PropertyField(quickSyncProp, new GUIContent("Quick Sync", quickSyncProp.tooltip));
-
-                using (new EditorGUI.DisabledScope(quickSyncProp.boolValue))
+                serializedObject.Update();
+                
+                // Update credit banner
+                creditBanner.Clear();
+                if (includeCreditsProp.boolValue)
                 {
-                    EditorGUILayout.PropertyField(referenceFrameProp, ReferenceFrameLabel);
+                    creditBanner.Add(YUCPUIToolkitHelper.CreateHelpBox("Powered by VRLabs Custom Object Sync (MIT). Please credit VRLabs when shipping your avatar.", YUCPUIToolkitHelper.MessageType.Info));
+                    var repoButton = YUCPUIToolkitHelper.CreateButton("Open VRLabs Custom Object Sync Repository", () => Application.OpenURL(VrLabsRepoUrl), YUCPUIToolkitHelper.ButtonVariant.Secondary);
+                    creditBanner.Add(repoButton);
                 }
-
+                
+                // Update build summary
+                buildSummary.Clear();
+                var summary = data.GetBuildSummary();
+                if (!string.IsNullOrEmpty(summary))
+                {
+                    var timestamp = data.GetLastBuildTimeUtc();
+                    string label = summary;
+                    if (timestamp.HasValue)
+                    {
+                        label += $" • {timestamp.Value.ToLocalTime():g}";
+                    }
+                    buildSummary.Add(YUCPUIToolkitHelper.CreateHelpBox($"Last build: {label}", YUCPUIToolkitHelper.MessageType.None));
+                }
+                
+                // Update descriptor warnings
+                descriptorWarnings.Clear();
+                var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+                if (descriptor == null)
+                {
+                    descriptorWarnings.Add(YUCPUIToolkitHelper.CreateHelpBox("This component must be placed under a VRCAvatarDescriptor in order for the builder to configure sync data.", YUCPUIToolkitHelper.MessageType.Error));
+                }
+                else if (data.transform == descriptor.transform)
+                {
+                    descriptorWarnings.Add(YUCPUIToolkitHelper.CreateHelpBox("Attach Custom Object Sync to the object you want to sync, not the descriptor root.", YUCPUIToolkitHelper.MessageType.Warning));
+                }
+                else if (!data.transform.IsChildOf(descriptor.transform))
+                {
+                    descriptorWarnings.Add(YUCPUIToolkitHelper.CreateHelpBox("Custom Object Sync target must be within the avatar hierarchy. Please move it inside the descriptor object.", YUCPUIToolkitHelper.MessageType.Error));
+                }
+                
+                // Update summary card
+                UpdateSummaryCard(summaryCard, data, descriptor);
+                
+                // Update conditional fields
+                referenceFrameField.SetEnabled(!quickSyncProp.boolValue);
                 if (quickSyncProp.boolValue && referenceFrameProp.enumValueIndex != (int)CustomObjectSyncData.ReferenceFrame.AvatarCentered)
                 {
                     referenceFrameProp.enumValueIndex = (int)CustomObjectSyncData.ReferenceFrame.AvatarCentered;
                 }
-
-                EditorGUILayout.PropertyField(rotationEnabledProp, new GUIContent("Sync Rotation"));
-                EditorGUILayout.PropertyField(addDebugProp, new GUIContent("Add Local Debug View"));
-            });
-
-            DrawCard("Precision & Range", "Control how far and how precisely motion is captured.", () =>
-            {
-                DrawRadiusField();
-                EditorGUILayout.IntSlider(positionPrecisionProp, 1, 12, new GUIContent("Position Precision"));
-                EditorGUILayout.IntSlider(rotationPrecisionProp, 0, 12, new GUIContent("Rotation Precision"));
-
-                using (new EditorGUI.DisabledScope(quickSyncProp.boolValue))
-                {
-                    EditorGUILayout.IntSlider(bitCountProp, 4, 32, new GUIContent("Bits Per Step"));
-                }
-
-                if (quickSyncProp.boolValue)
-                {
-                    EditorGUILayout.HelpBox("Bit count is disabled while Quick Sync is enabled because floats are sent directly.", MessageType.Info);
-                }
-            });
-
-            DrawCard("Motion Options", "Fine-tune smoothing and animator integration.", () =>
-            {
-                EditorGUILayout.PropertyField(addDampingProp, new GUIContent("Add Damping Constraint"));
-                using (new EditorGUI.DisabledScope(!addDampingProp.boolValue))
-                {
-                    EditorGUILayout.Slider(dampingValueProp, 0.01f, 1f, new GUIContent("Damping Strength"));
-                }
-
-                EditorGUILayout.PropertyField(writeDefaultsProp, new GUIContent("Write Defaults"));
-                EditorGUILayout.PropertyField(menuLocationProp, MenuLocationLabel);
-            });
-
-            DrawCard("Diagnostics & Debug", "Surface build output and logging helpers.", () =>
-            {
-                EditorGUILayout.PropertyField(verboseLoggingProp, new GUIContent("Verbose Logging"));
-                EditorGUILayout.PropertyField(includeCreditsProp, new GUIContent("Include Credits Banner"));
-            });
-
-            DrawCard("Grouping & Collaboration", "Keep multiple components in sync automatically.", () =>
-            {
-                EditorGUILayout.PropertyField(enableGroupingProp, new GUIContent("Enable Grouping", enableGroupingProp.tooltip));
-                using (new EditorGUI.DisabledScope(!enableGroupingProp.boolValue))
-                {
-                    EditorGUILayout.PropertyField(syncGroupIdProp, new GUIContent("Group ID", syncGroupIdProp.tooltip));
-                }
+                
+                bitCountField.SetEnabled(!quickSyncProp.boolValue);
+                quickSyncHelp.style.display = quickSyncProp.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
+                
+                dampingValueField.SetEnabled(addDampingProp.boolValue);
+                
+                groupIdField.SetEnabled(enableGroupingProp.boolValue);
+                groupingHelp.Clear();
                 var groupingInfo = enableGroupingProp.boolValue
                     ? "Components with the same Group ID share one Custom Object Sync rig to reduce parameters."
                     : "Grouping disabled: this component will get its own rig (same behavior as the original VRLabs wizard).";
-                EditorGUILayout.HelpBox(groupingInfo, MessageType.Info);
-            });
-
-            DrawCard("Scene Visualization", "Toggle an in-scene gizmo that mirrors your settings for quick spatial feedback.", () =>
+                groupingHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(groupingInfo, YUCPUIToolkitHelper.MessageType.Info));
+                
+                // Update radius field
+                UpdateRadiusField(radiusContainer);
+                
+                serializedObject.ApplyModifiedProperties();
+            }).Every(100);
+            
+            return root;
+        }
+        
+        private void UpdateSummaryCard(VisualElement container, CustomObjectSyncData data, VRCAvatarDescriptor descriptor)
+        {
+            container.Clear();
+            
+            var summary = CalculateParameterSummary();
+            string targetPath = descriptor != null ? UnityEditor.AnimationUtility.CalculateTransformPath(data.transform, descriptor.transform) : data.gameObject.name;
+            string modeLabel = quickSyncProp.boolValue ? "Quick Sync (fast, higher cost)" : "Bit Packed (slower, parameter efficient)";
+            
+            var summaryCard = YUCPUIToolkitHelper.CreateCard("Custom Object Sync Overview", null);
+            var summaryContent = YUCPUIToolkitHelper.GetCardContent(summaryCard);
+            
+            var title = new Label("Custom Object Sync Overview");
+            title.style.fontSize = 13;
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 2;
+            summaryContent.Add(title);
+            
+            AddInfoRow(summaryContent, "Target", targetPath);
+            var groupingLabel = enableGroupingProp.boolValue
+                ? CustomObjectSyncData.NormalizeGroupId(syncGroupIdProp.stringValue)
+                : "Isolated (per-object)";
+            AddInfoRow(summaryContent, "Group", groupingLabel);
+            AddInfoRow(summaryContent, "Mode", modeLabel);
+            
+            YUCPUIToolkitHelper.AddSpacing(summaryContent, 4);
+            
+            // Parameter budget card
+            var budgetCard = YUCPUIToolkitHelper.CreateCard("Expression Parameters", null);
+            var budgetContent = YUCPUIToolkitHelper.GetCardContent(budgetCard);
+            
+            var budgetValue = new Label(summary.Total.ToString());
+            budgetValue.style.fontSize = 18;
+            budgetValue.style.unityFontStyleAndWeight = FontStyle.Bold;
+            budgetValue.style.unityTextAlign = TextAnchor.MiddleCenter;
+            budgetValue.style.marginBottom = 2;
+            budgetContent.Add(budgetValue);
+            
+            var groupSizeLabel = new Label($"Group Size: {summary.GroupSize}");
+            groupSizeLabel.style.fontSize = 10;
+            groupSizeLabel.style.marginBottom = 2;
+            budgetContent.Add(groupSizeLabel);
+            
+            if (!string.IsNullOrEmpty(summary.Breakdown))
             {
-                EditorGUILayout.PropertyField(showSceneGizmoProp, new GUIContent("Show Scene Gizmo", showSceneGizmoProp.tooltip));
-                EditorGUILayout.HelpBox("When enabled, selecting this object in the Scene view shows discs for travel radius plus labels for precision and rotation. Use it to size ranges without guessing.", MessageType.Info);
-            });
+                var breakdownLabel = new Label(summary.Breakdown);
+                breakdownLabel.style.fontSize = 10;
+                breakdownLabel.style.marginBottom = 2;
+                budgetContent.Add(breakdownLabel);
+            }
+            
+            if (!string.IsNullOrEmpty(summary.Extra))
+            {
+                var extraLabel = new Label(summary.Extra);
+                extraLabel.style.fontSize = 10;
+                budgetContent.Add(extraLabel);
+            }
+            
+            summaryContent.Add(budgetCard);
+            container.Add(summaryCard);
+        }
+        
+        private void AddInfoRow(VisualElement parent, string label, string value)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom = 2;
+            
+            var labelElement = new Label(label);
+            labelElement.style.fontSize = 10;
+            labelElement.style.unityFontStyleAndWeight = FontStyle.Bold;
+            labelElement.style.width = 70;
+            row.Add(labelElement);
+            
+            var valueElement = new Label(value);
+            valueElement.style.fontSize = 11;
+            valueElement.style.whiteSpace = WhiteSpace.Normal;
+            row.Add(valueElement);
+            
+            parent.Add(row);
+        }
+        
+        private void UpdateRadiusField(VisualElement container)
+        {
+            container.Clear();
+            
+            int rawValue = Mathf.Clamp(maxRadiusProp.intValue, 1, 12);
+            double rangeMeters = Math.Pow(2, rawValue);
+            
+            var sliderContainer = new VisualElement();
+            sliderContainer.style.flexDirection = FlexDirection.Row;
+            sliderContainer.style.marginBottom = 5;
+            
+            var slider = new Slider($"Max Radius (2^{rawValue} m)", 1, 12) { bindingPath = "maxRadius" };
+            slider.AddToClassList("yucp-field-input");
+            slider.style.flexGrow = 1;
+            slider.style.marginRight = 5;
+            sliderContainer.Add(slider);
+            
+            var valueLabel = new Label($"{rangeMeters:0.#} m");
+            valueLabel.style.width = 70;
+            valueLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            sliderContainer.Add(valueLabel);
+            
+            container.Add(sliderContainer);
+            
+            var helpLabel = new Label("Choose how far the object can move from its anchor point. Example: value 8 allows roughly 256m of travel. Higher values consume more bits.");
+            helpLabel.style.fontSize = 10;
+            helpLabel.style.whiteSpace = WhiteSpace.Normal;
+            helpLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+            container.Add(helpLabel);
+        }
 
-            DrawHelpLinks();
-
-            serializedObject.ApplyModifiedProperties();
+        public override void OnInspectorGUI()
+        {
+            // Legacy support - not used anymore
         }
 
         private void DrawRadiusField()
@@ -209,49 +431,8 @@ namespace YUCP.Components.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private void DrawDescriptorWarnings()
-        {
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            if (descriptor == null)
-            {
-                EditorGUILayout.HelpBox("This component must be placed under a VRCAvatarDescriptor in order for the builder to configure sync data.", MessageType.Error);
-                return;
-            }
-
-            if (data.transform == descriptor.transform)
-            {
-                EditorGUILayout.HelpBox("Attach Custom Object Sync to the object you want to sync, not the descriptor root.", MessageType.Warning);
-            }
-            else if (!data.transform.IsChildOf(descriptor.transform))
-            {
-                EditorGUILayout.HelpBox("Custom Object Sync target must be within the avatar hierarchy. Please move it inside the descriptor object.", MessageType.Error);
-            }
-        }
-
-        private void DrawCreditBanner()
-        {
-            if (!includeCreditsProp.boolValue) return;
-
-            EditorGUILayout.HelpBox("Powered by VRLabs Custom Object Sync (MIT). Please credit VRLabs when shipping your avatar.", MessageType.Info);
-            if (GUILayout.Button("Open VRLabs Custom Object Sync Repository"))
-            {
-                Application.OpenURL(VrLabsRepoUrl);
-            }
-        }
-
-        private void DrawBuildSummary()
-        {
-            var summary = data.GetBuildSummary();
-            if (string.IsNullOrEmpty(summary)) return;
-
-            var timestamp = data.GetLastBuildTimeUtc();
-            string label = summary;
-            if (timestamp.HasValue)
-            {
-                label += $" • {timestamp.Value.ToLocalTime():g}";
-            }
-            EditorGUILayout.HelpBox($"Last build: {label}", MessageType.None);
-        }
+        // Removed IMGUI methods: DrawDescriptorWarnings, DrawCreditBanner, DrawBuildSummary
+        // These were IMGUI-only methods that are no longer needed with UI Toolkit migration
 
         private void DrawHelpLinks()
         {
@@ -474,22 +655,6 @@ namespace YUCP.Components.Editor
             public int GroupSize { get; }
         }
 
-        private void DrawCard(string title, string subtitle, Action body)
-        {
-            EnsureStyles();
-            EditorGUILayout.Space(5);
-            EditorGUILayout.BeginVertical(cardStyle);
-            EditorGUILayout.LabelField(title, sectionTitleStyle);
-            if (!string.IsNullOrEmpty(subtitle))
-            {
-                EditorGUILayout.LabelField(subtitle, sectionSubtitleStyle);
-            }
-            EditorGUILayout.Space(2);
-            EditorGUI.indentLevel++;
-            body?.Invoke();
-            EditorGUI.indentLevel--;
-            EditorGUILayout.EndVertical();
-        }
 
         private void DrawSummaryCard()
         {

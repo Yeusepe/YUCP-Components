@@ -1,7 +1,9 @@
 using UnityEditor;
+using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 using YUCP.Components;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Resources
 {
@@ -15,67 +17,48 @@ namespace YUCP.Components.Resources
 
         public override VisualElement CreateInspectorGUI()
         {
+            serializedObject.Update();
+            var data = (AttachToClosestBoneData)target;
+            
             var root = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             root.Add(YUCPComponentHeader.CreateHeaderOverlay("Closest Bone Auto-Link"));
             
-            var container = new IMGUIContainer(() => {
-                serializedObject.Update();
-                var data = (AttachToClosestBoneData)target;
-                
-                DrawSection("Settings", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("offset"), new GUIContent("Offset"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("maxDistance"), new GUIContent("Max Distance"));
-                });
-                
-                // Bone Filtering (Foldout)
-                EditorGUILayout.Space(5);
-                showBoneFiltering = EditorGUILayout.BeginFoldoutHeaderGroup(showBoneFiltering, "Bone Filtering");
-                if (showBoneFiltering)
+            var settingsCard = YUCPUIToolkitHelper.CreateCard("Settings", "Configure attachment offset and search distance");
+            var settingsContent = YUCPUIToolkitHelper.GetCardContent(settingsCard);
+            settingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("offset"), "Offset"));
+            settingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("maxDistance"), "Max Distance"));
+            root.Add(settingsCard);
+            
+            var foldout = YUCPUIToolkitHelper.CreateFoldout("Bone Filtering", showBoneFiltering);
+            foldout.RegisterValueChangedCallback(evt => { showBoneFiltering = evt.newValue; });
+            foldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("includeNameFilter"), "Include Name Filter"));
+            foldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("excludeNameFilter"), "Exclude Name Filter"));
+            foldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("ignoreHumanoidBones"), "Ignore Humanoid Bones"));
+            root.Add(foldout);
+            
+            root.schedule.Execute(() =>
+            {
+                var selectedBoneContainer = root.Q<VisualElement>("selected-bone-container");
+                if (selectedBoneContainer != null)
                 {
-                    EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("includeNameFilter"), new GUIContent("Include Name Filter"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("excludeNameFilter"), new GUIContent("Exclude Name Filter"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("ignoreHumanoidBones"), new GUIContent("Ignore Humanoid Bones"));
-                    EditorGUI.indentLevel--;
+                    root.Remove(selectedBoneContainer);
                 }
-                EditorGUILayout.EndFoldoutHeaderGroup();
                 
-                // Debug info
                 if (!string.IsNullOrEmpty(data.SelectedBonePath))
                 {
-                    EditorGUILayout.Space(10);
-                    EditorGUILayout.HelpBox($"Selected Bone: {data.SelectedBonePath}", MessageType.Info);
+                    YUCPUIToolkitHelper.AddSpacing(root, 10);
+                    var helpBox = YUCPUIToolkitHelper.CreateHelpBox($"Selected Bone: {data.SelectedBonePath}", YUCPUIToolkitHelper.MessageType.Info);
+                    helpBox.name = "selected-bone-container";
+                    root.Add(helpBox);
                 }
-                
-                serializedObject.ApplyModifiedProperties();
-            });
+            }).Every(100);
             
-            root.Add(container);
+            root.schedule.Execute(() => serializedObject.ApplyModifiedProperties()).Every(100);
+            
             return root;
         }
         
-        private void DrawSection(string title, System.Action content)
-        {
-            EditorGUILayout.Space(5);
-            
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
-            
-            if (!string.IsNullOrEmpty(title))
-            {
-                var style = new GUIStyle(EditorStyles.boldLabel);
-                style.alignment = TextAnchor.MiddleLeft;
-                EditorGUILayout.LabelField(title, style);
-                EditorGUILayout.Space(3);
-            }
-            
-            content?.Invoke();
-            
-            EditorGUILayout.EndVertical();
-        }
     }
 }
 

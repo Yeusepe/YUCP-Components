@@ -1,0 +1,8 @@
+/* YUCP Object Field Component */
+.yucp-objectfield {
+    min-height: 20px;
+    border-radius: var(--yucp-radius-input);
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+

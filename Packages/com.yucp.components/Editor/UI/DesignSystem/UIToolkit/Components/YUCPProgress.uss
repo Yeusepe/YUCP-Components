@@ -1,0 +1,26 @@
+/* YUCP Progress Bar Component */
+.yucp-progress-container {
+    flex-direction: column;
+    margin-bottom: 4px;
+}
+
+.yucp-progress-bar {
+    width: 100%;
+    height: 18px;
+    border-radius: var(--yucp-radius-small);
+    background-color: var(--yucp-bg-tertiary);
+    border-width: 0;
+}
+
+.yucp-progress-bar > .unity-progress-bar__progress {
+    background-color: var(--yucp-accent-primary);
+    border-radius: var(--yucp-radius-small);
+    transition-duration: var(--yucp-transition-normal);
+}
+
+.yucp-progress-label {
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+    -unity-text-align: middle-left;
+}
+

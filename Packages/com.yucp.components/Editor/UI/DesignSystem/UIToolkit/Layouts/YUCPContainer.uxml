@@ -1,0 +1,9 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPLayout.uss" />
+    
+    <ui:VisualElement class="yucp-container">
+        <ui:Slot />
+    </ui:VisualElement>
+</ui:UXML>
+

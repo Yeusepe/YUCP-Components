@@ -1501,7 +1501,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         }
 
         /// <summary>
-        /// Groups file changes by file type with comprehensive Unity categorization.
+        /// Groups file changes by file type with Unity categorization.
         /// </summary>
         private Dictionary<string, List<global::PackageGuardian.Core.Diff.FileChange>> GroupFilesByType(
             List<global::PackageGuardian.Core.Diff.FileChange> changes)

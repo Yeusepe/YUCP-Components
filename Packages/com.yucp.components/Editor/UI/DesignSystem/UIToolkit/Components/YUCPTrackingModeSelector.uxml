@@ -1,0 +1,17 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPTrackingModeSelector.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPButton.uss" />
+    
+    <ui:VisualElement class="yucp-tracking-mode-selector">
+        <ui:Label class="yucp-tracking-mode-label" text="Select Tracking Mode:" />
+        <ui:VisualElement class="yucp-tracking-mode-buttons">
+            <ui:Button name="mode-all" class="yucp-tracking-mode-button" text="All&#10;Blendshapes" />
+            <ui:Button name="mode-specific" class="yucp-tracking-mode-button" text="Specific&#10;List" />
+            <ui:Button name="mode-visemes" class="yucp-tracking-mode-button" text="Visemes&#10;Only" />
+            <ui:Button name="mode-smart" class="yucp-tracking-mode-button" text="Smart&#10;Detect" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
+
+

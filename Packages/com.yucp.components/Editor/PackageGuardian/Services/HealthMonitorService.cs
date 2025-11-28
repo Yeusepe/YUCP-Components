@@ -51,7 +51,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         }
         
         /// <summary>
-        /// Performs a comprehensive health check
+        /// Performs a health check
         /// </summary>
         public static void PerformHealthCheck()
         {

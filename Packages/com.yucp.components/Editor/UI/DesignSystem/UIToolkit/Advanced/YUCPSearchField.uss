@@ -1,0 +1,77 @@
+/* YUCP Search Field Component - Search and Filter */
+.yucp-searchfield {
+    flex-direction: row;
+    align-items: center;
+    border-radius: var(--yucp-radius-input);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    padding: 4px var(--yucp-spacing-xs);
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+/* Unity UI Toolkit doesn't support :focus-within pseudo-class */
+.yucp-searchfield.focused {
+    border-color: var(--yucp-border-focus);
+}
+
+.yucp-searchfield-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: var(--yucp-spacing-xs);
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-searchfield-input {
+    flex-grow: 1;
+    border-width: 0;
+    background-color: transparent;
+    min-height: 20px;
+}
+
+.yucp-searchfield-clear {
+    width: 20px;
+    height: 20px;
+    margin-left: var(--yucp-spacing-xs);
+    border-radius: 50%;
+    background-color: var(--yucp-bg-tertiary);
+    color: var(--yucp-text-secondary);
+    -unity-text-align: middle-center;
+    font-size: 12px;
+    /* Unity UI Toolkit doesn't support cursor property */
+}
+
+.yucp-searchfield-clear:hover {
+    background-color: var(--yucp-bg-hover);
+}
+
+.yucp-searchfield-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: var(--yucp-spacing-xs);
+    border-radius: var(--yucp-radius-card);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    background-color: var(--yucp-bg-secondary);
+    max-height: 200px;
+    overflow: auto;
+    /* Unity UI Toolkit doesn't support z-index property */
+}
+
+.yucp-searchfield-suggestion {
+    padding: var(--yucp-spacing-xs);
+    min-height: 28px;
+    /* Unity UI Toolkit doesn't support cursor property */
+    border-bottom-width: 1px;
+    border-bottom-color: var(--yucp-border-primary);
+}
+
+.yucp-searchfield-suggestion:hover {
+    background-color: var(--yucp-bg-hover);
+}
+
+.yucp-searchfield-suggestion.last {
+    border-bottom-width: 0;
+}
+

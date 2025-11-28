@@ -70,7 +70,16 @@ namespace PackageGuardian.Core.Diff
                 var newCommit = SafeReadObject(newCommitId) as Commit;
                 
                 if (oldCommit == null || newCommit == null)
-                    throw new InvalidOperationException("Invalid commit ID");
+                {
+                    string errorMsg = "Failed to load commit";
+                    if (oldCommit == null && newCommit == null)
+                        errorMsg = $"Failed to load commits: old commit '{oldCommitId.Substring(0, Math.Min(8, oldCommitId.Length))}...' and new commit '{newCommitId.Substring(0, Math.Min(8, newCommitId.Length))}...' may be corrupted or missing";
+                    else if (oldCommit == null)
+                        errorMsg = $"Failed to load old commit '{oldCommitId.Substring(0, Math.Min(8, oldCommitId.Length))}...' - may be corrupted or missing";
+                    else
+                        errorMsg = $"Failed to load new commit '{newCommitId.Substring(0, Math.Min(8, newCommitId.Length))}...' - may be corrupted or missing";
+                    throw new InvalidOperationException(errorMsg);
+                }
                 
                 string oldTreeId = BytesToHex(oldCommit.TreeId);
                 string newTreeId = BytesToHex(newCommit.TreeId);
@@ -420,6 +429,10 @@ namespace PackageGuardian.Core.Diff
                     {
                         var delBlob = SafeReadObject(del.OldOid) as Blob;
                         var addBlob = SafeReadObject(add.NewOid) as Blob;
+                        
+                        // Skip size check if either blob is corrupted (null)
+                        if (delBlob == null || addBlob == null)
+                            continue;
                         
                         if (delBlob.Data.Length > options.MaxFileSizeForRenameDetection ||
                             addBlob.Data.Length > options.MaxFileSizeForRenameDetection)

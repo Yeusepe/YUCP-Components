@@ -1,16 +1,16 @@
 using UnityEditor;
-using UnityEngine;
-using UnityEditorInternal;
-using UnityEngine.UIElements;
 using UnityEditor.UIElements;
+using UnityEngine;
+using UnityEngine.UIElements;
+using YUCP.Components;
 using YUCP.Components.Editor.Utils;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
 {
 	[CustomEditor(typeof(MirroredArmatureLinkData))]
 	public class MirroredArmatureLinkDataEditor : UnityEditor.Editor
 	{
-		private ReorderableList customList;
 		private static Material previewMat;
 		private static readonly System.Collections.Generic.Dictionary<SkinnedMeshRenderer, Mesh> bakedMeshCache = new System.Collections.Generic.Dictionary<SkinnedMeshRenderer, Mesh>();
 
@@ -24,72 +24,6 @@ namespace YUCP.Components.Editor
 
 		private void OnEnable()
 		{
-			var so = serializedObject;
-			customList = new ReorderableList(so, so.FindProperty("customTargets"), true, true, true, true);
-			customList.drawHeaderCallback = rect => EditorGUI.LabelField(rect, "Custom Targets");
-			customList.elementHeight = EditorGUIUtility.singleLineHeight * 8 + 24;
-			customList.drawElementCallback = (rect, index, active, focused) =>
-			{
-				var element = customList.serializedProperty.GetArrayElementAtIndex(index);
-				rect.y += 2;
-				var line = EditorGUIUtility.singleLineHeight + 2;
-
-				EditorGUI.LabelField(new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight), $"Custom Target {index + 1}", EditorStyles.boldLabel);
-				var y = rect.y + line;
-
-				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width * 0.5f - 4, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("displayName"), new GUIContent("Display Name"));
-				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.5f + 2, y, rect.width * 0.5f - 2, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("globalBoolParam"), new GUIContent("Global Param"));
-				y += line;
-
-				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("targetType"), new GUIContent("Target Type"));
-				y += line;
-
-				var typeProp = element.FindPropertyRelative("targetType");
-				switch ((MirroredArmatureLinkData.TargetType)typeProp.enumValueIndex)
-				{
-					case MirroredArmatureLinkData.TargetType.HumanoidBone:
-						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("humanoidBone"), new GUIContent("Humanoid Bone"));
-						break;
-					case MirroredArmatureLinkData.TargetType.Transform:
-						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("transform"), new GUIContent("Transform"));
-						break;
-					case MirroredArmatureLinkData.TargetType.ArmaturePath:
-						EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("armaturePath"), new GUIContent("Armature Path"));
-						break;
-				}
-				y += line;
-				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("offsetPath"), new GUIContent("Offset Path"));
-				y += line;
-				
-				// Animation clip with Record button
-				var animClipRect = new Rect(rect.x, y, rect.width - 60, EditorGUIUtility.singleLineHeight);
-				var animClipProp = element.FindPropertyRelative("animationClip");
-				EditorGUI.PropertyField(animClipRect, animClipProp, new GUIContent("Animation Clip"));
-				var recordRect = new Rect(rect.x + rect.width - 55, y, 50, EditorGUIUtility.singleLineHeight);
-				if (GUI.Button(recordRect, "Record"))
-				{
-					var data = target as MirroredArmatureLinkData;
-					if (data != null)
-					{
-						// Capture values to avoid GUI state issues
-						var go = data.gameObject;
-						var capturedIndex = index; // Capture index for lambda
-						// Use EditorApplication.delayCall to avoid GUI state issues
-						EditorApplication.delayCall += () =>
-						{
-							var so = new SerializedObject(data);
-							var prop = so.FindProperty("customTargets").GetArrayElementAtIndex(capturedIndex);
-							AnimationClipRecorder.RecordMuscleAnimation(prop.FindPropertyRelative("animationClip"), go, "CustomTargetAnimation");
-						};
-					}
-				}
-				y += line;
-				
-				EditorGUI.PropertyField(new Rect(rect.x, y, rect.width * 0.33f - 2, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("defaultOn"), new GUIContent("Default On"));
-				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.33f + 2, y, rect.width * 0.33f - 2, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("keepTransforms"), new GUIContent("Keep Transforms"));
-				EditorGUI.PropertyField(new Rect(rect.x + rect.width * 0.66f + 4, y, rect.width * 0.34f - 4, EditorGUIUtility.singleLineHeight), element.FindPropertyRelative("exclusiveOffState"), new GUIContent("Exclusive Off"));
-			};
-
 			SceneView.duringSceneGui += OnSceneGUI;
 
 			// Load foldout states
@@ -124,157 +58,132 @@ namespace YUCP.Components.Editor
 
 		public override VisualElement CreateInspectorGUI()
 		{
+			serializedObject.Update();
+			
 			var root = new VisualElement();
+			YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
 			root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Mirrored Armature Link"));
+			
 			var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(MirroredArmatureLinkData));
 			if (betaWarning != null) root.Add(betaWarning);
-			var container = new IMGUIContainer(() => { OnInspectorGUIContent(); });
-			root.Add(container);
+
+			var targetCard = YUCPUIToolkitHelper.CreateCard("Target Configuration", "Configure the symmetric body part and offset");
+			var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
+			targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("part"), "Symmetric Body Part"));
+			targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("offset"), "Offset Path"));
+			root.Add(targetCard);
+
+			var builtinsCard = YUCPUIToolkitHelper.CreateCard("Built-in Left/Right Options", "Configure left and right side options");
+			var builtinsContent = YUCPUIToolkitHelper.GetCardContent(builtinsCard);
+			
+			var includeLeft = serializedObject.FindProperty("includeLeft");
+			var includeRight = serializedObject.FindProperty("includeRight");
+			builtinsContent.Add(YUCPUIToolkitHelper.CreateField(includeLeft, "Include Left"));
+			
+			var leftContainer = new VisualElement();
+			leftContainer.style.paddingLeft = 15;
+			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftParam"), "Left Global Param"));
+			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftDefaultOn"), "Left Default On"));
+			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftExclusiveOffState"), "Left Exclusive Off State"));
+			
+			var leftAnimContainer = new VisualElement();
+			leftAnimContainer.style.flexDirection = FlexDirection.Row;
+			leftAnimContainer.style.marginBottom = 5;
+			var leftAnimField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftAnimation"), "Left Animation Clip");
+			leftAnimField.style.flexGrow = 1;
+			leftAnimField.style.marginRight = 5;
+			leftAnimContainer.Add(leftAnimField);
+			
+			var leftRecordButton = YUCPUIToolkitHelper.CreateButton("Record", () =>
+			{
+				var data = target as MirroredArmatureLinkData;
+				if (data != null)
+				{
+					var go = data.gameObject;
+					EditorApplication.delayCall += () =>
+					{
+						var so = new SerializedObject(data);
+						AnimationClipRecorder.RecordMuscleAnimation(so.FindProperty("leftAnimation"), go, "LeftAnimation");
+					};
+				}
+			}, YUCPUIToolkitHelper.ButtonVariant.Secondary);
+			leftRecordButton.style.width = 60;
+			leftAnimContainer.Add(leftRecordButton);
+			leftContainer.Add(leftAnimContainer);
+			builtinsContent.Add(leftContainer);
+			
+			builtinsContent.Add(YUCPUIToolkitHelper.CreateField(includeRight, "Include Right"));
+			
+			var rightContainer = new VisualElement();
+			rightContainer.style.paddingLeft = 15;
+			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightParam"), "Right Global Param"));
+			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightDefaultOn"), "Right Default On"));
+			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightExclusiveOffState"), "Right Exclusive Off State"));
+			
+			var rightAnimContainer = new VisualElement();
+			rightAnimContainer.style.flexDirection = FlexDirection.Row;
+			rightAnimContainer.style.marginBottom = 5;
+			var rightAnimField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightAnimation"), "Right Animation Clip");
+			rightAnimField.style.flexGrow = 1;
+			rightAnimField.style.marginRight = 5;
+			rightAnimContainer.Add(rightAnimField);
+			
+			var rightRecordButton = YUCPUIToolkitHelper.CreateButton("Record", () =>
+			{
+				var data = target as MirroredArmatureLinkData;
+				if (data != null)
+				{
+					var go = data.gameObject;
+					EditorApplication.delayCall += () =>
+					{
+						var so = new SerializedObject(data);
+						AnimationClipRecorder.RecordMuscleAnimation(so.FindProperty("rightAnimation"), go, "RightAnimation");
+					};
+				}
+			}, YUCPUIToolkitHelper.ButtonVariant.Secondary);
+			rightRecordButton.style.width = 60;
+			rightAnimContainer.Add(rightRecordButton);
+			rightContainer.Add(rightAnimContainer);
+			builtinsContent.Add(rightContainer);
+			
+			root.schedule.Execute(() =>
+			{
+				leftContainer.style.display = includeLeft.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
+				rightContainer.style.display = includeRight.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
+			}).Every(100);
+			
+			root.Add(builtinsCard);
+
+			var customsCard = YUCPUIToolkitHelper.CreateCard("Custom Targets", "Configure custom symmetric targets");
+			var customsContent = YUCPUIToolkitHelper.GetCardContent(customsCard);
+			var customTargetsProp = serializedObject.FindProperty("customTargets");
+			var customTargetsField = new PropertyField(customTargetsProp, "Custom Targets");
+			customTargetsField.AddToClassList("yucp-field-input");
+			customsContent.Add(customTargetsField);
+			root.Add(customsCard);
+
+			var menuCard = YUCPUIToolkitHelper.CreateCard("Toggles & Menu", "Configure menu and toggle settings");
+			var menuContent = YUCPUIToolkitHelper.GetCardContent(menuCard);
+			menuContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("menuPath"), "Menu Path"));
+			menuContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("saved"), "Saved"));
+			menuContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("exclusiveTag"), "Exclusive Tag"));
+			root.Add(menuCard);
+
+			var constraintCard = YUCPUIToolkitHelper.CreateCard("Constraint Mode", "Configure constraint behavior");
+			var constraintContent = YUCPUIToolkitHelper.GetCardContent(constraintCard);
+			constraintContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("constraintMode"), "Mode"));
+			root.Add(constraintCard);
+
+			var advancedFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced", foldAdvanced);
+			advancedFoldout.RegisterValueChangedCallback(evt => { foldAdvanced = evt.newValue; });
+			advancedFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Logging"));
+			root.Add(advancedFoldout);
+
+			root.schedule.Execute(() => serializedObject.ApplyModifiedProperties()).Every(100);
+
 			return root;
 		}
 
-		public override void OnInspectorGUI()
-		{
-			BetaWarningHelper.DrawBetaWarningIMGUI(typeof(MirroredArmatureLinkData));
-			OnInspectorGUIContent();
-		}
-
-		private void OnInspectorGUIContent()
-		{
-			serializedObject.Update();
-
-			// Target section
-			foldTarget = DrawFoldoutSection("Target Configuration", foldTarget, () => {
-				EditorGUILayout.PropertyField(serializedObject.FindProperty("part"), new GUIContent("Symmetric Body Part"));
-				EditorGUILayout.PropertyField(serializedObject.FindProperty("offset"), new GUIContent("Offset Path"));
-			});
-
-			EditorGUILayout.Space(4);
-			// Built-ins
-			foldBuiltins = DrawFoldoutSection("Built-in Left/Right Options", foldBuiltins, () => {
-				var includeLeft = serializedObject.FindProperty("includeLeft");
-				var includeRight = serializedObject.FindProperty("includeRight");
-				EditorGUILayout.PropertyField(includeLeft, new GUIContent("Include Left"));
-				if (includeLeft.boolValue)
-				{
-					EditorGUI.indentLevel++;
-					EditorGUILayout.PropertyField(serializedObject.FindProperty("leftParam"), new GUIContent("Left Global Param"));
-					EditorGUILayout.PropertyField(serializedObject.FindProperty("leftDefaultOn"), new GUIContent("Left Default On"));
-					EditorGUILayout.PropertyField(serializedObject.FindProperty("leftExclusiveOffState"), new GUIContent("Left Exclusive Off State"));
-					
-					// Left Animation with Record button
-					EditorGUILayout.BeginHorizontal();
-					var leftAnimProp = serializedObject.FindProperty("leftAnimation");
-					EditorGUILayout.PropertyField(leftAnimProp, new GUIContent("Left Animation Clip"), GUILayout.ExpandWidth(true));
-					if (GUILayout.Button("Record", GUILayout.Width(60)))
-					{
-						var data = target as MirroredArmatureLinkData;
-						if (data != null)
-						{
-							// Capture values to avoid GUI state issues
-							var go = data.gameObject;
-							// Use EditorApplication.delayCall to avoid GUI state issues
-							EditorApplication.delayCall += () =>
-							{
-								var so = new SerializedObject(data);
-								AnimationClipRecorder.RecordMuscleAnimation(so.FindProperty("leftAnimation"), go, "LeftAnimation");
-							};
-						}
-					}
-					EditorGUILayout.EndHorizontal();
-					
-					EditorGUI.indentLevel--;
-				}
-				EditorGUILayout.PropertyField(includeRight, new GUIContent("Include Right"));
-				if (includeRight.boolValue)
-				{
-					EditorGUI.indentLevel++;
-					EditorGUILayout.PropertyField(serializedObject.FindProperty("rightParam"), new GUIContent("Right Global Param"));
-					EditorGUILayout.PropertyField(serializedObject.FindProperty("rightDefaultOn"), new GUIContent("Right Default On"));
-					EditorGUILayout.PropertyField(serializedObject.FindProperty("rightExclusiveOffState"), new GUIContent("Right Exclusive Off State"));
-					
-					// Right Animation with Record button
-					EditorGUILayout.BeginHorizontal();
-					var rightAnimProp = serializedObject.FindProperty("rightAnimation");
-					EditorGUILayout.PropertyField(rightAnimProp, new GUIContent("Right Animation Clip"), GUILayout.ExpandWidth(true));
-					if (GUILayout.Button("Record", GUILayout.Width(60)))
-					{
-						var data = target as MirroredArmatureLinkData;
-						if (data != null)
-						{
-							// Capture values to avoid GUI state issues
-							var go = data.gameObject;
-							// Use EditorApplication.delayCall to avoid GUI state issues
-							EditorApplication.delayCall += () =>
-							{
-								var so = new SerializedObject(data);
-								AnimationClipRecorder.RecordMuscleAnimation(so.FindProperty("rightAnimation"), go, "RightAnimation");
-							};
-						}
-					}
-					EditorGUILayout.EndHorizontal();
-					
-					EditorGUI.indentLevel--;
-				}
-			});
-
-			EditorGUILayout.Space(4);
-			// Customs list
-			foldCustoms = DrawFoldoutSection("Custom Targets", foldCustoms, () => {
-				customList.DoLayoutList();
-			});
-
-			EditorGUILayout.Space(4);
-			// Menu & Save
-			foldMenu = DrawFoldoutSection("Toggles & Menu", foldMenu, () => {
-				EditorGUILayout.PropertyField(serializedObject.FindProperty("menuPath"), new GUIContent("Menu Path"));
-				EditorGUILayout.PropertyField(serializedObject.FindProperty("saved"), new GUIContent("Saved"));
-				EditorGUILayout.PropertyField(serializedObject.FindProperty("exclusiveTag"), new GUIContent("Exclusive Tag"));
-			});
-
-			EditorGUILayout.Space(4);
-			// Constraint Mode
-			foldConstraint = DrawFoldoutSection("Constraint Mode", foldConstraint, () => {
-				EditorGUILayout.PropertyField(serializedObject.FindProperty("constraintMode"), new GUIContent("Mode"));
-			});
-
-			EditorGUILayout.Space(4);
-			// Advanced
-			foldAdvanced = DrawFoldoutSection("Advanced", foldAdvanced, () => {
-				EditorGUILayout.PropertyField(serializedObject.FindProperty("debugMode"), new GUIContent("Debug Logging"));
-			});
-
-			serializedObject.ApplyModifiedProperties();
-		}
-
-		private bool DrawFoldoutSection(string title, bool foldout, System.Action content)
-		{
-			EditorGUILayout.Space(2);
-			var rect = EditorGUILayout.GetControlRect(false, 25);
-			var boxRect = new Rect(rect.x - 2, rect.y, rect.width + 4, rect.height);
-			var originalColor = GUI.backgroundColor;
-			GUI.backgroundColor = new Color(0.2f, 0.2f, 0.2f, 0.5f);
-			GUI.Box(boxRect, "", EditorStyles.helpBox);
-			GUI.backgroundColor = originalColor;
-			var foldoutRect = new Rect(rect.x + 5, rect.y + 4, rect.width - 10, 16);
-			var style = new GUIStyle(EditorStyles.foldout);
-			style.fontStyle = FontStyle.Bold;
-			style.fontSize = 12;
-			bool newFoldout = EditorGUI.Foldout(foldoutRect, foldout, title, true, style);
-			if (newFoldout)
-			{
-				EditorGUILayout.Space(2);
-				var contentColor = GUI.backgroundColor;
-				GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
-				EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-				GUI.backgroundColor = contentColor;
-				EditorGUILayout.Space(5);
-				content?.Invoke();
-				EditorGUILayout.Space(5);
-				EditorGUILayout.EndVertical();
-			}
-			return newFoldout;
-		}
 
 		private void OnSceneGUI(SceneView sceneView)
 		{

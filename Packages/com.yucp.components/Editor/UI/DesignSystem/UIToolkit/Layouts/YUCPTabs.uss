@@ -1,0 +1,39 @@
+/* YUCP Tabs Component */
+.yucp-tabs-container {
+    flex-direction: column;
+}
+
+.yucp-tabs-header {
+    flex-direction: row;
+    margin-right: 4px;
+    margin-bottom: var(--yucp-spacing-md);
+    border-bottom-width: 1px;
+    border-bottom-color: var(--yucp-border-primary);
+}
+
+.yucp-tab {
+    padding: 8px 16px;
+    background-color: transparent;
+    color: var(--yucp-text-secondary);
+    border-width: 0;
+    border-bottom-width: 2px;
+    border-bottom-color: transparent;
+    font-size: 13px;
+    transition-duration: var(--yucp-transition-fast);
+}
+
+.yucp-tab:hover {
+    color: var(--yucp-text-primary);
+    background-color: var(--yucp-bg-hover);
+}
+
+.yucp-tab-selected {
+    color: var(--yucp-accent-primary);
+    border-bottom-color: var(--yucp-accent-primary);
+    -unity-font-style: bold;
+}
+
+.yucp-tabs-content {
+    flex-grow: 1;
+}
+

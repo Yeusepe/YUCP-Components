@@ -29,7 +29,7 @@ namespace PackageGuardian.Core.Repository
         }
 
         /// <summary>
-        /// Create an auto-stash with timestamp and enhanced metadata.
+        /// Create an auto-stash with timestamp and metadata.
         /// </summary>
         public string CreateAutoStash(string message, string author)
         {
@@ -44,7 +44,7 @@ namespace PackageGuardian.Core.Repository
             // Build snapshot
             string commitId = _snapshots.BuildSnapshotCommit(message, author, author, parentCommitId);
             
-            // Calculate detailed diff summary for better naming
+            // Calculate detailed diff summary for naming
             string enhancedMessage = message;
             if (!string.IsNullOrEmpty(parentCommitId))
             {
@@ -60,7 +60,7 @@ namespace PackageGuardian.Core.Repository
                         var deleted = changes.Count(c => c.Type == ChangeType.Deleted);
                         var renamed = changes.Count(c => c.Type == ChangeType.Renamed || c.Type == ChangeType.Copied);
                         
-                        // Categorize changes by file type for better insight
+                        // Categorize changes by file type
                         var packagesAdded = changes.Where(c => c.Type == ChangeType.Added && 
                             (c.Path.Contains("Packages/") || c.Path.Contains("manifest.json"))).ToList();
                         var scenesModified = changes.Where(c => 

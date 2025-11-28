@@ -1,0 +1,30 @@
+/* YUCP Text Field Component */
+.yucp-textfield {
+    min-height: 20px;
+    border-radius: var(--yucp-radius-input);
+    padding: 4px 5px;
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    margin-bottom: var(--yucp-spacing-xs);
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+    transition-property: border-color, background-color;
+}
+
+.yucp-textfield:hover {
+    border-color: rgb(80, 80, 80);
+}
+
+.yucp-textfield:focus {
+    border-color: var(--yucp-border-focus);
+    transition-duration: 0.1s;
+}
+
+.yucp-textfield-error {
+    border-color: var(--yucp-accent-danger);
+}
+
+.yucp-textfield-warning {
+    border-color: var(--yucp-accent-warning);
+}
+

@@ -1,0 +1,10 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPAlert.uss" />
+    
+    <ui:VisualElement name="yucp-alert" class="yucp-alert yucp-alert-info">
+        <ui:Label name="alert-title" class="yucp-alert-title" />
+        <ui:Label name="alert-message" class="yucp-alert-message" />
+    </ui:VisualElement>
+</ui:UXML>
+

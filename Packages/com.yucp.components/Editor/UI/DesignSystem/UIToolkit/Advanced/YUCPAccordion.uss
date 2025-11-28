@@ -1,0 +1,66 @@
+/* YUCP Accordion Component - Nested Collapsible Content */
+.yucp-accordion {
+    flex-direction: column;
+}
+
+.yucp-accordion-item {
+    margin-bottom: var(--yucp-spacing-xs);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    border-radius: var(--yucp-radius-card);
+    overflow: hidden;
+    transition-duration: 0.25s;
+    transition-timing-function: ease-out;
+    transition-property: background-color;
+}
+
+.yucp-accordion-item:hover {
+    background-color: var(--yucp-bg-secondary);
+}
+
+.yucp-accordion-header {
+    flex-direction: row;
+    align-items: center;
+    padding: var(--yucp-spacing-sm);
+    /* Unity UI Toolkit doesn't support cursor property */
+}
+
+.yucp-accordion-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-accordion-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+    flex-grow: 1;
+}
+
+.yucp-accordion-chevron {
+    width: 16px;
+    height: 16px;
+    margin-left: var(--yucp-spacing-xs);
+    transition-duration: 0.25s;
+    transition-property: rotate;
+}
+
+.yucp-accordion-item-expanded .yucp-accordion-chevron {
+    rotate: 90deg;
+}
+
+.yucp-accordion-content {
+    padding: var(--yucp-spacing-sm);
+    padding-top: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition-duration: 0.25s;
+    transition-property: max-height, padding-top;
+}
+
+.yucp-accordion-item-expanded .yucp-accordion-content {
+    max-height: 1000px;
+    padding-top: var(--yucp-spacing-xs);
+}
+

@@ -1,0 +1,11 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPInput.uss" />
+    
+    <ui:VisualElement class="yucp-input-container">
+        <ui:Label name="input-label" class="yucp-input-label" />
+        <uie:TextField name="input-field" class="yucp-input-field" />
+        <ui:Label name="input-hint" class="yucp-input-hint" />
+    </ui:VisualElement>
+</ui:UXML>
+

@@ -1,0 +1,91 @@
+/* YUCP Card Component - spotcomponents pattern */
+.yucp-card {
+    background-color: rgb(30, 30, 30);
+    border-width: 1px;
+    border-color: rgb(60, 60, 60);
+    border-radius: var(--yucp-radius-card);
+    padding: var(--yucp-spacing-sm);
+    margin-top: var(--yucp-spacing-xs);
+    margin-bottom: var(--yucp-spacing-xs);
+    flex-direction: column;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
+    transition-property: background-color, border-color, box-shadow;
+}
+
+.yucp-card:hover {
+    border-color: rgb(80, 80, 80);
+    transition-duration: 0.15s;
+}
+
+.yucp-card-header {
+    flex-direction: column;
+    margin-bottom: var(--yucp-spacing-sm);
+}
+
+.yucp-card-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-card-subtitle {
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+    margin-top: var(--yucp-spacing-xs);
+}
+
+.yucp-card-content {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+/* Card Variants */
+.yucp-card-info {
+    background-color: rgba(29, 185, 84, 0.15);
+    border-left-width: var(--yucp-accent-border-width);
+    border-left-color: var(--yucp-accent-primary);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    transition-property: background-color, border-color, box-shadow, border-left-color;
+}
+
+.yucp-card-info:hover {
+    background-color: rgba(29, 185, 84, 0.2);
+    border-left-color: var(--yucp-accent-primary-hover);
+}
+
+.yucp-card-warning {
+    background-color: rgba(226, 165, 74, 0.3);
+    border-left-width: var(--yucp-accent-border-width);
+    border-left-color: var(--yucp-accent-warning);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    transition-property: background-color, border-color, box-shadow, border-left-color;
+}
+
+.yucp-card-warning:hover {
+    background-color: rgba(226, 165, 74, 0.4);
+    border-left-color: rgb(255, 200, 100);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        margin-top: -10px;
+    }
+    to {
+        opacity: 1;
+        margin-top: var(--yucp-spacing-xs);
+    }
+}
+
+.yucp-card {
+    animation-name: slideIn;
+    animation-duration: 0.3s;
+    animation-timing-function: ease-out;
+}
+

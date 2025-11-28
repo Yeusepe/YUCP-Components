@@ -1,0 +1,11 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Forms/YUCPColorField.uss" />
+    
+    <ui:VisualElement name="yucp-colorfield" class="yucp-colorfield" style="flex-direction: row; align-items: center;">
+        <ui:VisualElement name="color-preview" class="yucp-colorfield-preview" />
+        <uie:PropertyField name="color-field" />
+    </ui:VisualElement>
+</ui:UXML>
+
+

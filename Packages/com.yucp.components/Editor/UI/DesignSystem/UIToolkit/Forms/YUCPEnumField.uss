@@ -1,0 +1,16 @@
+/* YUCP Enum Field Component */
+.yucp-enumfield {
+    min-height: 20px;
+    border-radius: var(--yucp-radius-input);
+    margin-bottom: var(--yucp-spacing-xs);
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+    transition-property: background-color, border-color;
+    cursor: pointer;
+}
+
+.yucp-enumfield:hover {
+    background-color: var(--yucp-bg-hover);
+    transition-duration: 0.1s;
+}
+

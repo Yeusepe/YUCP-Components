@@ -1,0 +1,95 @@
+/* YUCP Input Mapping Editor Component */
+.yucp-input-mapping-editor {
+    flex-direction: column;
+    border-radius: var(--yucp-radius-card);
+    padding: var(--yucp-spacing-xs);
+    margin-bottom: var(--yucp-spacing-xs);
+    background-color: rgb(30, 30, 30);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-input-mapping-editor:hover {
+    border-color: var(--yucp-border-secondary);
+    scale: 1.002 1.002;
+}
+
+.yucp-input-mapping-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-mapping-enabled {
+    width: 20px;
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-mapping-foldout {
+    flex-grow: 1;
+}
+
+.yucp-mapping-remove {
+    min-width: 20px;
+    min-height: 18px;
+    height: 18px;
+    padding: 0;
+    margin-left: var(--yucp-spacing-xs);
+    font-size: 12px;
+    transition-property: background-color, scale;
+    transition-duration: 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-mapping-remove:hover {
+    scale: 1.05 1.05;
+}
+
+.yucp-mapping-remove:active {
+    scale: 0.95 0.95;
+}
+
+.yucp-input-mapping-content {
+    flex-direction: column;
+    padding-left: 15px;
+    margin-top: var(--yucp-spacing-xs);
+}
+
+.yucp-input-specific-fields {
+    flex-direction: column;
+    margin-bottom: var(--yucp-spacing-sm);
+}
+
+.yucp-parameter-section-label {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+    margin-top: var(--yucp-spacing-xs);
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-parameter-value-fields {
+    flex-direction: column;
+}
+
+.yucp-parameter-value-row {
+    flex-direction: row;
+}
+
+.yucp-parameter-value-row > * {
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-parameter-value-row > *.last {
+    margin-right: 0;
+}
+
+.yucp-parameter-value-row > * {
+    flex-grow: 1;
+}
+

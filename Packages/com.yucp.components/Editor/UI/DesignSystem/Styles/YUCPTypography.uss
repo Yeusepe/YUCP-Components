@@ -1,0 +1,130 @@
+/* ============================================================================
+   YUCP Design System - Typography
+   Font styles and text hierarchy
+   ============================================================================ */
+
+.yucp-font-heading-1 {
+    font-size: 24px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-font-heading-2 {
+    font-size: 20px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-font-heading-3 {
+    font-size: 16px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-font-heading-4 {
+    font-size: 14px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-font-body {
+    font-size: 13px;
+    -unity-font-style: normal;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-font-body-secondary {
+    font-size: 13px;
+    -unity-font-style: normal;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-font-caption {
+    font-size: 11px;
+    -unity-font-style: normal;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-font-small {
+    font-size: 9px;
+    -unity-font-style: normal;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-tertiary);
+}
+
+.yucp-font-label {
+    font-size: 12px;
+    -unity-font-style: normal;
+    -unity-text-align: middle-left;
+    color: var(--yucp-text-secondary);
+    margin-bottom: 4px;
+}
+
+/* Additional Typography Sizes for Complete Hierarchy */
+.yucp-font-9 {
+    font-size: 9px;
+    -unity-font-style: normal;
+}
+
+.yucp-font-10 {
+    font-size: 10px;
+    -unity-font-style: normal;
+}
+
+.yucp-font-11 {
+    font-size: 11px;
+    -unity-font-style: normal;
+}
+
+.yucp-font-12 {
+    font-size: 12px;
+    -unity-font-style: normal;
+}
+
+.yucp-font-13 {
+    font-size: 13px;
+    -unity-font-style: normal;
+}
+
+.yucp-font-14 {
+    font-size: 14px;
+    -unity-font-style: normal;
+}
+
+.yucp-font-16 {
+    font-size: 16px;
+    -unity-font-style: normal;
+}
+
+.yucp-font-18 {
+    font-size: 18px;
+    -unity-font-style: normal;
+}
+
+.yucp-font-24 {
+    font-size: 24px;
+    -unity-font-style: normal;
+}
+
+/* Font Weight Variants */
+.yucp-font-regular {
+    -unity-font-style: normal;
+}
+
+.yucp-font-medium {
+    -unity-font-style: normal;
+    font-weight: 500;
+}
+
+.yucp-font-bold {
+    -unity-font-style: bold;
+}
+
+

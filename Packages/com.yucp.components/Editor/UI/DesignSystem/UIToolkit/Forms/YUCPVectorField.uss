@@ -1,0 +1,20 @@
+/* YUCP Vector Field Component */
+.yucp-vectorfield {
+    flex-direction: row;
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-vectorfield-component {
+    width: 60px;
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-vectorfield-label {
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+    margin-right: var(--yucp-spacing-xs);
+    min-width: 12px;
+    -unity-text-align: middle-center;
+}
+
+

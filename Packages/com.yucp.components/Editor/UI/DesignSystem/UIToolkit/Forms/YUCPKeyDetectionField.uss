@@ -1,0 +1,67 @@
+/* YUCP Key Detection Field Component */
+.yucp-key-detection-field {
+    flex-direction: column;
+    margin-bottom: var(--yucp-spacing-sm);
+}
+
+.yucp-key-detection-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-key-detection-label {
+    width: 100px;
+    font-size: 11px;
+    color: var(--yucp-text-primary);
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-key-assign-button {
+    flex-grow: 1;
+    min-height: 20px;
+    height: 20px;
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-key-assign-button:hover {
+    scale: 1.01 1.01;
+}
+
+.yucp-key-assign-button:active {
+    scale: 0.99 0.99;
+}
+
+.yucp-key-assign-button.detecting {
+    background-color: rgba(255, 255, 0, 0.3);
+    border-color: rgb(255, 255, 0);
+}
+
+.yucp-key-clear-button {
+    width: 60px;
+    min-height: 20px;
+    height: 20px;
+    margin-left: var(--yucp-spacing-xs);
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-key-clear-button:hover {
+    scale: 1.01 1.01;
+}
+
+.yucp-key-clear-button:active {
+    scale: 0.99 0.99;
+}
+
+.yucp-key-detection-help {
+    margin-top: var(--yucp-spacing-xs);
+    padding-left: 104px;
+}
+
+

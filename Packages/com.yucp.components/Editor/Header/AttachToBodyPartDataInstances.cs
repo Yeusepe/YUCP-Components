@@ -1,7 +1,9 @@
 ﻿using UnityEditor;
+using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 using YUCP.Components;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Resources
 {    
@@ -13,52 +15,30 @@ namespace YUCP.Components.Resources
     {
         public override VisualElement CreateInspectorGUI()
         {
+            serializedObject.Update();
+            
             var root = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             root.Add(YUCPComponentHeader.CreateHeaderOverlay("Symmetric Armature Auto-Link"));
             
-            var container = new IMGUIContainer(() => {
-                serializedObject.Update();
-                
-                DrawSection("Target Settings", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("part"), new GUIContent("Body Part"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("side"), new GUIContent("Side"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("offset"), new GUIContent("Offset"));
-                });
-                
-                DrawSection("Auto-Delete Components", () => {
-                    EditorGUILayout.HelpBox("Optionally delete components based on which side is selected.", MessageType.Info);
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("leftComponentToDelete"), new GUIContent("Delete if Left"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("rightComponentToDelete"), new GUIContent("Delete if Right"));
-                });
-                
-                serializedObject.ApplyModifiedProperties();
-            });
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Settings", "Configure body part and side");
+            var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("part"), "Body Part"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("side"), "Side"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("offset"), "Offset"));
+            root.Add(targetCard);
             
-            root.Add(container);
+            var deleteCard = YUCPUIToolkitHelper.CreateCard("Auto-Delete Components", "Optionally delete components based on side");
+            var deleteContent = YUCPUIToolkitHelper.GetCardContent(deleteCard);
+            deleteContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Optionally delete components based on which side is selected.", YUCPUIToolkitHelper.MessageType.Info));
+            deleteContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftComponentToDelete"), "Delete if Left"));
+            deleteContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightComponentToDelete"), "Delete if Right"));
+            root.Add(deleteCard);
+            
+            root.schedule.Execute(() => serializedObject.ApplyModifiedProperties()).Every(100);
+            
             return root;
         }
         
-        private void DrawSection(string title, System.Action content)
-        {
-            EditorGUILayout.Space(5);
-            
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
-            
-            if (!string.IsNullOrEmpty(title))
-            {
-                var style = new GUIStyle(EditorStyles.boldLabel);
-                style.alignment = TextAnchor.MiddleLeft;
-                EditorGUILayout.LabelField(title, style);
-                EditorGUILayout.Space(3);
-            }
-            
-            content?.Invoke();
-            
-            EditorGUILayout.EndVertical();
-        }
     }
 }

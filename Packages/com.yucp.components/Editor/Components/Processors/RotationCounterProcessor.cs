@@ -12,7 +12,7 @@ namespace YUCP.Components.Editor
 {
     /// <summary>
     /// Processes Rotation Counter components during avatar build.
-    /// Generates Animator Controller with zone states to detect wraparounds and increment RotationIndex.
+    /// Generates Animator Controller with sector-based rotation detection and cardinal direction flick detection.
     /// </summary>
     public class RotationCounterProcessor : IVRCSDKPreprocessAvatarCallback
     {
@@ -75,31 +75,35 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            if (string.IsNullOrEmpty(data.angle01ParameterName))
+            if (string.IsNullOrEmpty(data.xParameterName))
             {
-                Debug.LogError($"[RotationCounterProcessor] Angle01 parameter name is not set for '{data.name}'", data);
+                Debug.LogError($"[RotationCounterProcessor] X parameter name is not set for '{data.name}'", data);
                 return false;
             }
 
-            if (string.IsNullOrEmpty(data.magnitudeParameterName))
+            if (string.IsNullOrEmpty(data.yParameterName))
             {
-                Debug.LogError($"[RotationCounterProcessor] Magnitude parameter name is not set for '{data.name}'", data);
+                Debug.LogError($"[RotationCounterProcessor] Y parameter name is not set for '{data.name}'", data);
                 return false;
             }
 
-            if (string.IsNullOrEmpty(data.rotationIndexParameterName))
+            if (string.IsNullOrEmpty(data.angleParameterName))
             {
-                Debug.LogError($"[RotationCounterProcessor] Rotation index parameter name is not set for '{data.name}'", data);
+                Debug.LogError($"[RotationCounterProcessor] Angle parameter name is not set for '{data.name}'", data);
                 return false;
             }
 
-            if (string.IsNullOrEmpty(data.directionParameterName))
+            if (string.IsNullOrEmpty(data.rotationStepParameterName))
             {
-                Debug.LogError($"[RotationCounterProcessor] Direction parameter name is not set for '{data.name}'", data);
+                Debug.LogError($"[RotationCounterProcessor] Rotation step parameter name is not set for '{data.name}'", data);
                 return false;
             }
 
-
+            if (string.IsNullOrEmpty(data.flickEventParameterName))
+            {
+                Debug.LogError($"[RotationCounterProcessor] Flick event parameter name is not set for '{data.name}'", data);
+                return false;
+            }
 
             if (data.numberOfSectors < 4 || data.numberOfSectors > 24)
             {
@@ -107,10 +111,33 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            var sectorWidth = 1f / data.numberOfSectors;
-            if (data.sectorHysteresis >= sectorWidth * 0.5f)
+            if (data.innerDeadzone < 0f || data.innerDeadzone >= 1f)
             {
-                Debug.LogError($"[RotationCounterProcessor] Sector hysteresis is too large for '{data.name}'. Reduce it below half of a sector width.", data);
+                Debug.LogError($"[RotationCounterProcessor] Inner deadzone must be between 0 and 1 for '{data.name}'", data);
+                return false;
+            }
+
+            if (data.flickMinRadius <= data.innerDeadzone)
+            {
+                Debug.LogError($"[RotationCounterProcessor] Flick min radius must be greater than inner deadzone for '{data.name}'", data);
+                return false;
+            }
+
+            if (data.releaseRadius < 0f || data.releaseRadius >= 1f)
+            {
+                Debug.LogError($"[RotationCounterProcessor] Release radius must be between 0 and 1 for '{data.name}'", data);
+                return false;
+            }
+
+            if (data.angleToleranceDeg < 0f || data.angleToleranceDeg > 90f)
+            {
+                Debug.LogError($"[RotationCounterProcessor] Angle tolerance must be between 0 and 90 degrees for '{data.name}'", data);
+                return false;
+            }
+
+            if (data.maxFlickFrames < 1 || data.maxFlickFrames > 30)
+            {
+                Debug.LogError($"[RotationCounterProcessor] Max flick frames must be between 1 and 30 for '{data.name}'", data);
                 return false;
             }
 
@@ -197,10 +224,11 @@ namespace YUCP.Components.Editor
                             if (!Has(paramName)) globalParamsList.Add(paramName);
                         }
 
-                        AddIfMissing(data.angle01ParameterName);
-                        AddIfMissing(data.magnitudeParameterName);
-                        AddIfMissing(data.rotationIndexParameterName);
-                        AddIfMissing(data.directionParameterName);
+                        AddIfMissing(data.xParameterName);
+                        AddIfMissing(data.yParameterName);
+                        AddIfMissing(data.angleParameterName);
+                        AddIfMissing(data.rotationStepParameterName);
+                        AddIfMissing(data.flickEventParameterName);
                         if (data.createDebugPhaseParameter)
                         {
                             AddIfMissing(data.debugPhaseParameterName);
@@ -221,10 +249,11 @@ namespace YUCP.Components.Editor
                 fullController.AddController(controller, VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.FX);
                 
                 // Add parameters as global parameters
-                fullController.AddGlobalParam(data.angle01ParameterName);
-                fullController.AddGlobalParam(data.magnitudeParameterName);
-                fullController.AddGlobalParam(data.rotationIndexParameterName);
-                fullController.AddGlobalParam(data.directionParameterName);
+                fullController.AddGlobalParam(data.xParameterName);
+                fullController.AddGlobalParam(data.yParameterName);
+                fullController.AddGlobalParam(data.angleParameterName);
+                fullController.AddGlobalParam(data.rotationStepParameterName);
+                fullController.AddGlobalParam(data.flickEventParameterName);
                 if (data.createDebugPhaseParameter && !string.IsNullOrEmpty(data.debugPhaseParameterName))
                 {
                     fullController.AddGlobalParam(data.debugPhaseParameterName);
@@ -245,10 +274,17 @@ namespace YUCP.Components.Editor
             string tempPath = "Assets/Temp_RotationCounter.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(tempPath);
             
-            controller.AddParameter(data.angle01ParameterName, AnimatorControllerParameterType.Float);
-            controller.AddParameter(data.magnitudeParameterName, AnimatorControllerParameterType.Float);
-            controller.AddParameter(data.rotationIndexParameterName, AnimatorControllerParameterType.Int);
-            controller.AddParameter(data.directionParameterName, AnimatorControllerParameterType.Int);
+            controller.AddParameter(data.xParameterName, AnimatorControllerParameterType.Float);
+            controller.AddParameter(data.yParameterName, AnimatorControllerParameterType.Float);
+            controller.AddParameter(data.angleParameterName, AnimatorControllerParameterType.Float);
+            controller.AddParameter(data.rotationStepParameterName, AnimatorControllerParameterType.Int);
+            controller.AddParameter(data.flickEventParameterName, AnimatorControllerParameterType.Int);
+
+            // Internal state parameters
+            controller.AddParameter("_PrevSector", AnimatorControllerParameterType.Int);
+            controller.AddParameter("_FlickState", AnimatorControllerParameterType.Int);
+            controller.AddParameter("_FlickDir", AnimatorControllerParameterType.Int);
+            controller.AddParameter("_FlickTimer", AnimatorControllerParameterType.Int);
 
             if (data.createDebugPhaseParameter && !string.IsNullOrEmpty(data.debugPhaseParameterName))
             {
@@ -281,94 +317,348 @@ namespace YUCP.Components.Editor
 
             ClearStateMachine(stateMachine);
 
-            // Calculate layout
-            float sectorWidth = 1f / data.numberOfSectors;
+            // Generate rotation detection states (sector tracking)
+            var sectorStates = GenerateRotationDetection(data, stateMachine);
             
-            // Create states
-            var idleStates = new AnimatorState[data.numberOfSectors];
+            // Generate flick detection states
+            var flickStates = GenerateFlickDetection(data, stateMachine);
+
+            // Set default state to first sector state
+            stateMachine.defaultState = sectorStates[0];
             
-            for (int i = 0; i < data.numberOfSectors; i++)
-            {
-                var pos = GetSectorStatePosition(i, 0);
-                var state = stateMachine.AddState($"Sector_{i}_Idle", pos);
-                state.writeDefaultValues = false;
-                // In idle, we just report the phase if debug is on
-                SetStateDriver(state, data, (float)i); 
-                idleStates[i] = state;
-            }
-
-            // Create transitions and intermediate states
-            for (int i = 0; i < data.numberOfSectors; i++)
-            {
-                int next = (i + 1) % data.numberOfSectors;
-                int prev = (i - 1 + data.numberOfSectors) % data.numberOfSectors;
-
-                // INC: i -> next
-                var incState = stateMachine.AddState($"Sector_{i}_Inc", GetSectorStatePosition(i, 1));
-                incState.writeDefaultValues = false;
-                SetStateDriver(incState, data, null,
-                    (data.rotationIndexParameterName, DriverAdd, 1f),
-                    (data.directionParameterName, DriverSet, 1f));
-                
-                var incTrans = incState.AddTransition(idleStates[next]);
-                ConfigureInstantTransition(incTrans);
-
-                // DEC: i -> prev
-                var decState = stateMachine.AddState($"Sector_{i}_Dec", GetSectorStatePosition(i, -1));
-                decState.writeDefaultValues = false;
-                SetStateDriver(decState, data, null,
-                    (data.rotationIndexParameterName, DriverAdd, -1f),
-                    (data.directionParameterName, DriverSet, -1f));
-
-                var decTrans = decState.AddTransition(idleStates[prev]);
-                ConfigureInstantTransition(decTrans);
-
-                // Transitions from Idle
-                // To INC
-                var toInc = idleStates[i].AddTransition(incState);
-                ConfigureInstantTransition(toInc);
-                AddMagnitudeGate(toInc, data);
-                
-                float incThreshold;
-                if (i == data.numberOfSectors - 1) // Last sector -> 0
-                {
-                    // Wrap around: Angle < Sector 0 width - hysteresis
-                    // Actually, simpler: if we are in last sector (approx 0.9-1.0), and angle is small (approx 0.0-0.1)
-                    // Threshold = 0 + width - hysteresis
-                    incThreshold = sectorWidth - data.sectorHysteresis;
-                    toInc.AddCondition(AnimatorConditionMode.Less, incThreshold, data.angle01ParameterName);
-                }
-                else
-                {
-                    // Normal: Angle > next start + hysteresis
-                    incThreshold = ((i + 1) * sectorWidth) + data.sectorHysteresis;
-                    toInc.AddCondition(AnimatorConditionMode.Greater, incThreshold, data.angle01ParameterName);
-                }
-
-                // To DEC
-                var toDec = idleStates[i].AddTransition(decState);
-                ConfigureInstantTransition(toDec);
-                AddMagnitudeGate(toDec, data);
-
-                float decThreshold;
-                if (i == 0) // Sector 0 -> Last
-                {
-                    // Wrap around: Angle > Last sector start + hysteresis
-                    decThreshold = 1f - sectorWidth + data.sectorHysteresis;
-                    toDec.AddCondition(AnimatorConditionMode.Greater, decThreshold, data.angle01ParameterName);
-                }
-                else
-                {
-                    // Normal: Angle < current start - hysteresis
-                    decThreshold = (i * sectorWidth) - data.sectorHysteresis;
-                    toDec.AddCondition(AnimatorConditionMode.Less, decThreshold, data.angle01ParameterName);
-                }
-            }
-
-            stateMachine.defaultState = idleStates[0];
             layer.stateMachine = stateMachine;
             layers[0] = layer;
             controller.layers = layers;
+        }
+
+        private AnimatorState[] GenerateRotationDetection(RotationCounterData data, AnimatorStateMachine stateMachine)
+        {
+            int numSectors = data.numberOfSectors;
+            float sectorWidthDeg = 360f / numSectors;
+            int halfSectors = numSectors / 2;
+            
+            var sectorStates = new AnimatorState[numSectors];
+            
+            // Create sector states
+            for (int i = 0; i < numSectors; i++)
+            {
+                float sectorStartDeg = i * sectorWidthDeg;
+                float sectorEndDeg = (i + 1) * sectorWidthDeg;
+                
+                var pos = GetSectorStatePosition(i, 0);
+                var state = stateMachine.AddState($"Sector_{i}", pos);
+                state.writeDefaultValues = false;
+                
+                // Set previous sector to current sector
+                SetStateDriver(state, data, (float)i,
+                    ("_PrevSector", DriverSet, (float)i));
+                
+                sectorStates[i] = state;
+            }
+            
+            // Create transitions between sectors with rotation step detection
+            for (int i = 0; i < numSectors; i++)
+            {
+                for (int j = 0; j < numSectors; j++)
+                {
+                    if (i == j) continue;
+                    
+                    int rawStep = j - i;
+                    int correctedStep = rawStep;
+                    
+                    // Wraparound correction
+                    if (rawStep > halfSectors)
+                    {
+                        correctedStep = rawStep - numSectors;
+                    }
+                    else if (rawStep < -halfSectors)
+                    {
+                        correctedStep = rawStep + numSectors;
+                    }
+                    
+                    // Only create transitions for valid rotation steps (+1, -1, or wraparound equivalents)
+                    // Don't create transitions for same sector (correctedStep == 0)
+                    bool isValidStep = false;
+                    int rotationStep = 0;
+                    
+                    if (correctedStep == 1 || correctedStep == -numSectors + 1)
+                    {
+                        isValidStep = true;
+                        rotationStep = 1;
+                    }
+                    else if (correctedStep == -1 || correctedStep == numSectors - 1)
+                    {
+                        isValidStep = true;
+                        rotationStep = -1;
+                    }
+                    
+                    if (isValidStep)
+                    {
+                        var transition = sectorStates[i].AddTransition(sectorStates[j]);
+                        ConfigureInstantTransition(transition);
+                        
+                        // Add angle range condition for target sector
+                        float sectorStartDeg = j * sectorWidthDeg;
+                        float sectorEndDeg = (j + 1) * sectorWidthDeg;
+                        
+                        if (sectorEndDeg >= 360f)
+                        {
+                            // Last sector wraps around - angle is in [sectorStartDeg, 360) OR [0, sectorEndDeg-360)
+                            // Since Unity doesn't support OR, we check the main range
+                            transition.AddCondition(AnimatorConditionMode.Greater, sectorStartDeg, data.angleParameterName);
+                        }
+                        else
+                        {
+                            transition.AddCondition(AnimatorConditionMode.Greater, sectorStartDeg, data.angleParameterName);
+                            transition.AddCondition(AnimatorConditionMode.Less, sectorEndDeg, data.angleParameterName);
+                        }
+                        
+                        // Set rotation step output on the target state
+                        if (rotationStep != 0)
+                        {
+                            SetStateDriver(sectorStates[j], data, null,
+                                (data.rotationStepParameterName, DriverSet, (float)rotationStep));
+                        }
+                        else
+                        {
+                            SetStateDriver(sectorStates[j], data, null,
+                                (data.rotationStepParameterName, DriverSet, 0f));
+                        }
+                    }
+                }
+            }
+            
+            return sectorStates;
+        }
+
+        private Dictionary<string, AnimatorState> GenerateFlickDetection(RotationCounterData data, AnimatorStateMachine stateMachine)
+        {
+            var flickStates = new Dictionary<string, AnimatorState>();
+            
+            // Create IDLE state
+            var idleState = stateMachine.AddState("Flick_Idle", new Vector3(0, 400, 0));
+            idleState.writeDefaultValues = false;
+            SetStateDriver(idleState, data, null,
+                ("_FlickState", DriverSet, 0f),
+                ("_FlickDir", DriverSet, 0f),
+                ("_FlickTimer", DriverSet, 0f),
+                (data.flickEventParameterName, DriverSet, 0f));
+            flickStates["IDLE"] = idleState;
+            
+            // Create ACTIVE states for each cardinal direction
+            string[] directions = { "RIGHT", "UP", "LEFT", "DOWN" };
+            float[] directionAngles = { 0f, 90f, 180f, 270f };
+            int[] directionValues = { 1, 2, 3, 4 };
+            
+            for (int i = 0; i < directions.Length; i++)
+            {
+                var activeState = stateMachine.AddState($"Flick_Active_{directions[i]}", new Vector3((i - 1.5f) * 200f, 600, 0));
+                activeState.writeDefaultValues = false;
+                flickStates[$"ACTIVE_{directions[i]}"] = activeState;
+            }
+            
+            // IDLE -> ACTIVE transitions (for each direction)
+            for (int i = 0; i < directions.Length; i++)
+            {
+                float dirAngle = directionAngles[i];
+                float angleMin = NormalizeAngle(dirAngle - data.angleToleranceDeg);
+                float angleMax = NormalizeAngle(dirAngle + data.angleToleranceDeg);
+                bool isWraparound = angleMin > angleMax;
+                
+                // Create transitions to handle angle range (may need two for wraparound)
+                if (isWraparound)
+                {
+                    // Wraparound case: create two transitions for [angleMin, 360) and [0, angleMax]
+                    // First transition: angle >= angleMin
+                    if (i == 0) // RIGHT
+                    {
+                        var toActive1 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive1);
+                        toActive1.AddCondition(AnimatorConditionMode.Greater, data.flickMinRadius, data.xParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Greater, data.innerDeadzone, data.xParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
+                        
+                        var toActive2 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive2);
+                        toActive2.AddCondition(AnimatorConditionMode.Greater, data.flickMinRadius, data.xParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Greater, data.innerDeadzone, data.xParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
+                    }
+                    else if (i == 1) // UP
+                    {
+                        var toActive1 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive1);
+                        toActive1.AddCondition(AnimatorConditionMode.Greater, data.flickMinRadius, data.yParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Greater, data.innerDeadzone, data.yParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
+                        
+                        var toActive2 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive2);
+                        toActive2.AddCondition(AnimatorConditionMode.Greater, data.flickMinRadius, data.yParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Greater, data.innerDeadzone, data.yParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
+                    }
+                    else if (i == 2) // LEFT
+                    {
+                        var toActive1 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive1);
+                        toActive1.AddCondition(AnimatorConditionMode.Less, 0f, data.xParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Less, -data.flickMinRadius, data.xParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Less, -data.innerDeadzone, data.xParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
+                        
+                        var toActive2 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive2);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, 0f, data.xParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, -data.flickMinRadius, data.xParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, -data.innerDeadzone, data.xParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
+                    }
+                    else // DOWN
+                    {
+                        var toActive1 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive1);
+                        toActive1.AddCondition(AnimatorConditionMode.Less, 0f, data.yParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Less, -data.flickMinRadius, data.yParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Less, -data.innerDeadzone, data.yParameterName);
+                        toActive1.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
+                        
+                        var toActive2 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive2);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, 0f, data.yParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, -data.flickMinRadius, data.yParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, -data.innerDeadzone, data.yParameterName);
+                        toActive2.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
+                    }
+                }
+                else
+                {
+                    // Normal case: single transition
+                    if (i == 0) // RIGHT
+                    {
+                        var toActive = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive);
+                        toActive.AddCondition(AnimatorConditionMode.Greater, data.flickMinRadius, data.xParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Greater, data.innerDeadzone, data.xParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
+                    }
+                    else if (i == 1) // UP
+                    {
+                        var toActive = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive);
+                        toActive.AddCondition(AnimatorConditionMode.Greater, data.flickMinRadius, data.yParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Greater, data.innerDeadzone, data.yParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
+                    }
+                    else if (i == 2) // LEFT
+                    {
+                        var toActive = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive);
+                        toActive.AddCondition(AnimatorConditionMode.Less, 0f, data.xParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Less, -data.flickMinRadius, data.xParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Less, -data.innerDeadzone, data.xParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
+                    }
+                    else // DOWN
+                    {
+                        var toActive = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
+                        ConfigureInstantTransition(toActive);
+                        toActive.AddCondition(AnimatorConditionMode.Less, 0f, data.yParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Less, -data.flickMinRadius, data.yParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Less, -data.innerDeadzone, data.yParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
+                        toActive.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
+                    }
+                }
+                
+                // Set ACTIVE state variables
+                SetStateDriver(flickStates[$"ACTIVE_{directions[i]}"], data, null,
+                    ("_FlickState", DriverSet, 1f),
+                    ("_FlickDir", DriverSet, (float)directionValues[i]),
+                    ("_FlickTimer", DriverSet, 0f));
+            }
+            
+            // ACTIVE -> IDLE transitions (cancel conditions and success)
+            for (int i = 0; i < directions.Length; i++)
+            {
+                var activeState = flickStates[$"ACTIVE_{directions[i]}"];
+                float dirAngle = directionAngles[i];
+                float angleMin = NormalizeAngle(dirAngle - data.angleToleranceDeg);
+                float angleMax = NormalizeAngle(dirAngle + data.angleToleranceDeg);
+                
+                // Cancel: Rotation detected
+                var cancelRotation = activeState.AddTransition(idleState);
+                ConfigureInstantTransition(cancelRotation);
+                cancelRotation.AddCondition(AnimatorConditionMode.NotEqual, 0f, data.rotationStepParameterName);
+                SetStateDriver(idleState, data, null,
+                    ("_FlickState", DriverSet, 0f),
+                    ("_FlickDir", DriverSet, 0f),
+                    ("_FlickTimer", DriverSet, 0f),
+                    (data.flickEventParameterName, DriverSet, 0f));
+                
+                // Cancel: Angle drift (angle outside tolerance)
+                // Create separate transitions for angle < min and angle > max
+                var cancelDriftLow = activeState.AddTransition(idleState);
+                ConfigureInstantTransition(cancelDriftLow);
+                if (angleMin > angleMax) // Wraparound case
+                {
+                    // For wraparound, angle is outside if it's between angleMax and angleMin
+                    cancelDriftLow.AddCondition(AnimatorConditionMode.Greater, angleMax, data.angleParameterName);
+                    cancelDriftLow.AddCondition(AnimatorConditionMode.Less, angleMin, data.angleParameterName);
+                }
+                else
+                {
+                    cancelDriftLow.AddCondition(AnimatorConditionMode.Less, angleMin, data.angleParameterName);
+                }
+                SetStateDriver(idleState, data, null,
+                    ("_FlickState", DriverSet, 0f),
+                    ("_FlickDir", DriverSet, 0f),
+                    ("_FlickTimer", DriverSet, 0f),
+                    (data.flickEventParameterName, DriverSet, 0f));
+                
+                if (!(angleMin > angleMax)) // Only add high cancel if not wraparound
+                {
+                    var cancelDriftHigh = activeState.AddTransition(idleState);
+                    ConfigureInstantTransition(cancelDriftHigh);
+                    cancelDriftHigh.AddCondition(AnimatorConditionMode.Greater, angleMax, data.angleParameterName);
+                    SetStateDriver(idleState, data, null,
+                        ("_FlickState", DriverSet, 0f),
+                        ("_FlickDir", DriverSet, 0f),
+                        ("_FlickTimer", DriverSet, 0f),
+                        (data.flickEventParameterName, DriverSet, 0f));
+                }
+                
+                // Success: Release detected (radius <= releaseRadius)
+                // Release means both |X| and |Y| are small
+                var success = activeState.AddTransition(idleState);
+                ConfigureInstantTransition(success);
+                // Check both X and Y are within release radius (positive and negative)
+                success.AddCondition(AnimatorConditionMode.Less, data.releaseRadius, data.xParameterName);
+                success.AddCondition(AnimatorConditionMode.Greater, -data.releaseRadius, data.xParameterName);
+                success.AddCondition(AnimatorConditionMode.Less, data.releaseRadius, data.yParameterName);
+                success.AddCondition(AnimatorConditionMode.Greater, -data.releaseRadius, data.yParameterName);
+                
+                // Emit flick event
+                SetStateDriver(idleState, data, null,
+                    ("_FlickState", DriverSet, 0f),
+                    ("_FlickDir", DriverSet, 0f),
+                    ("_FlickTimer", DriverSet, 0f),
+                    (data.flickEventParameterName, DriverSet, (float)directionValues[i]));
+            }
+            
+            return flickStates;
+        }
+
+
+
+        private float NormalizeAngle(float angle)
+        {
+            angle = angle % 360f;
+            if (angle < 0f) angle += 360f;
+            return angle;
         }
 
         private void SetStateDriver(AnimatorState state, RotationCounterData data, float? debugPhase, params (string name, int type, float value)[] entries)
@@ -408,13 +698,6 @@ namespace YUCP.Components.Editor
             return Vector3.zero;
         }
 
-        private void AddMagnitudeGate(AnimatorStateTransition transition, RotationCounterData data)
-        {
-            if (!string.IsNullOrEmpty(data.magnitudeParameterName) && data.magnitudeThreshold > 0)
-            {
-                transition.AddCondition(AnimatorConditionMode.Greater, data.magnitudeThreshold, data.magnitudeParameterName);
-            }
-        }
 
         private void ConfigureInstantTransition(AnimatorStateTransition transition)
         {

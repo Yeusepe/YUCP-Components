@@ -1,0 +1,15 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPCard.uss" />
+    
+    <ui:VisualElement class="yucp-card">
+        <ui:VisualElement name="card-header" class="yucp-card-header">
+            <ui:Label name="card-title" class="yucp-card-title" />
+            <ui:Label name="card-subtitle" class="yucp-card-subtitle" />
+        </ui:VisualElement>
+        <ui:VisualElement name="card-content" class="yucp-card-content">
+            <ui:Slot />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
+

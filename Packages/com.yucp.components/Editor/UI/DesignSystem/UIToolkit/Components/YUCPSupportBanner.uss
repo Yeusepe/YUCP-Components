@@ -1,0 +1,73 @@
+/* YUCP Support Banner Component */
+.yucp-support-banner {
+    margin-top: var(--yucp-spacing-sm);
+    margin-bottom: var(--yucp-spacing-sm);
+    border-left-width: var(--yucp-accent-border-width);
+    border-left-color: rgb(54, 191, 177);
+    background-color: rgb(30, 30, 30);
+    border-color: rgb(60, 60, 60);
+}
+
+.yucp-support-heart {
+    font-size: 16px;
+    color: rgb(54, 191, 177);
+    width: 20px;
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-support-title {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-support-close {
+    min-width: 20px;
+    min-height: 20px;
+    padding: 0;
+    margin: 0;
+    background-color: transparent;
+    border-width: 0;
+    color: rgb(128, 128, 128);
+    font-size: 16px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-support-close:hover {
+    color: rgb(204, 204, 204);
+}
+
+.yucp-support-message {
+    font-size: 11px;
+    color: rgb(191, 191, 191);
+    white-space: normal;
+    margin-bottom: var(--yucp-spacing-sm);
+}
+
+.yucp-support-actions {
+    flex-direction: row;
+    align-items: center;
+    margin-top: var(--yucp-spacing-sm);
+}
+
+.yucp-support-button {
+    min-width: 100px;
+    height: 30px;
+    background-color: rgb(54, 191, 177);
+}
+
+.yucp-support-never {
+    background-color: transparent;
+    border-width: 0;
+    color: rgb(128, 128, 128);
+    font-size: 10px;
+    padding: 0;
+    margin: 0;
+    -unity-text-align: middle-right;
+}
+
+.yucp-support-never:hover {
+    color: rgb(179, 179, 179);
+}
+
+

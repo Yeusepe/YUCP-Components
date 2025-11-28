@@ -1,0 +1,27 @@
+/* YUCP Section Component - spotcomponents pattern */
+.yucp-section {
+    margin-top: var(--yucp-spacing-lg);
+    margin-bottom: var(--yucp-spacing-sm);
+    flex-direction: column;
+}
+
+.yucp-section-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--yucp-accent-primary);
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-section-subtitle {
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+    margin-top: var(--yucp-spacing-xs);
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-section-content {
+    flex-direction: column;
+    margin-top: var(--yucp-spacing-xs);
+}
+
+

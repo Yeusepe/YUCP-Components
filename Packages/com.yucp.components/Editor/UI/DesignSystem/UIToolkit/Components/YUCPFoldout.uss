@@ -1,0 +1,55 @@
+/* YUCP Foldout Component - spotcomponents pattern */
+.yucp-foldout {
+    margin-top: var(--yucp-spacing-sm);
+    margin-bottom: var(--yucp-spacing-xs);
+    transition-duration: 0.25s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-foldout > .unity-foldout__toggle {
+    color: var(--yucp-text-primary);
+    font-size: 13px;
+    -unity-font-style: bold;
+    transition-duration: 0.15s, 0.15s;
+    transition-timing-function: ease-out, ease-out;
+    transition-property: color, scale;
+    scale: 1 1;
+}
+
+.yucp-foldout > .unity-foldout__toggle:hover {
+    scale: 1.005 1.005;
+}
+
+.yucp-foldout > .unity-foldout__toggle:hover {
+    color: var(--yucp-accent-primary);
+}
+
+.yucp-foldout > .unity-foldout__content {
+    margin-top: var(--yucp-spacing-xs);
+    padding-left: 15px;
+    transition-duration: 0.25s;
+    transition-timing-function: ease-out;
+    transition-property: opacity, margin-top, padding-top;
+}
+
+.yucp-foldout-header {
+    flex-direction: row;
+    align-items: center;
+}
+
+.yucp-foldout-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+}
+
+.yucp-foldout-badge {
+    margin-left: auto;
+    padding: 2px 4px;
+    font-size: 10px;
+    background-color: rgba(54, 191, 177, 0.2);
+    color: var(--yucp-accent-primary);
+    border-radius: var(--yucp-radius-badge);
+}
+
+

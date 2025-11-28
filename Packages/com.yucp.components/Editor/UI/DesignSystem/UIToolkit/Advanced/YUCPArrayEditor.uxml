@@ -1,0 +1,19 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Advanced/YUCPArrayEditor.uss" />
+    
+    <ui:VisualElement name="yucp-array-editor" class="yucp-array-editor">
+        <ui:VisualElement name="array-header" class="yucp-array-editor-header">
+            <ui:Label name="array-title" class="yucp-array-editor-title" />
+            <ui:VisualElement name="array-actions" class="yucp-array-editor-actions">
+                <ui:Slot name="action-buttons" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="array-items" class="yucp-array-editor-items">
+            <ui:Slot name="items" />
+        </ui:VisualElement>
+        <ui:Label name="array-empty" class="yucp-array-editor-empty" text="No items" style="display: none;" />
+    </ui:VisualElement>
+</ui:UXML>
+
+

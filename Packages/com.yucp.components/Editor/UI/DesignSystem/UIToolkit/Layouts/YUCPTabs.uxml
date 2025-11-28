@@ -1,0 +1,14 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Layouts/YUCPTabs.uss" />
+    
+    <ui:VisualElement class="yucp-tabs-container">
+        <ui:VisualElement name="yucp-tabs-header" class="yucp-tabs-header">
+            <ui:Slot name="tabs" />
+        </ui:VisualElement>
+        <ui:VisualElement name="yucp-tabs-content" class="yucp-tabs-content">
+            <ui:Slot name="content" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
+

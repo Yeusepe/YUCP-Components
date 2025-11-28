@@ -1,0 +1,16 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Forms/YUCPKeyDetectionField.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPButton.uss" />
+    
+    <ui:VisualElement class="yucp-key-detection-field">
+        <ui:VisualElement class="yucp-key-detection-row">
+            <ui:Label class="yucp-key-detection-label" text="Keyboard Key" />
+            <ui:Button name="key-assign-button" class="yucp-button yucp-button-secondary yucp-key-assign-button" />
+            <ui:Button name="key-clear-button" class="yucp-button yucp-button-danger yucp-key-clear-button" text="Clear" style="display: none;" />
+        </ui:VisualElement>
+        <ui:VisualElement name="key-detection-help" class="yucp-key-detection-help" style="display: none;" />
+    </ui:VisualElement>
+</ui:UXML>
+
+

@@ -1,0 +1,40 @@
+/* YUCP Badge Component */
+.yucp-badge {
+    border-radius: var(--yucp-radius-badge);
+    padding: 2px 6px;
+    font-size: 10px;
+    -unity-font-style: normal;
+    min-width: auto;
+    height: auto;
+}
+
+.yucp-badge-default {
+    background-color: var(--yucp-bg-tertiary);
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-badge-primary {
+    background-color: rgba(54, 191, 177, 0.2);
+    color: var(--yucp-accent-primary);
+}
+
+.yucp-badge-success {
+    background-color: rgba(54, 191, 177, 0.2);
+    color: var(--yucp-accent-success);
+}
+
+.yucp-badge-warning {
+    background-color: rgba(226, 165, 74, 0.2);
+    color: var(--yucp-accent-warning);
+}
+
+.yucp-badge-danger {
+    background-color: rgba(226, 74, 74, 0.2);
+    color: var(--yucp-accent-danger);
+}
+
+.yucp-badge-info {
+    background-color: rgba(91, 163, 255, 0.2);
+    color: var(--yucp-accent-info);
+}
+

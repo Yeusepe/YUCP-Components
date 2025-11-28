@@ -59,7 +59,7 @@ namespace YUCP.Components.Editor.MeshUtils
     }
     
     /// <summary>
-    /// Complete finger targets for all fingers.
+    /// Finger targets for all fingers.
     /// </summary>
     public struct FingerTargets
     {

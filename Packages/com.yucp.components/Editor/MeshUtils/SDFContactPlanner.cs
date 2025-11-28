@@ -424,7 +424,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Generate multiple contact candidates per finger for better optimization.
+        /// Generate multiple contact candidates per finger.
         /// </summary>
         private static Dictionary<string, List<SurfaceContact>> GenerateMultipleCandidates(
             Dictionary<string, SurfaceContact> initialContacts,

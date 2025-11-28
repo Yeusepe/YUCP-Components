@@ -254,7 +254,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                     return;
                 }
                 
-                // Group changes by action type for better presentation
+                // Group changes by action type
                 // Note: Added in current = will be DELETED on rollback
                 //       Deleted in current = will be RESTORED on rollback
                 //       Modified in current = will be REVERTED on rollback

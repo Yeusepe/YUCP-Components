@@ -1,0 +1,103 @@
+/* ============================================================================
+   YUCP Design System - Master Stylesheet
+   Core design tokens and variables for the unified YUCP UI system
+   ============================================================================ */
+
+/* Design Tokens - Colors */
+.yucp-root {
+    /* Background Colors */
+    --yucp-bg-primary: #090909;
+    --yucp-bg-secondary: #1a1a1a;
+    --yucp-bg-tertiary: #2a2a2a;
+    --yucp-bg-hover: #525252;
+    --yucp-bg-active: #3a3a3a;
+    
+    /* Border Colors */
+    --yucp-border-primary: #2a2a2a;
+    --yucp-border-secondary: #3a3a3a;
+    --yucp-border-focus: #36BFB1;
+    
+    /* Text Colors */
+    --yucp-text-primary: #ffffff;
+    --yucp-text-secondary: #b0b0b0;
+    --yucp-text-tertiary: #808080;
+    --yucp-text-disabled: #505050;
+    
+    /* Accent Colors - YUCP Brand */
+    --yucp-accent-primary: #36BFB1;
+    --yucp-accent-primary-hover: #48d1c3;
+    --yucp-accent-primary-active: #2da89c;
+    --yucp-accent-success: #36BFB1;
+    --yucp-accent-warning: #E2A54A;
+    --yucp-accent-danger: #E24A4A;
+    --yucp-accent-info: #5BA3FF;
+    
+    /* Border Radius */
+    --yucp-radius-card: 8px;
+    --yucp-radius-button: 10px;
+    --yucp-radius-input: 6px;
+    --yucp-radius-badge: 4px;
+    --yucp-radius-small: 4px;
+    
+    /* Spacing (5px base unit - spotcomponents pattern) */
+    --yucp-spacing-xs: 5px;
+    --yucp-spacing-sm: 10px;
+    --yucp-spacing-md: 15px;
+    --yucp-spacing-lg: 20px;
+    --yucp-spacing-xl: 24px;
+    --yucp-spacing-xxl: 32px;
+    
+    /* Accent Border */
+    --yucp-accent-border-width: 3px;
+    
+    /* Shadows */
+    --yucp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --yucp-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4);
+    --yucp-shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5);
+    
+    /* Transitions */
+    --yucp-transition-fast: 0.15s ease-out;
+    --yucp-transition-normal: 0.25s ease-out;
+    --yucp-transition-slow: 0.5s ease-out;
+}
+
+/* Typography */
+.yucp-text-heading-1 {
+    font-size: 24px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-text-heading-2 {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-text-heading-3 {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-text-body {
+    font-size: 13px;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-text-body-secondary {
+    font-size: 13px;
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-text-caption {
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-text-small {
+    font-size: 10px;
+    color: var(--yucp-text-tertiary);
+}
+
+

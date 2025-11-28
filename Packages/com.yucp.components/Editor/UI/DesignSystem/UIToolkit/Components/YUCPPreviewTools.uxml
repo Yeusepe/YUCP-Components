@@ -1,0 +1,17 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPPreviewTools.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPButton.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPCard.uss" />
+    
+    <ui:VisualElement class="yucp-preview-tools">
+        <ui:VisualElement name="preview-status" class="yucp-preview-status" />
+        <ui:VisualElement name="preview-buttons" class="yucp-preview-buttons">
+            <ui:Button name="generate-button" class="yucp-button yucp-button-primary yucp-generate-button" text="Generate Preview" />
+            <ui:Button name="clear-button" class="yucp-button yucp-button-danger yucp-clear-button" text="Clear" />
+        </ui:VisualElement>
+        <ui:VisualElement name="blendshape-sliders" class="yucp-blendshape-sliders" style="display: none;" />
+    </ui:VisualElement>
+</ui:UXML>
+
+

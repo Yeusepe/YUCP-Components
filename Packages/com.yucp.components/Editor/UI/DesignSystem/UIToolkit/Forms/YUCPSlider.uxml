@@ -1,0 +1,11 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Forms/YUCPSlider.uss" />
+    
+    <ui:VisualElement style="flex-direction: row; align-items: center;">
+        <ui:Slider name="yucp-slider" class="yucp-slider" />
+        <ui:Label name="slider-value" class="yucp-slider-value" />
+    </ui:VisualElement>
+</ui:UXML>
+
+

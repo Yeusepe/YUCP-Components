@@ -1,0 +1,18 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Advanced/YUCPWizard.uss" />
+    
+    <ui:VisualElement name="yucp-wizard" class="yucp-wizard">
+        <ui:VisualElement name="wizard-progress" class="yucp-wizard-progress">
+            <ui:Slot name="steps" />
+        </ui:VisualElement>
+        <ui:VisualElement name="wizard-content" class="yucp-wizard-content">
+            <ui:Slot />
+        </ui:VisualElement>
+        <ui:VisualElement name="wizard-navigation" class="yucp-wizard-navigation">
+            <ui:Slot name="buttons" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
+
+

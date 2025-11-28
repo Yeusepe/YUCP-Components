@@ -1,0 +1,17 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Advanced/YUCPSearchField.uss" />
+    
+    <ui:VisualElement name="yucp-searchfield-container" style="position: relative;">
+        <ui:VisualElement name="yucp-searchfield" class="yucp-searchfield">
+            <ui:Label name="search-icon" class="yucp-searchfield-icon" text="🔍" />
+            <ui:TextField name="search-input" class="yucp-searchfield-input" />
+            <ui:Button name="search-clear" class="yucp-searchfield-clear" text="×" style="display: none;" />
+        </ui:VisualElement>
+        <ui:VisualElement name="search-suggestions" class="yucp-searchfield-suggestions" style="display: none;">
+            <ui:Slot name="suggestions" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
+
+

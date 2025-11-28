@@ -1,0 +1,113 @@
+/* YUCP Array Editor Component - List Management */
+.yucp-array-editor {
+    flex-direction: column;
+}
+
+.yucp-array-editor-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-array-editor-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-array-editor-actions {
+    flex-direction: row;
+}
+
+.yucp-array-editor-actions > * {
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-array-editor-actions > *.last {
+    margin-right: 0;
+}
+
+.yucp-array-editor-add-button {
+    min-width: 28px;
+    min-height: 28px;
+    border-radius: var(--yucp-radius-button);
+    background-color: var(--yucp-accent-primary);
+    color: #ffffff;
+    -unity-font-style: bold;
+    font-size: 16px;
+    transition-property: background-color, scale;
+    transition-duration: 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-array-editor-add-button:hover {
+    scale: 1.05 1.05;
+}
+
+.yucp-array-editor-add-button:active {
+    scale: 0.95 0.95;
+}
+
+.yucp-array-editor-item {
+    border-radius: var(--yucp-radius-card);
+    padding: var(--yucp-spacing-xs);
+    margin-bottom: var(--yucp-spacing-xs);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    flex-direction: row;
+    align-items: center;
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-array-editor-item:hover {
+    scale: 1.002 1.002;
+}
+
+.yucp-array-editor-drag-handle {
+    width: 20px;
+    height: 20px;
+    margin-right: var(--yucp-spacing-xs);
+    background-color: var(--yucp-bg-tertiary);
+    border-radius: 2px;
+    /* Unity UI Toolkit doesn't support cursor property */
+}
+
+.yucp-array-editor-item-content {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.yucp-array-editor-remove-button {
+    min-width: 28px;
+    min-height: 28px;
+    border-radius: var(--yucp-radius-button);
+    background-color: var(--yucp-accent-danger);
+    color: #ffffff;
+    font-size: 12px;
+    margin-left: var(--yucp-spacing-xs);
+    transition-property: background-color, scale;
+    transition-duration: 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-array-editor-remove-button:hover {
+    scale: 1.05 1.05;
+}
+
+.yucp-array-editor-remove-button:active {
+    scale: 0.95 0.95;
+}
+
+.yucp-array-editor-empty {
+    padding: var(--yucp-spacing-sm);
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+    -unity-text-align: middle-center;
+}
+

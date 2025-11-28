@@ -299,7 +299,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
         /// <summary>
         /// Check if a bone segment intersects with object colliders.
-        /// Uses raycasting against colliders directly for better accuracy.
+        /// Uses raycasting against colliders directly.
         /// </summary>
         private static bool CheckSegmentCollision(
             Vector3 start, Vector3 end, 

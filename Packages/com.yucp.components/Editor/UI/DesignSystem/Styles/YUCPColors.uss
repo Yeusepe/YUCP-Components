@@ -1,0 +1,107 @@
+/* ============================================================================
+   YUCP Design System - Color Definitions
+   Professional color palette with proper contrast ratios (WCAG AA compliant)
+   ============================================================================ */
+
+/* Base Colors - High contrast backgrounds */
+.yucp-color-bg-primary {
+    background-color: #090909;
+}
+
+.yucp-color-bg-secondary {
+    background-color: #1a1a1a;
+    border-color: #2a2a2a;
+    border-width: 1px;
+}
+
+.yucp-color-bg-tertiary {
+    background-color: #2a2a2a;
+    border-color: #3a3a3a;
+    border-width: 1px;
+}
+
+.yucp-color-bg-hover {
+    background-color: #525252;
+}
+
+.yucp-color-bg-active {
+    background-color: #3a3a3a;
+}
+
+/* Border Colors - Visible contrast */
+.yucp-color-border-primary {
+    border-color: #2a2a2a;
+    border-width: 1px;
+}
+
+.yucp-color-border-secondary {
+    border-color: #3a3a3a;
+    border-width: 1px;
+}
+
+.yucp-color-border-focus {
+    border-color: #36BFB1;
+    border-width: 1px;
+}
+
+/* Text Colors - High contrast for readability */
+.yucp-color-text-primary {
+    color: #ffffff;
+}
+
+.yucp-color-text-secondary {
+    color: #b0b0b0;
+}
+
+.yucp-color-text-tertiary {
+    color: #808080;
+}
+
+.yucp-color-text-disabled {
+    color: #505050;
+}
+
+/* Accent Colors - Professional brand colors */
+.yucp-color-accent-primary {
+    color: #36BFB1;
+    background-color: #36BFB1;
+}
+
+.yucp-color-accent-primary-hover {
+    color: #48d1c3;
+    background-color: #48d1c3;
+}
+
+.yucp-color-accent-primary-active {
+    color: #2da89c;
+    background-color: #2da89c;
+}
+
+.yucp-color-accent-success {
+    color: #36BFB1;
+    background-color: rgba(54, 191, 177, 0.1);
+    border-left-color: #36BFB1;
+    border-left-width: 3px;
+}
+
+.yucp-color-accent-warning {
+    color: #E2A54A;
+    background-color: rgba(226, 165, 74, 0.1);
+    border-left-color: #E2A54A;
+    border-left-width: 3px;
+}
+
+.yucp-color-accent-danger {
+    color: #E24A4A;
+    background-color: rgba(226, 74, 74, 0.1);
+    border-left-color: #E24A4A;
+    border-left-width: 3px;
+}
+
+.yucp-color-accent-info {
+    color: #5BA3FF;
+    background-color: rgba(91, 163, 255, 0.1);
+    border-left-color: #5BA3FF;
+    border-left-width: 3px;
+}
+

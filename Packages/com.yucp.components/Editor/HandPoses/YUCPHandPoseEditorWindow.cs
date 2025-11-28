@@ -247,7 +247,7 @@ namespace YUCP.Components.HandPoses.Editor
                         ((Label)element).text = _poseAssets[index] != null ? _poseAssets[index].name : "<Missing>";
                     }
                 };
-                _poseListView.onSelectionChange += OnPoseSelectionChanged;
+                _poseListView.selectionChanged += OnPoseSelectionChanged;
             }
 
             if (_presetListView != null)

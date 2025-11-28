@@ -1,0 +1,10 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Advanced/YUCPAccordion.uss" />
+    
+    <ui:VisualElement name="yucp-accordion" class="yucp-accordion">
+        <ui:Slot />
+    </ui:VisualElement>
+</ui:UXML>
+
+

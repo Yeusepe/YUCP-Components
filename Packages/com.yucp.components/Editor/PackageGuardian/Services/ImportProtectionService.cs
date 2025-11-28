@@ -24,8 +24,6 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         private const int RETRY_DELAY_MS = 100;
         private const int FILE_OPERATION_TIMEOUT_MS = 5000;
         
-        private static bool _hasProcessedThisSession = false;
-        
         static ImportProtectionService()
         {
             EditorApplication.delayCall += SafeInitialize;

@@ -4,6 +4,7 @@ using UnityEngine.UIElements;
 using UnityEditor.UIElements;
 using YUCP.Components;
 using YUCP.Components.Editor;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor.UI
 {
@@ -25,109 +26,106 @@ namespace YUCP.Components.Editor.UI
 
         public override VisualElement CreateInspectorGUI()
         {
-            var root = new VisualElement();
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Rotation Counter"));
-            
-            var container = new IMGUIContainer(() => {
-                OnInspectorGUIContent();
-            });
-            
-            root.Add(container);
-            return root;
-        }
-
-        public override void OnInspectorGUI()
-        {
-            OnInspectorGUIContent();
-        }
-
-        private void OnInspectorGUIContent()
-        {
             serializedObject.Update();
             data = (RotationCounterData)target;
 
-            // Beta warning
-            BetaWarningHelper.DrawBetaWarningIMGUI(typeof(RotationCounterData));
-
-            EditorGUILayout.Space(5);
-
-            DrawSection("Required Parameters", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("angle01ParameterName"),
-                    new GUIContent("Angle01 Parameter", "Float (0-1) angle from your input source."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("magnitudeParameterName"),
-                    new GUIContent("Magnitude Parameter", "Float (0-1) stick magnitude gate."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("rotationIndexParameterName"),
-                    new GUIContent("Index Parameter", "Int counter incremented/decremented on each sector crossing."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("directionParameterName"),
-                    new GUIContent("Direction Parameter", "Int reporting last movement direction (1, -1, 0 idle)."));
-                EditorGUILayout.HelpBox("Ensure these parameters already exist (usually as FX animator parameters) or are created by your controller tooling before build.", MessageType.Info);
-            });
-
-            DrawSection("Debugging", () => {
-                var debugProp = serializedObject.FindProperty("createDebugPhaseParameter");
-                EditorGUILayout.PropertyField(debugProp,
-                    new GUIContent("Create DebugPhase", "Adds a DebugPhase Int parameter and updates it per sector."));
-                if (debugProp.boolValue)
-                {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("debugPhaseParameterName"),
-                        new GUIContent("DebugPhase Parameter", "Int value that reports the current sector index."));
-                }
-                EditorGUILayout.HelpBox("Enable DebugPhase to visualize which sector the rotation counter currently occupies.", MessageType.None);
-            });
-
-            DrawSection("Rotation Tracking", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("numberOfSectors"),
-                    new GUIContent("Number of Sectors", "How many slices to divide 360° into (12 = 30° each)."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("sectorHysteresis"),
-                    new GUIContent("Sector Hysteresis", "Margin kept inside each sector to prevent rapid toggling on boundaries."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("magnitudeThreshold"),
-                    new GUIContent("Magnitude Threshold", "Stick magnitude required to track rotation."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("layerName"),
-                    new GUIContent("Layer Name", "Animator layer name used for the generated graph."));
-                EditorGUILayout.HelpBox("The generator builds a sector-based tracking graph. It increments/decrements the Index parameter as you cross sector boundaries.", MessageType.Info);
-            });
+            var root = new VisualElement();
             
-            EditorGUILayout.Space(5);
-            EditorGUILayout.HelpBox("The rotation counter controller will be generated and automatically integrated via VRCFury FullController at build time. " +
-                "No manual setup required - VRCFury handles all integration.", 
-                MessageType.Info);
+            // Load design system stylesheets
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
+            
+            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Rotation Counter"));
 
-            // Build Statistics
+            var builder = new YUCPEditorBuilder(root);
+
+            builder.AddCard("Input Parameters", "Configure the input animator parameters")
+                .AddField(serializedObject.FindProperty("xParameterName"), "X Parameter")
+                .AddField(serializedObject.FindProperty("yParameterName"), "Y Parameter")
+                .AddField(serializedObject.FindProperty("angleParameterName"), "Angle Parameter (degrees 0-360)")
+                .AddHelpBox("Input parameters: X and Y are joystick coordinates, Angle is in degrees (0-360).", YUCPUIToolkitHelper.MessageType.Info)
+                .EndContainer();
+
+            builder.AddCard("Output Parameters", "Configure the output animator parameters")
+                .AddField(serializedObject.FindProperty("rotationStepParameterName"), "Rotation Step Parameter")
+                .AddField(serializedObject.FindProperty("flickEventParameterName"), "Flick Event Parameter")
+                .AddHelpBox("Output parameters: RotationStep outputs -1, 0, or +1. FlickEvent outputs 0=NONE, 1=RIGHT, 2=UP, 3=LEFT, 4=DOWN.", YUCPUIToolkitHelper.MessageType.Info)
+                .EndContainer();
+
+            builder.AddCard("Debugging", "Enable debug features for visualization")
+                .AddField(serializedObject.FindProperty("createDebugPhaseParameter"), "Create DebugPhase");
+
+            var debugProp = serializedObject.FindProperty("createDebugPhaseParameter");
+            if (debugProp.boolValue)
+            {
+                builder.AddField(serializedObject.FindProperty("debugPhaseParameterName"), "DebugPhase Parameter");
+            }
+
+            builder.AddHelpBox("Enable DebugPhase to visualize which sector the rotation counter currently occupies.", YUCPUIToolkitHelper.MessageType.None)
+                .EndContainer();
+
+            builder.AddCard("Rotation Detection", "Configure sector-based rotation detection")
+                .AddField(serializedObject.FindProperty("numberOfSectors"), "Number of Sectors")
+                .AddField(serializedObject.FindProperty("layerName"), "Layer Name")
+                .AddHelpBox("The generator builds a sector-based tracking graph. It outputs RotationStep (-1, 0, +1) as you cross sector boundaries with wraparound correction.", YUCPUIToolkitHelper.MessageType.Info)
+                .EndContainer();
+
+            builder.AddCard("Flick Detection", "Configure cardinal direction flick detection")
+                .AddField(serializedObject.FindProperty("innerDeadzone"), "Inner Deadzone")
+                .AddField(serializedObject.FindProperty("flickMinRadius"), "Flick Min Radius")
+                .AddField(serializedObject.FindProperty("releaseRadius"), "Release Radius")
+                .AddField(serializedObject.FindProperty("angleToleranceDeg"), "Angle Tolerance (degrees)")
+                .AddField(serializedObject.FindProperty("maxFlickFrames"), "Max Flick Frames")
+                .AddHelpBox("Flick detection: Detects cardinal direction flicks (RIGHT/UP/LEFT/DOWN) when stick moves from center to edge and back. Cancels if rotation is detected during flick.", YUCPUIToolkitHelper.MessageType.Info)
+                .EndContainer();
+
+            builder.AddHelpBox("The rotation counter controller will be generated and automatically integrated via VRCFury FullController at build time. No manual setup required - VRCFury handles all integration.", YUCPUIToolkitHelper.MessageType.Info);
+
             if (data.controllerGenerated)
             {
-                EditorGUILayout.Space(5);
-                DrawSection("Build Statistics", () => {
-                    GUI.enabled = false;
-                    EditorGUILayout.IntField("Generated Sectors", data.generatedSectorCount);
-                    EditorGUILayout.Toggle("Controller Generated", data.controllerGenerated);
-                    GUI.enabled = true;
-                });
+                builder.AddCard("Build Statistics", "Information about the generated controller")
+                    .AddElement(CreateReadOnlyIntField("Generated Sectors", data.generatedSectorCount))
+                    .AddElement(CreateReadOnlyToggle("Controller Generated", data.controllerGenerated))
+                    .EndContainer();
             }
 
-            serializedObject.ApplyModifiedProperties();
+            root.schedule.Execute(() => serializedObject.ApplyModifiedProperties()).Every(100);
+
+            return root;
         }
 
-        private void DrawSection(string title, System.Action content)
+        private VisualElement CreateReadOnlyIntField(string label, int value)
         {
-            EditorGUILayout.Space(5);
-            
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
-            
-            if (!string.IsNullOrEmpty(title))
-            {
-                var style = new GUIStyle(EditorStyles.boldLabel);
-                style.alignment = TextAnchor.MiddleLeft;
-                EditorGUILayout.LabelField(title, style);
-                EditorGUILayout.Space(3);
-            }
-            
-            content?.Invoke();
-            
-            EditorGUILayout.EndVertical();
+            var container = new VisualElement();
+            container.style.flexDirection = FlexDirection.Row;
+            container.style.marginBottom = 5;
+
+            var labelElement = new Label(label);
+            labelElement.style.width = 150;
+            container.Add(labelElement);
+
+            var valueField = new IntegerField { value = value };
+            valueField.SetEnabled(false);
+            valueField.style.flexGrow = 1;
+            container.Add(valueField);
+
+            return container;
+        }
+
+        private VisualElement CreateReadOnlyToggle(string label, bool value)
+        {
+            var container = new VisualElement();
+            container.style.flexDirection = FlexDirection.Row;
+            container.style.marginBottom = 5;
+
+            var labelElement = new Label(label);
+            labelElement.style.width = 150;
+            container.Add(labelElement);
+
+            var toggle = new Toggle { value = value };
+            toggle.SetEnabled(false);
+            container.Add(toggle);
+
+            return container;
         }
     }
 }

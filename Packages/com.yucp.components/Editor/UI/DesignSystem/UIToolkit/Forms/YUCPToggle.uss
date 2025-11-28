@@ -1,0 +1,27 @@
+/* YUCP Toggle Component */
+.yucp-toggle {
+    width: 36px;
+    height: 20px;
+    margin-bottom: var(--yucp-spacing-xs);
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
+    transition-property: background-color;
+    cursor: pointer;
+}
+
+.yucp-toggle:hover {
+    transition-duration: 0.15s;
+}
+
+.yucp-toggle:checked {
+    background-color: var(--yucp-accent-primary);
+}
+
+.yucp-toggle:not(:checked) {
+    background-color: var(--yucp-bg-tertiary);
+}
+
+.yucp-toggle:checked:hover {
+    background-color: var(--yucp-accent-primary-hover);
+}
+

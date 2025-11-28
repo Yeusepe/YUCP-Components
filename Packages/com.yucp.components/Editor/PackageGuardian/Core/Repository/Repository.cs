@@ -113,7 +113,7 @@ namespace PackageGuardian.Core.Repository
             
             var repo = new Repository(rootPath, hasher);
             
-            // Wrap object store with cache for better performance
+            // Wrap object store with cache
             if (enableObjectCache)
             {
                 repo._store = new CachedObjectStore(repo._store, maxCacheSize: 5000);

@@ -436,9 +436,6 @@ namespace YUCP.Components.Editor.MeshUtils
             Vector3 direction = (targetPosition - fingerBase).normalized;
             float distance = Vector3.Distance(fingerBase, targetPosition);
             
-            // Use a sphere radius representing finger thickness
-            const float fingerRadius = 0.008f; // 8mm radius for finger
-            
             // Find nearest blocking collider to decide if it's the avatar or the object
             Collider nearestBlocker = null;
             float nearestDist = float.MaxValue;

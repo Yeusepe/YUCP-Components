@@ -7,6 +7,7 @@ using UnityEngine.UIElements;
 using UnityEditor.UIElements;
 using YUCP.Components;
 using VF.Utils;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
 {
@@ -72,165 +73,207 @@ namespace YUCP.Components.Editor
         
         public override VisualElement CreateInspectorGUI()
         {
-            var root = new VisualElement();
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Avatar Muscle Poser"));
-            
-            var container = new IMGUIContainer(() => {
-                OnInspectorGUIContent();
-            });
-            
-            root.Add(container);
-            return root;
-        }
-        
-        public override void OnInspectorGUI()
-        {
-            OnInspectorGUIContent();
-        }
-        
-        private void OnInspectorGUIContent()
-        {
             serializedObject.Update();
             
-            // Toggle Configuration
-            DrawSection("Toggle Configuration", () => {
-                EditorGUI.BeginChangeCheck();
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("toggleObject"), new GUIContent("Toggle Object", "GameObject that contains the toggle component."));
-                if (EditorGUI.EndChangeCheck())
-                {
-                    serializedObject.ApplyModifiedProperties();
-                    RefreshToggleList();
-                }
+            var root = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
+            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Avatar Muscle Poser"));
+            
+            // Toggle Configuration Card
+            var toggleCard = YUCPUIToolkitHelper.CreateCard("Toggle Configuration", "Configure the toggle component");
+            var toggleContent = YUCPUIToolkitHelper.GetCardContent(toggleCard);
+            
+            var toggleObjectField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("toggleObject"), "Toggle Object");
+            toggleObjectField.RegisterValueChangeCallback(evt =>
+            {
+                serializedObject.ApplyModifiedProperties();
+                RefreshToggleList();
+            });
+            toggleContent.Add(toggleObjectField);
+            
+            var toggleSelectContainer = new VisualElement();
+            toggleSelectContainer.name = "toggle-select-container";
+            toggleContent.Add(toggleSelectContainer);
+            
+            var toggleHelp = new VisualElement();
+            toggleHelp.name = "toggle-help";
+            toggleContent.Add(toggleHelp);
+            root.Add(toggleCard);
+            
+            // Pose Settings Card
+            var poseCard = YUCPUIToolkitHelper.CreateCard("Pose Settings", "Configure pose recording settings");
+            var poseContent = YUCPUIToolkitHelper.GetCardContent(poseCard);
+            poseContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("showRotationRings"), "Show Rotation Handles"));
+            poseContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("ringSize"), "Handle Size"));
+            poseContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("poseAnimationClip"), "Animation Clip"));
+            root.Add(poseCard);
+            
+            // How to Use Card
+            var howToCard = YUCPUIToolkitHelper.CreateCard("How to Use", "Instructions for using the pose editor");
+            var howToContent = YUCPUIToolkitHelper.GetCardContent(howToCard);
+            howToContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                "1. Hover over a bone in Scene view to see rotation handles\n" +
+                "2. Click and drag a handle to rotate that axis\n" +
+                "3. Click 'Record Pose' to save the animation\n" +
+                "4. The animation will play when the toggle activates",
+                YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(howToCard);
+            
+            // Selected Bone Card (conditional)
+            var selectedBoneCard = YUCPUIToolkitHelper.CreateCard("Selected Bone", "Information about the currently selected bone");
+            selectedBoneCard.name = "selected-bone-card";
+            var selectedBoneContent = YUCPUIToolkitHelper.GetCardContent(selectedBoneCard);
+            selectedBoneContent.name = "selected-bone-content";
+            root.Add(selectedBoneCard);
+            
+            // Actions Card
+            var actionsCard = YUCPUIToolkitHelper.CreateCard("Actions", "Pose recording and preview actions");
+            var actionsContent = YUCPUIToolkitHelper.GetCardContent(actionsCard);
+            
+            var buttonsContainer = new VisualElement();
+            buttonsContainer.style.flexDirection = FlexDirection.Row;
+            buttonsContainer.style.marginBottom = 10;
+            
+            var recordButton = YUCPUIToolkitHelper.CreateButton("Record Pose", () => RecordPose(), YUCPUIToolkitHelper.ButtonVariant.Primary);
+            recordButton.style.height = 30;
+            recordButton.style.flexGrow = 1;
+            recordButton.style.marginRight = 5;
+            recordButton.name = "record-button";
+            buttonsContainer.Add(recordButton);
+            
+            var clearButton = YUCPUIToolkitHelper.CreateButton("Clear Pose", () => ClearPose(), YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            clearButton.style.height = 30;
+            clearButton.style.flexGrow = 1;
+            clearButton.style.marginRight = 5;
+            buttonsContainer.Add(clearButton);
+            
+            var previewButton = YUCPUIToolkitHelper.CreateButton("Preview Pose", () => PreviewPose(), YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            previewButton.style.height = 30;
+            previewButton.style.flexGrow = 1;
+            previewButton.name = "preview-button";
+            buttonsContainer.Add(previewButton);
+            
+            actionsContent.Add(buttonsContainer);
+            
+            var avatarWarning = new VisualElement();
+            avatarWarning.name = "avatar-warning";
+            actionsContent.Add(avatarWarning);
+            root.Add(actionsCard);
+            
+            // Debug & Preview Card
+            var debugCard = YUCPUIToolkitHelper.CreateCard("Debug & Preview", "Debug and preview settings");
+            var debugContent = YUCPUIToolkitHelper.GetCardContent(debugCard);
+            debugContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("showPreview"), "Show Preview"));
+            debugContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Mode"));
+            root.Add(debugCard);
+            
+            // Dynamic updates
+            root.schedule.Execute(() =>
+            {
+                serializedObject.Update();
+                FindAnimator();
                 
-                // Toggle Selection Dropdown
+                // Update toggle selection
+                toggleSelectContainer.Clear();
                 if (data.toggleObject != null && toggleComponentNames != null && toggleComponentNames.Length > 0)
                 {
-                    EditorGUI.BeginChangeCheck();
-                    selectedToggleIndex = EditorGUILayout.Popup("Selected Toggle", selectedToggleIndex, toggleComponentNames);
-                    if (EditorGUI.EndChangeCheck())
+                    var popup = new PopupField<string>("Selected Toggle", new List<string>(toggleComponentNames), selectedToggleIndex);
+                    popup.RegisterValueChangedCallback(evt =>
                     {
+                        selectedToggleIndex = popup.index;
                         UpdateSelectedToggle();
-                    }
-                    
+                    });
+                    toggleSelectContainer.Add(popup);
+                }
+                
+                // Update toggle help
+                toggleHelp.Clear();
+                if (data.toggleObject != null && toggleComponentNames != null && toggleComponentNames.Length > 0)
+                {
                     if (data.selectedToggle != null)
                     {
-                        EditorGUILayout.HelpBox($"Using toggle: {data.selectedToggle.GetType().Name}", MessageType.Info);
+                        toggleHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"Using toggle: {data.selectedToggle.GetType().Name}", YUCPUIToolkitHelper.MessageType.Info));
                     }
                 }
                 else if (data.toggleObject != null)
                 {
-                    EditorGUILayout.HelpBox("No toggle components found on the toggle object. Add a VRCFury toggle component.", MessageType.Warning);
-                }
-            });
-            
-            // Pose Settings
-            DrawSection("Pose Settings", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("showRotationRings"), new GUIContent("Show Rotation Handles", "Display rotation handles when hovering over bones."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("ringSize"), new GUIContent("Handle Size", "Size of rotation handles in meters."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("poseAnimationClip"), new GUIContent("Animation Clip", "Animation clip to record the pose to."));
-            });
-            
-            // Instructions
-            DrawSection("How to Use", () => {
-                EditorGUILayout.HelpBox(
-                    "1. Hover over a bone in Scene view to see rotation handles\n" +
-                    "2. Click and drag a handle to rotate that axis\n" +
-                    "3. Click 'Record Pose' to save the animation\n" +
-                    "4. The animation will play when the toggle activates",
-                    MessageType.Info);
-            });
-            
-            // Selected Bone Info
-            if (!string.IsNullOrEmpty(data.SelectedBoneName))
-            {
-                DrawSection("Selected Bone", () => {
-                    EditorGUILayout.LabelField($"Bone: {data.SelectedBoneName}", EditorStyles.miniLabel);
-                    
-                    if (data.CurrentMuscleValues != null && data.CurrentMuscleValues.Count > 0)
-                    {
-                        EditorGUILayout.Space(3);
-                        EditorGUILayout.LabelField("Affected Muscles:", EditorStyles.miniBoldLabel);
-                        EditorGUI.indentLevel++;
-                        foreach (var kvp in data.CurrentMuscleValues.Take(5))
-                        {
-                            EditorGUILayout.LabelField($"{kvp.Key}: {kvp.Value:F2}", EditorStyles.miniLabel);
-                        }
-                        if (data.CurrentMuscleValues.Count > 5)
-                        {
-                            EditorGUILayout.LabelField($"... and {data.CurrentMuscleValues.Count - 5} more", EditorStyles.miniLabel);
-                        }
-                        EditorGUI.indentLevel--;
-                    }
-                });
-            }
-            
-            // Action Buttons
-            DrawSection("Actions", () => {
-                GUI.enabled = animator != null && animator.avatar != null && animator.avatar.isHuman;
-                
-                EditorGUILayout.BeginHorizontal();
-                
-                GUI.backgroundColor = TEAL_COLOR;
-                if (GUILayout.Button("Record Pose", GUILayout.Height(30)))
-                {
-                    RecordPose();
-                }
-                GUI.backgroundColor = Color.white;
-                
-                if (GUILayout.Button("Clear Pose", GUILayout.Height(30)))
-                {
-                    ClearPose();
+                    toggleHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("No toggle components found on the toggle object. Add a VRCFury toggle component.", YUCPUIToolkitHelper.MessageType.Warning));
                 }
                 
-                if (GUILayout.Button("Preview Pose", GUILayout.Height(30)))
-                {
-                    PreviewPose();
-                }
+                // Update selected bone card
+                UpdateSelectedBoneCard(selectedBoneCard, selectedBoneContent);
                 
-                EditorGUILayout.EndHorizontal();
+                // Update button states
+                bool canRecord = animator != null && animator.avatar != null && animator.avatar.isHuman;
+                recordButton.SetEnabled(canRecord);
+                clearButton.SetEnabled(canRecord);
+                previewButton.SetEnabled(canRecord);
                 
-                GUI.enabled = true;
-                
+                // Update avatar warning
+                avatarWarning.Clear();
                 if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
                 {
-                    EditorGUILayout.Space(3);
-                    EditorGUILayout.HelpBox("No humanoid avatar found. This component requires a humanoid avatar with an Animator.", MessageType.Warning);
+                    avatarWarning.Add(YUCPUIToolkitHelper.CreateHelpBox("No humanoid avatar found. This component requires a humanoid avatar with an Animator.", YUCPUIToolkitHelper.MessageType.Warning));
                 }
-            });
-            
-            // Debug & Preview
-            DrawSection("Debug & Preview", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("showPreview"), new GUIContent("Show Preview", "Show preview visualization in Scene view."));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("debugMode"), new GUIContent("Debug Mode", "Show debug information during build."));
-            });
-            
-            if (serializedObject != null && serializedObject.targetObject != null)
-            {
+                
                 serializedObject.ApplyModifiedProperties();
+            }).Every(100);
+            
+            return root;
+        }
+        
+        private void UpdateSelectedBoneCard(VisualElement card, VisualElement content)
+        {
+            content.Clear();
+            
+            if (string.IsNullOrEmpty(data.SelectedBoneName))
+            {
+                card.style.display = DisplayStyle.None;
+                return;
+            }
+            
+            card.style.display = DisplayStyle.Flex;
+            
+            var boneLabel = new Label($"Bone: {data.SelectedBoneName}");
+            boneLabel.style.fontSize = 10;
+            boneLabel.style.marginBottom = 3;
+            content.Add(boneLabel);
+            
+            if (data.CurrentMuscleValues != null && data.CurrentMuscleValues.Count > 0)
+            {
+                YUCPUIToolkitHelper.AddSpacing(content, 3);
+                
+                var musclesLabel = new Label("Affected Muscles:");
+                musclesLabel.style.fontSize = 10;
+                musclesLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                musclesLabel.style.marginBottom = 2;
+                content.Add(musclesLabel);
+                
+                var musclesContainer = new VisualElement();
+                musclesContainer.style.paddingLeft = 15;
+                
+                foreach (var kvp in data.CurrentMuscleValues.Take(5))
+                {
+                    var muscleLabel = new Label($"{kvp.Key}: {kvp.Value:F2}");
+                    muscleLabel.style.fontSize = 10;
+                    muscleLabel.style.marginBottom = 1;
+                    musclesContainer.Add(muscleLabel);
+                }
+                
+                if (data.CurrentMuscleValues.Count > 5)
+                {
+                    var moreLabel = new Label($"... and {data.CurrentMuscleValues.Count - 5} more");
+                    moreLabel.style.fontSize = 10;
+                    musclesContainer.Add(moreLabel);
+                }
+                
+                content.Add(musclesContainer);
             }
         }
         
-        private void DrawSection(string title, System.Action content)
+        public override void OnInspectorGUI()
         {
-            EditorGUILayout.Space(5);
-            
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
-            
-            if (!string.IsNullOrEmpty(title))
-            {
-                var style = new GUIStyle(EditorStyles.boldLabel);
-                style.alignment = TextAnchor.MiddleLeft;
-                EditorGUILayout.LabelField(title, style);
-                EditorGUILayout.Space(3);
-            }
-            
-            content?.Invoke();
-            
-            EditorGUILayout.EndVertical();
+            // Legacy support - not used anymore
         }
         
         private void OnSceneGUI(SceneView sceneView)

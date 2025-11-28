@@ -1,7 +1,9 @@
 using UnityEditor;
+using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 using YUCP.Components;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Resources
 {
@@ -13,50 +15,26 @@ namespace YUCP.Components.Resources
     {
         public override VisualElement CreateInspectorGUI()
         {
+            serializedObject.Update();
+            
             var root = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             root.Add(YUCPComponentHeader.CreateHeaderOverlay("View Position & Head Auto-Link"));
             
-            var container = new IMGUIContainer(() => {
-                serializedObject.Update();
-                
-                DrawSection("Settings", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("offset"), new GUIContent("Offset"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("eyeAlignment"), new GUIContent("Eye Alignment"));
-                });
-                
-                EditorGUILayout.Space(5);
-                EditorGUILayout.HelpBox(
-                    "Positions this object at the avatar's view position (eye level) and links it to the head bone.",
-                    MessageType.Info);
-                
-                serializedObject.ApplyModifiedProperties();
-            });
+            var settingsCard = YUCPUIToolkitHelper.CreateCard("Settings", "Configure view position and eye alignment");
+            var settingsContent = YUCPUIToolkitHelper.GetCardContent(settingsCard);
+            settingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("offset"), "Offset"));
+            settingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("eyeAlignment"), "Eye Alignment"));
+            root.Add(settingsCard);
             
-            root.Add(container);
+            root.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                "Positions this object at the avatar's view position (eye level) and links it to the head bone.",
+                YUCPUIToolkitHelper.MessageType.Info));
+            
+            root.schedule.Execute(() => serializedObject.ApplyModifiedProperties()).Every(100);
+            
             return root;
         }
         
-        private void DrawSection(string title, System.Action content)
-        {
-            EditorGUILayout.Space(5);
-            
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.1f);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
-            
-            if (!string.IsNullOrEmpty(title))
-            {
-                var style = new GUIStyle(EditorStyles.boldLabel);
-                style.alignment = TextAnchor.MiddleLeft;
-                EditorGUILayout.LabelField(title, style);
-                EditorGUILayout.Space(3);
-            }
-            
-            content?.Invoke();
-            
-            EditorGUILayout.EndVertical();
-        }
     }
 }

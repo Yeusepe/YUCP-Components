@@ -1,0 +1,10 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPField.uss" />
+    
+    <ui:VisualElement name="yucp-field" class="yucp-field">
+        <uie:PropertyField name="property-field" class="yucp-field-input" />
+    </ui:VisualElement>
+</ui:UXML>
+
+

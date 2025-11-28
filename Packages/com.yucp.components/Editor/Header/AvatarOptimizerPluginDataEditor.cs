@@ -3,13 +3,15 @@ using System.Linq;
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.UIElements;
+using UnityEditor.UIElements;
 using YUCP.Components;
 using YUCP.Components.Editor.Utils;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
 {
     /// <summary>
-    /// Custom editor for Avatar Optimizer Plugin with comprehensive settings and modern UI.
+    /// Custom editor for Avatar Optimizer Plugin with settings and modern UI.
     /// Provides preset-based configuration and detailed per-category controls.
     /// Shows prominent install button when d4rkAvatarOptimizer is not installed.
     /// </summary>
@@ -59,81 +61,105 @@ namespace YUCP.Components.Editor
 
         public override VisualElement CreateInspectorGUI()
         {
+            serializedObject.Update();
+            data = (AvatarOptimizerPluginData)target;
+            
             var root = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Avatar Optimizer Plugin"));
             
-            var container = new IMGUIContainer(() => {
-                OnInspectorGUIContent();
-            });
+            // Placement validation
+            var placementValidation = new VisualElement();
+            placementValidation.name = "placement-validation";
+            root.Add(placementValidation);
             
-            root.Add(container);
+            // Not installed UI (conditional)
+            var notInstalledUI = new VisualElement();
+            notInstalledUI.name = "not-installed-ui";
+            root.Add(notInstalledUI);
+            
+            // Installed banner (conditional)
+            var installedBanner = new VisualElement();
+            installedBanner.name = "installed-banner";
+            root.Add(installedBanner);
+            
+            // Mode switcher
+            var modeSwitcher = new VisualElement();
+            modeSwitcher.name = "mode-switcher";
+            root.Add(modeSwitcher);
+            
+            // Preset mode UI (conditional)
+            var presetModeUI = new VisualElement();
+            presetModeUI.name = "preset-mode-ui";
+            root.Add(presetModeUI);
+            
+            // Advanced mode UI (conditional)
+            var advancedModeUI = new VisualElement();
+            advancedModeUI.name = "advanced-mode-ui";
+            root.Add(advancedModeUI);
+            
+            // Dynamic updates
+            root.schedule.Execute(() =>
+            {
+                serializedObject.Update();
+                
+                UpdatePlacementValidation(placementValidation);
+                
+                if (isOptimizerInstalled == false)
+                {
+                    UpdateNotInstalledUI(notInstalledUI);
+                    presetModeUI.style.display = DisplayStyle.None;
+                    advancedModeUI.style.display = DisplayStyle.None;
+                    modeSwitcher.style.display = DisplayStyle.None;
+                    installedBanner.style.display = DisplayStyle.None;
+                    serializedObject.ApplyModifiedProperties();
+                    return;
+                }
+                
+                notInstalledUI.style.display = DisplayStyle.None;
+                UpdateInstalledBanner(installedBanner);
+                UpdateModeSwitcher(modeSwitcher);
+                
+                if (currentMode == UIMode.Preset)
+                {
+                    presetModeUI.style.display = DisplayStyle.Flex;
+                    advancedModeUI.style.display = DisplayStyle.None;
+                    UpdatePresetMode(presetModeUI);
+                }
+                else
+                {
+                    presetModeUI.style.display = DisplayStyle.None;
+                    advancedModeUI.style.display = DisplayStyle.Flex;
+                    UpdateAdvancedMode(advancedModeUI);
+                }
+                
+                serializedObject.ApplyModifiedProperties();
+            }).Every(100);
+            
             return root;
         }
 
-        public override void OnInspectorGUI()
+        private void UpdatePlacementValidation(VisualElement container)
         {
-            OnInspectorGUIContent();
-        }
-
-        private void OnInspectorGUIContent()
-        {
-            serializedObject.Update();
-            data = (AvatarOptimizerPluginData)target;
-
-            // Validate component placement
-            DrawPlacementValidation();
-
-            // If optimizer is not installed, show install UI
-            if (isOptimizerInstalled == false)
-            {
-                DrawNotInstalledUI();
-                serializedObject.ApplyModifiedProperties();
-                return;
-            }
-
-            // Show installation status banner
-            DrawInstalledBanner();
-
-            // Draw mode switcher
-            DrawModeSwitcher();
-
-            EditorGUILayout.Space(10);
-
-            // Show appropriate UI based on mode
-            if (currentMode == UIMode.Preset)
-            {
-                DrawPresetMode();
-            }
-            else
-            {
-                DrawAdvancedMode();
-            }
-
-            serializedObject.ApplyModifiedProperties();
-        }
-
-        private void DrawPlacementValidation()
-        {
+            if (container == null) return;
+            
+            container.Clear();
+            
             var avatarDescriptor = data.GetComponent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
             if (avatarDescriptor == null)
             {
-                EditorGUILayout.Space(5);
-                var originalColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(1f, 0.4f, 0f, 0.8f);
-                
-                EditorGUILayout.HelpBox(
-                    "⚠ INCORRECT PLACEMENT\n\n" +
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "INCORRECT PLACEMENT\n\n" +
                     "This component MUST be on the avatar root GameObject (the one with VRCAvatarDescriptor).\n\n" +
                     "Current: NOT on avatar root\n" +
                     "Optimizer settings are per-avatar, not per-object.",
-                    MessageType.Error);
+                    YUCPUIToolkitHelper.MessageType.Error));
                 
-                if (GUILayout.Button("Find Avatar Root and Move Component", GUILayout.Height(30)))
+                var moveButton = YUCPUIToolkitHelper.CreateButton("Find Avatar Root and Move Component", () =>
                 {
                     var descriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
                     if (descriptor != null)
                     {
-                        // Move component to avatar root
                         if (EditorUtility.DisplayDialog("Move Component",
                             $"Move Avatar Optimizer Plugin to '{descriptor.gameObject.name}'?",
                             "Yes", "Cancel"))
@@ -150,37 +176,30 @@ namespace YUCP.Components.Editor
                             "Could not find VRCAvatarDescriptor in parent hierarchy.",
                             "OK");
                     }
-                }
-                
-                GUI.backgroundColor = originalColor;
-                EditorGUILayout.Space(5);
+                }, YUCPUIToolkitHelper.ButtonVariant.Primary);
+                moveButton.style.height = 30;
+                container.Add(moveButton);
             }
         }
-
-        private void DrawNotInstalledUI()
+        
+        private void UpdateNotInstalledUI(VisualElement container)
         {
-            EditorGUILayout.Space(10);
+            if (container == null) return;
             
-            // Large prominent install button
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.2f, 0.8f, 0.2f);
+            container.Clear();
             
-            GUIStyle bigButtonStyle = new GUIStyle(GUI.skin.button);
-            bigButtonStyle.fontSize = 14;
-            bigButtonStyle.fontStyle = FontStyle.Bold;
-            bigButtonStyle.fixedHeight = 60;
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
             
-            if (GUILayout.Button("⬇ Install d4rkAvatarOptimizer (Latest Version)", bigButtonStyle))
-            {
-                InstallOptimizer();
-            }
-            GUI.backgroundColor = originalColor;
+            var installButton = YUCPUIToolkitHelper.CreateButton("⬇ Install d4rkAvatarOptimizer (Latest Version)", () => InstallOptimizer(), YUCPUIToolkitHelper.ButtonVariant.Primary);
+            installButton.style.height = 60;
+            installButton.style.fontSize = 14;
+            installButton.style.unityFontStyleAndWeight = FontStyle.Bold;
+            installButton.style.backgroundColor = new StyleColor(new Color(0.2f, 0.8f, 0.2f));
+            container.Add(installButton);
             
-            EditorGUILayout.Space(10);
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
             
-            // Info box
-            GUI.backgroundColor = new Color(0.3f, 0.5f, 0.8f, 0.3f);
-            EditorGUILayout.HelpBox(
+            container.Add(YUCPUIToolkitHelper.CreateHelpBox(
                 "Automatic Installation via VPM\n\n" +
                 "Click the button above to automatically install d4rkAvatarOptimizer through Unity's VPM package manager.\n\n" +
                 "What happens:\n" +
@@ -189,37 +208,37 @@ namespace YUCP.Components.Editor
                 "3. Package compiles automatically\n" +
                 "4. This inspector updates to show all settings\n\n" +
                 "This usually takes 30-60 seconds.",
-                MessageType.Info);
-            GUI.backgroundColor = Color.white;
+                YUCPUIToolkitHelper.MessageType.Info));
             
-            EditorGUILayout.Space(15);
-            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
-            EditorGUILayout.Space(10);
+            YUCPUIToolkitHelper.AddSpacing(container, 15);
+            container.Add(YUCPUIToolkitHelper.CreateDivider());
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
             
-            // Alternative manual installation
-            EditorGUILayout.LabelField("Alternative: Manual Installation", EditorStyles.boldLabel);
-            EditorGUILayout.Space(5);
+            var manualLabel = new Label("Alternative: Manual Installation");
+            manualLabel.style.fontSize = 13;
+            manualLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            container.Add(manualLabel);
             
-            GUI.backgroundColor = new Color(0.4f, 0.6f, 1f);
-            if (GUILayout.Button("Open GitHub Releases Page", GUILayout.Height(35)))
-            {
-                D4rkOptimizerInstaller.OpenGitHubReleasePage();
-            }
-            GUI.backgroundColor = Color.white;
+            YUCPUIToolkitHelper.AddSpacing(container, 5);
             
-            EditorGUILayout.Space(5);
-            EditorGUILayout.HelpBox(
+            var githubButton = YUCPUIToolkitHelper.CreateButton("Open GitHub Releases Page", () => D4rkOptimizerInstaller.OpenGitHubReleasePage(), YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            githubButton.style.height = 35;
+            githubButton.style.backgroundColor = new StyleColor(new Color(0.4f, 0.6f, 1f));
+            container.Add(githubButton);
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 5);
+            
+            container.Add(YUCPUIToolkitHelper.CreateHelpBox(
                 "Manual Installation Steps:\n" +
                 "1. Click button above\n" +
                 "2. Download latest .unitypackage from releases\n" +
                 "3. Import into Unity project\n" +
                 "4. Wait for compilation",
-                MessageType.None);
-                
-            EditorGUILayout.Space(10);
+                YUCPUIToolkitHelper.MessageType.None));
             
-            // Refresh check button
-            if (GUILayout.Button("Check If Installed", GUILayout.Height(25)))
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
+            
+            var checkButton = YUCPUIToolkitHelper.CreateButton("Check If Installed", () =>
             {
                 isOptimizerInstalled = null;
                 CheckForOptimizer();
@@ -239,7 +258,688 @@ namespace YUCP.Components.Editor
                         "If you just installed it, wait for Unity to finish compiling, then check again.",
                         "OK");
                 }
+            }, YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            checkButton.style.height = 25;
+            container.Add(checkButton);
+        }
+        
+        private void UpdateInstalledBanner(VisualElement container)
+        {
+            if (container == null) return;
+            
+            container.Clear();
+            container.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                $"d4rkAvatarOptimizer Installed & Active\n\n" +
+                $"This avatar will be optimized during build with {data.GetEnabledOptimizationCount()} enabled features.",
+                YUCPUIToolkitHelper.MessageType.Info));
+        }
+        
+        private void UpdateModeSwitcher(VisualElement container)
+        {
+            if (container == null) return;
+            
+            container.Clear();
+            
+            var buttonsRow = new VisualElement();
+            buttonsRow.style.flexDirection = FlexDirection.Row;
+            buttonsRow.style.justifyContent = Justify.Center;
+            buttonsRow.style.marginBottom = 5;
+            
+            var presetButton = YUCPUIToolkitHelper.CreateButton("Preset Mode", () =>
+            {
+                currentMode = UIMode.Preset;
+                SaveUIMode();
+            }, currentMode == UIMode.Preset ? YUCPUIToolkitHelper.ButtonVariant.Primary : YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            presetButton.style.width = 120;
+            presetButton.style.height = 25;
+            if (currentMode == UIMode.Preset)
+            {
+                presetButton.style.unityFontStyleAndWeight = FontStyle.Bold;
             }
+            buttonsRow.Add(presetButton);
+            
+            var advancedButton = YUCPUIToolkitHelper.CreateButton("Advanced Mode", () =>
+            {
+                currentMode = UIMode.Advanced;
+                SaveUIMode();
+            }, currentMode == UIMode.Advanced ? YUCPUIToolkitHelper.ButtonVariant.Primary : YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            advancedButton.style.width = 120;
+            advancedButton.style.height = 25;
+            if (currentMode == UIMode.Advanced)
+            {
+                advancedButton.style.unityFontStyleAndWeight = FontStyle.Bold;
+            }
+            buttonsRow.Add(advancedButton);
+            
+            container.Add(buttonsRow);
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 5);
+            
+            if (currentMode == UIMode.Preset)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "Preset Mode: Quick configuration with recommended settings for common scenarios.",
+                    YUCPUIToolkitHelper.MessageType.None));
+            }
+            else
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "Advanced Mode: Full control over every optimization setting. For experienced users.",
+                    YUCPUIToolkitHelper.MessageType.None));
+            }
+        }
+        
+        private void UpdatePresetMode(VisualElement container)
+        {
+            if (container == null) return;
+            
+            container.Clear();
+            
+            var enableCard = YUCPUIToolkitHelper.CreateCard("Enable Optimization", "Configure optimizer for this avatar");
+            var enableContent = YUCPUIToolkitHelper.GetCardContent(enableCard);
+            enableContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("enableOptimizer"), "Enable Optimizer for this Avatar"));
+            
+            var enableWarning = new VisualElement();
+            enableWarning.name = "enable-warning";
+            enableContent.Add(enableWarning);
+            container.Add(enableCard);
+            
+            if (!data.enableOptimizer)
+            {
+                enableWarning.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "Optimization is disabled for this avatar. It will not be processed during build.",
+                    YUCPUIToolkitHelper.MessageType.Warning));
+                UpdateOptimizationOverview(container);
+                UpdatePresetExclusions(container);
+                UpdatePresetBuildStatistics(container);
+                return;
+            }
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
+            
+            var presetCard = YUCPUIToolkitHelper.CreateCard("Optimization Preset", "Choose a preset or use Auto Settings");
+            var presetContent = YUCPUIToolkitHelper.GetCardContent(presetCard);
+            
+            var chooseLabel = new Label("Choose a preset or use Auto Settings:");
+            chooseLabel.style.fontSize = 13;
+            chooseLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            presetContent.Add(chooseLabel);
+            
+            YUCPUIToolkitHelper.AddSpacing(presetContent, 5);
+            
+            presetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("useAutoSettings"), "Auto-Detect Settings (Recommended)"));
+            
+            var autoSettingsHelp = new VisualElement();
+            autoSettingsHelp.name = "auto-settings-help";
+            presetContent.Add(autoSettingsHelp);
+            
+            var manualPresetsContainer = new VisualElement();
+            manualPresetsContainer.name = "manual-presets";
+            presetContent.Add(manualPresetsContainer);
+            
+            container.Add(presetCard);
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
+            
+            UpdateOptimizationOverview(container);
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
+            
+            UpdatePresetExclusions(container);
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
+            
+            UpdatePresetBuildStatistics(container);
+            
+            // Update auto settings help and manual presets
+            container.schedule.Execute(() =>
+            {
+                autoSettingsHelp.Clear();
+                manualPresetsContainer.Clear();
+                
+                if (data.useAutoSettings)
+                {
+                    autoSettingsHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        "Auto Settings: The optimizer will analyze your avatar and automatically choose the best settings based on complexity, poly count, and features.\n\n" +
+                        "This is recommended for most users.",
+                        YUCPUIToolkitHelper.MessageType.Info));
+                    manualPresetsContainer.style.display = DisplayStyle.None;
+                }
+                else
+                {
+                    autoSettingsHelp.style.display = DisplayStyle.None;
+                    manualPresetsContainer.style.display = DisplayStyle.Flex;
+                    
+                    YUCPUIToolkitHelper.AddSpacing(manualPresetsContainer, 10);
+                    
+                    var manualLabel = new Label("Manual Presets:");
+                    manualLabel.style.fontSize = 13;
+                    manualLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    manualPresetsContainer.Add(manualLabel);
+                    
+                    YUCPUIToolkitHelper.AddSpacing(manualPresetsContainer, 5);
+                    
+                    var presetSelector = YUCPUIToolkitHelper.CreatePresetSelector((preset) =>
+                    {
+                        switch (preset)
+                        {
+                            case YUCPPresetSelector.Preset.Conservative:
+                                ApplyConservativePreset();
+                                break;
+                            case YUCPPresetSelector.Preset.Balanced:
+                                ApplyBalancedPreset();
+                                break;
+                            case YUCPPresetSelector.Preset.Aggressive:
+                                ApplyAggressivePreset();
+                                break;
+                            case YUCPPresetSelector.Preset.Custom:
+                                EditorUtility.DisplayDialog("Custom Settings",
+                                    "Switch to Advanced Mode using the toggle above to customize all settings individually.",
+                                    "OK");
+                                break;
+                        }
+                    });
+                    manualPresetsContainer.Add(presetSelector);
+                }
+            }).Every(100);
+        }
+        
+        private void UpdatePresetExclusions(VisualElement container)
+        {
+            var exclusionsCard = YUCPUIToolkitHelper.CreateCard("Exclusions", "Exclude transforms from optimization");
+            var exclusionsContent = YUCPUIToolkitHelper.GetCardContent(exclusionsCard);
+            exclusionsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("excludeTransforms"), "Exclude from Optimization"));
+            
+            var exclusionsHelp = new VisualElement();
+            exclusionsHelp.name = "exclusions-help";
+            exclusionsContent.Add(exclusionsHelp);
+            container.Add(exclusionsCard);
+            
+            container.schedule.Execute(() =>
+            {
+                exclusionsHelp.Clear();
+                if (data.excludeTransforms != null && data.excludeTransforms.Count > 0)
+                {
+                    exclusionsHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        $"{data.excludeTransforms.Count} transform(s) excluded from all optimizations.",
+                        YUCPUIToolkitHelper.MessageType.Info));
+                }
+                else
+                {
+                    exclusionsHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        "Add transforms here to exclude them from optimization (e.g., posebones, penetrators, custom systems).",
+                        YUCPUIToolkitHelper.MessageType.None));
+                }
+            }).Every(100);
+        }
+        
+        private void UpdateOptimizationOverview(VisualElement container)
+        {
+            var overviewCard = YUCPUIToolkitHelper.CreateCard("Optimization Overview", "Summary of enabled optimizations");
+            var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
+            
+            var overviewLabel = new VisualElement();
+            overviewLabel.name = "overview-label";
+            overviewContent.Add(overviewLabel);
+            
+            var optimizationsList = new VisualElement();
+            optimizationsList.name = "optimizations-list";
+            overviewContent.Add(optimizationsList);
+            
+            container.Add(overviewCard);
+            
+            container.schedule.Execute(() =>
+            {
+                overviewLabel.Clear();
+                optimizationsList.Clear();
+                
+                int enabledCount = data.GetEnabledOptimizationCount();
+                
+                var countLabel = new Label($"Active Optimizations: {enabledCount}");
+                countLabel.style.fontSize = 13;
+                countLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                overviewLabel.Add(countLabel);
+                
+                YUCPUIToolkitHelper.AddSpacing(optimizationsList, 5);
+                
+                var optimizations = new System.Collections.Generic.List<(string name, bool enabled)>
+                {
+                    ("Mesh Merging", data.mergeSkinnedMeshes),
+                    ("Static Mesh Merging", data.mergeStaticMeshesAsSkinned),
+                    ("Shader Toggle Merging", data.mergeSkinnedMeshesWithShaderToggle > 0),
+                    ("NaNimation Merging", data.mergeSkinnedMeshesWithNaNimation > 0),
+                    ("Material Merging", data.mergeDifferentPropertyMaterials),
+                    ("Texture Arrays", data.mergeSameDimensionTextures),
+                    ("FX Layer Optimization", data.optimizeFXLayer),
+                    ("Animation Combining", data.combineApproximateMotionTimeAnimations),
+                    ("PhysBone Disabling", data.disablePhysBonesWhenUnused),
+                    ("Component Cleanup", data.deleteUnusedComponents),
+                    ("GameObject Cleanup", data.deleteUnusedGameObjects > 0),
+                    ("Blendshape Merging", data.mergeSameRatioBlendShapes),
+                };
+                
+                foreach (var opt in optimizations)
+                {
+                    if (opt.enabled)
+                    {
+                        var label = new Label($"  {opt.name}");
+                        label.style.fontSize = 11;
+                        label.style.color = new StyleColor(Color.green);
+                        optimizationsList.Add(label);
+                    }
+                }
+                
+                if (enabledCount == 0)
+                {
+                    var noOptLabel = new Label("  No optimizations enabled");
+                    noOptLabel.style.fontSize = 11;
+                    noOptLabel.style.color = new StyleColor(Color.yellow);
+                    optimizationsList.Add(noOptLabel);
+                }
+            }).Every(100);
+        }
+        
+        private void UpdatePresetBuildStatistics(VisualElement container)
+        {
+            var refreshButton = YUCPUIToolkitHelper.CreateButton("Refresh Build Statistics", () =>
+            {
+                Repaint();
+                EditorUtility.SetDirty(data);
+            }, YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            refreshButton.style.height = 25;
+            container.Add(refreshButton);
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 5);
+            
+            var buildStatusContainer = new VisualElement();
+            buildStatusContainer.name = "build-status";
+            container.Add(buildStatusContainer);
+            
+            var buildStatsFoldout = YUCPUIToolkitHelper.CreateFoldout("Detailed Build Statistics", showBuildStats);
+            buildStatsFoldout.RegisterValueChangedCallback(evt => { showBuildStats = evt.newValue; });
+            
+            var buildStatsContent = new VisualElement();
+            buildStatsContent.name = "build-stats-content";
+            buildStatsFoldout.Add(buildStatsContent);
+            container.Add(buildStatsFoldout);
+            
+            container.schedule.Execute(() =>
+            {
+                buildStatusContainer.Clear();
+                buildStatsContent.Clear();
+                
+                if (data.OptimizerDetected)
+                {
+                    if (data.OptimizationApplied)
+                    {
+                        buildStatusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                            $"Last Build Result: Successfully applied {data.OptimizationsApplied} optimization settings to avatar",
+                            YUCPUIToolkitHelper.MessageType.Info));
+                    }
+                    else if (!string.IsNullOrEmpty(data.BuildError))
+                    {
+                        buildStatusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                            $"Last Build Result: {data.BuildError}",
+                            YUCPUIToolkitHelper.MessageType.Warning));
+                    }
+                    else if (!data.enableOptimizer)
+                    {
+                        buildStatusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                            "Last Build Result: Optimizer was disabled",
+                            YUCPUIToolkitHelper.MessageType.Info));
+                    }
+                }
+                else
+                {
+                    buildStatusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        "Build Status: Not yet applied\n\n" +
+                        "To see optimization results:\n" +
+                        "1. Configure your desired settings above\n" +
+                        "2. Upload your avatar using VRChat SDK\n" +
+                        "3. Check this section for confirmation\n\n" +
+                        "Note: Statistics are saved during actual builds/uploads.\n" +
+                        "NDMF 'Apply on Play' preview mode applies settings but doesn't persist statistics.\n" +
+                        "Check the Console for confirmation messages during previews.",
+                        YUCPUIToolkitHelper.MessageType.Info));
+                }
+                
+                if (showBuildStats)
+                {
+                    var optimizerDetectedLabel = new Label($"Optimizer Detected: {(data.OptimizerDetected ? "Yes" : "No")}");
+                    optimizerDetectedLabel.SetEnabled(false);
+                    optimizerDetectedLabel.style.fontSize = 11;
+                    buildStatsContent.Add(optimizerDetectedLabel);
+                    
+                    var optimizationAppliedLabel = new Label($"Optimization Applied: {(data.OptimizationApplied ? "Yes" : "No")}");
+                    optimizationAppliedLabel.SetEnabled(false);
+                    optimizationAppliedLabel.style.fontSize = 11;
+                    buildStatsContent.Add(optimizationAppliedLabel);
+                    
+                    var settingsAppliedLabel = new Label($"Settings Applied: {data.OptimizationsApplied}");
+                    settingsAppliedLabel.SetEnabled(false);
+                    settingsAppliedLabel.style.fontSize = 11;
+                    buildStatsContent.Add(settingsAppliedLabel);
+                    
+                    if (!string.IsNullOrEmpty(data.BuildError))
+                    {
+                        var errorLabel = new Label($"Error: {data.BuildError}");
+                        errorLabel.SetEnabled(false);
+                        errorLabel.style.fontSize = 11;
+                        buildStatsContent.Add(errorLabel);
+                    }
+                }
+            }).Every(100);
+        }
+        
+        private void UpdateAdvancedMode(VisualElement container)
+        {
+            if (container == null) return;
+            
+            container.Clear();
+            
+            var enableCard = YUCPUIToolkitHelper.CreateCard("Enable Optimization", "Configure optimizer settings");
+            var enableContent = YUCPUIToolkitHelper.GetCardContent(enableCard);
+            enableContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("enableOptimizer"), "Enable Optimizer"));
+            enableContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("useAutoSettings"), "Use Auto Settings"));
+            
+            var autoSettingsWarning = new VisualElement();
+            autoSettingsWarning.name = "auto-settings-warning";
+            enableContent.Add(autoSettingsWarning);
+            container.Add(enableCard);
+            
+            var disabledWarning = new VisualElement();
+            disabledWarning.name = "disabled-warning";
+            container.Add(disabledWarning);
+            
+            container.schedule.Execute(() =>
+            {
+                autoSettingsWarning.Clear();
+                disabledWarning.Clear();
+                
+                if (data.useAutoSettings)
+                {
+                    autoSettingsWarning.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        "Auto Settings is ON - manual settings below will be overridden by auto-detection.",
+                        YUCPUIToolkitHelper.MessageType.Warning));
+                }
+                
+                if (!data.enableOptimizer)
+                {
+                    disabledWarning.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        "Optimization disabled for this avatar.",
+                        YUCPUIToolkitHelper.MessageType.Warning));
+                }
+            }).Every(100);
+            
+            if (!data.enableOptimizer)
+            {
+                return;
+            }
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
+            
+            // Mesh Merging Foldout
+            var meshMergingFoldout = YUCPUIToolkitHelper.CreateFoldout("Mesh Merging", showMeshMerging);
+            meshMergingFoldout.RegisterValueChangedCallback(evt => { showMeshMerging = evt.newValue; });
+            meshMergingFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeSkinnedMeshes"), "Merge Skinned Meshes"));
+            meshMergingFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("Combines multiple skinned meshes to reduce draw calls.", YUCPUIToolkitHelper.MessageType.None));
+            
+            var staticMeshField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeStaticMeshesAsSkinned"), "Include Static Meshes");
+            staticMeshField.name = "static-mesh-field";
+            meshMergingFoldout.Add(staticMeshField);
+            
+            var staticMeshHelp = new VisualElement();
+            staticMeshHelp.name = "static-mesh-help";
+            meshMergingFoldout.Add(staticMeshHelp);
+            container.Add(meshMergingFoldout);
+            
+            container.schedule.Execute(() =>
+            {
+                staticMeshField.style.display = data.mergeSkinnedMeshes ? DisplayStyle.Flex : DisplayStyle.None;
+                staticMeshHelp.Clear();
+                if (data.mergeSkinnedMeshes)
+                {
+                    staticMeshHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Converts static meshes to skinned so they can be merged.", YUCPUIToolkitHelper.MessageType.None));
+                }
+            }).Every(100);
+            
+            // Advanced Mesh Merging Foldout
+            var advancedMergingFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced Mesh Merging", showAdvancedMerging);
+            advancedMergingFoldout.RegisterValueChangedCallback(evt => { showAdvancedMerging = evt.newValue; });
+            
+            var shaderToggleLabel = new Label("Shader Toggle Merging");
+            shaderToggleLabel.style.fontSize = 13;
+            shaderToggleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            advancedMergingFoldout.Add(shaderToggleLabel);
+            advancedMergingFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeSkinnedMeshesWithShaderToggle"), "Shader Toggle Level"));
+            advancedMergingFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("0=Off, 1=Basic, 2=Advanced | Requires Windows build target", YUCPUIToolkitHelper.MessageType.None));
+            
+            var windowsWarning = new VisualElement();
+            windowsWarning.name = "windows-warning";
+            advancedMergingFoldout.Add(windowsWarning);
+            
+            YUCPUIToolkitHelper.AddSpacing(advancedMergingFoldout, 5);
+            
+            var nanimationLabel = new Label("NaNimation Merging");
+            nanimationLabel.style.fontSize = 13;
+            nanimationLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            advancedMergingFoldout.Add(nanimationLabel);
+            advancedMergingFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeSkinnedMeshesWithNaNimation"), "NaNimation Level"));
+            advancedMergingFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("0=Off, 1=Basic, 2=Advanced | Uses NaN in animations for visibility", YUCPUIToolkitHelper.MessageType.None));
+            
+            var nanimationFields = new VisualElement();
+            nanimationFields.name = "nanimation-fields";
+            advancedMergingFoldout.Add(nanimationFields);
+            container.Add(advancedMergingFoldout);
+            
+            container.schedule.Execute(() =>
+            {
+                windowsWarning.Clear();
+                if (data.mergeSkinnedMeshesWithShaderToggle > 0 && EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneWindows64)
+                {
+                    windowsWarning.Add(YUCPUIToolkitHelper.CreateHelpBox("Shader toggles require Windows build target!", YUCPUIToolkitHelper.MessageType.Warning));
+                }
+                
+                nanimationFields.Clear();
+                if (data.mergeSkinnedMeshesWithNaNimation > 0)
+                {
+                    nanimationFields.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("naNimationAllow3BoneSkinning"), "Allow 3-Bone Skinning"));
+                    nanimationFields.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeSkinnedMeshesSeparatedByDefaultEnabledState"), "Separate by Default State"));
+                }
+            }).Every(100);
+            
+            // Material Optimization Foldout
+            var materialFoldout = YUCPUIToolkitHelper.CreateFoldout("Material Optimization", showMaterialOptimization);
+            materialFoldout.RegisterValueChangedCallback(evt => { showMaterialOptimization = evt.newValue; });
+            materialFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeDifferentPropertyMaterials"), "Merge Different Property Materials"));
+            materialFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("Creates optimized shaders combining multiple materials. Windows only.", YUCPUIToolkitHelper.MessageType.None));
+            
+            var materialFields = new VisualElement();
+            materialFields.name = "material-fields";
+            materialFoldout.Add(materialFields);
+            container.Add(materialFoldout);
+            
+            container.schedule.Execute(() =>
+            {
+                materialFields.Clear();
+                if (data.mergeDifferentPropertyMaterials)
+                {
+                    materialFields.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeSameDimensionTextures"), "Merge Textures to Arrays"));
+                    
+                    var mainTexField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeMainTex"), "Include Main Textures");
+                    mainTexField.name = "main-tex-field";
+                    materialFields.Add(mainTexField);
+                    
+                    container.schedule.Execute(() =>
+                    {
+                        mainTexField.style.display = data.mergeSameDimensionTextures ? DisplayStyle.Flex : DisplayStyle.None;
+                    }).Every(100);
+                    
+                    YUCPUIToolkitHelper.AddSpacing(materialFields, 3);
+                    materialFields.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("writePropertiesAsStaticValues"), "Write Static Properties"));
+                }
+            }).Every(100);
+            
+            // FX Layer Optimization Foldout
+            var fxLayerFoldout = YUCPUIToolkitHelper.CreateFoldout("FX Layer Optimization", showFXLayer);
+            fxLayerFoldout.RegisterValueChangedCallback(evt => { showFXLayer = evt.newValue; });
+            fxLayerFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("optimizeFXLayer"), "Optimize FX Layer"));
+            fxLayerFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("Merges compatible animator layers and removes unused ones.", YUCPUIToolkitHelper.MessageType.None));
+            
+            var animationCombineField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("combineApproximateMotionTimeAnimations"), "Combine Similar-Length Animations");
+            animationCombineField.name = "animation-combine-field";
+            fxLayerFoldout.Add(animationCombineField);
+            container.Add(fxLayerFoldout);
+            
+            container.schedule.Execute(() =>
+            {
+                animationCombineField.style.display = data.optimizeFXLayer ? DisplayStyle.Flex : DisplayStyle.None;
+            }).Every(100);
+            
+            // Component Cleanup Foldout
+            var componentsFoldout = YUCPUIToolkitHelper.CreateFoldout("Component Cleanup", showComponents);
+            componentsFoldout.RegisterValueChangedCallback(evt => { showComponents = evt.newValue; });
+            componentsFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("disablePhysBonesWhenUnused"), "Disable Unused PhysBones"));
+            componentsFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("deleteUnusedComponents"), "Delete Unused Components"));
+            componentsFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("deleteUnusedGameObjects"), "Delete Unused GameObjects"));
+            componentsFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("0=Off, 1=Safe, 2=Aggressive", YUCPUIToolkitHelper.MessageType.None));
+            container.Add(componentsFoldout);
+            
+            // Blendshape Optimization Foldout
+            var blendshapeFoldout = YUCPUIToolkitHelper.CreateFoldout("Blendshape Optimization", showBlendshapes);
+            blendshapeFoldout.RegisterValueChangedCallback(evt => { showBlendshapes = evt.newValue; });
+            blendshapeFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeSameRatioBlendShapes"), "Merge Same-Ratio Blendshapes"));
+            blendshapeFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mmdCompatibility"), "MMD Compatibility"));
+            container.Add(blendshapeFoldout);
+            
+            // Advanced Features Foldout
+            var advancedFeaturesFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced Features", showAdvancedFeatures);
+            advancedFeaturesFoldout.RegisterValueChangedCallback(evt => { showAdvancedFeatures = evt.newValue; });
+            advancedFeaturesFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("useRingFingerAsFootCollider"), "Ring Finger → Foot Collider"));
+            advancedFeaturesFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("Moves ring finger contact to feet. Disables ring finger interactions.", YUCPUIToolkitHelper.MessageType.None));
+            container.Add(advancedFeaturesFoldout);
+            
+            // Exclusions Foldout
+            var exclusionsFoldout = YUCPUIToolkitHelper.CreateFoldout("Exclusions", showExclusions);
+            exclusionsFoldout.RegisterValueChangedCallback(evt => { showExclusions = evt.newValue; });
+            exclusionsFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("excludeTransforms"), "Excluded Transforms"));
+            container.Add(exclusionsFoldout);
+            
+            // Inspector Display Foldout
+            var inspectorFoldout = YUCPUIToolkitHelper.CreateFoldout("Inspector Display", showInspectorOptions);
+            inspectorFoldout.RegisterValueChangedCallback(evt => { showInspectorOptions = evt.newValue; });
+            inspectorFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("showMeshMergePreview"), "Show Mesh Merge Preview"));
+            inspectorFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("showFXLayerMergeResults"), "Show FX Layer Results"));
+            inspectorFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("showDebugInfo"), "Show Debug Info"));
+            container.Add(inspectorFoldout);
+            
+            // Debug & Profiling Foldout
+            var debugFoldout = YUCPUIToolkitHelper.CreateFoldout("Debug & Profiling", showDebug);
+            debugFoldout.RegisterValueChangedCallback(evt => { showDebug = evt.newValue; });
+            debugFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("profileTimeUsed"), "Profile Time Used"));
+            debugFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Logging"));
+            container.Add(debugFoldout);
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 10);
+            
+            UpdateAdvancedBuildStatistics(container);
+        }
+        
+        private void UpdateAdvancedBuildStatistics(VisualElement container)
+        {
+            var refreshButton = YUCPUIToolkitHelper.CreateButton("Refresh Build Statistics", () =>
+            {
+                Repaint();
+                EditorUtility.SetDirty(data);
+            }, YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            refreshButton.style.height = 25;
+            container.Add(refreshButton);
+            
+            YUCPUIToolkitHelper.AddSpacing(container, 5);
+            
+            var buildStatusContainer = new VisualElement();
+            buildStatusContainer.name = "build-status";
+            container.Add(buildStatusContainer);
+            
+            var buildStatsFoldout = YUCPUIToolkitHelper.CreateFoldout("Detailed Build Statistics", showBuildStats);
+            buildStatsFoldout.RegisterValueChangedCallback(evt => { showBuildStats = evt.newValue; });
+            
+            var buildStatsContent = new VisualElement();
+            buildStatsContent.name = "build-stats-content";
+            buildStatsFoldout.Add(buildStatsContent);
+            container.Add(buildStatsFoldout);
+            
+            container.schedule.Execute(() =>
+            {
+                buildStatusContainer.Clear();
+                buildStatsContent.Clear();
+                
+                if (data.OptimizerDetected)
+                {
+                    if (data.OptimizationApplied)
+                    {
+                        buildStatusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                            $"Last Build Result: Successfully applied {data.OptimizationsApplied} optimization settings to avatar",
+                            YUCPUIToolkitHelper.MessageType.Info));
+                    }
+                    else if (!string.IsNullOrEmpty(data.BuildError))
+                    {
+                        buildStatusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                            $"Last Build Result: {data.BuildError}",
+                            YUCPUIToolkitHelper.MessageType.Warning));
+                    }
+                    else if (!data.enableOptimizer)
+                    {
+                        buildStatusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                            "Last Build Result: Optimizer was disabled",
+                            YUCPUIToolkitHelper.MessageType.Info));
+                    }
+                }
+                else
+                {
+                    buildStatusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        "Build Status: Not yet applied\n\n" +
+                        "To see optimization results:\n" +
+                        "1. Configure your desired settings above\n" +
+                        "2. Upload your avatar using VRChat SDK\n" +
+                        "3. Check this section for confirmation\n\n" +
+                        "Note: Statistics are saved during actual builds/uploads.\n" +
+                        "NDMF 'Apply on Play' preview mode applies settings but doesn't persist statistics.\n" +
+                        "Check the Console for confirmation messages during previews.",
+                        YUCPUIToolkitHelper.MessageType.Info));
+                }
+                
+                if (showBuildStats)
+                {
+                    var optimizerDetectedLabel = new Label($"Optimizer Detected: {(data.OptimizerDetected ? "Yes" : "No")}");
+                    optimizerDetectedLabel.SetEnabled(false);
+                    optimizerDetectedLabel.style.fontSize = 11;
+                    buildStatsContent.Add(optimizerDetectedLabel);
+                    
+                    var optimizationAppliedLabel = new Label($"Optimization Applied: {(data.OptimizationApplied ? "Yes" : "No")}");
+                    optimizationAppliedLabel.SetEnabled(false);
+                    optimizationAppliedLabel.style.fontSize = 11;
+                    buildStatsContent.Add(optimizationAppliedLabel);
+                    
+                    var settingsAppliedLabel = new Label($"Settings Applied: {data.OptimizationsApplied}");
+                    settingsAppliedLabel.SetEnabled(false);
+                    settingsAppliedLabel.style.fontSize = 11;
+                    buildStatsContent.Add(settingsAppliedLabel);
+                    
+                    if (!string.IsNullOrEmpty(data.BuildError))
+                    {
+                        var errorLabel = new Label($"Error: {data.BuildError}");
+                        errorLabel.SetEnabled(false);
+                        errorLabel.style.fontSize = 11;
+                        buildStatsContent.Add(errorLabel);
+                    }
+                }
+            }).Every(100);
+        }
+
+        public override void OnInspectorGUI()
+        {
+            // Legacy support - not used anymore
         }
         
         private void InstallOptimizer()
@@ -279,65 +979,6 @@ namespace YUCP.Components.Editor
             }
         }
 
-        private void DrawInstalledBanner()
-        {
-            EditorGUILayout.Space(5);
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.2f, 0.8f, 0.3f, 0.3f);
-            
-            EditorGUILayout.HelpBox(
-                $"✓ d4rkAvatarOptimizer Installed & Active\n\n" +
-                $"This avatar will be optimized during build with {data.GetEnabledOptimizationCount()} enabled features.",
-                MessageType.Info);
-            
-            GUI.backgroundColor = originalColor;
-            EditorGUILayout.Space(5);
-        }
-
-        private void DrawModeSwitcher()
-        {
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-            
-            GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
-            buttonStyle.fixedWidth = 120;
-            buttonStyle.fixedHeight = 25;
-            
-            GUIStyle selectedButtonStyle = new GUIStyle(buttonStyle);
-            selectedButtonStyle.fontStyle = FontStyle.Bold;
-            selectedButtonStyle.normal.background = buttonStyle.active.background;
-            
-            if (GUILayout.Button("Preset Mode", currentMode == UIMode.Preset ? selectedButtonStyle : buttonStyle))
-            {
-                currentMode = UIMode.Preset;
-                SaveUIMode();
-            }
-            
-            if (GUILayout.Button("Advanced Mode", currentMode == UIMode.Advanced ? selectedButtonStyle : buttonStyle))
-            {
-                currentMode = UIMode.Advanced;
-                SaveUIMode();
-            }
-            
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.Space(5);
-            
-            // Mode description
-            if (currentMode == UIMode.Preset)
-            {
-                EditorGUILayout.HelpBox(
-                    "Preset Mode: Quick configuration with recommended settings for common scenarios.",
-                    MessageType.None);
-            }
-            else
-            {
-                EditorGUILayout.HelpBox(
-                    "Advanced Mode: Full control over every optimization setting. For experienced users.",
-                    MessageType.None);
-            }
-        }
 
         private void SaveUIMode()
         {
@@ -345,451 +986,6 @@ namespace YUCP.Components.Editor
             SessionState.SetInt(modeKey, (int)currentMode);
         }
 
-        private void DrawPresetMode()
-        {
-            // Main enable toggle
-            DrawSection("Enable Optimization", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("enableOptimizer"), new GUIContent("Enable Optimizer for this Avatar"));
-                
-                if (!data.enableOptimizer)
-                {
-                    EditorGUILayout.HelpBox(
-                        "Optimization is disabled for this avatar. It will not be processed during build.",
-                        MessageType.Warning);
-                    return;
-                }
-            });
-
-            if (!data.enableOptimizer)
-            {
-                return; // Don't show other settings if disabled
-            }
-
-            EditorGUILayout.Space(10);
-
-            // Preset selector
-            DrawSection("Optimization Preset", () => {
-                EditorGUILayout.LabelField("Choose a preset or use Auto Settings:", EditorStyles.boldLabel);
-                EditorGUILayout.Space(5);
-                
-                // Auto settings toggle
-                var autoSettingsProp = serializedObject.FindProperty("useAutoSettings");
-                bool wasAutoSettings = autoSettingsProp.boolValue;
-                EditorGUILayout.PropertyField(autoSettingsProp, new GUIContent("Auto-Detect Settings (Recommended)"));
-                
-                if (data.useAutoSettings)
-                {
-                    EditorGUILayout.HelpBox(
-                        "Auto Settings: The optimizer will analyze your avatar and automatically choose the best settings based on complexity, poly count, and features.\n\n" +
-                        "This is recommended for most users.",
-                        MessageType.Info);
-                }
-                else
-                {
-                    EditorGUILayout.Space(10);
-                    EditorGUILayout.LabelField("Manual Presets:", EditorStyles.boldLabel);
-                    EditorGUILayout.Space(5);
-                    
-                    // Preset buttons
-                    EditorGUILayout.BeginHorizontal();
-                    
-                    if (PresetButton("Conservative", "Safe settings for complex avatars with many systems", new Color(0.6f, 0.8f, 0.6f)))
-                    {
-                        ApplyConservativePreset();
-                    }
-                    
-                    if (PresetButton("Balanced", "Good balance of optimization and safety", new Color(0.6f, 0.8f, 1f)))
-                    {
-                        ApplyBalancedPreset();
-                    }
-                    
-                    EditorGUILayout.EndHorizontal();
-                    
-                    EditorGUILayout.Space(5);
-                    EditorGUILayout.BeginHorizontal();
-                    
-                    if (PresetButton("Aggressive", "Maximum optimization, test carefully", new Color(1f, 0.7f, 0.4f)))
-                    {
-                        ApplyAggressivePreset();
-                    }
-                    
-                    if (PresetButton("Custom", "Use Advanced Mode for full control", new Color(0.8f, 0.8f, 0.8f)))
-                    {
-                        // Just a visual indicator, user can use advanced mode
-                        EditorUtility.DisplayDialog("Custom Settings",
-                            "Switch to Advanced Mode using the toggle above to customize all settings individually.",
-                            "OK");
-                    }
-                    
-                    EditorGUILayout.EndHorizontal();
-                }
-            });
-
-            // Quick overview
-            EditorGUILayout.Space(10);
-            DrawOptimizationOverview();
-
-            // Exclusions (always accessible)
-            EditorGUILayout.Space(10);
-            DrawSection("Exclusions", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("excludeTransforms"), new GUIContent("Exclude from Optimization"), true);
-                
-                if (data.excludeTransforms != null && data.excludeTransforms.Count > 0)
-                {
-                    EditorGUILayout.HelpBox(
-                        $"{data.excludeTransforms.Count} transform(s) excluded from all optimizations.",
-                        MessageType.Info);
-                }
-                else
-                {
-                    EditorGUILayout.HelpBox(
-                        "Add transforms here to exclude them from optimization (e.g., posebones, penetrators, custom systems).",
-                        MessageType.None);
-                }
-            });
-
-            // Build stats - always show
-            EditorGUILayout.Space(10);
-            DrawBuildStatistics();
-        }
-
-        private void DrawAdvancedMode()
-        {
-            // Enable toggle at top
-            DrawSection("Enable Optimization", () => {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("enableOptimizer"), new GUIContent("Enable Optimizer"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("useAutoSettings"), new GUIContent("Use Auto Settings"));
-                
-                if (data.useAutoSettings)
-                {
-                    EditorGUILayout.HelpBox("Auto Settings is ON - manual settings below will be overridden by auto-detection.", MessageType.Warning);
-                }
-            });
-
-            if (!data.enableOptimizer)
-            {
-                EditorGUILayout.Space(5);
-                EditorGUILayout.HelpBox("Optimization disabled for this avatar.", MessageType.Warning);
-                return;
-            }
-
-            EditorGUILayout.Space(10);
-
-            // Mesh Merging
-            showMeshMerging = EditorGUILayout.BeginFoldoutHeaderGroup(showMeshMerging, "Mesh Merging");
-            if (showMeshMerging)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeSkinnedMeshes"), new GUIContent("Merge Skinned Meshes"));
-                    EditorGUILayout.HelpBox("Combines multiple skinned meshes to reduce draw calls.", MessageType.None);
-                    
-                    if (data.mergeSkinnedMeshes)
-                    {
-                        EditorGUI.indentLevel++;
-                        EditorGUILayout.Space(3);
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeStaticMeshesAsSkinned"), new GUIContent("Include Static Meshes"));
-                        EditorGUILayout.HelpBox("Converts static meshes to skinned so they can be merged.", MessageType.None);
-                        EditorGUI.indentLevel--;
-                    }
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Advanced Merging
-            EditorGUILayout.Space(5);
-            showAdvancedMerging = EditorGUILayout.BeginFoldoutHeaderGroup(showAdvancedMerging, "Advanced Mesh Merging");
-            if (showAdvancedMerging)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.LabelField("Shader Toggle Merging", EditorStyles.boldLabel);
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeSkinnedMeshesWithShaderToggle"), new GUIContent("Shader Toggle Level"));
-                    EditorGUILayout.HelpBox("0=Off, 1=Basic, 2=Advanced | Requires Windows build target", MessageType.None);
-                    
-                    if (data.mergeSkinnedMeshesWithShaderToggle > 0 && EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneWindows64)
-                    {
-                        EditorGUILayout.HelpBox("Shader toggles require Windows build target!", MessageType.Warning);
-                    }
-                    
-                    EditorGUILayout.Space(5);
-                    EditorGUILayout.LabelField("NaNimation Merging", EditorStyles.boldLabel);
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeSkinnedMeshesWithNaNimation"), new GUIContent("NaNimation Level"));
-                    EditorGUILayout.HelpBox("0=Off, 1=Basic, 2=Advanced | Uses NaN in animations for visibility", MessageType.None);
-                    
-                    if (data.mergeSkinnedMeshesWithNaNimation > 0)
-                    {
-                        EditorGUI.indentLevel++;
-                        EditorGUILayout.Space(3);
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("naNimationAllow3BoneSkinning"), new GUIContent("Allow 3-Bone Skinning"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeSkinnedMeshesSeparatedByDefaultEnabledState"), new GUIContent("Separate by Default State"));
-                        EditorGUI.indentLevel--;
-                    }
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Material Optimization
-            EditorGUILayout.Space(5);
-            showMaterialOptimization = EditorGUILayout.BeginFoldoutHeaderGroup(showMaterialOptimization, "Material Optimization");
-            if (showMaterialOptimization)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeDifferentPropertyMaterials"), new GUIContent("Merge Different Property Materials"));
-                    EditorGUILayout.HelpBox("Creates optimized shaders combining multiple materials. Windows only.", MessageType.None);
-                    
-                    if (data.mergeDifferentPropertyMaterials)
-                    {
-                        EditorGUI.indentLevel++;
-                        EditorGUILayout.Space(3);
-                        
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeSameDimensionTextures"), new GUIContent("Merge Textures to Arrays"));
-                        if (data.mergeSameDimensionTextures)
-                        {
-                            EditorGUI.indentLevel++;
-                            EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeMainTex"), new GUIContent("Include Main Textures"));
-                            EditorGUI.indentLevel--;
-                        }
-                        
-                        EditorGUILayout.Space(3);
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("writePropertiesAsStaticValues"), new GUIContent("Write Static Properties"));
-                        
-                        EditorGUI.indentLevel--;
-                    }
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // FX Layer
-            EditorGUILayout.Space(5);
-            showFXLayer = EditorGUILayout.BeginFoldoutHeaderGroup(showFXLayer, "FX Layer Optimization");
-            if (showFXLayer)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("optimizeFXLayer"), new GUIContent("Optimize FX Layer"));
-                    EditorGUILayout.HelpBox("Merges compatible animator layers and removes unused ones.", MessageType.None);
-                    
-                    if (data.optimizeFXLayer)
-                    {
-                        EditorGUI.indentLevel++;
-                        EditorGUILayout.Space(3);
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("combineApproximateMotionTimeAnimations"), new GUIContent("Combine Similar-Length Animations"));
-                        EditorGUI.indentLevel--;
-                    }
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Components
-            EditorGUILayout.Space(5);
-            showComponents = EditorGUILayout.BeginFoldoutHeaderGroup(showComponents, "Component Cleanup");
-            if (showComponents)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("disablePhysBonesWhenUnused"), new GUIContent("Disable Unused PhysBones"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("deleteUnusedComponents"), new GUIContent("Delete Unused Components"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("deleteUnusedGameObjects"), new GUIContent("Delete Unused GameObjects"));
-                    EditorGUILayout.HelpBox("0=Off, 1=Safe, 2=Aggressive", MessageType.None);
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Blendshapes
-            EditorGUILayout.Space(5);
-            showBlendshapes = EditorGUILayout.BeginFoldoutHeaderGroup(showBlendshapes, "Blendshape Optimization");
-            if (showBlendshapes)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("mergeSameRatioBlendShapes"), new GUIContent("Merge Same-Ratio Blendshapes"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("mmdCompatibility"), new GUIContent("MMD Compatibility"));
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Advanced Features
-            EditorGUILayout.Space(5);
-            showAdvancedFeatures = EditorGUILayout.BeginFoldoutHeaderGroup(showAdvancedFeatures, "Advanced Features");
-            if (showAdvancedFeatures)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("useRingFingerAsFootCollider"), new GUIContent("Ring Finger → Foot Collider"));
-                    EditorGUILayout.HelpBox("Moves ring finger contact to feet. Disables ring finger interactions.", MessageType.None);
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Exclusions
-            EditorGUILayout.Space(5);
-            showExclusions = EditorGUILayout.BeginFoldoutHeaderGroup(showExclusions, "Exclusions");
-            if (showExclusions)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("excludeTransforms"), new GUIContent("Excluded Transforms"), true);
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Inspector Options
-            EditorGUILayout.Space(5);
-            showInspectorOptions = EditorGUILayout.BeginFoldoutHeaderGroup(showInspectorOptions, "Inspector Display");
-            if (showInspectorOptions)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("showMeshMergePreview"), new GUIContent("Show Mesh Merge Preview"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("showFXLayerMergeResults"), new GUIContent("Show FX Layer Results"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("showDebugInfo"), new GUIContent("Show Debug Info"));
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Debug
-            EditorGUILayout.Space(5);
-            showDebug = EditorGUILayout.BeginFoldoutHeaderGroup(showDebug, "Debug & Profiling");
-            if (showDebug)
-            {
-                DrawSection("", () => {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("profileTimeUsed"), new GUIContent("Profile Time Used"));
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("debugMode"), new GUIContent("Debug Logging"));
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-
-            // Build stats - always show
-            EditorGUILayout.Space(10);
-            DrawBuildStatistics();
-        }
-
-        private bool PresetButton(string label, string description, Color color)
-        {
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = color;
-            
-            GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
-            buttonStyle.fixedHeight = 60;
-            buttonStyle.wordWrap = true;
-            buttonStyle.alignment = TextAnchor.MiddleCenter;
-            
-            bool clicked = GUILayout.Button($"{label}\n\n{description}", buttonStyle);
-            
-            GUI.backgroundColor = originalColor;
-            return clicked;
-        }
-
-        private void DrawOptimizationOverview()
-        {
-            DrawSection("Optimization Overview", () => {
-                int enabledCount = data.GetEnabledOptimizationCount();
-                
-                EditorGUILayout.LabelField($"Active Optimizations: {enabledCount}", EditorStyles.boldLabel);
-                EditorGUILayout.Space(5);
-                
-                // Show enabled optimizations
-                var optimizations = new System.Collections.Generic.List<(string name, bool enabled)>
-                {
-                    ("Mesh Merging", data.mergeSkinnedMeshes),
-                    ("Static Mesh Merging", data.mergeStaticMeshesAsSkinned),
-                    ("Shader Toggle Merging", data.mergeSkinnedMeshesWithShaderToggle > 0),
-                    ("NaNimation Merging", data.mergeSkinnedMeshesWithNaNimation > 0),
-                    ("Material Merging", data.mergeDifferentPropertyMaterials),
-                    ("Texture Arrays", data.mergeSameDimensionTextures),
-                    ("FX Layer Optimization", data.optimizeFXLayer),
-                    ("Animation Combining", data.combineApproximateMotionTimeAnimations),
-                    ("PhysBone Disabling", data.disablePhysBonesWhenUnused),
-                    ("Component Cleanup", data.deleteUnusedComponents),
-                    ("GameObject Cleanup", data.deleteUnusedGameObjects > 0),
-                    ("Blendshape Merging", data.mergeSameRatioBlendShapes),
-                };
-                
-                foreach (var opt in optimizations)
-                {
-                    if (opt.enabled)
-                    {
-                        EditorGUILayout.LabelField($"  ✓ {opt.name}", new GUIStyle(EditorStyles.label) { normal = { textColor = Color.green } });
-                    }
-                }
-                
-                if (enabledCount == 0)
-                {
-                    EditorGUILayout.LabelField("  No optimizations enabled", new GUIStyle(EditorStyles.label) { normal = { textColor = Color.yellow } });
-                }
-            });
-        }
-
-        private void DrawBuildStatistics()
-        {
-            // Refresh button to check for updated stats
-            if (GUILayout.Button("Refresh Build Statistics", GUILayout.Height(25)))
-            {
-                Repaint();
-                EditorUtility.SetDirty(data);
-            }
-            
-            EditorGUILayout.Space(5);
-            
-            // Show a prominent box with last build results
-            if (data.OptimizerDetected)
-            {
-                EditorGUILayout.Space(5);
-                
-                // Success state - show in green box
-                if (data.OptimizationApplied)
-                {
-                    EditorGUILayout.HelpBox(
-                        $"Last Build Result: Successfully applied {data.OptimizationsApplied} optimization settings to avatar", 
-                        MessageType.Info
-                    );
-                }
-                // Error state - show in red box
-                else if (!string.IsNullOrEmpty(data.BuildError))
-                {
-                    EditorGUILayout.HelpBox(
-                        $"Last Build Result: {data.BuildError}", 
-                        MessageType.Warning
-                    );
-                }
-                // Disabled state
-                else if (!data.enableOptimizer)
-                {
-                    EditorGUILayout.HelpBox(
-                        "Last Build Result: Optimizer was disabled", 
-                        MessageType.Info
-                    );
-                }
-            }
-            else
-            {
-                // No build yet - show instructions
-                EditorGUILayout.Space(5);
-                EditorGUILayout.HelpBox(
-                    "Build Status: Not yet applied\n\n" +
-                    "To see optimization results:\n" +
-                    "1. Configure your desired settings above\n" +
-                    "2. Upload your avatar using VRChat SDK\n" +
-                    "3. Check this section for confirmation\n\n" +
-                    "Note: Statistics are saved during actual builds/uploads.\n" +
-                    "NDMF 'Apply on Play' preview mode applies settings but doesn't persist statistics.\n" +
-                    "Check the Console for confirmation messages during previews.",
-                    MessageType.Info
-                );
-            }
-            
-            // Detailed stats in expandable section
-            showBuildStats = EditorGUILayout.BeginFoldoutHeaderGroup(showBuildStats, "Detailed Build Statistics");
-            if (showBuildStats)
-            {
-                DrawSection("", () => {
-                    GUI.enabled = false;
-                    EditorGUILayout.LabelField("Optimizer Detected", data.OptimizerDetected ? "Yes" : "No");
-                    EditorGUILayout.LabelField("Optimization Applied", data.OptimizationApplied ? "Yes" : "No");
-                    EditorGUILayout.LabelField("Settings Applied", $"{data.OptimizationsApplied}");
-                    
-                    if (!string.IsNullOrEmpty(data.BuildError))
-                    {
-                        EditorGUILayout.LabelField("Error", data.BuildError);
-                    }
-                    GUI.enabled = true;
-                });
-            }
-            EditorGUILayout.EndFoldoutHeaderGroup();
-        }
 
         private void ApplyConservativePreset()
         {
@@ -894,32 +1090,6 @@ namespace YUCP.Components.Editor
             Debug.Log("[AvatarOptimizerPlugin] Applied Aggressive preset");
         }
 
-        private void DrawSection(string title, System.Action content)
-        {
-            if (!string.IsNullOrEmpty(title))
-            {
-                EditorGUILayout.Space(5);
-            }
-            
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0f, 0f, 0f, 0.15f);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = originalColor;
-            
-            if (!string.IsNullOrEmpty(title))
-            {
-                var style = new GUIStyle(EditorStyles.boldLabel);
-                style.fontSize = 12;
-                style.alignment = TextAnchor.MiddleLeft;
-                EditorGUILayout.LabelField(title, style);
-                EditorGUILayout.Space(3);
-            }
-            
-            content?.Invoke();
-            
-            EditorGUILayout.EndVertical();
-        }
 
         private void CheckForOptimizer()
         {

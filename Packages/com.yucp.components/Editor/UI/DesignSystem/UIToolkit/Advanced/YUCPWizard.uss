@@ -1,0 +1,68 @@
+/* YUCP Wizard Component - Multi-step Process */
+.yucp-wizard {
+    flex-direction: column;
+}
+
+.yucp-wizard-progress {
+    flex-direction: row;
+    justify-content: space-between;
+    margin-bottom: var(--yucp-spacing-lg);
+    padding: var(--yucp-spacing-sm);
+}
+
+.yucp-wizard-step {
+    flex-direction: column;
+    align-items: center;
+    flex-grow: 1;
+}
+
+.yucp-wizard-step-indicator {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    -unity-text-align: middle-center;
+    font-size: 12px;
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-wizard-step-active {
+    background-color: var(--yucp-accent-primary);
+    color: #ffffff;
+}
+
+.yucp-wizard-step-completed {
+    background-color: var(--yucp-bg-tertiary);
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-wizard-step-pending {
+    background-color: transparent;
+    border-width: 2px;
+    border-color: var(--yucp-border-primary);
+    color: var(--yucp-text-tertiary);
+}
+
+.yucp-wizard-step-label {
+    font-size: 12px;
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-wizard-content {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.yucp-wizard-navigation {
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: var(--yucp-spacing-lg);
+}
+
+.yucp-wizard-navigation > * {
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-wizard-navigation > *.last {
+    margin-right: 0;
+}
+

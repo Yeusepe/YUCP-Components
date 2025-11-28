@@ -10,12 +10,12 @@ using PackageGuardian.Core.Validation;
 namespace YUCP.Components.PackageGuardian.Editor.Services
 {
     /// <summary>
-    /// Generates comprehensive health reports for the project
+    /// Generates health reports for the project
     /// </summary>
     public static class HealthReportGenerator
     {
         /// <summary>
-        /// Generates a comprehensive health report and saves it to file
+        /// Generates a health report and saves it to file
         /// </summary>
         [MenuItem("Tools/Package Guardian/Generate Health Report", priority = 101)]
         public static void GenerateReport()

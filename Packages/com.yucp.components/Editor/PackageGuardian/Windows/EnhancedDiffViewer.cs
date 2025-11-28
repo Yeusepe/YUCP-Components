@@ -12,7 +12,7 @@ using global::PackageGuardian.Core.Objects;
 namespace YUCP.Components.PackageGuardian.Editor.Windows
 {
     /// <summary>
-    /// Enhanced diff viewer with syntax highlighting and side-by-side comparison.
+    /// Diff viewer with syntax highlighting and side-by-side comparison.
     /// </summary>
     public class EnhancedDiffViewer : EditorWindow
     {

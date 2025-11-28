@@ -1,0 +1,93 @@
+/* YUCP Blendshape List Editor Component */
+.yucp-blendshape-list-editor {
+    flex-direction: column;
+    margin-bottom: var(--yucp-spacing-sm);
+}
+
+.yucp-blendshape-mesh-info {
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-add-blendshape-button {
+    height: 28px;
+    margin-bottom: var(--yucp-spacing-sm);
+    background-color: rgb(102, 204, 128);
+    transition-property: background-color, scale;
+    transition-duration: 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-add-blendshape-button:hover {
+    scale: 1.01 1.01;
+}
+
+.yucp-add-blendshape-button:active {
+    scale: 0.99 0.99;
+}
+
+.yucp-blendshape-list {
+    flex-direction: column;
+    border-radius: var(--yucp-radius-card);
+    padding: var(--yucp-spacing-xs);
+    background-color: rgba(0, 0, 0, 0.2);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-blendshape-list:hover {
+    scale: 1.002 1.002;
+}
+
+.yucp-blendshape-item {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.yucp-blendshape-item.last {
+    margin-bottom: 0;
+}
+
+.yucp-blendshape-index {
+    width: 25px;
+    font-size: 10px;
+    color: rgb(179, 179, 179);
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-blendshape-name-field {
+    flex-grow: 1;
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-blendshape-remove-button {
+    min-width: 25px;
+    min-height: 18px;
+    height: 18px;
+    padding: 0;
+    background-color: rgb(255, 77, 77);
+    border-color: rgb(255, 77, 77);
+    font-size: 12px;
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-blendshape-remove-button:hover {
+    scale: 1.05 1.05;
+}
+
+.yucp-blendshape-remove-button:active {
+    scale: 0.95 0.95;
+}
+
+.yucp-blendshape-empty-state {
+    margin-top: var(--yucp-spacing-sm);
+}
+

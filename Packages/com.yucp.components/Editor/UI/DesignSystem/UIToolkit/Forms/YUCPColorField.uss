@@ -1,0 +1,14 @@
+/* YUCP Color Field Component */
+.yucp-colorfield {
+    margin-bottom: var(--yucp-spacing-xs);
+}
+
+.yucp-colorfield-preview {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--yucp-radius-input);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+}
+
+
