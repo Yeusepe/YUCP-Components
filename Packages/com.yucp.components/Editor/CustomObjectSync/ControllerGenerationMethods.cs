@@ -64,7 +64,6 @@ namespace VRLabs.CustomObjectSyncCreator
 			return frame;
 		}
 			
-		// Redundant? Maybe. But I'm gonna use it anyways hehe
 		public static void AddCurve(AnimationClip clip, string relativePath, Type type, string propertyName, AnimationCurve curve)
 		{
 			clip.SetCurve(relativePath, type, propertyName, curve);

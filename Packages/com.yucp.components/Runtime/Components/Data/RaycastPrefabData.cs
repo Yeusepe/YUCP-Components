@@ -14,13 +14,25 @@ namespace YUCP.Components
     [SupportBanner("This component ports VRLabs Raycast Prefab (MIT). Please support VRLabs!")]
     public class RaycastPrefabData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target")]
-        [Tooltip("The casting target object that determines the raycast direction.")]
+        [Header("Target Objects")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to position via raycast. This object will be moved into the Raycast Prefab's Container during build. The component automatically uses the GameObject it's attached to as the raycast object.")]
+        [SerializeField, HideInInspector]
+        private GameObject _raycastObjectInfo;
+        
+        [Tooltip("CASTING TARGET: The object that determines the raycast direction. The raycast will be cast from this object's position in its forward direction. The raycast object will be positioned at the hit point using Final IK's Grounder.")]
         public Transform castingTarget;
 
         [Header("Options")]
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Raycast\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Raycast";
+
+        [Header("Raycast Settings")]
+        [Tooltip("Layers that the Grounder IK will raycast against.")]
+        public LayerMask grounderLayers = -1;
+
+        [Tooltip("Maximum raycast distance.")]
+        [Range(0.1f, 100f)]
+        public float raycastDistance = 10f;
 
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared raycast setup.")]
@@ -52,6 +64,8 @@ namespace YUCP.Components
             public GameObject targetObject;
             public Transform castingTarget;
             public string menuLocation;
+            public LayerMask grounderLayers;
+            public float raycastDistance;
             public string raycastGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -90,6 +104,8 @@ namespace YUCP.Components
                 targetObject = gameObject,
                 castingTarget = castingTarget,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
+                grounderLayers = grounderLayers,
+                raycastDistance = Mathf.Clamp(raycastDistance, 0.1f, 100f),
                 raycastGroupId = enableGrouping ? NormalizeGroupId(raycastGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,
@@ -146,6 +162,8 @@ namespace YUCP.Components
             try
             {
                 menuLocation = source.menuLocation;
+                grounderLayers = source.grounderLayers;
+                raycastDistance = source.raycastDistance;
                 enableGrouping = source.enableGrouping;
                 verboseLogging = source.verboseLogging;
                 includeCredits = source.includeCredits;

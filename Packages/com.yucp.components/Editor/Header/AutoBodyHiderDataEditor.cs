@@ -44,7 +44,6 @@ namespace YUCP.Components.Editor
         {
             data = (AutoBodyHiderData)target;
             
-            // Initialize cache tracking
             lastDetectionMethod = data.detectionMethod;
             lastProximityThreshold = data.proximityThreshold;
             lastRaycastDistance = data.raycastDistance;
@@ -151,7 +150,6 @@ namespace YUCP.Components.Editor
             udimCard.name = "udim-card";
             root.Add(udimCard);
             
-            // Toggle section (very complex, will be handled dynamically)
             var toggleSection = new VisualElement();
             toggleSection.name = "toggle-section";
             root.Add(toggleSection);
@@ -244,7 +242,6 @@ namespace YUCP.Components.Editor
                 var detectionMethod = serializedObject.FindProperty("detectionMethod");
                 var detectionMethodValue = (DetectionMethod)detectionMethod.enumValueIndex;
                 
-                // Update conditional fields visibility
                 proximityThresholdField.style.display = (detectionMethodValue == DetectionMethod.Proximity || detectionMethodValue == DetectionMethod.Hybrid) ? DisplayStyle.Flex : DisplayStyle.None;
                 raycastDistanceField.style.display = (detectionMethodValue == DetectionMethod.Raycast || detectionMethodValue == DetectionMethod.Hybrid || detectionMethodValue == DetectionMethod.Smart) ? DisplayStyle.Flex : DisplayStyle.None;
                 hybridExpansionField.style.display = (detectionMethodValue == DetectionMethod.Hybrid) ? DisplayStyle.Flex : DisplayStyle.None;
@@ -263,7 +260,6 @@ namespace YUCP.Components.Editor
                 var useBoneFiltering = serializedObject.FindProperty("useBoneFiltering");
                 filterBonesContainer.style.display = useBoneFiltering.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
                 
-                // Check for VRCFury toggle
                 var vrcFuryComponents = data.GetComponents<Component>();
                 Component vrcFuryToggle = null;
                 foreach (var comp in vrcFuryComponents)
@@ -275,25 +271,20 @@ namespace YUCP.Components.Editor
                     }
                 }
                 
-                // Update VRCFury banner only when toggle changes
                 if (vrcFuryToggle != previousVrcFuryToggle)
                 {
                     UpdateVrcFuryBanner(vrcFuryBanner, vrcFuryToggle);
                     previousVrcFuryToggle = vrcFuryToggle;
                 }
                 
-                // Update toggle section (complex logic)
                 UpdateToggleSection(toggleSection, data, serializedObject, vrcFuryToggle);
                 
-                // Update preview info
                 UpdatePreviewInfo(previewInfo, data);
                 
-                // Update button states
                 generateButton.SetEnabled(!isGeneratingPreview && ValidateData());
                 generateButton.text = isGeneratingPreview ? "Generating..." : "Generate Preview";
                 clearButton.SetEnabled(data.previewGenerated);
                 
-                // Update validation error only when it changes
                 string currentValidationError = ValidateData() ? null : GetValidationError();
                 if (currentValidationError != previousValidationError)
                 {
@@ -301,7 +292,6 @@ namespace YUCP.Components.Editor
                     previousValidationError = currentValidationError;
                 }
                 
-                // Handle preview cache updates
                 bool settingsChanged = CheckForSettingsChanges();
                 if (data.previewGenerated && data.previewRawHiddenVertices != null)
                 {
@@ -440,7 +430,6 @@ namespace YUCP.Components.Editor
                 savedDefaultContainer.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleDefaultOn"), "Default ON"));
                 toggleContent.Add(savedDefaultContainer);
                 
-                // Update synced help dynamically
                 var hasMenuPath = !string.IsNullOrEmpty(data.toggleMenuPath);
                 var hasCustomParam = !string.IsNullOrEmpty(data.toggleParameterName);
                 syncedHelpContainer.Clear();
@@ -576,10 +565,8 @@ namespace YUCP.Components.Editor
         
         private void CreateVRCFuryToggleComponent()
         {
-            // Create a VRCFury Toggle component with pre-configured settings
             var toggle = com.vrcfury.api.FuryComponents.CreateToggle(data.gameObject);
             
-            // Pre-configure with sensible defaults for body hiding
             toggle.SetMenuPath("Clothing/Hide Body");
             toggle.SetSaved();
             
@@ -590,7 +577,6 @@ namespace YUCP.Components.Editor
             
             Debug.Log($"[AutoBodyHider] Created VRCFury Toggle component on '{data.gameObject.name}'", data);
             
-            // Show message to user
             EditorUtility.DisplayDialog(
                 "VRCFury Toggle Created",
                 "A VRCFury Toggle component has been added to this object with default settings:\n\n" +

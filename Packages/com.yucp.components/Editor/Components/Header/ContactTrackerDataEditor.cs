@@ -17,6 +17,8 @@ namespace YUCP.Components.Editor
 
         private SerializedProperty trackerTargetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty collisionTagsProp;
+        private SerializedProperty sizeParameterProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty trackerGroupIdProp;
         private SerializedProperty verboseLoggingProp;
@@ -30,6 +32,8 @@ namespace YUCP.Components.Editor
 
             trackerTargetProp = serializedObject.FindProperty("trackerTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            collisionTagsProp = serializedObject.FindProperty("collisionTags");
+            sizeParameterProp = serializedObject.FindProperty("sizeParameter");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             trackerGroupIdProp = serializedObject.FindProperty("trackerGroupId");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
@@ -66,16 +70,25 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target", "The tracker target object.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets tracked and what follows the tracking.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to track contacts for. That object will be moved into the Contact Tracker's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(trackerTargetProp, "Tracker Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("The tracker target will be moved outside the prefab hierarchy and centered on tracked objects using six proximity contacts.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("TRACKER TARGET: The object that will be moved outside the prefab and positioned based on contact detection. This is the visual/functional object that follows the tracked contacts (e.g., a hand tracker that follows hand contacts). It will be centered on tracked objects using six proximity contacts (X+, X-, Y+, Y-, Z+, Z-).", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure contact tracker behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
+            
+            var contactCard = YUCPUIToolkitHelper.CreateCard("Contact Settings", "Configure proximity contact collision tags and size.");
+            var contactContent = YUCPUIToolkitHelper.GetCardContent(contactCard);
+            contactContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Collision tags for the 6 proximity contacts. Order: X+, X-, Y+, Y-, Z+, Z-", YUCPUIToolkitHelper.MessageType.Info));
+            contactContent.Add(new PropertyField(collisionTagsProp, "Collision Tags"));
+            contactContent.Add(YUCPUIToolkitHelper.CreateField(sizeParameterProp, "Size Parameter"));
+            contactContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Size parameter value for ContactTracker/Size. This sets the default size when not tracking (0-1).", YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(contactCard);
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
@@ -162,7 +175,7 @@ namespace YUCP.Components.Editor
             var overviewCard = YUCPUIToolkitHelper.CreateCard("Contact Tracker Overview", null);
             var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
             
-            AddInfoRow(overviewContent, "Target", targetPath);
+            AddInfoRow(overviewContent, "Tracked Object", targetPath);
             AddInfoRow(overviewContent, "Group", groupingLabel);
             
             container.Add(overviewCard);

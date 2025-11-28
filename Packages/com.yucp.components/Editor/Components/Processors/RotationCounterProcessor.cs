@@ -146,7 +146,6 @@ namespace YUCP.Components.Editor
 
         private void ProcessRotationCounter(RotationCounterData data, Animator animator)
         {
-            // Find VRCFury component by name (it's internal, can't use type directly)
             Component existingVRCFury = null;
             var components = data.gameObject.GetComponents<Component>();
             foreach (var comp in components)
@@ -158,7 +157,6 @@ namespace YUCP.Components.Editor
                 }
             }
             
-            // Check if it's a FullController
             bool isFullController = false;
             if (existingVRCFury != null)
             {
@@ -174,16 +172,13 @@ namespace YUCP.Components.Editor
                 }
             }
             
-            // Generate controller
             AnimatorController controller = GenerateInMemoryController(data);
             
             if (isFullController)
             {
-                // Get the existing FullController content
                 var contentField = existingVRCFury.GetType().GetField("content", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                 var content = contentField.GetValue(existingVRCFury);
                 
-                // Access the controllers list via reflection
                 var controllersField = content.GetType().GetField("controllers", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                 if (controllersField == null)
                 {
@@ -191,7 +186,6 @@ namespace YUCP.Components.Editor
                     return;
                 }
                 
-                // Create controller entry and add it
                 var controllerEntryType = controllersField.FieldType.GetGenericArguments()[0];
                 var entry = System.Activator.CreateInstance(controllerEntryType);
                 controllerEntryType.GetField("controller").SetValue(entry, controller);
@@ -200,14 +194,12 @@ namespace YUCP.Components.Editor
                 var controllersList = controllersField.GetValue(content) as System.Collections.IList;
                 controllersList.Add(entry);
                 
-                // Add parameters as global parameters
                 var globalParamsField = content.GetType().GetField("globalParams", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                 if (globalParamsField != null)
                 {
                     var globalParamsList = globalParamsField.GetValue(content) as System.Collections.IList;
                     if (globalParamsList != null)
                     {
-                        // Add angle parameter if not already present
                         bool Has(string paramName)
                         {
                             if (string.IsNullOrEmpty(paramName)) return true;
@@ -242,13 +234,10 @@ namespace YUCP.Components.Editor
             }
             else
             {
-                // Create new FullController
                 var fullController = FuryComponents.CreateFullController(data.gameObject);
                 
-                // Add controller to VRCFury FullController (will integrate at build time)
                 fullController.AddController(controller, VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.FX);
                 
-                // Add parameters as global parameters
                 fullController.AddGlobalParam(data.xParameterName);
                 fullController.AddGlobalParam(data.yParameterName);
                 fullController.AddGlobalParam(data.angleParameterName);
@@ -262,7 +251,6 @@ namespace YUCP.Components.Editor
                 Debug.Log($"[RotationCounterProcessor] Created new VRCFury FullController and added rotation counter controller with global parameters", data);
             }
 
-            // Mark as generated
             data.controllerGenerated = true;
             data.generatedSectorCount = data.numberOfSectors;
 
@@ -280,8 +268,8 @@ namespace YUCP.Components.Editor
             controller.AddParameter(data.rotationStepParameterName, AnimatorControllerParameterType.Int);
             controller.AddParameter(data.flickEventParameterName, AnimatorControllerParameterType.Int);
 
-            // Internal state parameters
             controller.AddParameter("_PrevSector", AnimatorControllerParameterType.Int);
+            controller.AddParameter("_CurrentSector", AnimatorControllerParameterType.Int);
             controller.AddParameter("_FlickState", AnimatorControllerParameterType.Int);
             controller.AddParameter("_FlickDir", AnimatorControllerParameterType.Int);
             controller.AddParameter("_FlickTimer", AnimatorControllerParameterType.Int);
@@ -317,13 +305,10 @@ namespace YUCP.Components.Editor
 
             ClearStateMachine(stateMachine);
 
-            // Generate rotation detection states (sector tracking)
             var sectorStates = GenerateRotationDetection(data, stateMachine);
             
-            // Generate flick detection states
             var flickStates = GenerateFlickDetection(data, stateMachine);
 
-            // Set default state to first sector state
             stateMachine.defaultState = sectorStates[0];
             
             layer.stateMachine = stateMachine;
@@ -339,7 +324,6 @@ namespace YUCP.Components.Editor
             
             var sectorStates = new AnimatorState[numSectors];
             
-            // Create sector states
             for (int i = 0; i < numSectors; i++)
             {
                 float sectorStartDeg = i * sectorWidthDeg;
@@ -349,14 +333,17 @@ namespace YUCP.Components.Editor
                 var state = stateMachine.AddState($"Sector_{i}", pos);
                 state.writeDefaultValues = false;
                 
-                // Set previous sector to current sector
-                SetStateDriver(state, data, (float)i,
-                    ("_PrevSector", DriverSet, (float)i));
-                
                 sectorStates[i] = state;
             }
             
-            // Create transitions between sectors with rotation step detection
+            for (int i = 0; i < numSectors; i++)
+            {
+                SetStateDriver(sectorStates[i], data, null,
+                    (data.rotationStepParameterName, DriverSet, 0f),
+                    ("_CurrentSector", DriverSet, (float)i),
+                    ("_PrevSector", DriverSet, (float)i));
+            }
+            
             for (int i = 0; i < numSectors; i++)
             {
                 for (int j = 0; j < numSectors; j++)
@@ -366,7 +353,6 @@ namespace YUCP.Components.Editor
                     int rawStep = j - i;
                     int correctedStep = rawStep;
                     
-                    // Wraparound correction
                     if (rawStep > halfSectors)
                     {
                         correctedStep = rawStep - numSectors;
@@ -376,8 +362,6 @@ namespace YUCP.Components.Editor
                         correctedStep = rawStep + numSectors;
                     }
                     
-                    // Only create transitions for valid rotation steps (+1, -1, or wraparound equivalents)
-                    // Don't create transitions for same sector (correctedStep == 0)
                     bool isValidStep = false;
                     int rotationStep = 0;
                     
@@ -397,14 +381,11 @@ namespace YUCP.Components.Editor
                         var transition = sectorStates[i].AddTransition(sectorStates[j]);
                         ConfigureInstantTransition(transition);
                         
-                        // Add angle range condition for target sector
                         float sectorStartDeg = j * sectorWidthDeg;
                         float sectorEndDeg = (j + 1) * sectorWidthDeg;
                         
                         if (sectorEndDeg >= 360f)
                         {
-                            // Last sector wraps around - angle is in [sectorStartDeg, 360) OR [0, sectorEndDeg-360)
-                            // Since Unity doesn't support OR, we check the main range
                             transition.AddCondition(AnimatorConditionMode.Greater, sectorStartDeg, data.angleParameterName);
                         }
                         else
@@ -413,17 +394,10 @@ namespace YUCP.Components.Editor
                             transition.AddCondition(AnimatorConditionMode.Less, sectorEndDeg, data.angleParameterName);
                         }
                         
-                        // Set rotation step output on the target state
-                        if (rotationStep != 0)
-                        {
-                            SetStateDriver(sectorStates[j], data, null,
-                                (data.rotationStepParameterName, DriverSet, (float)rotationStep));
-                        }
-                        else
-                        {
-                            SetStateDriver(sectorStates[j], data, null,
-                                (data.rotationStepParameterName, DriverSet, 0f));
-                        }
+                        SetStateDriver(sectorStates[j], data, null,
+                            ("_PrevSector", DriverSet, (float)i),
+                            ("_CurrentSector", DriverSet, (float)j),
+                            (data.rotationStepParameterName, DriverSet, (float)rotationStep));
                     }
                 }
             }
@@ -435,7 +409,6 @@ namespace YUCP.Components.Editor
         {
             var flickStates = new Dictionary<string, AnimatorState>();
             
-            // Create IDLE state
             var idleState = stateMachine.AddState("Flick_Idle", new Vector3(0, 400, 0));
             idleState.writeDefaultValues = false;
             SetStateDriver(idleState, data, null,
@@ -445,7 +418,6 @@ namespace YUCP.Components.Editor
                 (data.flickEventParameterName, DriverSet, 0f));
             flickStates["IDLE"] = idleState;
             
-            // Create ACTIVE states for each cardinal direction
             string[] directions = { "RIGHT", "UP", "LEFT", "DOWN" };
             float[] directionAngles = { 0f, 90f, 180f, 270f };
             int[] directionValues = { 1, 2, 3, 4 };
@@ -457,7 +429,6 @@ namespace YUCP.Components.Editor
                 flickStates[$"ACTIVE_{directions[i]}"] = activeState;
             }
             
-            // IDLE -> ACTIVE transitions (for each direction)
             for (int i = 0; i < directions.Length; i++)
             {
                 float dirAngle = directionAngles[i];
@@ -465,12 +436,9 @@ namespace YUCP.Components.Editor
                 float angleMax = NormalizeAngle(dirAngle + data.angleToleranceDeg);
                 bool isWraparound = angleMin > angleMax;
                 
-                // Create transitions to handle angle range (may need two for wraparound)
                 if (isWraparound)
                 {
-                    // Wraparound case: create two transitions for [angleMin, 360) and [0, angleMax]
-                    // First transition: angle >= angleMin
-                    if (i == 0) // RIGHT
+                    if (i == 0)
                     {
                         var toActive1 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
                         ConfigureInstantTransition(toActive1);
@@ -484,7 +452,7 @@ namespace YUCP.Components.Editor
                         toActive2.AddCondition(AnimatorConditionMode.Greater, data.innerDeadzone, data.xParameterName);
                         toActive2.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
                     }
-                    else if (i == 1) // UP
+                    else if (i == 1)
                     {
                         var toActive1 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
                         ConfigureInstantTransition(toActive1);
@@ -498,7 +466,7 @@ namespace YUCP.Components.Editor
                         toActive2.AddCondition(AnimatorConditionMode.Greater, data.innerDeadzone, data.yParameterName);
                         toActive2.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
                     }
-                    else if (i == 2) // LEFT
+                    else if (i == 2)
                     {
                         var toActive1 = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
                         ConfigureInstantTransition(toActive1);
@@ -533,8 +501,7 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    // Normal case: single transition
-                    if (i == 0) // RIGHT
+                    if (i == 0)
                     {
                         var toActive = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
                         ConfigureInstantTransition(toActive);
@@ -543,7 +510,7 @@ namespace YUCP.Components.Editor
                         toActive.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
                         toActive.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
                     }
-                    else if (i == 1) // UP
+                    else if (i == 1)
                     {
                         var toActive = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
                         ConfigureInstantTransition(toActive);
@@ -552,7 +519,7 @@ namespace YUCP.Components.Editor
                         toActive.AddCondition(AnimatorConditionMode.Greater, angleMin, data.angleParameterName);
                         toActive.AddCondition(AnimatorConditionMode.Less, angleMax, data.angleParameterName);
                     }
-                    else if (i == 2) // LEFT
+                    else if (i == 2)
                     {
                         var toActive = idleState.AddTransition(flickStates[$"ACTIVE_{directions[i]}"]);
                         ConfigureInstantTransition(toActive);
@@ -574,14 +541,12 @@ namespace YUCP.Components.Editor
                     }
                 }
                 
-                // Set ACTIVE state variables
                 SetStateDriver(flickStates[$"ACTIVE_{directions[i]}"], data, null,
                     ("_FlickState", DriverSet, 1f),
                     ("_FlickDir", DriverSet, (float)directionValues[i]),
                     ("_FlickTimer", DriverSet, 0f));
             }
             
-            // ACTIVE -> IDLE transitions (cancel conditions and success)
             for (int i = 0; i < directions.Length; i++)
             {
                 var activeState = flickStates[$"ACTIVE_{directions[i]}"];
@@ -589,7 +554,6 @@ namespace YUCP.Components.Editor
                 float angleMin = NormalizeAngle(dirAngle - data.angleToleranceDeg);
                 float angleMax = NormalizeAngle(dirAngle + data.angleToleranceDeg);
                 
-                // Cancel: Rotation detected
                 var cancelRotation = activeState.AddTransition(idleState);
                 ConfigureInstantTransition(cancelRotation);
                 cancelRotation.AddCondition(AnimatorConditionMode.NotEqual, 0f, data.rotationStepParameterName);
@@ -599,13 +563,10 @@ namespace YUCP.Components.Editor
                     ("_FlickTimer", DriverSet, 0f),
                     (data.flickEventParameterName, DriverSet, 0f));
                 
-                // Cancel: Angle drift (angle outside tolerance)
-                // Create separate transitions for angle < min and angle > max
                 var cancelDriftLow = activeState.AddTransition(idleState);
                 ConfigureInstantTransition(cancelDriftLow);
-                if (angleMin > angleMax) // Wraparound case
+                if (angleMin > angleMax)
                 {
-                    // For wraparound, angle is outside if it's between angleMax and angleMin
                     cancelDriftLow.AddCondition(AnimatorConditionMode.Greater, angleMax, data.angleParameterName);
                     cancelDriftLow.AddCondition(AnimatorConditionMode.Less, angleMin, data.angleParameterName);
                 }
@@ -631,17 +592,13 @@ namespace YUCP.Components.Editor
                         (data.flickEventParameterName, DriverSet, 0f));
                 }
                 
-                // Success: Release detected (radius <= releaseRadius)
-                // Release means both |X| and |Y| are small
                 var success = activeState.AddTransition(idleState);
                 ConfigureInstantTransition(success);
-                // Check both X and Y are within release radius (positive and negative)
                 success.AddCondition(AnimatorConditionMode.Less, data.releaseRadius, data.xParameterName);
                 success.AddCondition(AnimatorConditionMode.Greater, -data.releaseRadius, data.xParameterName);
                 success.AddCondition(AnimatorConditionMode.Less, data.releaseRadius, data.yParameterName);
                 success.AddCondition(AnimatorConditionMode.Greater, -data.releaseRadius, data.yParameterName);
                 
-                // Emit flick event
                 SetStateDriver(idleState, data, null,
                     ("_FlickState", DriverSet, 0f),
                     ("_FlickDir", DriverSet, 0f),
@@ -684,7 +641,6 @@ namespace YUCP.Components.Editor
 
         private Vector3 GetSectorStatePosition(int sector, int type)
         {
-            // type: 0=Idle, 1=Inc, -1=Dec
             int column = sector % 6;
             int row = sector / 6;
             
@@ -727,7 +683,7 @@ namespace YUCP.Components.Editor
         }
 
         /// <summary>
-        /// Add VRCParameterDriver to an animator state
+        /// Add VRCParameterDriver to an animator state, or merge parameters into existing driver
         /// </summary>
         private void AddParameterDriver(AnimatorState state, (string name, int type, float value, float min)[] parameters)
         {
@@ -740,11 +696,25 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                var driver = state.AddStateMachineBehaviour(vrcDriverType) as StateMachineBehaviour;
+                StateMachineBehaviour driver = null;
+                
+                foreach (var behaviour in state.behaviours)
+                {
+                    if (behaviour != null && behaviour.GetType() == vrcDriverType)
+                    {
+                        driver = behaviour;
+                        break;
+                    }
+                }
+
                 if (driver == null)
                 {
-                    Debug.LogWarning("[RotationCounterProcessor] Could not add VRCParameterDriver to state");
-                    return;
+                    driver = state.AddStateMachineBehaviour(vrcDriverType) as StateMachineBehaviour;
+                    if (driver == null)
+                    {
+                        Debug.LogWarning("[RotationCounterProcessor] Could not add VRCParameterDriver to state");
+                        return;
+                    }
                 }
 
                 var parametersField = vrcDriverType.GetField("parameters");
@@ -755,13 +725,47 @@ namespace YUCP.Components.Editor
                 }
 
                 var parameterListType = parametersField.FieldType;
-                var parameterList = System.Activator.CreateInstance(parameterListType) as System.Collections.IList;
+                System.Collections.IList parameterList;
                 var parameterType = parameterListType.GetGenericArguments()[0];
+                
+                var existingParams = parametersField.GetValue(driver);
+                if (existingParams != null && existingParams is System.Collections.IList existingList && existingList.Count > 0)
+                {
+                    parameterList = existingList;
+                    
+                    var nameField = parameterType.GetField("name");
+                    
+                    var toRemove = new List<object>();
+                    foreach (var param in parameterList)
+                    {
+                        if (param != null)
+                        {
+                            var existingName = nameField?.GetValue(param) as string;
+                            foreach (var (name, _, _, _) in parameters)
+                            {
+                                if (existingName == name)
+                                {
+                                    toRemove.Add(param);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    foreach (var param in toRemove)
+                    {
+                        parameterList.Remove(param);
+                    }
+                }
+                else
+                {
+                    parameterList = System.Activator.CreateInstance(parameterListType) as System.Collections.IList;
+                }
 
                 foreach (var (name, type, value, min) in parameters)
                 {
                     var parameter = System.Activator.CreateInstance(parameterType);
-                    parameterType.GetField("type").SetValue(parameter, type); // 0=Set, 1=Add
+                    parameterType.GetField("type").SetValue(parameter, type);
                     parameterType.GetField("name").SetValue(parameter, name);
                     parameterType.GetField("value").SetValue(parameter, value);
                     parameterList.Add(parameter);
@@ -782,4 +786,5 @@ namespace YUCP.Components.Editor
         }
     }
 }
+
 

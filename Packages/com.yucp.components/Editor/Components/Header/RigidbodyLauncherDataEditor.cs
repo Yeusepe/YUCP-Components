@@ -17,6 +17,9 @@ namespace YUCP.Components.Editor
 
         private SerializedProperty launcherTargetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty launchSpeedProp;
+        private SerializedProperty maximumForceProp;
+        private SerializedProperty collisionLayersProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty launcherGroupIdProp;
         private SerializedProperty verboseLoggingProp;
@@ -30,6 +33,9 @@ namespace YUCP.Components.Editor
 
             launcherTargetProp = serializedObject.FindProperty("launcherTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            launchSpeedProp = serializedObject.FindProperty("launchSpeed");
+            maximumForceProp = serializedObject.FindProperty("maximumForce");
+            collisionLayersProp = serializedObject.FindProperty("collisionLayers");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             launcherGroupIdProp = serializedObject.FindProperty("launcherGroupId");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
@@ -66,16 +72,27 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target", "The launcher target object.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets launched.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to launch. That object will be moved into the Rigidbody Launcher's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(launcherTargetProp, "Launcher Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("The launcher target will be moved outside the prefab hierarchy. Uses a configurable joint connected to a world-constrained kinematic rigidbody to launch objects.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("LAUNCHER TARGET: The object that will be launched. This object will be moved outside the prefab hierarchy and connected to a configurable joint that launches it when triggered. Uses a configurable joint connected to a world-constrained kinematic rigidbody.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure rigidbody launcher behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
+            
+            var launchCard = YUCPUIToolkitHelper.CreateCard("Launch Settings", "Configure launch speed, force, and collision.");
+            var launchContent = YUCPUIToolkitHelper.GetCardContent(launchCard);
+            launchContent.Add(YUCPUIToolkitHelper.CreateField(launchSpeedProp, "Launch Speed"));
+            launchContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Launch speed/velocity. Negative value for forward direction. This affects the Target Velocity in the animation clip.", YUCPUIToolkitHelper.MessageType.Info));
+            launchContent.Add(YUCPUIToolkitHelper.CreateField(maximumForceProp, "Maximum Force"));
+            launchContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Maximum force for the configurable joint X/Y/Z drives.", YUCPUIToolkitHelper.MessageType.Info));
+            launchContent.Add(YUCPUIToolkitHelper.CreateField(collisionLayersProp, "Collision Layers"));
+            launchContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Layers that the particle system will detect collisions with.", YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(launchCard);
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
@@ -162,7 +179,7 @@ namespace YUCP.Components.Editor
             var overviewCard = YUCPUIToolkitHelper.CreateCard("Rigidbody Launcher Overview", null);
             var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
             
-            AddInfoRow(overviewContent, "Target", targetPath);
+            AddInfoRow(overviewContent, "Launched Object", targetPath);
             AddInfoRow(overviewContent, "Group", groupingLabel);
             
             container.Add(overviewCard);

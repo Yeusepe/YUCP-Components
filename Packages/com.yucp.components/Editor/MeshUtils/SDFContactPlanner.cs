@@ -57,7 +57,6 @@ namespace YUCP.Components.Editor.MeshUtils
 
             public static CostWeights GetDefaults()
             {
-                // Default weights for manual grip positioning
                 return new CostWeights
                 {
                     wDistance = 1.0f,
@@ -90,19 +89,14 @@ namespace YUCP.Components.Editor.MeshUtils
                 return targets;
             }
 
-            // Get finger MCP positions
             var mcpPositions = GetMCPPositions(animator, handTransform);
             
-            // Generate initial fingertip guesses
             var initialGuesses = GenerateInitialGuesses(grippedObject, handTransform, mcpPositions);
             
-            // Project to surface using SDF or mesh closest point
             var surfaceContacts = ProjectToSurface(grippedObject, initialGuesses);
             
-            // Score and select best contacts
             var selectedContacts = SelectBestContacts(surfaceContacts, mcpPositions, weights);
             
-            // Build final target poses
             targets = BuildTargetPoses(selectedContacts, weights);
             
             return targets;
@@ -115,7 +109,6 @@ namespace YUCP.Components.Editor.MeshUtils
         {
             var mcpPositions = new Dictionary<string, Vector3>();
             
-            // Get MCP bone transforms
             var thumbMCP = animator.GetBoneTransform(HumanBodyBones.LeftThumbProximal);
             var indexMCP = animator.GetBoneTransform(HumanBodyBones.LeftIndexProximal);
             var middleMCP = animator.GetBoneTransform(HumanBodyBones.LeftMiddleProximal);
@@ -173,7 +166,6 @@ namespace YUCP.Components.Editor.MeshUtils
                 string fingerName = kvp.Key;
                 Vector3 guess = kvp.Value;
                 
-                // Try SDF projection first
                 if (TrySDFProjection(grippedObject, guess, out Vector3 surfacePoint, out Vector3 surfaceNormal))
                 {
                     contacts[fingerName] = new SurfaceContact
@@ -183,7 +175,6 @@ namespace YUCP.Components.Editor.MeshUtils
                         method = "SDF"
                     };
                 }
-                // Fallback to mesh closest point
                 else if (TryMeshClosestPoint(grippedObject, guess, out surfacePoint, out surfaceNormal))
                 {
                     contacts[fingerName] = new SurfaceContact
@@ -195,7 +186,6 @@ namespace YUCP.Components.Editor.MeshUtils
                 }
                 else
                 {
-                    // Last resort: use bounds-based approximation
                     contacts[fingerName] = GetBoundsContact(grippedObject, guess);
                 }
             }
@@ -211,8 +201,6 @@ namespace YUCP.Components.Editor.MeshUtils
             surfacePoint = point;
             surfaceNormal = Vector3.up;
             
-            // For now, use collider-based approximation
-            // In a full implementation, this would compute actual SDF gradients
             Collider collider = obj.GetComponent<Collider>();
             if (collider != null)
             {
@@ -226,7 +214,6 @@ namespace YUCP.Components.Editor.MeshUtils
                     return true;
                 }
                 
-                // Fallback: use direction from surface point to original point
                 surfaceNormal = direction;
                 return true;
             }
@@ -250,10 +237,8 @@ namespace YUCP.Components.Editor.MeshUtils
                 Mesh mesh = meshFilter.sharedMesh;
                 if (mesh != null)
                 {
-                    // Transform point to local space
                     Vector3 localPoint = obj.InverseTransformPoint(point);
                     
-                    // Find closest point on mesh
                     float minDistance = float.MaxValue;
                     Vector3 closestPoint = localPoint;
                     Vector3 closestNormal = Vector3.up;
@@ -272,7 +257,6 @@ namespace YUCP.Components.Editor.MeshUtils
                         Vector3 n1 = normals[triangles[i + 1]];
                         Vector3 n2 = normals[triangles[i + 2]];
                         
-                        // Compute barycentric closest point
                         Vector3 closestOnTriangle = ClosestPointOnTriangle(localPoint, v0, v1, v2);
                         float distance = Vector3.Distance(localPoint, closestOnTriangle);
                         
@@ -287,7 +271,6 @@ namespace YUCP.Components.Editor.MeshUtils
                         }
                     }
                     
-                    // Transform back to world space
                     surfacePoint = obj.TransformPoint(closestPoint);
                     surfaceNormal = obj.TransformDirection(closestNormal);
                     return true;
@@ -443,8 +426,7 @@ namespace YUCP.Components.Editor.MeshUtils
                     var baseContact = initialContacts[fingerName];
                     Vector3 mcpPos = mcpPositions[fingerName];
                     
-                    // Generate variations around the base contact
-                    for (int i = 0; i < 8; i++) // Generate 8 candidates per finger
+                    for (int i = 0; i < 8; i++)
                     {
                         var candidate = GenerateCandidateVariation(baseContact, mcpPos, i, weights);
                         candidate.cost = ComputeContactCost(candidate, mcpPos, weights, fingerName);
@@ -465,8 +447,7 @@ namespace YUCP.Components.Editor.MeshUtils
             int variationIndex, 
             CostWeights weights)
         {
-            // Create variations by perturbing position and normal
-            float angle = variationIndex * Mathf.PI / 4f; // 45-degree increments
+            float angle = variationIndex * Mathf.PI / 4f;
             float radius = 0.01f; // 1cm variation radius
             
             Vector3 tangent1 = BuildTangentFrame(baseContact.normal, Vector3.up);
@@ -475,8 +456,7 @@ namespace YUCP.Components.Editor.MeshUtils
             Vector3 offset = radius * (Mathf.Cos(angle) * tangent1 + Mathf.Sin(angle) * tangent2);
             Vector3 variedPosition = baseContact.position + offset;
             
-            // Recompute normal at varied position
-            Vector3 variedNormal = baseContact.normal; // Simplified - in full implementation, recompute from surface
+            Vector3 variedNormal = baseContact.normal;
             
             return new SurfaceContact
             {
@@ -509,7 +489,6 @@ namespace YUCP.Components.Editor.MeshUtils
                     SurfaceContact bestContact = candidates[0];
                     float bestCost = float.MaxValue;
                     
-                    // Find candidate with lowest cost
                     foreach (var candidate in candidates)
                     {
                         float cost = ComputeContactCost(candidate, mcpPos, weights, fingerName);
@@ -520,7 +499,6 @@ namespace YUCP.Components.Editor.MeshUtils
                         }
                     }
                     
-                    // Apply local optimization to joint angles
                     bestContact = OptimizeContactLocally(bestContact, mcpPos, weights, fingerName);
                     optimizedContacts[fingerName] = bestContact;
                 }
@@ -548,10 +526,8 @@ namespace YUCP.Components.Editor.MeshUtils
             {
                 float currentCost = ComputeContactCost(optimized, mcpPos, weights, fingerName);
                 
-                // Compute numerical gradient
                 Vector3 gradient = ComputeContactGradient(optimized, mcpPos, weights, fingerName);
                 
-                // Update position
                 Vector3 newPosition = optimized.position - learningRate * gradient;
                 
                 // Recompute normal (simplified)
@@ -573,7 +549,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 }
                 else
                 {
-                    break; // No improvement, stop optimization
+                    break;
                 }
             }
             
@@ -592,7 +568,6 @@ namespace YUCP.Components.Editor.MeshUtils
             float epsilon = 0.001f;
             float baseCost = ComputeContactCost(contact, mcpPos, weights, fingerName);
             
-            // Compute gradient in x, y, z directions
             float dx = ComputeContactCost(new SurfaceContact
             {
                 position = contact.position + Vector3.right * epsilon,
@@ -631,27 +606,20 @@ namespace YUCP.Components.Editor.MeshUtils
         {
             float cost = 0f;
             
-            // Distance term: fingertip-to-surface distance
             Vector3 fingertipTarget = contact.position + weights.padOffset * contact.normal;
             float distance = Vector3.Distance(mcpPosition, fingertipTarget);
             cost += weights.wDistance * distance * distance;
             
-            // Normal alignment term: pad normal should align with surface normal
-            Vector3 padNormal = Vector3.forward; // Finger pad normal in local coordinates
+            Vector3 padNormal = Vector3.forward;
             float normalAlignment = Vector3.Dot(contact.normal, padNormal);
             cost += weights.wNormal * (1f - normalAlignment);
             
-            // Collision term: penalize penetration
-            // Simplified: check if contact is inside object bounds
             float collisionPenalty = 0f;
-            // TODO: Implement proper collision detection
             cost += weights.wCollision * collisionPenalty;
             
-            // Joint limits term: penalize uncomfortable joint angles
             float jointComfort = ComputeJointComfort(mcpPosition, fingertipTarget);
             cost += weights.wJointLimits * (1f - jointComfort);
             
-            // Curvature term: prefer edges, ridges, concavities
             float curvature = ComputeCurvature(contact.position, contact.normal);
             cost += weights.wCurvature * curvature;
             
@@ -663,7 +631,6 @@ namespace YUCP.Components.Editor.MeshUtils
         /// </summary>
         private static float ComputeJointComfort(Vector3 mcpPos, Vector3 fingertipTarget)
         {
-            // Simplified comfort model based on reach distance
             float distance = Vector3.Distance(mcpPos, fingertipTarget);
             float maxComfortableReach = 0.08f; // 8cm typical finger reach
             
@@ -678,9 +645,7 @@ namespace YUCP.Components.Editor.MeshUtils
         /// </summary>
         private static float ComputeCurvature(Vector3 position, Vector3 normal)
         {
-            // Simplified curvature estimation
-            // In a full implementation, this would compute principal curvatures
-            return 0f; // Placeholder
+            return 0f;
         }
 
         /// <summary>
@@ -697,15 +662,12 @@ namespace YUCP.Components.Editor.MeshUtils
                 string fingerName = kvp.Key;
                 SurfaceContact contact = kvp.Value;
                 
-                // Build tangent frame
                 Vector3 normal = contact.normal;
                 Vector3 tangent1 = BuildTangentFrame(normal, Vector3.up);
                 Vector3 tangent2 = Vector3.Cross(normal, tangent1);
                 
-                // Build orientation quaternion
                 Quaternion orientation = BuildFingerOrientation(normal, tangent1);
                 
-                // Create contact result
                 var result = new ContactResult
                 {
                     position = contact.position + weights.padOffset * normal,
@@ -714,7 +676,6 @@ namespace YUCP.Components.Editor.MeshUtils
                     cost = contact.cost
                 };
                 
-                // Assign to appropriate finger
                 switch (fingerName)
                 {
                     case "thumb": targets.thumb = result; break;
@@ -743,13 +704,10 @@ namespace YUCP.Components.Editor.MeshUtils
         /// </summary>
         private static Quaternion BuildFingerOrientation(Vector3 normal, Vector3 tangent)
         {
-            // Pad normal should point against surface normal
             Vector3 padNormal = -normal;
             
-            // Create rotation that aligns pad normal with desired direction
             Quaternion alignment = Quaternion.FromToRotation(Vector3.forward, padNormal);
             
-            // Add roll around pad normal to align with tangent
             float rollAngle = Mathf.Atan2(Vector3.Dot(tangent, Vector3.right), Vector3.Dot(tangent, Vector3.up));
             Quaternion roll = Quaternion.AngleAxis(rollAngle * Mathf.Rad2Deg, padNormal);
             
@@ -770,14 +728,12 @@ namespace YUCP.Components.Editor.MeshUtils
             if (normalColor == default) normalColor = Color.blue;
             if (orientationColor == default) orientationColor = Color.green;
             
-            // Draw contact points
             DrawContactPoint(targets.thumb, contactColor, normalColor, orientationColor);
             DrawContactPoint(targets.index, contactColor, normalColor, orientationColor);
             DrawContactPoint(targets.middle, contactColor, normalColor, orientationColor);
             DrawContactPoint(targets.ring, contactColor, normalColor, orientationColor);
             DrawContactPoint(targets.little, contactColor, normalColor, orientationColor);
             
-            // Draw MCP connections
             if (mcpPositions.ContainsKey("thumb"))
                 Handles.DrawLine(mcpPositions["thumb"], targets.thumb.position);
             if (mcpPositions.ContainsKey("index"))
@@ -799,15 +755,12 @@ namespace YUCP.Components.Editor.MeshUtils
             Color normalColor,
             Color orientationColor)
         {
-            // Draw contact point
             Handles.color = contactColor;
             Handles.DrawWireDisc(contact.position, contact.normal, 0.005f);
             
-            // Draw surface normal
             Handles.color = normalColor;
             Handles.DrawLine(contact.position, contact.position + contact.normal * 0.01f);
             
-            // Draw orientation frame
             Handles.color = orientationColor;
             Vector3 forward = contact.orientation * Vector3.forward;
             Vector3 up = contact.orientation * Vector3.up;

@@ -208,6 +208,32 @@ namespace YUCP.Components.Editor
             var collisionSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
             collisionSystem.name = collisionSystem.name.Replace("(Clone)", "");
 
+            var particleSystem = collisionSystem.GetComponent<ParticleSystem>();
+            if (particleSystem != null)
+            {
+                var collision = particleSystem.collision;
+                var triggers = particleSystem.trigger;
+                
+                if (settings.useTriggers)
+                {
+                    collision.enabled = false;
+                    triggers.enabled = true;
+                }
+                else
+                {
+                    collision.enabled = true;
+                    triggers.enabled = false;
+                    collision.collidesWith = settings.collisionLayers;
+                }
+
+                if (settings.particleScale != 1f)
+                {
+                    var shape = particleSystem.shape;
+                    shape.scale = new Vector3(settings.particleScale, settings.particleScale, settings.particleScale);
+                    collisionSystem.transform.localScale = Vector3.one * settings.particleScale;
+                }
+            }
+
             if (settings.targetObject != null)
             {
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
@@ -245,12 +271,18 @@ namespace YUCP.Components.Editor
             {
                 AlwaysReset = settings.alwaysReset;
                 MenuLocation = settings.menuLocation;
+                CollisionLayers = settings.collisionLayers;
+                UseTriggers = settings.useTriggers;
+                ParticleScale = settings.particleScale;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
 
             private bool AlwaysReset { get; }
             private string MenuLocation { get; }
+            private LayerMask CollisionLayers { get; }
+            private bool UseTriggers { get; }
+            private float ParticleScale { get; }
             private bool VerboseLogging { get; }
             private bool IncludeCredits { get; }
 
@@ -258,6 +290,9 @@ namespace YUCP.Components.Editor
             {
                 return AlwaysReset == other.AlwaysReset &&
                        MenuLocation == other.MenuLocation &&
+                       CollisionLayers == other.CollisionLayers &&
+                       UseTriggers == other.UseTriggers &&
+                       Mathf.Approximately(ParticleScale, other.ParticleScale) &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -273,6 +308,9 @@ namespace YUCP.Components.Editor
                 {
                     var hashCode = AlwaysReset.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ CollisionLayers.GetHashCode();
+                    hashCode = (hashCode * 397) ^ UseTriggers.GetHashCode();
+                    hashCode = (hashCode * 397) ^ ParticleScale.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;
@@ -288,6 +326,9 @@ namespace YUCP.Components.Editor
                 IsIsolated = isIsolated;
                 AlwaysReset = settings.alwaysReset;
                 MenuLocation = settings.menuLocation;
+                CollisionLayers = settings.collisionLayers;
+                UseTriggers = settings.useTriggers;
+                ParticleScale = settings.particleScale;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
@@ -296,6 +337,9 @@ namespace YUCP.Components.Editor
             public bool IsIsolated { get; }
             public bool AlwaysReset { get; }
             public string MenuLocation { get; }
+            public LayerMask CollisionLayers { get; }
+            public bool UseTriggers { get; }
+            public float ParticleScale { get; }
             public bool VerboseLogging { get; }
             public bool IncludeCredits { get; }
 
@@ -305,6 +349,9 @@ namespace YUCP.Components.Editor
                        IsIsolated == other.IsIsolated &&
                        AlwaysReset == other.AlwaysReset &&
                        MenuLocation == other.MenuLocation &&
+                       CollisionLayers == other.CollisionLayers &&
+                       UseTriggers == other.UseTriggers &&
+                       Mathf.Approximately(ParticleScale, other.ParticleScale) &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -322,6 +369,9 @@ namespace YUCP.Components.Editor
                     hashCode = (hashCode * 397) ^ IsIsolated.GetHashCode();
                     hashCode = (hashCode * 397) ^ AlwaysReset.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ CollisionLayers.GetHashCode();
+                    hashCode = (hashCode * 397) ^ UseTriggers.GetHashCode();
+                    hashCode = (hashCode * 397) ^ ParticleScale.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;

@@ -209,10 +209,70 @@ namespace YUCP.Components.Editor
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
             }
 
+            if (settings.lookTarget != null)
+            {
+                var lookTargetObj = followerSystem.transform.Find("Follower Target/Look Target");
+                if (lookTargetObj != null)
+                {
+                    var oldPath = AnimationUtility.CalculateTransformPath(lookTargetObj.transform, descriptor.transform);
+                    lookTargetObj.parent = settings.lookTarget.parent;
+                    lookTargetObj.localPosition = settings.lookTarget.localPosition;
+                    lookTargetObj.localRotation = settings.lookTarget.localRotation;
+                    lookTargetObj.localScale = settings.lookTarget.localScale;
+                    var newPath = AnimationUtility.CalculateTransformPath(lookTargetObj.transform, descriptor.transform);
+
+                    var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
+                        .Where(x => x.animatorController != null)
+                        .SelectMany(x => x.animatorController.animationClips)
+                        .ToArray();
+
+                    CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+                }
+            }
+
+            if (settings.followSpeed != 1f)
+            {
+                var fxLayer = descriptor.baseAnimationLayers
+                    .FirstOrDefault(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
+                var fxController = fxLayer.animatorController as AnimatorController;
+                if (fxController != null)
+                {
+                    var clips = fxController.animationClips;
+                    foreach (var clip in clips)
+                    {
+                        if (clip != null && clip.name.Contains("Follow"))
+                        {
+                            var bindings = AnimationUtility.GetCurveBindings(clip);
+                            foreach (var binding in bindings)
+                            {
+                                var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                                if (curve != null && curve.keys.Length > 0)
+                                {
+                                    for (int i = 0; i < curve.keys.Length; i++)
+                                    {
+                                        var key = curve.keys[i];
+                                        key.value *= settings.followSpeed;
+                                        curve.MoveKey(i, key);
+                                    }
+                                    AnimationUtility.SetEditorCurve(clip, binding, curve);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (settings.targetObject != null)
             {
+                var container = followerSystem.transform.Find("Container");
+                if (container == null)
+                {
+                    Debug.LogError("[YUCP Follower] Prefab missing Container object.");
+                    return;
+                }
+
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = followerSystem.transform;
+                settings.targetObject.transform.parent = container;
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -245,17 +305,20 @@ namespace YUCP.Components.Editor
             public GroupSettingsSignature(FollowerData.Settings settings)
             {
                 MenuLocation = settings.menuLocation;
+                FollowSpeed = settings.followSpeed;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
 
             private string MenuLocation { get; }
+            private float FollowSpeed { get; }
             private bool VerboseLogging { get; }
             private bool IncludeCredits { get; }
 
             public bool Equals(GroupSettingsSignature other)
             {
                 return MenuLocation == other.MenuLocation &&
+                       Mathf.Approximately(FollowSpeed, other.FollowSpeed) &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -270,6 +333,7 @@ namespace YUCP.Components.Editor
                 unchecked
                 {
                     var hashCode = MenuLocation != null ? MenuLocation.GetHashCode() : 0;
+                    hashCode = (hashCode * 397) ^ FollowSpeed.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;
@@ -284,6 +348,7 @@ namespace YUCP.Components.Editor
                 FollowerGroupId = groupId;
                 IsIsolated = isIsolated;
                 MenuLocation = settings.menuLocation;
+                FollowSpeed = settings.followSpeed;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
@@ -291,6 +356,7 @@ namespace YUCP.Components.Editor
             public string FollowerGroupId { get; }
             public bool IsIsolated { get; }
             public string MenuLocation { get; }
+            public float FollowSpeed { get; }
             public bool VerboseLogging { get; }
             public bool IncludeCredits { get; }
 
@@ -299,6 +365,7 @@ namespace YUCP.Components.Editor
                 return FollowerGroupId == other.FollowerGroupId &&
                        IsIsolated == other.IsIsolated &&
                        MenuLocation == other.MenuLocation &&
+                       Mathf.Approximately(FollowSpeed, other.FollowSpeed) &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -315,6 +382,7 @@ namespace YUCP.Components.Editor
                     var hashCode = FollowerGroupId != null ? FollowerGroupId.GetHashCode() : 0;
                     hashCode = (hashCode * 397) ^ IsIsolated.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ FollowSpeed.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;

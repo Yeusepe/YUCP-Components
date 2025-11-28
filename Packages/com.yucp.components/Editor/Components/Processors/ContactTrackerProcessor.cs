@@ -191,6 +191,25 @@ namespace YUCP.Components.Editor
             var trackerSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
             trackerSystem.name = trackerSystem.name.Replace("(Clone)", "");
 
+            var trackingPoints = trackerSystem.transform.Find("Tracking Points");
+            if (trackingPoints != null && settings.collisionTags != null && settings.collisionTags.Length >= 6)
+            {
+                string[] contactNames = { "X+", "X-", "Y+", "Y-", "Z+", "Z-" };
+                for (int i = 0; i < 6; i++)
+                {
+                    var contactObj = trackingPoints.Find(contactNames[i]);
+                    if (contactObj != null)
+                    {
+                        var contactReceiver = contactObj.GetComponent<VRC.SDK3.Dynamics.Contact.Components.VRCContactReceiver>();
+                        if (contactReceiver != null && !string.IsNullOrEmpty(settings.collisionTags[i]))
+                        {
+                            var tags = new System.Collections.Generic.List<string> { settings.collisionTags[i] };
+                            contactReceiver.collisionTags = tags;
+                        }
+                    }
+                }
+            }
+
             var trackerTarget = trackerSystem.transform.Find("Tracker Target");
             if (trackerTarget != null && settings.trackerTarget != null)
             {
@@ -211,8 +230,15 @@ namespace YUCP.Components.Editor
 
             if (settings.targetObject != null)
             {
+                var container = trackerSystem.transform.Find("Container");
+                if (container == null)
+                {
+                    Debug.LogError("[YUCP Contact Tracker] Prefab missing Container object.");
+                    return;
+                }
+
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = trackerSystem.transform;
+                settings.targetObject.transform.parent = container;
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -221,6 +247,45 @@ namespace YUCP.Components.Editor
                     .ToArray();
 
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+            }
+
+            if (settings.sizeParameter != 0f)
+            {
+                var fxLayer = descriptor.baseAnimationLayers
+                    .FirstOrDefault(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
+                var fxController = fxLayer.animatorController as AnimatorController;
+                if (fxController != null)
+                {
+                    var param = fxController.parameters.FirstOrDefault(p => p.name == "ContactTracker/Size");
+                    if (param != null)
+                    {
+                        var clips = fxController.animationClips;
+                        foreach (var clip in clips)
+                        {
+                            if (clip != null)
+                            {
+                                var bindings = AnimationUtility.GetCurveBindings(clip);
+                                foreach (var binding in bindings)
+                                {
+                                    if (binding.path.Contains("Contact Tracker") && binding.propertyName.Contains("Size"))
+                                    {
+                                        var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                                        if (curve != null && curve.keys.Length > 0)
+                                        {
+                                            for (int i = 0; i < curve.keys.Length; i++)
+                                            {
+                                                var key = curve.keys[i];
+                                                key.value = settings.sizeParameter;
+                                                curve.MoveKey(i, key);
+                                            }
+                                            AnimationUtility.SetEditorCurve(clip, binding, curve);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -245,17 +310,40 @@ namespace YUCP.Components.Editor
             public GroupSettingsSignature(ContactTrackerData.Settings settings)
             {
                 MenuLocation = settings.menuLocation;
+                CollisionTags = settings.collisionTags != null ? (string[])settings.collisionTags.Clone() : new string[6];
+                SizeParameter = settings.sizeParameter;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
 
             private string MenuLocation { get; }
+            private string[] CollisionTags { get; }
+            private float SizeParameter { get; }
             private bool VerboseLogging { get; }
             private bool IncludeCredits { get; }
 
             public bool Equals(GroupSettingsSignature other)
             {
+                if (CollisionTags == null && other.CollisionTags == null)
+                    return MenuLocation == other.MenuLocation &&
+                           Mathf.Approximately(SizeParameter, other.SizeParameter) &&
+                           VerboseLogging == other.VerboseLogging &&
+                           IncludeCredits == other.IncludeCredits;
+                
+                if (CollisionTags == null || other.CollisionTags == null)
+                    return false;
+                
+                if (CollisionTags.Length != other.CollisionTags.Length)
+                    return false;
+                
+                for (int i = 0; i < CollisionTags.Length; i++)
+                {
+                    if (CollisionTags[i] != other.CollisionTags[i])
+                        return false;
+                }
+                
                 return MenuLocation == other.MenuLocation &&
+                       Mathf.Approximately(SizeParameter, other.SizeParameter) &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -270,6 +358,14 @@ namespace YUCP.Components.Editor
                 unchecked
                 {
                     var hashCode = MenuLocation != null ? MenuLocation.GetHashCode() : 0;
+                    if (CollisionTags != null)
+                    {
+                        foreach (var tag in CollisionTags)
+                        {
+                            hashCode = (hashCode * 397) ^ (tag != null ? tag.GetHashCode() : 0);
+                        }
+                    }
+                    hashCode = (hashCode * 397) ^ SizeParameter.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;
@@ -284,6 +380,8 @@ namespace YUCP.Components.Editor
                 TrackerGroupId = groupId;
                 IsIsolated = isIsolated;
                 MenuLocation = settings.menuLocation;
+                CollisionTags = settings.collisionTags != null ? (string[])settings.collisionTags.Clone() : new string[6];
+                SizeParameter = settings.sizeParameter;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
@@ -291,14 +389,37 @@ namespace YUCP.Components.Editor
             public string TrackerGroupId { get; }
             public bool IsIsolated { get; }
             public string MenuLocation { get; }
+            public string[] CollisionTags { get; }
+            public float SizeParameter { get; }
             public bool VerboseLogging { get; }
             public bool IncludeCredits { get; }
 
             public bool Equals(GroupKey other)
             {
+                if (CollisionTags == null && other.CollisionTags == null)
+                    return TrackerGroupId == other.TrackerGroupId &&
+                           IsIsolated == other.IsIsolated &&
+                           MenuLocation == other.MenuLocation &&
+                           Mathf.Approximately(SizeParameter, other.SizeParameter) &&
+                           VerboseLogging == other.VerboseLogging &&
+                           IncludeCredits == other.IncludeCredits;
+                
+                if (CollisionTags == null || other.CollisionTags == null)
+                    return false;
+                
+                if (CollisionTags.Length != other.CollisionTags.Length)
+                    return false;
+                
+                for (int i = 0; i < CollisionTags.Length; i++)
+                {
+                    if (CollisionTags[i] != other.CollisionTags[i])
+                        return false;
+                }
+                
                 return TrackerGroupId == other.TrackerGroupId &&
                        IsIsolated == other.IsIsolated &&
                        MenuLocation == other.MenuLocation &&
+                       Mathf.Approximately(SizeParameter, other.SizeParameter) &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -315,6 +436,14 @@ namespace YUCP.Components.Editor
                     var hashCode = TrackerGroupId != null ? TrackerGroupId.GetHashCode() : 0;
                     hashCode = (hashCode * 397) ^ IsIsolated.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
+                    if (CollisionTags != null)
+                    {
+                        foreach (var tag in CollisionTags)
+                        {
+                            hashCode = (hashCode * 397) ^ (tag != null ? tag.GetHashCode() : 0);
+                        }
+                    }
+                    hashCode = (hashCode * 397) ^ SizeParameter.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;

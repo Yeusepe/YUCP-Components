@@ -14,12 +14,28 @@ namespace YUCP.Components
     [SupportBanner("This component ports VRLabs Collision Detection (MIT). Please support VRLabs!")]
     public class CollisionDetectionData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
+        [Header("Target Object")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to detect collisions on. This object will be moved into the collision detection system's Container during build. The component automatically uses the GameObject it's attached to as the target.")]
+        [SerializeField, HideInInspector]
+        private GameObject _targetObjectInfo;
+        
         [Header("Options")]
         [Tooltip("Whether IsColliding should reset immediately after stopping collision, or stay on until Reset is enabled.")]
         public bool alwaysReset = false;
 
         [Tooltip("Expressions menu path where the reset toggle should be created (e.g. \"Utility/Collision\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Collision";
+
+        [Header("Collision Settings")]
+        [Tooltip("Layers that the particle system will detect collisions with.")]
+        public LayerMask collisionLayers = -1;
+
+        [Tooltip("Use trigger colliders instead of collision detection. When enabled, the collision module is disabled and triggers module is enabled.")]
+        public bool useTriggers = false;
+
+        [Tooltip("Scale of the collision detection area. This affects the size of the particle system bounds.")]
+        [Range(0.1f, 10f)]
+        public float particleScale = 1f;
 
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared collision detection setup.")]
@@ -51,6 +67,9 @@ namespace YUCP.Components
             public GameObject targetObject;
             public bool alwaysReset;
             public string menuLocation;
+            public LayerMask collisionLayers;
+            public bool useTriggers;
+            public float particleScale;
             public string collisionGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -89,6 +108,9 @@ namespace YUCP.Components
                 targetObject = gameObject,
                 alwaysReset = alwaysReset,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
+                collisionLayers = collisionLayers,
+                useTriggers = useTriggers,
+                particleScale = Mathf.Clamp(particleScale, 0.1f, 10f),
                 collisionGroupId = enableGrouping ? NormalizeGroupId(collisionGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,
@@ -146,6 +168,9 @@ namespace YUCP.Components
             {
                 alwaysReset = source.alwaysReset;
                 menuLocation = source.menuLocation;
+                collisionLayers = source.collisionLayers;
+                useTriggers = source.useTriggers;
+                particleScale = source.particleScale;
                 enableGrouping = source.enableGrouping;
                 verboseLogging = source.verboseLogging;
                 includeCredits = source.includeCredits;

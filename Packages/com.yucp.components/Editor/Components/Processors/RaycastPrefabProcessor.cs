@@ -184,10 +184,52 @@ namespace YUCP.Components.Editor
                 castingTarget.localScale = settings.castingTarget.localScale;
             }
 
+            var grounder = raycastSystem.transform.Find("IK/Grounder");
+            if (grounder != null)
+            {
+                var grounderIKType = System.Type.GetType("RootMotion.FinalIK.GrounderIK, Assembly-CSharp");
+                if (grounderIKType != null)
+                {
+                    var grounderIK = grounder.GetComponent(grounderIKType);
+                    if (grounderIK != null && settings.grounderLayers != -1)
+                    {
+                        var layersField = grounderIKType.GetField("layers");
+                        if (layersField != null)
+                        {
+                            layersField.SetValue(grounderIK, settings.grounderLayers);
+                        }
+                    }
+
+                    if (settings.raycastDistance != 10f)
+                    {
+                        var solverProperty = grounderIKType.GetProperty("solver");
+                        if (solverProperty != null)
+                        {
+                            var solver = solverProperty.GetValue(grounderIK);
+                            if (solver != null)
+                            {
+                                var maxStepField = solver.GetType().GetField("maxStep");
+                                if (maxStepField != null)
+                                {
+                                    maxStepField.SetValue(solver, settings.raycastDistance);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (settings.targetObject != null)
             {
+                var container = raycastSystem.transform.Find("Container");
+                if (container == null)
+                {
+                    Debug.LogError("[YUCP Raycast Prefab] Prefab missing Container object.");
+                    return;
+                }
+
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = raycastSystem.transform;
+                settings.targetObject.transform.parent = container;
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -220,17 +262,23 @@ namespace YUCP.Components.Editor
             public GroupSettingsSignature(RaycastPrefabData.Settings settings)
             {
                 MenuLocation = settings.menuLocation;
+                GrounderLayers = settings.grounderLayers;
+                RaycastDistance = settings.raycastDistance;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
 
             private string MenuLocation { get; }
+            private LayerMask GrounderLayers { get; }
+            private float RaycastDistance { get; }
             private bool VerboseLogging { get; }
             private bool IncludeCredits { get; }
 
             public bool Equals(GroupSettingsSignature other)
             {
                 return MenuLocation == other.MenuLocation &&
+                       GrounderLayers == other.GrounderLayers &&
+                       Mathf.Approximately(RaycastDistance, other.RaycastDistance) &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -245,6 +293,8 @@ namespace YUCP.Components.Editor
                 unchecked
                 {
                     var hashCode = MenuLocation != null ? MenuLocation.GetHashCode() : 0;
+                    hashCode = (hashCode * 397) ^ GrounderLayers.GetHashCode();
+                    hashCode = (hashCode * 397) ^ RaycastDistance.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;
@@ -259,6 +309,8 @@ namespace YUCP.Components.Editor
                 RaycastGroupId = groupId;
                 IsIsolated = isIsolated;
                 MenuLocation = settings.menuLocation;
+                GrounderLayers = settings.grounderLayers;
+                RaycastDistance = settings.raycastDistance;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
@@ -266,6 +318,8 @@ namespace YUCP.Components.Editor
             public string RaycastGroupId { get; }
             public bool IsIsolated { get; }
             public string MenuLocation { get; }
+            public LayerMask GrounderLayers { get; }
+            public float RaycastDistance { get; }
             public bool VerboseLogging { get; }
             public bool IncludeCredits { get; }
 
@@ -274,6 +328,8 @@ namespace YUCP.Components.Editor
                 return RaycastGroupId == other.RaycastGroupId &&
                        IsIsolated == other.IsIsolated &&
                        MenuLocation == other.MenuLocation &&
+                       GrounderLayers == other.GrounderLayers &&
+                       Mathf.Approximately(RaycastDistance, other.RaycastDistance) &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -290,6 +346,8 @@ namespace YUCP.Components.Editor
                     var hashCode = RaycastGroupId != null ? RaycastGroupId.GetHashCode() : 0;
                     hashCode = (hashCode * 397) ^ IsIsolated.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ GrounderLayers.GetHashCode();
+                    hashCode = (hashCode * 397) ^ RaycastDistance.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;

@@ -51,10 +51,8 @@ namespace YUCP.Components.Editor.MeshUtils
             }
             catch (System.Exception)
             {
-                // Fallback to bounds-based normal
             }
             
-            // Fallback: compute normal from bounds center
             var bounds = collider.bounds;
             normal = (fromPoint - bounds.center).normalized;
             return false;
@@ -97,7 +95,6 @@ namespace YUCP.Components.Editor.MeshUtils
                 float minDist = float.MaxValue;
                 int closestTri = -1;
                 
-                // Find closest triangle
                 for (int i = 0; i < triangles.Length; i += 3)
                 {
                     Vector3 v0 = vertices[triangles[i]];
@@ -116,7 +113,6 @@ namespace YUCP.Components.Editor.MeshUtils
                 
                 if (closestTri >= 0)
                 {
-                    // Use triangle normal
                     Vector3 v0 = vertices[triangles[closestTri * 3]];
                     Vector3 v1 = vertices[triangles[closestTri * 3 + 1]];
                     Vector3 v2 = vertices[triangles[closestTri * 3 + 2]];
@@ -129,7 +125,6 @@ namespace YUCP.Components.Editor.MeshUtils
             }
             catch (System.Exception)
             {
-                // Fallback
             }
             
             return false;

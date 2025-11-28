@@ -16,7 +16,9 @@ namespace YUCP.Components.Editor
         private bool previousIncludeCredits = false;
 
         private SerializedProperty followerTargetProp;
+        private SerializedProperty lookTargetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty followSpeedProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty followerGroupIdProp;
         private SerializedProperty verboseLoggingProp;
@@ -29,7 +31,9 @@ namespace YUCP.Components.Editor
             data = (FollowerData)target;
 
             followerTargetProp = serializedObject.FindProperty("followerTarget");
+            lookTargetProp = serializedObject.FindProperty("lookTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            followSpeedProp = serializedObject.FindProperty("followSpeed");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             followerGroupIdProp = serializedObject.FindProperty("followerGroupId");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
@@ -66,16 +70,25 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target", "The follower target object.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what follows the player and what it looks at.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to follow the player. That object will be moved into the Follower's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(followerTargetProp, "Follower Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("The follower target will be moved outside the prefab hierarchy and will follow the player using a damping constraint inside a world constraint.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("FOLLOWER TARGET: The object that will follow the player. This object will be moved outside the prefab hierarchy and will smoothly follow the player's position using damping constraints inside a world constraint.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(lookTargetProp, "Look Target"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("LOOK TARGET: The object the follower looks at (for look constraint). This determines what direction the follower faces. If not set, will use Follower Target/Look Target from prefab.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure follower behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
+            
+            var followCard = YUCPUIToolkitHelper.CreateCard("Follow Settings", "Configure follow speed.");
+            var followContent = YUCPUIToolkitHelper.GetCardContent(followCard);
+            followContent.Add(YUCPUIToolkitHelper.CreateField(followSpeedProp, "Follow Speed"));
+            followContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Follow speed multiplier. Higher values = faster following. This affects the Follow animation clip.", YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(followCard);
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
@@ -162,7 +175,7 @@ namespace YUCP.Components.Editor
             var overviewCard = YUCPUIToolkitHelper.CreateCard("Follower Overview", null);
             var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
             
-            AddInfoRow(overviewContent, "Target", targetPath);
+            AddInfoRow(overviewContent, "Followed Object", targetPath);
             AddInfoRow(overviewContent, "Group", groupingLabel);
             
             container.Add(overviewCard);

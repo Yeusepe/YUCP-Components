@@ -14,13 +14,28 @@ namespace YUCP.Components
     [SupportBanner("This component ports VRLabs Rigidbody Launcher (MIT). Please support VRLabs!")]
     public class RigidbodyLauncherData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target")]
-        [Tooltip("The launcher target object that will be moved outside the prefab hierarchy.")]
+        [Header("Target Objects")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to launch. This object will be moved into the Rigidbody Launcher's Container during build. The component automatically uses the GameObject it's attached to as the launched object.")]
+        [SerializeField, HideInInspector]
+        private GameObject _launchedObjectInfo;
+        
+        [Tooltip("LAUNCHER TARGET: The object that will be launched. This object will be moved outside the prefab hierarchy and connected to a configurable joint that launches it when triggered.")]
         public Transform launcherTarget;
 
         [Header("Options")]
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Launcher\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Launcher";
+
+        [Header("Launch Settings")]
+        [Tooltip("Launch speed/velocity. Negative value for forward direction. This affects the Target Velocity in the animation clip.")]
+        public float launchSpeed = -10f;
+
+        [Tooltip("Maximum force for the configurable joint X/Y/Z drives.")]
+        [Range(0f, 10000f)]
+        public float maximumForce = 1000f;
+
+        [Tooltip("Layers that the particle system will detect collisions with.")]
+        public LayerMask collisionLayers = -1;
 
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared launcher setup.")]
@@ -52,6 +67,9 @@ namespace YUCP.Components
             public GameObject targetObject;
             public Transform launcherTarget;
             public string menuLocation;
+            public float launchSpeed;
+            public float maximumForce;
+            public LayerMask collisionLayers;
             public string launcherGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -90,6 +108,9 @@ namespace YUCP.Components
                 targetObject = gameObject,
                 launcherTarget = launcherTarget,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
+                launchSpeed = launchSpeed,
+                maximumForce = Mathf.Clamp(maximumForce, 0f, 10000f),
+                collisionLayers = collisionLayers,
                 launcherGroupId = enableGrouping ? NormalizeGroupId(launcherGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,
@@ -146,6 +167,9 @@ namespace YUCP.Components
             try
             {
                 menuLocation = source.menuLocation;
+                launchSpeed = source.launchSpeed;
+                maximumForce = source.maximumForce;
+                collisionLayers = source.collisionLayers;
                 enableGrouping = source.enableGrouping;
                 verboseLogging = source.verboseLogging;
                 includeCredits = source.includeCredits;

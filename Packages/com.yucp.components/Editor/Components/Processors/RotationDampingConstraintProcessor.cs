@@ -188,7 +188,23 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            if (settings.targetTransform != null)
+            if (settings.rotationTarget != null)
+            {
+                var oldPath = AnimationUtility.CalculateTransformPath(rotationTarget.transform, descriptor.transform);
+                rotationTarget.parent = settings.rotationTarget.parent;
+                rotationTarget.localPosition = settings.rotationTarget.localPosition;
+                rotationTarget.localRotation = settings.rotationTarget.localRotation;
+                rotationTarget.localScale = settings.rotationTarget.localScale;
+                var newPath = AnimationUtility.CalculateTransformPath(rotationTarget.transform, descriptor.transform);
+
+                var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
+                    .Where(x => x.animatorController != null)
+                    .SelectMany(x => x.animatorController.animationClips)
+                    .ToArray();
+
+                CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+            }
+            else if (settings.targetTransform != null)
             {
                 var oldPath = AnimationUtility.CalculateTransformPath(rotationTarget.transform, descriptor.transform);
                 rotationTarget.parent = settings.targetTransform.parent;

@@ -14,13 +14,25 @@ namespace YUCP.Components
     [SupportBanner("This component ports VRLabs Contact Tracker (MIT). Please support VRLabs!")]
     public class ContactTrackerData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target")]
-        [Tooltip("The tracker target object that will be moved outside the prefab hierarchy.")]
+        [Header("Target Objects")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to track contacts for. This object will be moved into the Contact Tracker's Container during build. The component automatically uses the GameObject it's attached to as the tracked object.")]
+        [SerializeField, HideInInspector]
+        private GameObject _trackedObjectInfo;
+        
+        [Tooltip("TRACKER TARGET: The object that will be moved outside the prefab and positioned based on contact detection. This is the visual/functional object that follows the tracked contacts (e.g., a hand tracker that follows hand contacts).")]
         public Transform trackerTarget;
 
         [Header("Options")]
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Tracker\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Tracker";
+
+        [Header("Contact Settings")]
+        [Tooltip("Collision tags for the 6 proximity contacts. Order: X+, X-, Y+, Y-, Z+, Z-")]
+        public string[] collisionTags = new string[6] { "Head", "Head", "Head", "Head", "Head", "Head" };
+
+        [Tooltip("Size parameter value for ContactTracker/Size. This sets the default size when not tracking.")]
+        [Range(0f, 1f)]
+        public float sizeParameter = 0f;
 
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared contact tracker setup.")]
@@ -52,6 +64,8 @@ namespace YUCP.Components
             public GameObject targetObject;
             public Transform trackerTarget;
             public string menuLocation;
+            public string[] collisionTags;
+            public float sizeParameter;
             public string trackerGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -85,11 +99,26 @@ namespace YUCP.Components
 
         public Settings ToSettings()
         {
+            var tags = new string[6];
+            if (collisionTags != null && collisionTags.Length >= 6)
+            {
+                Array.Copy(collisionTags, tags, 6);
+            }
+            else
+            {
+                for (int i = 0; i < 6; i++)
+                {
+                    tags[i] = collisionTags != null && i < collisionTags.Length ? collisionTags[i] : "Head";
+                }
+            }
+
             return new Settings
             {
                 targetObject = gameObject,
                 trackerTarget = trackerTarget,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
+                collisionTags = tags,
+                sizeParameter = Mathf.Clamp01(sizeParameter),
                 trackerGroupId = enableGrouping ? NormalizeGroupId(trackerGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,
@@ -146,6 +175,11 @@ namespace YUCP.Components
             try
             {
                 menuLocation = source.menuLocation;
+                if (source.collisionTags != null && source.collisionTags.Length == 6)
+                {
+                    collisionTags = (string[])source.collisionTags.Clone();
+                }
+                sizeParameter = source.sizeParameter;
                 enableGrouping = source.enableGrouping;
                 verboseLogging = source.verboseLogging;
                 includeCredits = source.includeCredits;

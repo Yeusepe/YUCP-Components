@@ -209,10 +209,77 @@ namespace YUCP.Components.Editor
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
             }
 
+            var collision = launcherSystem.transform.Find("Kinematic Rigidbody/Collision");
+            if (collision != null)
+            {
+                var joint = collision.GetComponent<ConfigurableJoint>();
+                if (joint != null)
+                {
+                    var xDrive = joint.xDrive;
+                    var yDrive = joint.yDrive;
+                    var zDrive = joint.zDrive;
+                    xDrive.maximumForce = settings.maximumForce;
+                    yDrive.maximumForce = settings.maximumForce;
+                    zDrive.maximumForce = settings.maximumForce;
+                    joint.xDrive = xDrive;
+                    joint.yDrive = yDrive;
+                    joint.zDrive = zDrive;
+                }
+
+                if (settings.launchSpeed != -10f)
+                {
+                    var fxLayer = descriptor.baseAnimationLayers
+                        .FirstOrDefault(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
+                    var fxController = fxLayer.animatorController as AnimatorController;
+                    if (fxController != null)
+                    {
+                        var clips = fxController.animationClips;
+                        foreach (var clip in clips)
+                        {
+                            if (clip != null && clip.name.Contains("Launcher Fire"))
+                            {
+                                var bindings = AnimationUtility.GetCurveBindings(clip);
+                                foreach (var binding in bindings)
+                                {
+                                    if (binding.propertyName.Contains("Target Velocity"))
+                                    {
+                                        var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                                        if (curve != null && curve.keys.Length > 0)
+                                        {
+                                            for (int i = 0; i < curve.keys.Length; i++)
+                                            {
+                                                var key = curve.keys[i];
+                                                key.value = settings.launchSpeed;
+                                                curve.MoveKey(i, key);
+                                            }
+                                            AnimationUtility.SetEditorCurve(clip, binding, curve);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            var particleSystem = launcherSystem.GetComponentInChildren<ParticleSystem>();
+            if (particleSystem != null)
+            {
+                var collisionModule = particleSystem.collision;
+                collisionModule.collidesWith = settings.collisionLayers;
+            }
+
             if (settings.targetObject != null)
             {
+                var container = launcherSystem.transform.Find("Container");
+                if (container == null)
+                {
+                    Debug.LogError("[YUCP Rigidbody Launcher] Prefab missing Container object.");
+                    return;
+                }
+
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = launcherSystem.transform;
+                settings.targetObject.transform.parent = container;
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -245,17 +312,26 @@ namespace YUCP.Components.Editor
             public GroupSettingsSignature(RigidbodyLauncherData.Settings settings)
             {
                 MenuLocation = settings.menuLocation;
+                LaunchSpeed = settings.launchSpeed;
+                MaximumForce = settings.maximumForce;
+                CollisionLayers = settings.collisionLayers;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
 
             private string MenuLocation { get; }
+            private float LaunchSpeed { get; }
+            private float MaximumForce { get; }
+            private LayerMask CollisionLayers { get; }
             private bool VerboseLogging { get; }
             private bool IncludeCredits { get; }
 
             public bool Equals(GroupSettingsSignature other)
             {
                 return MenuLocation == other.MenuLocation &&
+                       Mathf.Approximately(LaunchSpeed, other.LaunchSpeed) &&
+                       Mathf.Approximately(MaximumForce, other.MaximumForce) &&
+                       CollisionLayers == other.CollisionLayers &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -270,6 +346,9 @@ namespace YUCP.Components.Editor
                 unchecked
                 {
                     var hashCode = MenuLocation != null ? MenuLocation.GetHashCode() : 0;
+                    hashCode = (hashCode * 397) ^ LaunchSpeed.GetHashCode();
+                    hashCode = (hashCode * 397) ^ MaximumForce.GetHashCode();
+                    hashCode = (hashCode * 397) ^ CollisionLayers.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;
@@ -284,6 +363,9 @@ namespace YUCP.Components.Editor
                 LauncherGroupId = groupId;
                 IsIsolated = isIsolated;
                 MenuLocation = settings.menuLocation;
+                LaunchSpeed = settings.launchSpeed;
+                MaximumForce = settings.maximumForce;
+                CollisionLayers = settings.collisionLayers;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
@@ -291,6 +373,9 @@ namespace YUCP.Components.Editor
             public string LauncherGroupId { get; }
             public bool IsIsolated { get; }
             public string MenuLocation { get; }
+            public float LaunchSpeed { get; }
+            public float MaximumForce { get; }
+            public LayerMask CollisionLayers { get; }
             public bool VerboseLogging { get; }
             public bool IncludeCredits { get; }
 
@@ -299,6 +384,9 @@ namespace YUCP.Components.Editor
                 return LauncherGroupId == other.LauncherGroupId &&
                        IsIsolated == other.IsIsolated &&
                        MenuLocation == other.MenuLocation &&
+                       Mathf.Approximately(LaunchSpeed, other.LaunchSpeed) &&
+                       Mathf.Approximately(MaximumForce, other.MaximumForce) &&
+                       CollisionLayers == other.CollisionLayers &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -315,6 +403,9 @@ namespace YUCP.Components.Editor
                     var hashCode = LauncherGroupId != null ? LauncherGroupId.GetHashCode() : 0;
                     hashCode = (hashCode * 397) ^ IsIsolated.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ LaunchSpeed.GetHashCode();
+                    hashCode = (hashCode * 397) ^ MaximumForce.GetHashCode();
+                    hashCode = (hashCode * 397) ^ CollisionLayers.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;

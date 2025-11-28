@@ -230,8 +230,19 @@ namespace YUCP.Components.Editor
 
             if (settings.targetObject != null)
             {
+                var container = throwSystem.transform.Find("Throw/Container");
+                if (container == null)
+                {
+                    container = throwSystem.transform.Find("Container");
+                }
+                if (container == null)
+                {
+                    Debug.LogError("[YUCP Rigidbody Throw] Prefab missing Container object.");
+                    return;
+                }
+
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = throwSystem.transform;
+                settings.targetObject.transform.parent = container;
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -240,6 +251,67 @@ namespace YUCP.Components.Editor
                     .ToArray();
 
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+            }
+
+            if (settings.physicsMaterial != null)
+            {
+                var collisionCollider = throwSystem.transform.Find("Throw/Container/Colliders/Collision Collider");
+                if (collisionCollider != null)
+                {
+                    var collider = collisionCollider.GetComponent<Collider>();
+                    if (collider != null)
+                    {
+                        collider.material = settings.physicsMaterial;
+                    }
+                }
+            }
+
+            if (settings.throwGesture != 2 || settings.resetGesture != 1)
+            {
+                var fxLayer = descriptor.baseAnimationLayers
+                    .FirstOrDefault(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
+                var fxController = fxLayer.animatorController as AnimatorController;
+                if (fxController != null)
+                {
+                    var layers = fxController.layers;
+                    foreach (var layer in layers)
+                    {
+                        if (layer.name.Contains("Rigidbody Throw Main"))
+                        {
+                            var states = layer.stateMachine.states;
+                            foreach (var state in states)
+                            {
+                                var transitions = state.state.transitions;
+                                foreach (var transition in transitions)
+                                {
+                                    foreach (var condition in transition.conditions)
+                                    {
+                                        if (condition.parameter == "GestureRight")
+                                        {
+                                            if (condition.mode == AnimatorConditionMode.Equals && condition.threshold == 2f)
+                                            {
+                                                transition.RemoveCondition(condition);
+                                                transition.AddCondition(AnimatorConditionMode.Equals, settings.throwGesture, "GestureRight");
+                                            }
+                                            else if (condition.mode == AnimatorConditionMode.Equals && condition.threshold == 1f)
+                                            {
+                                                transition.RemoveCondition(condition);
+                                                transition.AddCondition(AnimatorConditionMode.Equals, settings.resetGesture, "GestureRight");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            var particleSystem = throwSystem.GetComponentInChildren<ParticleSystem>();
+            if (particleSystem != null)
+            {
+                var collisionModule = particleSystem.collision;
+                collisionModule.collidesWith = settings.collisionLayers;
             }
 
             if (settings.enableRotationSync)
@@ -274,12 +346,18 @@ namespace YUCP.Components.Editor
             {
                 EnableRotationSync = settings.enableRotationSync;
                 MenuLocation = settings.menuLocation;
+                ThrowGesture = settings.throwGesture;
+                ResetGesture = settings.resetGesture;
+                CollisionLayers = settings.collisionLayers;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
 
             private bool EnableRotationSync { get; }
             private string MenuLocation { get; }
+            private int ThrowGesture { get; }
+            private int ResetGesture { get; }
+            private LayerMask CollisionLayers { get; }
             private bool VerboseLogging { get; }
             private bool IncludeCredits { get; }
 
@@ -287,6 +365,9 @@ namespace YUCP.Components.Editor
             {
                 return EnableRotationSync == other.EnableRotationSync &&
                        MenuLocation == other.MenuLocation &&
+                       ThrowGesture == other.ThrowGesture &&
+                       ResetGesture == other.ResetGesture &&
+                       CollisionLayers == other.CollisionLayers &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -302,6 +383,9 @@ namespace YUCP.Components.Editor
                 {
                     var hashCode = EnableRotationSync.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ ThrowGesture.GetHashCode();
+                    hashCode = (hashCode * 397) ^ ResetGesture.GetHashCode();
+                    hashCode = (hashCode * 397) ^ CollisionLayers.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;
@@ -317,6 +401,9 @@ namespace YUCP.Components.Editor
                 IsIsolated = isIsolated;
                 EnableRotationSync = settings.enableRotationSync;
                 MenuLocation = settings.menuLocation;
+                ThrowGesture = settings.throwGesture;
+                ResetGesture = settings.resetGesture;
+                CollisionLayers = settings.collisionLayers;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
@@ -325,6 +412,9 @@ namespace YUCP.Components.Editor
             public bool IsIsolated { get; }
             public bool EnableRotationSync { get; }
             public string MenuLocation { get; }
+            public int ThrowGesture { get; }
+            public int ResetGesture { get; }
+            public LayerMask CollisionLayers { get; }
             public bool VerboseLogging { get; }
             public bool IncludeCredits { get; }
 
@@ -334,6 +424,9 @@ namespace YUCP.Components.Editor
                        IsIsolated == other.IsIsolated &&
                        EnableRotationSync == other.EnableRotationSync &&
                        MenuLocation == other.MenuLocation &&
+                       ThrowGesture == other.ThrowGesture &&
+                       ResetGesture == other.ResetGesture &&
+                       CollisionLayers == other.CollisionLayers &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -351,6 +444,9 @@ namespace YUCP.Components.Editor
                     hashCode = (hashCode * 397) ^ IsIsolated.GetHashCode();
                     hashCode = (hashCode * 397) ^ EnableRotationSync.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ ThrowGesture.GetHashCode();
+                    hashCode = (hashCode * 397) ^ ResetGesture.GetHashCode();
+                    hashCode = (hashCode * 397) ^ CollisionLayers.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;

@@ -17,6 +17,8 @@ namespace YUCP.Components.Editor
 
         private SerializedProperty castingTargetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty grounderLayersProp;
+        private SerializedProperty raycastDistanceProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty raycastGroupIdProp;
         private SerializedProperty verboseLoggingProp;
@@ -30,6 +32,8 @@ namespace YUCP.Components.Editor
 
             castingTargetProp = serializedObject.FindProperty("castingTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            grounderLayersProp = serializedObject.FindProperty("grounderLayers");
+            raycastDistanceProp = serializedObject.FindProperty("raycastDistance");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             raycastGroupIdProp = serializedObject.FindProperty("raycastGroupId");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
@@ -66,16 +70,25 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target", "The casting target object.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets raycast and the raycast direction.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to position via raycast. That object will be moved into the Raycast Prefab's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(castingTargetProp, "Casting Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("The casting target determines the raycast direction. Uses Final IK's Grounder to place the object at the raycast hit point.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("CASTING TARGET: The object that determines the raycast direction. The raycast will be cast from this object's position in its forward direction. The raycast object will be positioned at the hit point using Final IK's Grounder.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure raycast prefab behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
+            
+            var raycastCard = YUCPUIToolkitHelper.CreateCard("Raycast Settings", "Configure grounder layers and raycast distance.");
+            var raycastContent = YUCPUIToolkitHelper.GetCardContent(raycastCard);
+            raycastContent.Add(YUCPUIToolkitHelper.CreateField(grounderLayersProp, "Grounder Layers"));
+            raycastContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Layers that the Grounder IK will raycast against.", YUCPUIToolkitHelper.MessageType.Info));
+            raycastContent.Add(YUCPUIToolkitHelper.CreateField(raycastDistanceProp, "Raycast Distance"));
+            raycastContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Maximum raycast distance.", YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(raycastCard);
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
@@ -162,7 +175,7 @@ namespace YUCP.Components.Editor
             var overviewCard = YUCPUIToolkitHelper.CreateCard("Raycast Prefab Overview", null);
             var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
             
-            AddInfoRow(overviewContent, "Target", targetPath);
+            AddInfoRow(overviewContent, "Raycast Object", targetPath);
             AddInfoRow(overviewContent, "Group", groupingLabel);
             
             container.Add(overviewCard);

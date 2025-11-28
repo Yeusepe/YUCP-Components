@@ -14,13 +14,25 @@ namespace YUCP.Components
     [SupportBanner("This component ports VRLabs Follower (MIT). Please support VRLabs!")]
     public class FollowerData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target")]
-        [Tooltip("The follower target object that will be moved outside the prefab hierarchy.")]
+        [Header("Target Objects")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to follow the player. This object will be moved into the Follower's Container during build. The component automatically uses the GameObject it's attached to as the followed object.")]
+        [SerializeField, HideInInspector]
+        private GameObject _followedObjectInfo;
+        
+        [Tooltip("FOLLOWER TARGET: The object that will follow the player. This object will be moved outside the prefab hierarchy and will smoothly follow the player's position using damping constraints.")]
         public Transform followerTarget;
+
+        [Tooltip("LOOK TARGET: The object the follower looks at (for look constraint). If not set, will use Follower Target/Look Target from prefab. This determines what direction the follower faces.")]
+        public Transform lookTarget;
 
         [Header("Options")]
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Follower\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Follower";
+
+        [Header("Follow Settings")]
+        [Tooltip("Follow speed multiplier. Higher values = faster following. This affects the Follow animation clip.")]
+        [Range(0.1f, 5f)]
+        public float followSpeed = 1f;
 
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared follower setup.")]
@@ -51,6 +63,8 @@ namespace YUCP.Components
         {
             public GameObject targetObject;
             public Transform followerTarget;
+            public Transform lookTarget;
+            public float followSpeed;
             public string menuLocation;
             public string followerGroupId;
             public bool enableGrouping;
@@ -89,6 +103,8 @@ namespace YUCP.Components
             {
                 targetObject = gameObject,
                 followerTarget = followerTarget,
+                lookTarget = lookTarget,
+                followSpeed = Mathf.Clamp(followSpeed, 0.1f, 5f),
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 followerGroupId = enableGrouping ? NormalizeGroupId(followerGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
@@ -146,6 +162,8 @@ namespace YUCP.Components
             try
             {
                 menuLocation = source.menuLocation;
+                lookTarget = source.lookTarget;
+                followSpeed = source.followSpeed;
                 enableGrouping = source.enableGrouping;
                 verboseLogging = source.verboseLogging;
                 includeCredits = source.includeCredits;

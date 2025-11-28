@@ -14,9 +14,16 @@ namespace YUCP.Components
     [SupportBanner("This component ports VRLabs Damping Constraints (MIT). Please support VRLabs!")]
     public class PositionDampingConstraintData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target")]
-        [Tooltip("The target object that this constraint will dampen towards.")]
+        [Header("Target Objects")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to dampen. This object will be moved into the Damping Constraint's Container during build. The component automatically uses the GameObject it's attached to as the dampened object.")]
+        [SerializeField, HideInInspector]
+        private GameObject _dampenedObjectInfo;
+        
+        [Tooltip("DAMPENED OBJECT: The object that will have its position dampened. This is automatically set to the GameObject this component is attached to.")]
         public Transform targetObject;
+
+        [Tooltip("POSITION TARGET: The target position the constraint dampens towards. This object will be moved outside the prefab hierarchy. The dampened object will smoothly follow this target's position based on the damping weight.")]
+        public Transform positionTarget;
 
         [Header("Damping Settings")]
         [Tooltip("Weight of the second source in the constraint. Lower values = stronger damping effect.")]
@@ -52,6 +59,7 @@ namespace YUCP.Components
         {
             public GameObject targetObject;
             public Transform targetTransform;
+            public Transform positionTarget;
             public float dampingWeight;
             public string constraintGroupId;
             public bool enableGrouping;
@@ -90,6 +98,7 @@ namespace YUCP.Components
             {
                 targetObject = gameObject,
                 targetTransform = targetObject,
+                positionTarget = positionTarget,
                 dampingWeight = Mathf.Clamp(dampingWeight, 0.01f, 1f),
                 constraintGroupId = enableGrouping ? NormalizeGroupId(constraintGroupId) : string.Empty,
                 enableGrouping = enableGrouping,

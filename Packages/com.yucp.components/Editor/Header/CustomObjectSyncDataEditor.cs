@@ -97,7 +97,6 @@ namespace YUCP.Components.Editor
             creditBanner.name = "credit-banner";
             root.Add(creditBanner);
             
-            // Build summary (conditional)
             var buildSummary = new VisualElement();
             buildSummary.name = "build-summary";
             root.Add(buildSummary);
@@ -135,8 +134,6 @@ namespace YUCP.Components.Editor
             
             var positionPrecisionField = new IntegerField("Position Precision") { bindingPath = "positionPrecision" };
             positionPrecisionField.AddToClassList("yucp-field-input");
-            // Note: IntegerField doesn't support lowValue/highValue in UI Toolkit
-            // Validation should be handled in the component or via custom validation
             precisionContent.Add(positionPrecisionField);
             
             var rotationPrecisionField = new IntegerField("Rotation Precision") { bindingPath = "rotationPrecision" };
@@ -218,7 +215,6 @@ namespace YUCP.Components.Editor
             helpLinks.Add(discordButton);
             root.Add(helpLinks);
             
-            // Initialize previous values
             previousMaxRadius = maxRadiusProp.intValue;
             previousQuickSync = quickSyncProp.boolValue;
             previousEnableGrouping = enableGroupingProp.boolValue;
@@ -226,7 +222,6 @@ namespace YUCP.Components.Editor
             previousIncludeCredits = includeCreditsProp.boolValue;
             previousBuildSummary = data.GetBuildSummary();
             
-            // Initial population
             UpdateCreditBanner(creditBanner);
             UpdateBuildSummary(buildSummary);
             UpdateDescriptorWarnings(descriptorWarnings);
@@ -235,12 +230,10 @@ namespace YUCP.Components.Editor
             UpdateRadiusField(radiusContainer);
             UpdateGroupingHelp(groupingHelp);
             
-            // Dynamic updates
             root.schedule.Execute(() =>
             {
                 serializedObject.Update();
                 
-                // Update credit banner only when it changes
                 bool currentIncludeCredits = includeCreditsProp.boolValue;
                 if (currentIncludeCredits != previousIncludeCredits)
                 {
@@ -248,7 +241,6 @@ namespace YUCP.Components.Editor
                     previousIncludeCredits = currentIncludeCredits;
                 }
                 
-                // Update build summary only when it changes
                 string currentBuildSummary = data.GetBuildSummary();
                 if (currentBuildSummary != previousBuildSummary)
                 {
@@ -256,11 +248,9 @@ namespace YUCP.Components.Editor
                     previousBuildSummary = currentBuildSummary;
                 }
                 
-                // Update descriptor warnings (these can change based on hierarchy, so check more frequently)
                 UpdateDescriptorWarnings(descriptorWarnings);
                 descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
                 
-                // Update summary card only when relevant values change
                 bool currentQuickSync = quickSyncProp.boolValue;
                 string currentGroupId = syncGroupIdProp.stringValue;
                 bool currentEnableGrouping = enableGroupingProp.boolValue;
@@ -273,7 +263,6 @@ namespace YUCP.Components.Editor
                     previousEnableGrouping = currentEnableGrouping;
                 }
                 
-                // Update conditional fields
                 referenceFrameField.SetEnabled(!quickSyncProp.boolValue);
                 if (quickSyncProp.boolValue && referenceFrameProp.enumValueIndex != (int)CustomObjectSyncData.ReferenceFrame.AvatarCentered)
                 {
@@ -287,13 +276,11 @@ namespace YUCP.Components.Editor
                 
                 groupIdField.SetEnabled(enableGroupingProp.boolValue);
                 
-                // Update grouping help only when it changes
                 if (currentEnableGrouping != previousEnableGrouping || currentGroupId != previousGroupId)
                 {
                     UpdateGroupingHelp(groupingHelp);
                 }
                 
-                // Update radius field only when it changes
                 int currentMaxRadius = maxRadiusProp.intValue;
                 if (currentMaxRadius != previousMaxRadius)
                 {

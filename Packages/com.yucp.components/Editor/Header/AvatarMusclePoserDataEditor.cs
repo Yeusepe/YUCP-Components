@@ -29,7 +29,6 @@ namespace YUCP.Components.Editor
         private Dictionary<HumanBodyBones, Quaternion> originalBoneRotations = new Dictionary<HumanBodyBones, Quaternion>();
         private Dictionary<HumanBodyBones, Quaternion> currentBoneRotations = new Dictionary<HumanBodyBones, Quaternion>();
         
-        // Toggle selection
         private string[] toggleComponentNames;
         private int selectedToggleIndex = 0;
         
@@ -137,7 +136,6 @@ namespace YUCP.Components.Editor
             YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Avatar Muscle Poser"));
             
-            // Toggle Configuration Card
             var toggleCard = YUCPUIToolkitHelper.CreateCard("Toggle Configuration", "Configure the toggle component");
             var toggleContent = YUCPUIToolkitHelper.GetCardContent(toggleCard);
             
@@ -225,24 +223,20 @@ namespace YUCP.Components.Editor
             debugContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Mode"));
             root.Add(debugCard);
             
-            // Initialize previous values
             previousToggleObject = data.toggleObject;
             previousToggleComponentNames = toggleComponentNames;
             previousSelectedToggle = data.selectedToggle;
             previousAnimator = animator;
             
-            // Initial population
             UpdateToggleSelection(toggleSelectContainer);
             UpdateToggleHelp(toggleHelp);
             UpdateAvatarWarning(avatarWarning);
             
-            // Dynamic updates
             root.schedule.Execute(() =>
             {
                 serializedObject.Update();
                 FindAnimator();
                 
-                // Update toggle selection only when toggle object or component names change
                 if (data.toggleObject != previousToggleObject || 
                     !AreArraysEqual(toggleComponentNames, previousToggleComponentNames))
                 {
@@ -251,7 +245,6 @@ namespace YUCP.Components.Editor
                     previousToggleComponentNames = toggleComponentNames;
                 }
                 
-                // Update toggle help only when toggle object, component names, or selected toggle changes
                 if (data.toggleObject != previousToggleObject || 
                     !AreArraysEqual(toggleComponentNames, previousToggleComponentNames) ||
                     data.selectedToggle != previousSelectedToggle)
@@ -260,16 +253,13 @@ namespace YUCP.Components.Editor
                     previousSelectedToggle = data.selectedToggle;
                 }
                 
-                // Update selected bone card
                 UpdateSelectedBoneCard(selectedBoneCard, selectedBoneContent);
                 
-                // Update button states
                 bool canRecord = animator != null && animator.avatar != null && animator.avatar.isHuman;
                 recordButton.SetEnabled(canRecord);
                 clearButton.SetEnabled(canRecord);
                 previewButton.SetEnabled(canRecord);
                 
-                // Update avatar warning only when animator changes
                 if (animator != previousAnimator)
                 {
                     UpdateAvatarWarning(avatarWarning);
@@ -344,13 +334,10 @@ namespace YUCP.Components.Editor
             
             Event e = Event.current;
             
-            // Detect hover
             hoveredBone = DetectHoveredBone(sceneView, e);
             
-            // Draw bone gizmos and rotation handles
             DrawBoneGizmos(e);
             
-            // Update scene view
             if (e.type == EventType.MouseMove || e.type == EventType.MouseDrag || e.type == EventType.Layout)
             {
                 SceneView.RepaintAll();
@@ -373,10 +360,8 @@ namespace YUCP.Components.Editor
                 
                 Vector3 bonePos = boneTransform.position;
                 
-                // Calculate distance from mouse ray to bone position
                 float distance = HandleUtility.DistancePointLine(bonePos, ray.origin, ray.origin + ray.direction * 100f);
                 
-                // Also check screen space distance
                 Vector3 screenPos = sceneView.camera.WorldToScreenPoint(bonePos);
                 float screenDistance = Vector2.Distance(e.mousePosition, new Vector2(screenPos.x, Screen.height - screenPos.y));
                 
@@ -402,7 +387,6 @@ namespace YUCP.Components.Editor
                 bool isHovered = hoveredBone == bone;
                 bool isSelected = selectedBone == bone;
                 
-                // Get current local rotation (preserve original if not modified)
                 if (!currentBoneRotations.ContainsKey(bone))
                 {
                     currentBoneRotations[bone] = boneTransform.localRotation;
@@ -417,21 +401,17 @@ namespace YUCP.Components.Editor
                     ? boneTransform.parent.rotation * currentLocalRot 
                     : currentLocalRot;
                 
-                // Draw bone indicator - subtle and clean
                 Color gizmoColor = isSelected ? TEAL_COLOR : (isHovered ? new Color(1f, 0.8f, 0.2f) : Color.white * 0.3f);
                 float size = isSelected ? 0.012f : (isHovered ? 0.01f : 0.006f);
                 
                 Handles.color = gizmoColor;
                 
-                // Draw a small dot instead of sphere for cleaner look
                 Handles.DrawSolidDisc(boneTransform.position, 
                     SceneView.currentDrawingSceneView.camera.transform.forward, 
                     size);
                 
-                // Draw rotation handle when hovered or selected
                 if (isHovered || isSelected)
                 {
-                    // Use Unity's built-in rotation handle but with custom size
                     float handleSize = HandleUtility.GetHandleSize(boneTransform.position) * 0.3f;
                     Handles.color = Color.white;
                     
@@ -439,7 +419,6 @@ namespace YUCP.Components.Editor
                     Quaternion newWorldRot = Handles.RotationHandle(currentWorldRot, boneTransform.position);
                     if (EditorGUI.EndChangeCheck())
                     {
-                        // Convert world rotation back to local rotation
                         Quaternion parentWorldRot = boneTransform.parent != null 
                             ? boneTransform.parent.rotation 
                             : Quaternion.identity;
@@ -450,14 +429,12 @@ namespace YUCP.Components.Editor
                         boneTransform.localRotation = newLocalRot;
                         selectedBone = bone;
                         
-                        // Update human pose to get muscle values
                         UpdateMuscleValuesFromBoneRotation(bone, newLocalRot);
                         
                         EditorUtility.SetDirty(data);
                         e.Use();
                     }
                     
-                    // Draw subtle outline ring
                     Handles.color = gizmoColor * 0.5f;
                     Handles.DrawWireDisc(boneTransform.position, 
                         SceneView.currentDrawingSceneView.camera.transform.forward, 
@@ -465,7 +442,6 @@ namespace YUCP.Components.Editor
                 }
             }
             
-            // Clear selection on click outside
             if (e.type == EventType.MouseDown && e.button == 0)
             {
                 if (!hoveredBone.HasValue)
@@ -480,20 +456,16 @@ namespace YUCP.Components.Editor
         {
             if (humanPoseHandler == null) return;
             
-            // Get current human pose (this preserves root position and other bones)
             humanPoseHandler.GetHumanPose(ref humanPose);
             
-            // Apply local rotation to bone (this won't affect root)
             Transform boneTransform = animator.GetBoneTransform(bone);
             if (boneTransform != null)
             {
                 boneTransform.localRotation = localRotation;
             }
             
-            // Update human pose to recalculate muscle values
             humanPoseHandler.SetHumanPose(ref humanPose);
             
-            // Extract muscle values
             var muscleValues = new Dictionary<string, float>();
             string[] muscleNames = HumanTrait.MuscleName;
             
@@ -543,7 +515,6 @@ namespace YUCP.Components.Editor
                 return;
             }
             
-            // Create or get animation clip
             AnimationClip clip = data.poseAnimationClip;
             if (clip == null)
             {
@@ -556,7 +527,6 @@ namespace YUCP.Components.Editor
                 EditorUtility.SetDirty(data);
             }
             
-            // Get current muscle values
             if (humanPoseHandler == null)
             {
                 humanPoseHandler = new HumanPoseHandler(animator.avatar, animator.transform);
@@ -564,24 +534,20 @@ namespace YUCP.Components.Editor
             
             humanPoseHandler.GetHumanPose(ref humanPose);
             
-            // Create animation clip with muscle values
             CreateMuscleAnimationClip(clip);
             
-            // Use VRCFury recorder via reflection (RecorderUtils is internal)
             var vrcFuryObject = data.toggleObject ?? data.gameObject;
             CallVRCFuryRecorder(clip, vrcFuryObject);
         }
         
         private void CreateMuscleAnimationClip(AnimationClip clip)
         {
-            // Clear existing curves
             var bindings = AnimationUtility.GetCurveBindings(clip);
             foreach (var binding in bindings)
             {
                 AnimationUtility.SetEditorCurve(clip, binding, null);
             }
             
-            // Add muscle curves
             string[] muscleNames = HumanTrait.MuscleName;
             for (int i = 0; i < muscleNames.Length && i < humanPose.muscles.Length; i++)
             {
@@ -600,7 +566,6 @@ namespace YUCP.Components.Editor
         
         private void ClearPose()
         {
-            // Reset all bone rotations to original local rotations
             foreach (var kvp in originalBoneRotations)
             {
                 Transform boneTransform = animator.GetBoneTransform(kvp.Key);
@@ -617,11 +582,9 @@ namespace YUCP.Components.Editor
             data.SetSelectedBone("");
             data.SetMuscleValues(new Dictionary<string, float>());
             
-            // Reset human pose
             if (humanPoseHandler != null)
             {
                 humanPoseHandler.GetHumanPose(ref humanPose);
-                // Reset all muscles to zero
                 for (int i = 0; i < humanPose.muscles.Length; i++)
                 {
                     humanPose.muscles[i] = 0f;
@@ -705,7 +668,6 @@ namespace YUCP.Components.Editor
             }
             else if (data.selectedToggle != null)
             {
-                // Find index of selected toggle
                 selectedToggleIndex = toggleComponents.IndexOf(data.selectedToggle);
                 if (selectedToggleIndex < 0) selectedToggleIndex = 0;
             }
@@ -741,10 +703,8 @@ namespace YUCP.Components.Editor
         
         private void CallVRCFuryRecorder(AnimationClip clip, GameObject targetObject)
         {
-            // Use reflection to call VRCFury's internal RecorderUtils.Record method
             try
             {
-                // Try to find the type from loaded assemblies
                 System.Type recorderUtilsType = null;
                 foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
                 {

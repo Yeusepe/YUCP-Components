@@ -17,6 +17,9 @@ namespace YUCP.Components.Editor
 
         private SerializedProperty alwaysResetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty collisionLayersProp;
+        private SerializedProperty useTriggersProp;
+        private SerializedProperty particleScaleProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty collisionGroupIdProp;
         private SerializedProperty verboseLoggingProp;
@@ -30,6 +33,9 @@ namespace YUCP.Components.Editor
 
             alwaysResetProp = serializedObject.FindProperty("alwaysReset");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            collisionLayersProp = serializedObject.FindProperty("collisionLayers");
+            useTriggersProp = serializedObject.FindProperty("useTriggers");
+            particleScaleProp = serializedObject.FindProperty("particleScale");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             collisionGroupIdProp = serializedObject.FindProperty("collisionGroupId");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
@@ -72,6 +78,16 @@ namespace YUCP.Components.Editor
             optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, IsColliding resets immediately after collision stops. When disabled, it stays on until Reset is triggered.", YUCPUIToolkitHelper.MessageType.Info));
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
+            
+            var collisionCard = YUCPUIToolkitHelper.CreateCard("Collision Settings", "Configure particle system collision detection.");
+            var collisionContent = YUCPUIToolkitHelper.GetCardContent(collisionCard);
+            collisionContent.Add(YUCPUIToolkitHelper.CreateField(collisionLayersProp, "Collision Layers"));
+            collisionContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Select which layers the particle system will detect collisions with.", YUCPUIToolkitHelper.MessageType.Info));
+            collisionContent.Add(YUCPUIToolkitHelper.CreateField(useTriggersProp, "Use Triggers"));
+            collisionContent.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, uses trigger colliders instead of collision detection. The collision module is disabled and triggers module is enabled.", YUCPUIToolkitHelper.MessageType.Info));
+            collisionContent.Add(YUCPUIToolkitHelper.CreateField(particleScaleProp, "Particle Scale"));
+            collisionContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Scale of the collision detection area. This affects the size of the particle system bounds.", YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(collisionCard);
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
@@ -158,7 +174,7 @@ namespace YUCP.Components.Editor
             var overviewCard = YUCPUIToolkitHelper.CreateCard("Collision Detection Overview", null);
             var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
             
-            AddInfoRow(overviewContent, "Target", targetPath);
+            AddInfoRow(overviewContent, "Detecting Object", targetPath);
             AddInfoRow(overviewContent, "Group", groupingLabel);
             AddInfoRow(overviewContent, "Always Reset", alwaysResetProp.boolValue ? "Yes" : "No");
             

@@ -18,6 +18,10 @@ namespace YUCP.Components.Editor
         private SerializedProperty throwTargetProp;
         private SerializedProperty enableRotationSyncProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty physicsMaterialProp;
+        private SerializedProperty throwGestureProp;
+        private SerializedProperty resetGestureProp;
+        private SerializedProperty collisionLayersProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty throwGroupIdProp;
         private SerializedProperty verboseLoggingProp;
@@ -32,6 +36,10 @@ namespace YUCP.Components.Editor
             throwTargetProp = serializedObject.FindProperty("throwTarget");
             enableRotationSyncProp = serializedObject.FindProperty("enableRotationSync");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            physicsMaterialProp = serializedObject.FindProperty("physicsMaterial");
+            throwGestureProp = serializedObject.FindProperty("throwGesture");
+            resetGestureProp = serializedObject.FindProperty("resetGesture");
+            collisionLayersProp = serializedObject.FindProperty("collisionLayers");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             throwGroupIdProp = serializedObject.FindProperty("throwGroupId");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
@@ -68,10 +76,11 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target", "The throw target object.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets thrown.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to throw. That object will be moved into the Rigidbody Throw's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(throwTargetProp, "Throw Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("The throw target will be moved outside the prefab hierarchy. Uses a particle system to apply force and contacts/constraints to sync position (and optionally rotation) remotely.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("THROW TARGET: The object that will be thrown. This object will be moved outside the prefab hierarchy and will be thrown when the gesture condition is met. Uses a particle system to apply force and contacts/constraints to sync position (and optionally rotation) remotely across clients.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure rigidbody throw behavior.");
@@ -80,6 +89,18 @@ namespace YUCP.Components.Editor
             optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, rotation will be synced alongside position. This requires additional expression parameters (27 without rotation, 51 with rotation).", YUCPUIToolkitHelper.MessageType.Info));
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
+            
+            var throwCard = YUCPUIToolkitHelper.CreateCard("Throw Settings", "Configure physics material, gesture conditions, and collision.");
+            var throwContent = YUCPUIToolkitHelper.GetCardContent(throwCard);
+            throwContent.Add(YUCPUIToolkitHelper.CreateField(physicsMaterialProp, "Physics Material"));
+            throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Physics material for collision. Applied to the Collision Collider.", YUCPUIToolkitHelper.MessageType.Info));
+            throwContent.Add(YUCPUIToolkitHelper.CreateField(throwGestureProp, "Throw Gesture"));
+            throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture value for throwing (default: 2 = HandOpen).", YUCPUIToolkitHelper.MessageType.Info));
+            throwContent.Add(YUCPUIToolkitHelper.CreateField(resetGestureProp, "Reset Gesture"));
+            throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture value for resetting (default: 1 = Fist).", YUCPUIToolkitHelper.MessageType.Info));
+            throwContent.Add(YUCPUIToolkitHelper.CreateField(collisionLayersProp, "Collision Layers"));
+            throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Layers that collision detection will use.", YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(throwCard);
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
@@ -166,7 +187,7 @@ namespace YUCP.Components.Editor
             var overviewCard = YUCPUIToolkitHelper.CreateCard("Rigidbody Throw Overview", null);
             var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
             
-            AddInfoRow(overviewContent, "Target", targetPath);
+            AddInfoRow(overviewContent, "Thrown Object", targetPath);
             AddInfoRow(overviewContent, "Group", groupingLabel);
             AddInfoRow(overviewContent, "Rotation Sync", enableRotationSyncProp.boolValue ? "Enabled" : "Disabled");
             
