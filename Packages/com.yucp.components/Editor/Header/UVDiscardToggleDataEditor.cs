@@ -16,6 +16,12 @@ namespace YUCP.Components.Editor
     {
         private bool showAdvancedToggle = false;
         private bool showDebug = false;
+        
+        // Track previous values to prevent unnecessary UI updates
+        private string previousMenuPath = null;
+        private string previousGlobalParameter = null;
+        private SkinnedMeshRenderer previousTargetBodyMesh = null;
+        private SkinnedMeshRenderer previousClothingMesh = null;
 
         public override VisualElement CreateInspectorGUI()
         {
@@ -76,41 +82,21 @@ namespace YUCP.Components.Editor
             var dynamicHelpBoxContainer = new VisualElement();
             toggleContent.Add(dynamicHelpBoxContainer);
             
+            // Initialize previous values
+            previousMenuPath = menuPathProp.stringValue;
+            previousGlobalParameter = globalParameterProp.stringValue;
+            UpdateDynamicHelpBox(dynamicHelpBoxContainer, menuPathProp, globalParameterProp);
+            
             root.schedule.Execute(() =>
             {
-                dynamicHelpBoxContainer.Clear();
-                bool hasMenuPath = !string.IsNullOrEmpty(menuPathProp.stringValue);
-                bool hasGlobalParam = !string.IsNullOrEmpty(globalParameterProp.stringValue);
-
-                VisualElement helpBox = null;
-                if (!hasMenuPath && hasGlobalParam)
-                {
-                    helpBox = YUCPUIToolkitHelper.CreateHelpBox(
-                        $"Global Parameter Only: Controlled by '{globalParameterProp.stringValue}' (no menu item).",
-                        YUCPUIToolkitHelper.MessageType.Info);
-                }
-                else if (hasMenuPath && hasGlobalParam)
-                {
-                    helpBox = YUCPUIToolkitHelper.CreateHelpBox(
-                        $"Synced Toggle: Menu controls '{globalParameterProp.stringValue}' (synced across players).",
-                        YUCPUIToolkitHelper.MessageType.Info);
-                }
-                else if (hasMenuPath && !hasGlobalParam)
-                {
-                    helpBox = YUCPUIToolkitHelper.CreateHelpBox(
-                        "Local Toggle: VRCFury auto-generates local parameter (not synced).",
-                        YUCPUIToolkitHelper.MessageType.Info);
-                }
-                else
-                {
-                    helpBox = YUCPUIToolkitHelper.CreateHelpBox(
-                        "Menu path or global parameter is required!",
-                        YUCPUIToolkitHelper.MessageType.Warning);
-                }
+                string currentMenuPath = menuPathProp.stringValue;
+                string currentGlobalParameter = globalParameterProp.stringValue;
                 
-                if (helpBox != null)
+                if (currentMenuPath != previousMenuPath || currentGlobalParameter != previousGlobalParameter)
                 {
-                    dynamicHelpBoxContainer.Add(helpBox);
+                    UpdateDynamicHelpBox(dynamicHelpBoxContainer, menuPathProp, globalParameterProp);
+                    previousMenuPath = currentMenuPath;
+                    previousGlobalParameter = currentGlobalParameter;
                 }
             }).Every(100);
 
@@ -183,51 +169,107 @@ namespace YUCP.Components.Editor
             validationContainer.name = "validation-container";
             root.Add(validationContainer);
 
+            // Initialize previous values
+            previousTargetBodyMesh = data.targetBodyMesh;
+            previousClothingMesh = data.clothingMesh;
+            UpdateValidationContainer(validationContainer, data);
+
             root.schedule.Execute(() =>
             {
-                validationContainer.Clear();
-
-                if (data.targetBodyMesh == null)
+                if (data.targetBodyMesh != previousTargetBodyMesh || data.clothingMesh != previousClothingMesh ||
+                    data.menuPath != previousMenuPath || data.globalParameter != previousGlobalParameter)
                 {
-                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Target Body Mesh is required", YUCPUIToolkitHelper.MessageType.Error));
-                }
-                else if (data.clothingMesh == null)
-                {
-                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Clothing Mesh is required", YUCPUIToolkitHelper.MessageType.Error));
-                }
-                else if (data.targetBodyMesh.sharedMesh == null)
-                {
-                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Target Body Mesh has no mesh data", YUCPUIToolkitHelper.MessageType.Error));
-                }
-                else if (data.clothingMesh.sharedMesh == null)
-                {
-                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Clothing Mesh has no mesh data", YUCPUIToolkitHelper.MessageType.Error));
-                }
-                else if (string.IsNullOrEmpty(data.menuPath) && string.IsNullOrEmpty(data.globalParameter))
-                {
-                    validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Either Menu Path or Global Parameter must be set", YUCPUIToolkitHelper.MessageType.Error));
-                }
-                else if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
-                {
-                    bool hasPoiyomi = false;
-                    foreach (var mat in data.targetBodyMesh.sharedMaterials)
-                    {
-                        if (UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
-                        {
-                            hasPoiyomi = true;
-                            break;
-                        }
-                    }
-                    if (!hasPoiyomi)
-                    {
-                        validationContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Body mesh needs a Poiyomi or FastFur material with UDIM support", YUCPUIToolkitHelper.MessageType.Warning));
-                    }
+                    UpdateValidationContainer(validationContainer, data);
+                    previousTargetBodyMesh = data.targetBodyMesh;
+                    previousClothingMesh = data.clothingMesh;
+                    previousMenuPath = data.menuPath;
+                    previousGlobalParameter = data.globalParameter;
                 }
             }).Every(100);
 
             root.schedule.Execute(() => serializedObject.ApplyModifiedProperties()).Every(100);
 
             return root;
+        }
+        
+        private void UpdateDynamicHelpBox(VisualElement container, SerializedProperty menuPathProp, SerializedProperty globalParameterProp)
+        {
+            container.Clear();
+            bool hasMenuPath = !string.IsNullOrEmpty(menuPathProp.stringValue);
+            bool hasGlobalParam = !string.IsNullOrEmpty(globalParameterProp.stringValue);
+
+            VisualElement helpBox = null;
+            if (!hasMenuPath && hasGlobalParam)
+            {
+                helpBox = YUCPUIToolkitHelper.CreateHelpBox(
+                    $"Global Parameter Only: Controlled by '{globalParameterProp.stringValue}' (no menu item).",
+                    YUCPUIToolkitHelper.MessageType.Info);
+            }
+            else if (hasMenuPath && hasGlobalParam)
+            {
+                helpBox = YUCPUIToolkitHelper.CreateHelpBox(
+                    $"Synced Toggle: Menu controls '{globalParameterProp.stringValue}' (synced across players).",
+                    YUCPUIToolkitHelper.MessageType.Info);
+            }
+            else if (hasMenuPath && !hasGlobalParam)
+            {
+                helpBox = YUCPUIToolkitHelper.CreateHelpBox(
+                    "Local Toggle: VRCFury auto-generates local parameter (not synced).",
+                    YUCPUIToolkitHelper.MessageType.Info);
+            }
+            else
+            {
+                helpBox = YUCPUIToolkitHelper.CreateHelpBox(
+                    "Menu path or global parameter is required!",
+                    YUCPUIToolkitHelper.MessageType.Warning);
+            }
+            
+            if (helpBox != null)
+            {
+                container.Add(helpBox);
+            }
+        }
+        
+        private void UpdateValidationContainer(VisualElement container, UVDiscardToggleData data)
+        {
+            container.Clear();
+
+            if (data.targetBodyMesh == null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Target Body Mesh is required", YUCPUIToolkitHelper.MessageType.Error));
+            }
+            else if (data.clothingMesh == null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Clothing Mesh is required", YUCPUIToolkitHelper.MessageType.Error));
+            }
+            else if (data.targetBodyMesh.sharedMesh == null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Target Body Mesh has no mesh data", YUCPUIToolkitHelper.MessageType.Error));
+            }
+            else if (data.clothingMesh.sharedMesh == null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Clothing Mesh has no mesh data", YUCPUIToolkitHelper.MessageType.Error));
+            }
+            else if (string.IsNullOrEmpty(data.menuPath) && string.IsNullOrEmpty(data.globalParameter))
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Either Menu Path or Global Parameter must be set", YUCPUIToolkitHelper.MessageType.Error));
+            }
+            else if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
+            {
+                bool hasPoiyomi = false;
+                foreach (var mat in data.targetBodyMesh.sharedMaterials)
+                {
+                    if (UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                    {
+                        hasPoiyomi = true;
+                        break;
+                    }
+                }
+                if (!hasPoiyomi)
+                {
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Body mesh needs a Poiyomi or FastFur material with UDIM support", YUCPUIToolkitHelper.MessageType.Warning));
+                }
+            }
         }
     }
 }

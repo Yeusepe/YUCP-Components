@@ -38,6 +38,20 @@ namespace YUCP.Components.Resources
         // Cache to prevent recalculation spam
         private List<string> cachedDetectedVisemes;
         private int cachedVisemeFrameCount = -1;
+        
+        // Track previous values to prevent unnecessary UI updates
+        private SkinnedMeshRenderer previousTargetMesh = null;
+        private int previousManualTriangleIndex = -2;
+        private SolverMode previousSolverMode = (SolverMode)(-1);
+        private bool previousAttachToClosestBone = false;
+        private bool previousCreateDirectAnimations = false;
+        private BlendshapeTrackingMode previousTrackingMode = (BlendshapeTrackingMode)(-1);
+        private bool previousAutoCreateVisemeFxLayer = false;
+        private int previousSamplesPerBlendshape = -1;
+        private string previousValidationError = null;
+        private int previousTrackedBlendshapesCount = -1;
+        private int previousGeneratedAnimationCount = -1;
+        private string previousSelectedBonePath = null;
 
         private void OnEnable()
         {
@@ -256,97 +270,218 @@ namespace YUCP.Components.Resources
             buildStatsFoldout.Add(buildStatsCard);
             root.Add(buildStatsFoldout);
             
+            // Initialize previous values
+            previousTargetMesh = data.targetMesh;
+            previousManualTriangleIndex = data.manualTriangleIndex;
+            previousSolverMode = data.solverMode;
+            previousAttachToClosestBone = data.attachToClosestBone;
+            previousCreateDirectAnimations = data.createDirectAnimations;
+            previousTrackingMode = data.trackingMode;
+            previousAutoCreateVisemeFxLayer = data.autoCreateVisemeFxLayer;
+            previousSamplesPerBlendshape = data.samplesPerBlendshape;
+            previousValidationError = ValidateData() ? null : GetValidationError();
+            previousTrackedBlendshapesCount = data.TrackedBlendshapes?.Count ?? -1;
+            previousGeneratedAnimationCount = data.GeneratedAnimationCount;
+            previousSelectedBonePath = data.SelectedBonePath;
+            
+            // Initial population
+            UpdateValidationBanner(validationBanner);
+            UpdateTargetMeshHelp(targetMeshHelp);
+            UpdateManualTriangleHelp(manualTriangleHelp);
+            UpdateSolverModeCard(root.Q<VisualElement>("solver-mode-card"));
+            UpdateBoneHelp(boneHelp);
+            UpdateDirectAnimHelp(directAnimHelp);
+            UpdateVisemeFxHelp(visemeFxHelp);
+            UpdateSamplesHelp(samplesHelp);
+            UpdateTrackingModeContent(root.Q<VisualElement>("tracking-mode-content"));
+            UpdatePreviewTools(root.Q<VisualElement>("preview-tools-container"));
+            UpdateBuildStatistics(buildStatsFoldout, buildStatsContent);
+            
             // Dynamic updates
             root.schedule.Execute(() =>
             {
                 serializedObject.Update();
                 
-                validationBanner.Clear();
-                if (!ValidateData())
+                // Update validation banner only when validation error changes
+                string currentValidationError = ValidateData() ? null : GetValidationError();
+                if (currentValidationError != previousValidationError)
                 {
-                    validationBanner.Add(YUCPUIToolkitHelper.CreateHelpBox($"Configuration Error\n\n{GetValidationError()}", YUCPUIToolkitHelper.MessageType.Error));
+                    UpdateValidationBanner(validationBanner);
+                    previousValidationError = currentValidationError;
                 }
                 
-                targetMeshHelp.Clear();
-                if (data.targetMesh != null)
+                // Update target mesh help only when target mesh changes
+                if (data.targetMesh != previousTargetMesh)
                 {
-                    if (!PoseSampler.HasBlendshapes(data.targetMesh))
-                    {
-                        targetMeshHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Target mesh has no blendshapes!", YUCPUIToolkitHelper.MessageType.Error));
-                    }
-                    else
-                    {
-                        int blendshapeCount = data.targetMesh.sharedMesh.blendShapeCount;
-                        targetMeshHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"Found {blendshapeCount} blendshape{(blendshapeCount != 1 ? "s" : "")} on target mesh", YUCPUIToolkitHelper.MessageType.Info));
-                    }
-                }
-                else
-                {
-                    targetMeshHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Select a SkinnedMeshRenderer with blendshapes", YUCPUIToolkitHelper.MessageType.None));
+                    UpdateTargetMeshHelp(targetMeshHelp);
+                    previousTargetMesh = data.targetMesh;
                 }
                 
-                manualTriangleHelp.Clear();
-                if (data.manualTriangleIndex >= 0)
+                // Update manual triangle help only when index changes
+                if (data.manualTriangleIndex != previousManualTriangleIndex)
                 {
-                    manualTriangleHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"Manual mode: Using triangle #{data.manualTriangleIndex} as primary anchor", YUCPUIToolkitHelper.MessageType.Info));
+                    UpdateManualTriangleHelp(manualTriangleHelp);
+                    previousManualTriangleIndex = data.manualTriangleIndex;
                 }
                 
-                // Update solver mode card
+                // Update solver mode card only when solver mode changes
                 var solverCardContainer = root.Q<VisualElement>("solver-mode-card");
-                if (solverCardContainer != null && showSolverConfiguration)
+                if (data.solverMode != previousSolverMode)
                 {
-                    solverCardContainer.Clear();
-                    var solverCard = YUCPUIToolkitHelper.CreateSolverModeCard(data.solverMode);
-                    solverCardContainer.Add(solverCard);
+                    UpdateSolverModeCard(solverCardContainer);
+                    previousSolverMode = data.solverMode;
                 }
                 
                 normalOffsetCard.style.display = (data.solverMode == SolverMode.RigidNormalOffset) ? DisplayStyle.Flex : DisplayStyle.None;
                 rbfCard.style.display = (data.solverMode == SolverMode.CageRBF) ? DisplayStyle.Flex : DisplayStyle.None;
                 
                 boneSettingsCard.style.display = data.attachToClosestBone ? DisplayStyle.Flex : DisplayStyle.None;
-                boneHelp.Clear();
-                if (data.attachToClosestBone)
+                
+                // Update bone help only when attachToClosestBone changes
+                if (data.attachToClosestBone != previousAttachToClosestBone)
                 {
-                    boneHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Bone attachment provides base positioning.\nBlendshape animations are applied relative to the bone.", YUCPUIToolkitHelper.MessageType.None));
-                }
-                else
-                {
-                    boneHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Bone attachment disabled - object will stay in place without base bone link.", YUCPUIToolkitHelper.MessageType.Warning));
+                    UpdateBoneHelp(boneHelp);
+                    previousAttachToClosestBone = data.attachToClosestBone;
                 }
                 
-                directAnimHelp.Clear();
-                if (data.createDirectAnimations)
+                // Update direct anim help only when createDirectAnimations changes
+                if (data.createDirectAnimations != previousCreateDirectAnimations)
                 {
-                    directAnimHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Animations will be saved to Assets/Generated/AttachToBlendshape/\n\n" +
-                        "You'll need to manually wire these to your FX layer or use VRCFury's Direct Tree Controller.", YUCPUIToolkitHelper.MessageType.Info));
+                    UpdateDirectAnimHelp(directAnimHelp);
+                    previousCreateDirectAnimations = data.createDirectAnimations;
                 }
                 
                 visemeFxLayerField.style.display = (data.trackingMode == BlendshapeTrackingMode.VisemsOnly) ? DisplayStyle.Flex : DisplayStyle.None;
-                visemeFxHelp.Clear();
-                if (data.trackingMode == BlendshapeTrackingMode.VisemsOnly && data.autoCreateVisemeFxLayer)
+                
+                // Update viseme FX help only when tracking mode or autoCreateVisemeFxLayer changes
+                if (data.trackingMode != previousTrackingMode || data.autoCreateVisemeFxLayer != previousAutoCreateVisemeFxLayer)
                 {
-                    visemeFxHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, a controller asset is created in Assets/Generated/AttachToBlendshape/Controllers\n" +
-                        "and automatically hooked up through VRCFury so the attachment follows live visemes.", YUCPUIToolkitHelper.MessageType.None));
+                    UpdateVisemeFxHelp(visemeFxHelp);
+                    previousTrackingMode = data.trackingMode;
+                    previousAutoCreateVisemeFxLayer = data.autoCreateVisemeFxLayer;
                 }
                 
-                samplesHelp.Clear();
-                int samples = data.samplesPerBlendshape;
-                int estimatedKeyframes = samples * 7;
-                samplesHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"{samples} samples = ~{estimatedKeyframes} keyframes per blendshape\n" +
-                    $"More samples = smoother animation but larger file size", YUCPUIToolkitHelper.MessageType.None));
+                // Update samples help only when samplesPerBlendshape changes
+                if (data.samplesPerBlendshape != previousSamplesPerBlendshape)
+                {
+                    UpdateSamplesHelp(samplesHelp);
+                    previousSamplesPerBlendshape = data.samplesPerBlendshape;
+                }
                 
-                // Update tracking mode content
-                UpdateTrackingModeContent(root.Q<VisualElement>("tracking-mode-content"));
+                // Update tracking mode content only when tracking mode changes
+                if (data.trackingMode != previousTrackingMode || data.targetMesh != previousTargetMesh)
+                {
+                    UpdateTrackingModeContent(root.Q<VisualElement>("tracking-mode-content"));
+                }
                 
-                // Update preview tools
+                // Update preview tools (doesn't clear, just updates data)
                 UpdatePreviewTools(root.Q<VisualElement>("preview-tools-container"));
                 
-                UpdateBuildStatistics(buildStatsFoldout, buildStatsContent);
+                // Update build statistics only when relevant data changes
+                int currentTrackedCount = data.TrackedBlendshapes?.Count ?? -1;
+                if (currentTrackedCount != previousTrackedBlendshapesCount || 
+                    data.GeneratedAnimationCount != previousGeneratedAnimationCount ||
+                    data.SelectedBonePath != previousSelectedBonePath)
+                {
+                    UpdateBuildStatistics(buildStatsFoldout, buildStatsContent);
+                    previousTrackedBlendshapesCount = currentTrackedCount;
+                    previousGeneratedAnimationCount = data.GeneratedAnimationCount;
+                    previousSelectedBonePath = data.SelectedBonePath;
+                }
                 
                 serializedObject.ApplyModifiedProperties();
             }).Every(100);
             
             return root;
+        }
+        
+        private void UpdateValidationBanner(VisualElement container)
+        {
+            container.Clear();
+            if (!ValidateData())
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Configuration Error\n\n{GetValidationError()}", YUCPUIToolkitHelper.MessageType.Error));
+            }
+        }
+        
+        private void UpdateTargetMeshHelp(VisualElement container)
+        {
+            container.Clear();
+            if (data.targetMesh != null)
+            {
+                if (!PoseSampler.HasBlendshapes(data.targetMesh))
+                {
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Target mesh has no blendshapes!", YUCPUIToolkitHelper.MessageType.Error));
+                }
+                else
+                {
+                    int blendshapeCount = data.targetMesh.sharedMesh.blendShapeCount;
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Found {blendshapeCount} blendshape{(blendshapeCount != 1 ? "s" : "")} on target mesh", YUCPUIToolkitHelper.MessageType.Info));
+                }
+            }
+            else
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Select a SkinnedMeshRenderer with blendshapes", YUCPUIToolkitHelper.MessageType.None));
+            }
+        }
+        
+        private void UpdateManualTriangleHelp(VisualElement container)
+        {
+            container.Clear();
+            if (data.manualTriangleIndex >= 0)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Manual mode: Using triangle #{data.manualTriangleIndex} as primary anchor", YUCPUIToolkitHelper.MessageType.Info));
+            }
+        }
+        
+        private void UpdateSolverModeCard(VisualElement container)
+        {
+            if (container == null || !showSolverConfiguration) return;
+            container.Clear();
+            var solverCard = YUCPUIToolkitHelper.CreateSolverModeCard(data.solverMode);
+            container.Add(solverCard);
+        }
+        
+        private void UpdateBoneHelp(VisualElement container)
+        {
+            container.Clear();
+            if (data.attachToClosestBone)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Bone attachment provides base positioning.\nBlendshape animations are applied relative to the bone.", YUCPUIToolkitHelper.MessageType.None));
+            }
+            else
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Bone attachment disabled - object will stay in place without base bone link.", YUCPUIToolkitHelper.MessageType.Warning));
+            }
+        }
+        
+        private void UpdateDirectAnimHelp(VisualElement container)
+        {
+            container.Clear();
+            if (data.createDirectAnimations)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Animations will be saved to Assets/Generated/AttachToBlendshape/\n\n" +
+                    "You'll need to manually wire these to your FX layer or use VRCFury's Direct Tree Controller.", YUCPUIToolkitHelper.MessageType.Info));
+            }
+        }
+        
+        private void UpdateVisemeFxHelp(VisualElement container)
+        {
+            container.Clear();
+            if (data.trackingMode == BlendshapeTrackingMode.VisemsOnly && data.autoCreateVisemeFxLayer)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, a controller asset is created in Assets/Generated/AttachToBlendshape/Controllers\n" +
+                    "and automatically hooked up through VRCFury so the attachment follows live visemes.", YUCPUIToolkitHelper.MessageType.None));
+            }
+        }
+        
+        private void UpdateSamplesHelp(VisualElement container)
+        {
+            container.Clear();
+            int samples = data.samplesPerBlendshape;
+            int estimatedKeyframes = samples * 7;
+            container.Add(YUCPUIToolkitHelper.CreateHelpBox($"{samples} samples = ~{estimatedKeyframes} keyframes per blendshape\n" +
+                $"More samples = smoother animation but larger file size", YUCPUIToolkitHelper.MessageType.None));
         }
         
         private void UpdateBuildStatistics(Foldout foldout, VisualElement content)

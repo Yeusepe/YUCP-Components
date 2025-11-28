@@ -12,6 +12,12 @@ namespace YUCP.Components.Editor
     public class CustomObjectSyncDataEditor : UnityEditor.Editor
     {
         private CustomObjectSyncData data;
+        private int previousMaxRadius = -1;
+        private bool previousQuickSync = false;
+        private bool previousEnableGrouping = false;
+        private string previousGroupId = null;
+        private bool previousIncludeCredits = false;
+        private string previousBuildSummary = null;
 
         private SerializedProperty quickSyncProp;
         private SerializedProperty referenceFrameProp;
@@ -152,9 +158,16 @@ namespace YUCP.Components.Editor
             var motionContent = YUCPUIToolkitHelper.GetCardContent(motionCard);
             motionContent.Add(YUCPUIToolkitHelper.CreateField(addDampingProp, "Add Damping Constraint"));
             
-            var dampingValueField = new Slider("Damping Strength", 0.01f, 1f) { bindingPath = "dampingConstraintValue" };
+            var dampingValueField = new Slider("Damping Strength", 0.01f, 1f);
+            dampingValueField.value = dampingValueProp.floatValue;
             dampingValueField.AddToClassList("yucp-field-input");
             dampingValueField.name = "damping-value";
+            dampingValueField.RegisterCallback<MouseCaptureOutEvent>(evt =>
+            {
+                dampingValueProp.floatValue = dampingValueField.value;
+                serializedObject.ApplyModifiedProperties();
+                EditorUtility.SetDirty(data);
+            });
             motionContent.Add(dampingValueField);
             
             motionContent.Add(YUCPUIToolkitHelper.CreateField(writeDefaultsProp, "Write Defaults"));
@@ -205,52 +218,60 @@ namespace YUCP.Components.Editor
             helpLinks.Add(discordButton);
             root.Add(helpLinks);
             
+            // Initialize previous values
+            previousMaxRadius = maxRadiusProp.intValue;
+            previousQuickSync = quickSyncProp.boolValue;
+            previousEnableGrouping = enableGroupingProp.boolValue;
+            previousGroupId = syncGroupIdProp.stringValue;
+            previousIncludeCredits = includeCreditsProp.boolValue;
+            previousBuildSummary = data.GetBuildSummary();
+            
+            // Initial population
+            UpdateCreditBanner(creditBanner);
+            UpdateBuildSummary(buildSummary);
+            UpdateDescriptorWarnings(descriptorWarnings);
+            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+            UpdateSummaryCard(summaryCard, data, descriptor);
+            UpdateRadiusField(radiusContainer);
+            UpdateGroupingHelp(groupingHelp);
+            
             // Dynamic updates
             root.schedule.Execute(() =>
             {
                 serializedObject.Update();
                 
-                // Update credit banner
-                creditBanner.Clear();
-                if (includeCreditsProp.boolValue)
+                // Update credit banner only when it changes
+                bool currentIncludeCredits = includeCreditsProp.boolValue;
+                if (currentIncludeCredits != previousIncludeCredits)
                 {
-                    creditBanner.Add(YUCPUIToolkitHelper.CreateHelpBox("Powered by VRLabs Custom Object Sync (MIT). Please credit VRLabs when shipping your avatar.", YUCPUIToolkitHelper.MessageType.Info));
-                    var repoButton = YUCPUIToolkitHelper.CreateButton("Open VRLabs Custom Object Sync Repository", () => Application.OpenURL(VrLabsRepoUrl), YUCPUIToolkitHelper.ButtonVariant.Secondary);
-                    creditBanner.Add(repoButton);
+                    UpdateCreditBanner(creditBanner);
+                    previousIncludeCredits = currentIncludeCredits;
                 }
                 
-                // Update build summary
-                buildSummary.Clear();
-                var summary = data.GetBuildSummary();
-                if (!string.IsNullOrEmpty(summary))
+                // Update build summary only when it changes
+                string currentBuildSummary = data.GetBuildSummary();
+                if (currentBuildSummary != previousBuildSummary)
                 {
-                    var timestamp = data.GetLastBuildTimeUtc();
-                    string label = summary;
-                    if (timestamp.HasValue)
-                    {
-                        label += $" • {timestamp.Value.ToLocalTime():g}";
-                    }
-                    buildSummary.Add(YUCPUIToolkitHelper.CreateHelpBox($"Last build: {label}", YUCPUIToolkitHelper.MessageType.None));
+                    UpdateBuildSummary(buildSummary);
+                    previousBuildSummary = currentBuildSummary;
                 }
                 
-                // Update descriptor warnings
-                descriptorWarnings.Clear();
-                var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-                if (descriptor == null)
-                {
-                    descriptorWarnings.Add(YUCPUIToolkitHelper.CreateHelpBox("This component must be placed under a VRCAvatarDescriptor in order for the builder to configure sync data.", YUCPUIToolkitHelper.MessageType.Error));
-                }
-                else if (data.transform == descriptor.transform)
-                {
-                    descriptorWarnings.Add(YUCPUIToolkitHelper.CreateHelpBox("Attach Custom Object Sync to the object you want to sync, not the descriptor root.", YUCPUIToolkitHelper.MessageType.Warning));
-                }
-                else if (!data.transform.IsChildOf(descriptor.transform))
-                {
-                    descriptorWarnings.Add(YUCPUIToolkitHelper.CreateHelpBox("Custom Object Sync target must be within the avatar hierarchy. Please move it inside the descriptor object.", YUCPUIToolkitHelper.MessageType.Error));
-                }
+                // Update descriptor warnings (these can change based on hierarchy, so check more frequently)
+                UpdateDescriptorWarnings(descriptorWarnings);
+                descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
                 
-                // Update summary card
-                UpdateSummaryCard(summaryCard, data, descriptor);
+                // Update summary card only when relevant values change
+                bool currentQuickSync = quickSyncProp.boolValue;
+                string currentGroupId = syncGroupIdProp.stringValue;
+                bool currentEnableGrouping = enableGroupingProp.boolValue;
+                if (currentQuickSync != previousQuickSync || currentGroupId != previousGroupId || 
+                    currentEnableGrouping != previousEnableGrouping || maxRadiusProp.intValue != previousMaxRadius)
+                {
+                    UpdateSummaryCard(summaryCard, data, descriptor);
+                    previousQuickSync = currentQuickSync;
+                    previousGroupId = currentGroupId;
+                    previousEnableGrouping = currentEnableGrouping;
+                }
                 
                 // Update conditional fields
                 referenceFrameField.SetEnabled(!quickSyncProp.boolValue);
@@ -265,14 +286,20 @@ namespace YUCP.Components.Editor
                 dampingValueField.SetEnabled(addDampingProp.boolValue);
                 
                 groupIdField.SetEnabled(enableGroupingProp.boolValue);
-                groupingHelp.Clear();
-                var groupingInfo = enableGroupingProp.boolValue
-                    ? "Components with the same Group ID share one Custom Object Sync rig to reduce parameters."
-                    : "Grouping disabled: this component will get its own rig (same behavior as the original VRLabs wizard).";
-                groupingHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(groupingInfo, YUCPUIToolkitHelper.MessageType.Info));
                 
-                // Update radius field
-                UpdateRadiusField(radiusContainer);
+                // Update grouping help only when it changes
+                if (currentEnableGrouping != previousEnableGrouping || currentGroupId != previousGroupId)
+                {
+                    UpdateGroupingHelp(groupingHelp);
+                }
+                
+                // Update radius field only when it changes
+                int currentMaxRadius = maxRadiusProp.intValue;
+                if (currentMaxRadius != previousMaxRadius)
+                {
+                    UpdateRadiusField(radiusContainer);
+                    previousMaxRadius = currentMaxRadius;
+                }
                 
                 serializedObject.ApplyModifiedProperties();
             }).Every(100);
@@ -361,6 +388,60 @@ namespace YUCP.Components.Editor
             parent.Add(row);
         }
         
+        private void UpdateCreditBanner(VisualElement container)
+        {
+            container.Clear();
+            if (includeCreditsProp.boolValue)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Powered by VRLabs Custom Object Sync (MIT). Please credit VRLabs when shipping your avatar.", YUCPUIToolkitHelper.MessageType.Info));
+                var repoButton = YUCPUIToolkitHelper.CreateButton("Open VRLabs Custom Object Sync Repository", () => Application.OpenURL(VrLabsRepoUrl), YUCPUIToolkitHelper.ButtonVariant.Secondary);
+                container.Add(repoButton);
+            }
+        }
+        
+        private void UpdateBuildSummary(VisualElement container)
+        {
+            container.Clear();
+            var summary = data.GetBuildSummary();
+            if (!string.IsNullOrEmpty(summary))
+            {
+                var timestamp = data.GetLastBuildTimeUtc();
+                string label = summary;
+                if (timestamp.HasValue)
+                {
+                    label += $" • {timestamp.Value.ToLocalTime():g}";
+                }
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Last build: {label}", YUCPUIToolkitHelper.MessageType.None));
+            }
+        }
+        
+        private void UpdateDescriptorWarnings(VisualElement container)
+        {
+            container.Clear();
+            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+            if (descriptor == null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("This component must be placed under a VRCAvatarDescriptor in order for the builder to configure sync data.", YUCPUIToolkitHelper.MessageType.Error));
+            }
+            else if (data.transform == descriptor.transform)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Attach Custom Object Sync to the object you want to sync, not the descriptor root.", YUCPUIToolkitHelper.MessageType.Warning));
+            }
+            else if (!data.transform.IsChildOf(descriptor.transform))
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Custom Object Sync target must be within the avatar hierarchy. Please move it inside the descriptor object.", YUCPUIToolkitHelper.MessageType.Error));
+            }
+        }
+        
+        private void UpdateGroupingHelp(VisualElement container)
+        {
+            container.Clear();
+            var groupingInfo = enableGroupingProp.boolValue
+                ? "Components with the same Group ID share one Custom Object Sync rig to reduce parameters."
+                : "Grouping disabled: this component will get its own rig (same behavior as the original VRLabs wizard).";
+            container.Add(YUCPUIToolkitHelper.CreateHelpBox(groupingInfo, YUCPUIToolkitHelper.MessageType.Info));
+        }
+        
         private void UpdateRadiusField(VisualElement container)
         {
             container.Clear();
@@ -372,15 +453,123 @@ namespace YUCP.Components.Editor
             sliderContainer.style.flexDirection = FlexDirection.Row;
             sliderContainer.style.marginBottom = 5;
             
-            var slider = new Slider($"Max Radius (2^{rawValue} m)", 1, 12) { bindingPath = "maxRadius" };
+            var slider = new Slider($"Max Radius (2^{rawValue} m)", 1, 12);
+            slider.value = rawValue;
             slider.AddToClassList("yucp-field-input");
             slider.style.flexGrow = 1;
             slider.style.marginRight = 5;
-            sliderContainer.Add(slider);
             
             var valueLabel = new Label($"{rangeMeters:0.#} m");
             valueLabel.style.width = 70;
             valueLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            
+            int currentDiscreteSection = rawValue;
+            float previousSliderValue = rawValue;
+            bool isDragging = false;
+            const float snapZoneSize = 0.3f;
+            const float snapSpeed = 30f;
+            const float velocityThreshold = 0.05f;
+            
+            slider.RegisterValueChangedCallback(evt =>
+            {
+                if (!isDragging) return;
+                
+                int nearestDiscrete = Mathf.RoundToInt(evt.newValue);
+                float distanceToNearest = Mathf.Abs(evt.newValue - nearestDiscrete);
+                
+                if (distanceToNearest < snapZoneSize)
+                {
+                    if (nearestDiscrete != currentDiscreteSection)
+                    {
+                        currentDiscreteSection = nearestDiscrete;
+                    }
+                }
+                else
+                {
+                    float distanceFromCurrent = Mathf.Abs(evt.newValue - currentDiscreteSection);
+                    if (distanceFromCurrent > snapZoneSize)
+                    {
+                        currentDiscreteSection = nearestDiscrete;
+                    }
+                }
+            });
+            
+            slider.RegisterCallback<MouseDownEvent>(evt => 
+            { 
+                isDragging = true;
+                previousSliderValue = slider.value;
+                currentDiscreteSection = Mathf.RoundToInt(slider.value);
+            });
+            
+            slider.RegisterCallback<MouseCaptureOutEvent>(evt =>
+            {
+                isDragging = false;
+                int finalValue = Mathf.RoundToInt(slider.value);
+                currentDiscreteSection = finalValue;
+                slider.value = finalValue;
+                previousSliderValue = finalValue;
+                
+                if (finalValue != maxRadiusProp.intValue)
+                {
+                    maxRadiusProp.intValue = finalValue;
+                    serializedObject.ApplyModifiedProperties();
+                    EditorUtility.SetDirty(data);
+                }
+            });
+            
+            slider.schedule.Execute(() =>
+            {
+                int displayValue;
+                double newRangeMeters;
+                
+                if (!isDragging)
+                {
+                    displayValue = Mathf.RoundToInt(slider.value);
+                    newRangeMeters = Math.Pow(2, displayValue);
+                    slider.label = $"Max Radius (2^{displayValue} m)";
+                    valueLabel.text = $"{newRangeMeters:0.#} m";
+                    return;
+                }
+                
+                float currentSliderValue = slider.value;
+                float mouseVelocity = Mathf.Abs(currentSliderValue - previousSliderValue);
+                float distanceToDiscrete = Mathf.Abs(currentSliderValue - currentDiscreteSection);
+                
+                bool isMovingSlowly = mouseVelocity < velocityThreshold;
+                bool isInSnapZone = distanceToDiscrete < snapZoneSize;
+                bool shouldSnap = isInSnapZone && isMovingSlowly;
+                
+                if (shouldSnap)
+                {
+                    float targetValue = currentDiscreteSection;
+                    float newValue = Mathf.Lerp(currentSliderValue, targetValue, snapSpeed * 0.016f);
+                    
+                    if (Mathf.Abs(newValue - targetValue) < 0.005f)
+                    {
+                        newValue = targetValue;
+                    }
+                    
+                    float currentActualValue = slider.value;
+                    if (Mathf.Abs(currentActualValue - newValue) > 0.003f && Mathf.Abs(currentActualValue - previousSliderValue) < 0.1f)
+                    {
+                        slider.SetValueWithoutNotify(newValue);
+                    }
+                    
+                    displayValue = Mathf.RoundToInt(newValue);
+                }
+                else
+                {
+                    displayValue = Mathf.RoundToInt(currentSliderValue);
+                }
+                
+                previousSliderValue = slider.value;
+                
+                newRangeMeters = Math.Pow(2, displayValue);
+                slider.label = $"Max Radius (2^{displayValue} m)";
+                valueLabel.text = $"{newRangeMeters:0.#} m";
+            }).Every(16);
+            
+            sliderContainer.Add(slider);
             sliderContainer.Add(valueLabel);
             
             container.Add(sliderContainer);

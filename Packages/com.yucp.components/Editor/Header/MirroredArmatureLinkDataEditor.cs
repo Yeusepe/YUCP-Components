@@ -21,6 +21,10 @@ namespace YUCP.Components.Editor
 		private bool foldMenu = true;
 		private bool foldConstraint = true;
 		private bool foldAdvanced = false;
+		
+		private VisualElement customTargetsContainer;
+		private SerializedProperty customTargetsProp;
+		private int lastCustomTargetsArraySize = -1;
 
 		private void OnEnable()
 		{
@@ -156,10 +160,33 @@ namespace YUCP.Components.Editor
 
 			var customsCard = YUCPUIToolkitHelper.CreateCard("Custom Targets", "Configure custom symmetric targets");
 			var customsContent = YUCPUIToolkitHelper.GetCardContent(customsCard);
-			var customTargetsProp = serializedObject.FindProperty("customTargets");
-			var customTargetsField = new PropertyField(customTargetsProp, "Custom Targets");
-			customTargetsField.AddToClassList("yucp-field-input");
-			customsContent.Add(customTargetsField);
+			customTargetsProp = serializedObject.FindProperty("customTargets");
+			
+			var addButton = YUCPUIToolkitHelper.CreateButton("Add Custom Target", () =>
+			{
+				customTargetsProp.arraySize++;
+				serializedObject.ApplyModifiedProperties();
+			}, YUCPUIToolkitHelper.ButtonVariant.Secondary);
+			addButton.style.marginBottom = 10;
+			customsContent.Add(addButton);
+			
+			customTargetsContainer = new VisualElement();
+			customTargetsContainer.name = "customTargetsContainer";
+			customsContent.Add(customTargetsContainer);
+			
+			lastCustomTargetsArraySize = -1;
+			UpdateCustomTargetsUI(customTargetsContainer, customTargetsProp);
+			
+			root.schedule.Execute(() =>
+			{
+				serializedObject.Update();
+				if (customTargetsProp.arraySize != lastCustomTargetsArraySize)
+				{
+					lastCustomTargetsArraySize = customTargetsProp.arraySize;
+					UpdateCustomTargetsUI(customTargetsContainer, customTargetsProp);
+				}
+			}).Every(100);
+			
 			root.Add(customsCard);
 
 			var menuCard = YUCPUIToolkitHelper.CreateCard("Toggles & Menu", "Configure menu and toggle settings");
@@ -490,6 +517,144 @@ namespace YUCP.Components.Editor
 			var Rp = S * R * S;
 			return Rp.rotation;
 		}
+
+		private void UpdateCustomTargetsUI(VisualElement container, SerializedProperty customTargetsProp)
+		{
+			serializedObject.Update();
+			container.Clear();
+			
+			if (customTargetsProp.arraySize == 0)
+			{
+				var emptyLabel = new Label("No custom targets. Click 'Add Custom Target' to add one.");
+				emptyLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+				emptyLabel.style.fontSize = 12;
+				emptyLabel.style.marginTop = 5;
+				emptyLabel.style.marginBottom = 5;
+				container.Add(emptyLabel);
+				return;
+			}
+			
+			for (int i = 0; i < customTargetsProp.arraySize; i++)
+			{
+				var elementProp = customTargetsProp.GetArrayElementAtIndex(i);
+				var displayNameProp = elementProp.FindPropertyRelative("displayName");
+				var displayName = string.IsNullOrEmpty(displayNameProp.stringValue) ? "Custom" : displayNameProp.stringValue;
+				var targetFoldout = YUCPUIToolkitHelper.CreateFoldout($"Target {i + 1}: {displayName}", true);
+				
+				var targetContent = new VisualElement();
+				targetContent.style.paddingLeft = 10;
+				targetContent.style.paddingTop = 5;
+				targetContent.style.paddingBottom = 5;
+				targetContent.Bind(serializedObject);
+				
+				var targetTypeProp = elementProp.FindPropertyRelative("targetType");
+				var displayNameField = YUCPUIToolkitHelper.CreateField(displayNameProp, "Display Name");
+				var targetTypeField = YUCPUIToolkitHelper.CreateField(targetTypeProp, "Target Type");
+				var globalBoolParamField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("globalBoolParam"), "Global Bool Param");
+				
+				targetContent.Add(displayNameField);
+				targetContent.Add(globalBoolParamField);
+				targetContent.Add(targetTypeField);
+				
+				var humanoidBoneField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("humanoidBone"), "Humanoid Bone");
+				var transformField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("transform"), "Transform");
+				var armaturePathField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("armaturePath"), "Armature Path");
+				
+				var humanoidBoneContainer = new VisualElement();
+				humanoidBoneContainer.Add(humanoidBoneField);
+				humanoidBoneContainer.style.paddingLeft = 15;
+				
+				var transformContainer = new VisualElement();
+				transformContainer.Add(transformField);
+				transformContainer.style.paddingLeft = 15;
+				
+				var armaturePathContainer = new VisualElement();
+				armaturePathContainer.Add(armaturePathField);
+				armaturePathContainer.style.paddingLeft = 15;
+				
+				targetContent.Add(humanoidBoneContainer);
+				targetContent.Add(transformContainer);
+				targetContent.Add(armaturePathContainer);
+				
+				var offsetPathField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("offsetPath"), "Offset Path");
+				var defaultOnField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("defaultOn"), "Default On");
+				var keepTransformsField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("keepTransforms"), "Keep Transforms");
+				var exclusiveOffStateField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("exclusiveOffState"), "Exclusive Off State");
+				
+				targetContent.Add(offsetPathField);
+				targetContent.Add(defaultOnField);
+				targetContent.Add(keepTransformsField);
+				targetContent.Add(exclusiveOffStateField);
+				
+				var animContainer = new VisualElement();
+				animContainer.style.flexDirection = FlexDirection.Row;
+				animContainer.style.marginBottom = 5;
+				var animField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("animationClip"), "Animation Clip");
+				animField.style.flexGrow = 1;
+				animField.style.marginRight = 5;
+				animContainer.Add(animField);
+				targetContent.Add(animContainer);
+				
+				var index = i;
+				var removeButtonContainer = new VisualElement();
+				removeButtonContainer.style.flexDirection = FlexDirection.Row;
+				removeButtonContainer.style.justifyContent = Justify.FlexEnd;
+				removeButtonContainer.style.marginTop = 8;
+				removeButtonContainer.style.paddingTop = 8;
+				removeButtonContainer.style.borderTopWidth = 1;
+				removeButtonContainer.style.borderTopColor = new StyleColor(new Color(0.3f, 0.3f, 0.3f, 0.5f));
+				
+				var removeButton = YUCPUIToolkitHelper.CreateButton("Remove", () =>
+				{
+					customTargetsProp.DeleteArrayElementAtIndex(index);
+					serializedObject.ApplyModifiedProperties();
+				}, YUCPUIToolkitHelper.ButtonVariant.Danger);
+				removeButton.style.fontSize = 12;
+				removeButton.style.height = 26;
+				removeButton.style.paddingLeft = 12;
+				removeButton.style.paddingRight = 12;
+				removeButton.style.paddingTop = 4;
+				removeButton.style.paddingBottom = 4;
+				
+				removeButtonContainer.Add(removeButton);
+				targetContent.Add(removeButtonContainer);
+				
+				targetFoldout.Add(targetContent);
+				
+				var targetIndex = index;
+				System.Action updateVisibility = () =>
+				{
+					serializedObject.Update();
+					if (targetIndex >= customTargetsProp.arraySize) return;
+					
+					var currentElement = customTargetsProp.GetArrayElementAtIndex(targetIndex);
+					var currentTargetType = (MirroredArmatureLinkData.TargetType)currentElement.FindPropertyRelative("targetType").enumValueIndex;
+					var currentDisplayName = currentElement.FindPropertyRelative("displayName").stringValue;
+					if (string.IsNullOrEmpty(currentDisplayName))
+					{
+						currentDisplayName = "Custom";
+					}
+					
+					humanoidBoneContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.HumanoidBone ? DisplayStyle.Flex : DisplayStyle.None;
+					transformContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.Transform ? DisplayStyle.Flex : DisplayStyle.None;
+					armaturePathContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.ArmaturePath ? DisplayStyle.Flex : DisplayStyle.None;
+					
+					targetFoldout.text = $"Target {targetIndex + 1}: {currentDisplayName}";
+				};
+				
+				targetFoldout.schedule.Execute(() => updateVisibility()).Every(100);
+				
+				updateVisibility();
+				
+				container.Add(targetFoldout);
+				
+				if (i < customTargetsProp.arraySize - 1)
+				{
+					container.Add(YUCPUIToolkitHelper.CreateDivider());
+				}
+			}
+		}
+		
 
 	}
 }

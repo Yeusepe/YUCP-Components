@@ -31,6 +31,10 @@ namespace YUCP.Components.Editor
         private bool lastSmartRequireBidirectional;
         private Texture2D lastManualMask;
         private float lastManualMaskThreshold;
+        
+        // Track previous values to prevent unnecessary UI updates
+        private Component previousVrcFuryToggle = null;
+        private string previousValidationError = null;
 
         // Foldout states
         private bool showSmartDetection = false;
@@ -271,14 +275,11 @@ namespace YUCP.Components.Editor
                     }
                 }
                 
-                vrcFuryBanner.Clear();
-                if (vrcFuryToggle != null)
+                // Update VRCFury banner only when toggle changes
+                if (vrcFuryToggle != previousVrcFuryToggle)
                 {
-                    vrcFuryBanner.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                        "VRCFury Toggle Integration Detected\n\n" +
-                        "This Auto Body Hider will work together with the VRCFury Toggle component. " +
-                        "The UDIM discard animation will be added to the toggle's actions automatically during build.",
-                        YUCPUIToolkitHelper.MessageType.Info));
+                    UpdateVrcFuryBanner(vrcFuryBanner, vrcFuryToggle);
+                    previousVrcFuryToggle = vrcFuryToggle;
                 }
                 
                 // Update toggle section (complex logic)
@@ -292,11 +293,12 @@ namespace YUCP.Components.Editor
                 generateButton.text = isGeneratingPreview ? "Generating..." : "Generate Preview";
                 clearButton.SetEnabled(data.previewGenerated);
                 
-                // Update validation error
-                validationError.Clear();
-                if (!ValidateData())
+                // Update validation error only when it changes
+                string currentValidationError = ValidateData() ? null : GetValidationError();
+                if (currentValidationError != previousValidationError)
                 {
-                    validationError.Add(YUCPUIToolkitHelper.CreateHelpBox(GetValidationError(), YUCPUIToolkitHelper.MessageType.Error));
+                    UpdateValidationError(validationError, currentValidationError);
+                    previousValidationError = currentValidationError;
                 }
                 
                 // Handle preview cache updates
@@ -332,6 +334,28 @@ namespace YUCP.Components.Editor
             }).Every(100);
             
             return root;
+        }
+        
+        private void UpdateVrcFuryBanner(VisualElement container, Component vrcFuryToggle)
+        {
+            container.Clear();
+            if (vrcFuryToggle != null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "VRCFury Toggle Integration Detected\n\n" +
+                    "This Auto Body Hider will work together with the VRCFury Toggle component. " +
+                    "The UDIM discard animation will be added to the toggle's actions automatically during build.",
+                    YUCPUIToolkitHelper.MessageType.Info));
+            }
+        }
+        
+        private void UpdateValidationError(VisualElement container, string error)
+        {
+            container.Clear();
+            if (error != null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox(error, YUCPUIToolkitHelper.MessageType.Error));
+            }
         }
         
         private void UpdateToggleSection(VisualElement container, AutoBodyHiderData data, SerializedObject so, Component vrcFuryToggle)

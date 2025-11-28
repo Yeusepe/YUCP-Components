@@ -271,7 +271,13 @@ namespace YUCP.UI.DesignSystem.Utilities
             row.Add(label);
             
             var options = GetControllerButtonOptions();
-            var popup = new PopupField<string>(options, mapping.controllerButton ?? "None");
+            string currentValue = string.IsNullOrEmpty(mapping.controllerButton) ? "None" : mapping.controllerButton;
+            if (!options.Contains(currentValue))
+            {
+                currentValue = "None";
+                mapping.controllerButton = "None";
+            }
+            var popup = new PopupField<string>(options, currentValue);
             popup.style.flexGrow = 1;
             popup.RegisterValueChangedCallback(evt => {
                 mapping.controllerButton = evt.newValue;
@@ -293,7 +299,13 @@ namespace YUCP.UI.DesignSystem.Utilities
             row.Add(label);
             
             var options = GetControllerAxisOptions();
-            var popup = new PopupField<string>(options, mapping.controllerAxis ?? "None");
+            string currentValue = string.IsNullOrEmpty(mapping.controllerAxis) ? "None" : mapping.controllerAxis;
+            if (!options.Contains(currentValue))
+            {
+                currentValue = "None";
+                mapping.controllerAxis = "None";
+            }
+            var popup = new PopupField<string>(options, currentValue);
             popup.style.flexGrow = 1;
             popup.RegisterValueChangedCallback(evt => {
                 mapping.controllerAxis = evt.newValue;
@@ -315,7 +327,13 @@ namespace YUCP.UI.DesignSystem.Utilities
             row.Add(label);
             
             var options = GetControllerTriggerOptions();
-            var popup = new PopupField<string>(options, mapping.controllerTrigger ?? "None");
+            string currentValue = string.IsNullOrEmpty(mapping.controllerTrigger) ? "None" : mapping.controllerTrigger;
+            if (!options.Contains(currentValue))
+            {
+                currentValue = "None";
+                mapping.controllerTrigger = "None";
+            }
+            var popup = new PopupField<string>(options, currentValue);
             popup.style.flexGrow = 1;
             popup.RegisterValueChangedCallback(evt => {
                 mapping.controllerTrigger = evt.newValue;
@@ -337,7 +355,13 @@ namespace YUCP.UI.DesignSystem.Utilities
             row.Add(label);
             
             var options = GetControllerDpadOptions();
-            var popup = new PopupField<string>(options, mapping.controllerDpad ?? "None");
+            string currentValue = string.IsNullOrEmpty(mapping.controllerDpad) ? "None" : mapping.controllerDpad;
+            if (!options.Contains(currentValue))
+            {
+                currentValue = "None";
+                mapping.controllerDpad = "None";
+            }
+            var popup = new PopupField<string>(options, currentValue);
             popup.style.flexGrow = 1;
             popup.RegisterValueChangedCallback(evt => {
                 mapping.controllerDpad = evt.newValue;

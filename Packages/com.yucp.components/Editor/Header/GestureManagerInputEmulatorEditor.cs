@@ -23,12 +23,17 @@ namespace YUCP.Components.Editor.UI
         private bool showControllerSettings = false;
         private bool showBuildStats = false;
         private Vector2 scrollPosition;
+        private int previousMappingsCount = -1;
+        private GameObject previousGestureManager = null;
+        private GestureManagerMode previousGestureManagerMode = (GestureManagerMode)(-1);
+        private bool previousControllerConnected = false;
 
         private void OnEnable()
         {
             if (target is GestureManagerInputEmulator)
             {
                 data = (GestureManagerInputEmulator)target;
+                previousMappingsCount = data.inputMappings != null ? data.inputMappings.Count : -1;
             }
         }
 
@@ -78,6 +83,10 @@ namespace YUCP.Components.Editor.UI
             mappingsContainer.name = "mappings-container";
             root.Add(mappingsContainer);
             
+            // Initialize mappings container with existing mappings
+            previousMappingsCount = data.inputMappings != null ? data.inputMappings.Count : 0;
+            UpdateMappingsContainer(mappingsContainer);
+            
             // Add/Remove Mapping Buttons
             var mappingButtons = new VisualElement();
             mappingButtons.style.flexDirection = FlexDirection.Row;
@@ -98,6 +107,8 @@ namespace YUCP.Components.Editor.UI
                 };
                 data.AddInputMapping(newMapping);
                 EditorUtility.SetDirty(data);
+                UpdateMappingsContainer(mappingsContainer);
+                previousMappingsCount = data.inputMappings.Count;
             }, YUCPUIToolkitHelper.ButtonVariant.Primary);
             addButton.style.height = 25;
             addButton.style.flexGrow = 1;
@@ -111,6 +122,8 @@ namespace YUCP.Components.Editor.UI
                 {
                     data.inputMappings.Clear();
                     EditorUtility.SetDirty(data);
+                    UpdateMappingsContainer(mappingsContainer);
+                    previousMappingsCount = 0;
                 }
             }, YUCPUIToolkitHelper.ButtonVariant.Danger);
             clearButton.style.height = 25;
@@ -160,49 +173,46 @@ namespace YUCP.Components.Editor.UI
             runtimeStatus.name = "runtime-status";
             root.Add(runtimeStatus);
             
+            // Initialize previous values
+            previousGestureManager = data.gestureManager;
+            previousGestureManagerMode = data.gestureManagerMode;
+            previousControllerConnected = IsControllerConnected();
+            
+            // Initial population
+            UpdateGestureManagerHelp(gestureManagerHelp);
+            UpdateControllerStatus(controllerStatus);
+            
             // Dynamic updates
             root.schedule.Execute(() =>
             {
                 serializedObject.Update();
                 
-                // Update gesture manager help
-                gestureManagerHelp.Clear();
-                if (data.gestureManager == null)
+                // Update gesture manager help only when it changes
+                if (data.gestureManager != previousGestureManager || data.gestureManagerMode != previousGestureManagerMode)
                 {
-                    gestureManagerHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("No Gesture Manager assigned. The component will attempt to auto-detect one on this avatar.", YUCPUIToolkitHelper.MessageType.Info));
-                }
-                else
-                {
-                    gestureManagerHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"Using Gesture Manager: {data.gestureManager.GetType().Name}", YUCPUIToolkitHelper.MessageType.None));
+                    UpdateGestureManagerHelp(gestureManagerHelp);
+                    previousGestureManager = data.gestureManager;
+                    previousGestureManagerMode = data.gestureManagerMode;
                 }
                 
-                if (data.gestureManagerMode == GestureManagerMode.GestureManagerMode)
+                // Update mappings container only when count changes
+                int currentMappingsCount = data.inputMappings != null ? data.inputMappings.Count : 0;
+                if (currentMappingsCount != previousMappingsCount)
                 {
-                    gestureManagerHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture Manager Mode: Uses Vrc3Param system for parameter control. Recommended for full Gesture Manager integration.", YUCPUIToolkitHelper.MessageType.Info));
+                    UpdateMappingsContainer(mappingsContainer);
+                    previousMappingsCount = currentMappingsCount;
                 }
-                else if (data.gestureManagerMode == GestureManagerMode.AnimatorMode)
-                {
-                    gestureManagerHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Animator Mode: Directly controls Animator parameters. Use when Gesture Manager is not available.", YUCPUIToolkitHelper.MessageType.Info));
-                }
-                else
-                {
-                    gestureManagerHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Auto Detect: Will automatically determine the best mode based on the detected Gesture Manager.", YUCPUIToolkitHelper.MessageType.Info));
-                }
-                
-                // Update mappings container
-                UpdateMappingsContainer(mappingsContainer);
                 
                 // Update clear button visibility
                 clearButton.style.display = (data.inputMappings != null && data.inputMappings.Count > 0) ? DisplayStyle.Flex : DisplayStyle.None;
                 
-                // Update controller status
-                controllerStatus.Clear();
+                // Update controller status only when connection state changes
                 bool controllerConnected = IsControllerConnected();
-                string[] joystickNames = Input.GetJoystickNames();
-                string statusText = controllerConnected ? 
-                    $"Controller Connected: {joystickNames[0]}" : 
-                    "No Controller Detected";
-                controllerStatus.Add(YUCPUIToolkitHelper.CreateHelpBox(statusText, controllerConnected ? YUCPUIToolkitHelper.MessageType.Info : YUCPUIToolkitHelper.MessageType.Warning));
+                if (controllerConnected != previousControllerConnected)
+                {
+                    UpdateControllerStatus(controllerStatus);
+                    previousControllerConnected = controllerConnected;
+                }
                 
                 // Update build stats visibility
                 buildStatsFoldout.style.display = (data.activeMappings != null && data.activeMappings.Count > 0) ? DisplayStyle.Flex : DisplayStyle.None;
@@ -226,10 +236,6 @@ namespace YUCP.Components.Editor.UI
                 return;
             }
             
-            // Use ScrollView for mappings
-            var scrollView = new ScrollView();
-            scrollView.style.height = 250;
-            
             // Use YUCPInputMappingEditor for each mapping
             for (int i = 0; i < data.inputMappings.Count; i++)
             {
@@ -247,13 +253,12 @@ namespace YUCP.Components.Editor.UI
                         EditorUtility.SetDirty(data);
                         serializedObject.Update();
                         UpdateMappingsContainer(container);
+                        previousMappingsCount = data.inputMappings.Count;
                     }
                 );
                 
-                scrollView.Add(mappingEditor);
+                container.Add(mappingEditor);
             }
-            
-            container.Add(scrollView);
         }
         
         private void UpdateRuntimeStatus(VisualElement container)
@@ -313,6 +318,43 @@ namespace YUCP.Components.Editor.UI
             // Legacy support - not used anymore
         }
 
+        private void UpdateGestureManagerHelp(VisualElement container)
+        {
+            container.Clear();
+            if (data.gestureManager == null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("No Gesture Manager assigned. The component will attempt to auto-detect one on this avatar.", YUCPUIToolkitHelper.MessageType.Info));
+            }
+            else
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Using Gesture Manager: {data.gestureManager.GetType().Name}", YUCPUIToolkitHelper.MessageType.None));
+            }
+            
+            if (data.gestureManagerMode == GestureManagerMode.GestureManagerMode)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture Manager Mode: Uses Vrc3Param system for parameter control. Recommended for full Gesture Manager integration.", YUCPUIToolkitHelper.MessageType.Info));
+            }
+            else if (data.gestureManagerMode == GestureManagerMode.AnimatorMode)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Animator Mode: Directly controls Animator parameters. Use when Gesture Manager is not available.", YUCPUIToolkitHelper.MessageType.Info));
+            }
+            else
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Auto Detect: Will automatically determine the best mode based on the detected Gesture Manager.", YUCPUIToolkitHelper.MessageType.Info));
+            }
+        }
+        
+        private void UpdateControllerStatus(VisualElement container)
+        {
+            container.Clear();
+            bool controllerConnected = IsControllerConnected();
+            string[] joystickNames = Input.GetJoystickNames();
+            string statusText = controllerConnected ? 
+                $"Controller Connected: {joystickNames[0]}" : 
+                "No Controller Detected";
+            container.Add(YUCPUIToolkitHelper.CreateHelpBox(statusText, controllerConnected ? YUCPUIToolkitHelper.MessageType.Info : YUCPUIToolkitHelper.MessageType.Warning));
+        }
+        
         private bool IsControllerConnected()
         {
             // Check if any controller is connected

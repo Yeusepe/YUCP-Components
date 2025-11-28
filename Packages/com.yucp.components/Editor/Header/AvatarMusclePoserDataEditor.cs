@@ -33,6 +33,12 @@ namespace YUCP.Components.Editor
         private string[] toggleComponentNames;
         private int selectedToggleIndex = 0;
         
+        // Track previous values to prevent unnecessary UI updates
+        private GameObject previousToggleObject = null;
+        private string[] previousToggleComponentNames = null;
+        private Component previousSelectedToggle = null;
+        private Animator previousAnimator = null;
+        
         // Teal color
         private static readonly Color TEAL_COLOR = new Color(0.212f, 0.749f, 0.694f);
         
@@ -69,6 +75,58 @@ namespace YUCP.Components.Editor
         {
             SceneView.duringSceneGui -= OnSceneGUI;
             CleanupPreview();
+        }
+        
+        private void UpdateToggleSelection(VisualElement container)
+        {
+            container.Clear();
+            if (data.toggleObject != null && toggleComponentNames != null && toggleComponentNames.Length > 0)
+            {
+                var popup = new PopupField<string>("Selected Toggle", new List<string>(toggleComponentNames), selectedToggleIndex);
+                popup.RegisterValueChangedCallback(evt =>
+                {
+                    selectedToggleIndex = popup.index;
+                    UpdateSelectedToggle();
+                });
+                container.Add(popup);
+            }
+        }
+        
+        private void UpdateToggleHelp(VisualElement container)
+        {
+            container.Clear();
+            if (data.toggleObject != null && toggleComponentNames != null && toggleComponentNames.Length > 0)
+            {
+                if (data.selectedToggle != null)
+                {
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Using toggle: {data.selectedToggle.GetType().Name}", YUCPUIToolkitHelper.MessageType.Info));
+                }
+            }
+            else if (data.toggleObject != null)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("No toggle components found on the toggle object. Add a VRCFury toggle component.", YUCPUIToolkitHelper.MessageType.Warning));
+            }
+        }
+        
+        private void UpdateAvatarWarning(VisualElement container)
+        {
+            container.Clear();
+            if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox("No humanoid avatar found. This component requires a humanoid avatar with an Animator.", YUCPUIToolkitHelper.MessageType.Warning));
+            }
+        }
+        
+        private bool AreArraysEqual(string[] a, string[] b)
+        {
+            if (a == null && b == null) return true;
+            if (a == null || b == null) return false;
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
         }
         
         public override VisualElement CreateInspectorGUI()
@@ -167,37 +225,39 @@ namespace YUCP.Components.Editor
             debugContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Mode"));
             root.Add(debugCard);
             
+            // Initialize previous values
+            previousToggleObject = data.toggleObject;
+            previousToggleComponentNames = toggleComponentNames;
+            previousSelectedToggle = data.selectedToggle;
+            previousAnimator = animator;
+            
+            // Initial population
+            UpdateToggleSelection(toggleSelectContainer);
+            UpdateToggleHelp(toggleHelp);
+            UpdateAvatarWarning(avatarWarning);
+            
             // Dynamic updates
             root.schedule.Execute(() =>
             {
                 serializedObject.Update();
                 FindAnimator();
                 
-                // Update toggle selection
-                toggleSelectContainer.Clear();
-                if (data.toggleObject != null && toggleComponentNames != null && toggleComponentNames.Length > 0)
+                // Update toggle selection only when toggle object or component names change
+                if (data.toggleObject != previousToggleObject || 
+                    !AreArraysEqual(toggleComponentNames, previousToggleComponentNames))
                 {
-                    var popup = new PopupField<string>("Selected Toggle", new List<string>(toggleComponentNames), selectedToggleIndex);
-                    popup.RegisterValueChangedCallback(evt =>
-                    {
-                        selectedToggleIndex = popup.index;
-                        UpdateSelectedToggle();
-                    });
-                    toggleSelectContainer.Add(popup);
+                    UpdateToggleSelection(toggleSelectContainer);
+                    previousToggleObject = data.toggleObject;
+                    previousToggleComponentNames = toggleComponentNames;
                 }
                 
-                // Update toggle help
-                toggleHelp.Clear();
-                if (data.toggleObject != null && toggleComponentNames != null && toggleComponentNames.Length > 0)
+                // Update toggle help only when toggle object, component names, or selected toggle changes
+                if (data.toggleObject != previousToggleObject || 
+                    !AreArraysEqual(toggleComponentNames, previousToggleComponentNames) ||
+                    data.selectedToggle != previousSelectedToggle)
                 {
-                    if (data.selectedToggle != null)
-                    {
-                        toggleHelp.Add(YUCPUIToolkitHelper.CreateHelpBox($"Using toggle: {data.selectedToggle.GetType().Name}", YUCPUIToolkitHelper.MessageType.Info));
-                    }
-                }
-                else if (data.toggleObject != null)
-                {
-                    toggleHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("No toggle components found on the toggle object. Add a VRCFury toggle component.", YUCPUIToolkitHelper.MessageType.Warning));
+                    UpdateToggleHelp(toggleHelp);
+                    previousSelectedToggle = data.selectedToggle;
                 }
                 
                 // Update selected bone card
@@ -209,11 +269,11 @@ namespace YUCP.Components.Editor
                 clearButton.SetEnabled(canRecord);
                 previewButton.SetEnabled(canRecord);
                 
-                // Update avatar warning
-                avatarWarning.Clear();
-                if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+                // Update avatar warning only when animator changes
+                if (animator != previousAnimator)
                 {
-                    avatarWarning.Add(YUCPUIToolkitHelper.CreateHelpBox("No humanoid avatar found. This component requires a humanoid avatar with an Animator.", YUCPUIToolkitHelper.MessageType.Warning));
+                    UpdateAvatarWarning(avatarWarning);
+                    previousAnimator = animator;
                 }
                 
                 serializedObject.ApplyModifiedProperties();

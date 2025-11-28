@@ -43,6 +43,11 @@ namespace YUCP.Components.Editor
         private bool showDebug = false;
         private bool showInspectorOptions = false;
         private bool showBuildStats = false;
+        
+        // Track previous values to prevent unnecessary UI updates
+        private UIMode previousMode = (UIMode)(-1);
+        private VRC.SDK3.Avatars.Components.VRCAvatarDescriptor previousAvatarDescriptor = null;
+        private bool previousUseAutoSettings = false;
 
         private void OnEnable()
         {
@@ -98,12 +103,53 @@ namespace YUCP.Components.Editor
             advancedModeUI.name = "advanced-mode-ui";
             root.Add(advancedModeUI);
             
+            // Initialize previous values
+            previousMode = currentMode;
+            previousAvatarDescriptor = data.GetComponent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
+            previousUseAutoSettings = data.useAutoSettings;
+            
+            // Initial population
+            UpdatePlacementValidation(placementValidation);
+            if (isOptimizerInstalled == false)
+            {
+                UpdateNotInstalledUI(notInstalledUI);
+                presetModeUI.style.display = DisplayStyle.None;
+                advancedModeUI.style.display = DisplayStyle.None;
+                modeSwitcher.style.display = DisplayStyle.None;
+                installedBanner.style.display = DisplayStyle.None;
+            }
+            else
+            {
+                notInstalledUI.style.display = DisplayStyle.None;
+                UpdateInstalledBanner(installedBanner);
+                UpdateModeSwitcher(modeSwitcher);
+                
+                if (currentMode == UIMode.Preset)
+                {
+                    presetModeUI.style.display = DisplayStyle.Flex;
+                    advancedModeUI.style.display = DisplayStyle.None;
+                    UpdatePresetMode(presetModeUI);
+                }
+                else
+                {
+                    presetModeUI.style.display = DisplayStyle.None;
+                    advancedModeUI.style.display = DisplayStyle.Flex;
+                    UpdateAdvancedMode(advancedModeUI);
+                }
+            }
+            
             // Dynamic updates
             root.schedule.Execute(() =>
             {
                 serializedObject.Update();
                 
-                UpdatePlacementValidation(placementValidation);
+                // Update placement validation only when avatar descriptor changes
+                var currentAvatarDescriptor = data.GetComponent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
+                if (currentAvatarDescriptor != previousAvatarDescriptor)
+                {
+                    UpdatePlacementValidation(placementValidation);
+                    previousAvatarDescriptor = currentAvatarDescriptor;
+                }
                 
                 if (isOptimizerInstalled == false)
                 {
@@ -120,17 +166,22 @@ namespace YUCP.Components.Editor
                 UpdateInstalledBanner(installedBanner);
                 UpdateModeSwitcher(modeSwitcher);
                 
-                if (currentMode == UIMode.Preset)
+                // Only rebuild mode UI when mode changes
+                if (currentMode != previousMode)
                 {
-                    presetModeUI.style.display = DisplayStyle.Flex;
-                    advancedModeUI.style.display = DisplayStyle.None;
-                    UpdatePresetMode(presetModeUI);
-                }
-                else
-                {
-                    presetModeUI.style.display = DisplayStyle.None;
-                    advancedModeUI.style.display = DisplayStyle.Flex;
-                    UpdateAdvancedMode(advancedModeUI);
+                    if (currentMode == UIMode.Preset)
+                    {
+                        presetModeUI.style.display = DisplayStyle.Flex;
+                        advancedModeUI.style.display = DisplayStyle.None;
+                        UpdatePresetMode(presetModeUI);
+                    }
+                    else
+                    {
+                        presetModeUI.style.display = DisplayStyle.None;
+                        advancedModeUI.style.display = DisplayStyle.Flex;
+                        UpdateAdvancedMode(advancedModeUI);
+                    }
+                    previousMode = currentMode;
                 }
                 
                 serializedObject.ApplyModifiedProperties();
@@ -391,57 +442,69 @@ namespace YUCP.Components.Editor
             
             UpdatePresetBuildStatistics(container);
             
-            // Update auto settings help and manual presets
+            // Initial population of auto settings help and manual presets
+            UpdateAutoSettingsHelp(autoSettingsHelp, manualPresetsContainer);
+            
+            // Update auto settings help and manual presets only when useAutoSettings changes
             container.schedule.Execute(() =>
             {
-                autoSettingsHelp.Clear();
-                manualPresetsContainer.Clear();
-                
-                if (data.useAutoSettings)
+                if (data.useAutoSettings != previousUseAutoSettings)
                 {
-                    autoSettingsHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                        "Auto Settings: The optimizer will analyze your avatar and automatically choose the best settings based on complexity, poly count, and features.\n\n" +
-                        "This is recommended for most users.",
-                        YUCPUIToolkitHelper.MessageType.Info));
-                    manualPresetsContainer.style.display = DisplayStyle.None;
-                }
-                else
-                {
-                    autoSettingsHelp.style.display = DisplayStyle.None;
-                    manualPresetsContainer.style.display = DisplayStyle.Flex;
-                    
-                    YUCPUIToolkitHelper.AddSpacing(manualPresetsContainer, 10);
-                    
-                    var manualLabel = new Label("Manual Presets:");
-                    manualLabel.style.fontSize = 13;
-                    manualLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-                    manualPresetsContainer.Add(manualLabel);
-                    
-                    YUCPUIToolkitHelper.AddSpacing(manualPresetsContainer, 5);
-                    
-                    var presetSelector = YUCPUIToolkitHelper.CreatePresetSelector((preset) =>
-                    {
-                        switch (preset)
-                        {
-                            case YUCPPresetSelector.Preset.Conservative:
-                                ApplyConservativePreset();
-                                break;
-                            case YUCPPresetSelector.Preset.Balanced:
-                                ApplyBalancedPreset();
-                                break;
-                            case YUCPPresetSelector.Preset.Aggressive:
-                                ApplyAggressivePreset();
-                                break;
-                            case YUCPPresetSelector.Preset.Custom:
-                                EditorUtility.DisplayDialog("Custom Settings",
-                                    "Switch to Advanced Mode using the toggle above to customize all settings individually.",
-                                    "OK");
-                                break;
-                        }
-                    });
-                    manualPresetsContainer.Add(presetSelector);
+                    UpdateAutoSettingsHelp(autoSettingsHelp, manualPresetsContainer);
+                    previousUseAutoSettings = data.useAutoSettings;
                 }
             }).Every(100);
+        }
+        
+        private void UpdateAutoSettingsHelp(VisualElement autoSettingsHelp, VisualElement manualPresetsContainer)
+        {
+            autoSettingsHelp.Clear();
+            manualPresetsContainer.Clear();
+            
+            if (data.useAutoSettings)
+            {
+                autoSettingsHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "Auto Settings: The optimizer will analyze your avatar and automatically choose the best settings based on complexity, poly count, and features.\n\n" +
+                    "This is recommended for most users.",
+                    YUCPUIToolkitHelper.MessageType.Info));
+                manualPresetsContainer.style.display = DisplayStyle.None;
+            }
+            else
+            {
+                autoSettingsHelp.style.display = DisplayStyle.None;
+                manualPresetsContainer.style.display = DisplayStyle.Flex;
+                
+                YUCPUIToolkitHelper.AddSpacing(manualPresetsContainer, 10);
+                
+                var manualLabel = new Label("Manual Presets:");
+                manualLabel.style.fontSize = 13;
+                manualLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                manualPresetsContainer.Add(manualLabel);
+                
+                YUCPUIToolkitHelper.AddSpacing(manualPresetsContainer, 5);
+                
+                var presetSelector = YUCPUIToolkitHelper.CreatePresetSelector((preset) =>
+                {
+                    switch (preset)
+                    {
+                        case YUCPPresetSelector.Preset.Conservative:
+                            ApplyConservativePreset();
+                            break;
+                        case YUCPPresetSelector.Preset.Balanced:
+                            ApplyBalancedPreset();
+                            break;
+                        case YUCPPresetSelector.Preset.Aggressive:
+                            ApplyAggressivePreset();
+                            break;
+                        case YUCPPresetSelector.Preset.Custom:
+                            EditorUtility.DisplayDialog("Custom Settings",
+                                "Switch to Advanced Mode using the toggle above to customize all settings individually.",
+                                "OK");
+                            break;
+                    }
+                });
+                manualPresetsContainer.Add(presetSelector);
+            }
         }
         
         private void UpdatePresetExclusions(VisualElement container)
@@ -455,22 +518,36 @@ namespace YUCP.Components.Editor
             exclusionsContent.Add(exclusionsHelp);
             container.Add(exclusionsCard);
             
+            // Track previous exclude transforms count
+            int previousExcludeTransformsCount = data.excludeTransforms != null ? data.excludeTransforms.Count : -1;
+            UpdateExclusionsHelp(exclusionsHelp);
+            
             container.schedule.Execute(() =>
             {
-                exclusionsHelp.Clear();
-                if (data.excludeTransforms != null && data.excludeTransforms.Count > 0)
+                int currentExcludeTransformsCount = data.excludeTransforms != null ? data.excludeTransforms.Count : -1;
+                if (currentExcludeTransformsCount != previousExcludeTransformsCount)
                 {
-                    exclusionsHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                        $"{data.excludeTransforms.Count} transform(s) excluded from all optimizations.",
-                        YUCPUIToolkitHelper.MessageType.Info));
-                }
-                else
-                {
-                    exclusionsHelp.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                        "Add transforms here to exclude them from optimization (e.g., posebones, penetrators, custom systems).",
-                        YUCPUIToolkitHelper.MessageType.None));
+                    UpdateExclusionsHelp(exclusionsHelp);
+                    previousExcludeTransformsCount = currentExcludeTransformsCount;
                 }
             }).Every(100);
+        }
+        
+        private void UpdateExclusionsHelp(VisualElement container)
+        {
+            container.Clear();
+            if (data.excludeTransforms != null && data.excludeTransforms.Count > 0)
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    $"{data.excludeTransforms.Count} transform(s) excluded from all optimizations.",
+                    YUCPUIToolkitHelper.MessageType.Info));
+            }
+            else
+            {
+                container.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "Add transforms here to exclude them from optimization (e.g., posebones, penetrators, custom systems).",
+                    YUCPUIToolkitHelper.MessageType.None));
+            }
         }
         
         private void UpdateOptimizationOverview(VisualElement container)
