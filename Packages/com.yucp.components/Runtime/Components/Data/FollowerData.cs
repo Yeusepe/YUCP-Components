@@ -29,6 +29,9 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Follower\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Follower";
 
+        [Tooltip("OPTIONAL: Global parameter name for Follower/Stop. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        public string globalParameterStop = "";
+
         [Header("Follow Settings")]
         [Tooltip("Follow speed multiplier. Higher values = faster following. This affects the Follow animation clip.")]
         [Range(0.1f, 5f)]
@@ -66,6 +69,7 @@ namespace YUCP.Components
             public Transform lookTarget;
             public float followSpeed;
             public string menuLocation;
+            public string globalParameterStop;
             public string followerGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -106,6 +110,7 @@ namespace YUCP.Components
                 lookTarget = lookTarget,
                 followSpeed = Mathf.Clamp(followSpeed, 0.1f, 5f),
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
+                globalParameterStop = globalParameterStop?.Trim() ?? string.Empty,
                 followerGroupId = enableGrouping ? NormalizeGroupId(followerGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,
@@ -162,6 +167,7 @@ namespace YUCP.Components
             try
             {
                 menuLocation = source.menuLocation;
+                globalParameterStop = source.globalParameterStop;
                 lookTarget = source.lookTarget;
                 followSpeed = source.followSpeed;
                 enableGrouping = source.enableGrouping;

@@ -18,6 +18,7 @@ namespace YUCP.Components.Editor
         private SerializedProperty followerTargetProp;
         private SerializedProperty lookTargetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty globalParameterStopProp;
         private SerializedProperty followSpeedProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty followerGroupIdProp;
@@ -33,6 +34,7 @@ namespace YUCP.Components.Editor
             followerTargetProp = serializedObject.FindProperty("followerTarget");
             lookTargetProp = serializedObject.FindProperty("lookTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            globalParameterStopProp = serializedObject.FindProperty("globalParameterStop");
             followSpeedProp = serializedObject.FindProperty("followSpeed");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             followerGroupIdProp = serializedObject.FindProperty("followerGroupId");
@@ -82,6 +84,8 @@ namespace YUCP.Components.Editor
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure follower behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterStopProp, "Global Parameter (Stop)"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("OPTIONAL: When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(optionsCard);
             
             var followCard = YUCPUIToolkitHelper.CreateCard("Follow Settings", "Configure follow speed.");

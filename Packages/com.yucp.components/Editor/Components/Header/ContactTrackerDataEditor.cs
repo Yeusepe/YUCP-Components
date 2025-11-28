@@ -17,6 +17,7 @@ namespace YUCP.Components.Editor
 
         private SerializedProperty trackerTargetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty globalParameterControlProp;
         private SerializedProperty collisionTagsProp;
         private SerializedProperty sizeParameterProp;
         private SerializedProperty enableGroupingProp;
@@ -32,6 +33,7 @@ namespace YUCP.Components.Editor
 
             trackerTargetProp = serializedObject.FindProperty("trackerTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            globalParameterControlProp = serializedObject.FindProperty("globalParameterControl");
             collisionTagsProp = serializedObject.FindProperty("collisionTags");
             sizeParameterProp = serializedObject.FindProperty("sizeParameter");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
@@ -80,6 +82,8 @@ namespace YUCP.Components.Editor
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure contact tracker behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterControlProp, "Global Parameter (Control)"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("OPTIONAL: When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(optionsCard);
             
             var contactCard = YUCPUIToolkitHelper.CreateCard("Contact Settings", "Configure proximity contact collision tags and size.");

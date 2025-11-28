@@ -26,6 +26,12 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the reset toggle should be created (e.g. \"Utility/Collision\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Collision";
 
+        [Tooltip("OPTIONAL: Global parameter name for CollisionDetection/Reset. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        public string globalParameterReset = "";
+
+        [Tooltip("OPTIONAL: Global parameter name for CollisionDetection/AlwaysReset. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        public string globalParameterAlwaysReset = "";
+
         [Header("Collision Settings")]
         [Tooltip("Layers that the particle system will detect collisions with.")]
         public LayerMask collisionLayers = -1;
@@ -67,6 +73,8 @@ namespace YUCP.Components
             public GameObject targetObject;
             public bool alwaysReset;
             public string menuLocation;
+            public string globalParameterReset;
+            public string globalParameterAlwaysReset;
             public LayerMask collisionLayers;
             public bool useTriggers;
             public float particleScale;
@@ -108,6 +116,8 @@ namespace YUCP.Components
                 targetObject = gameObject,
                 alwaysReset = alwaysReset,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
+                globalParameterReset = globalParameterReset?.Trim() ?? string.Empty,
+                globalParameterAlwaysReset = globalParameterAlwaysReset?.Trim() ?? string.Empty,
                 collisionLayers = collisionLayers,
                 useTriggers = useTriggers,
                 particleScale = Mathf.Clamp(particleScale, 0.1f, 10f),
@@ -168,6 +178,8 @@ namespace YUCP.Components
             {
                 alwaysReset = source.alwaysReset;
                 menuLocation = source.menuLocation;
+                globalParameterReset = source.globalParameterReset;
+                globalParameterAlwaysReset = source.globalParameterAlwaysReset;
                 collisionLayers = source.collisionLayers;
                 useTriggers = source.useTriggers;
                 particleScale = source.particleScale;

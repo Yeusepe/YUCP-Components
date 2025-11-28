@@ -26,6 +26,9 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Tracker\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Tracker";
 
+        [Tooltip("OPTIONAL: Global parameter name for ContactTracker/Control. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        public string globalParameterControl = "";
+
         [Header("Contact Settings")]
         [Tooltip("Collision tags for the 6 proximity contacts. Order: X+, X-, Y+, Y-, Z+, Z-")]
         public string[] collisionTags = new string[6] { "Head", "Head", "Head", "Head", "Head", "Head" };
@@ -64,6 +67,7 @@ namespace YUCP.Components
             public GameObject targetObject;
             public Transform trackerTarget;
             public string menuLocation;
+            public string globalParameterControl;
             public string[] collisionTags;
             public float sizeParameter;
             public string trackerGroupId;
@@ -117,6 +121,7 @@ namespace YUCP.Components
                 targetObject = gameObject,
                 trackerTarget = trackerTarget,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
+                globalParameterControl = globalParameterControl?.Trim() ?? string.Empty,
                 collisionTags = tags,
                 sizeParameter = Mathf.Clamp01(sizeParameter),
                 trackerGroupId = enableGrouping ? NormalizeGroupId(trackerGroupId) : string.Empty,
@@ -175,6 +180,7 @@ namespace YUCP.Components
             try
             {
                 menuLocation = source.menuLocation;
+                globalParameterControl = source.globalParameterControl;
                 if (source.collisionTags != null && source.collisionTags.Length == 6)
                 {
                     collisionTags = (string[])source.collisionTags.Clone();

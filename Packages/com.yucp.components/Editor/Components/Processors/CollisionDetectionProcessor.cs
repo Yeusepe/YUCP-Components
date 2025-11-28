@@ -169,6 +169,27 @@ namespace YUCP.Components.Editor
                     InstallSystem(descriptor, prefab, settings);
                 }
 
+                var menuLocation = members.Count > 0 ? members[0].Settings.menuLocation : string.Empty;
+                var globalParamReset = members.Count > 0 ? members[0].Settings.globalParameterReset : string.Empty;
+                var globalParamAlwaysReset = members.Count > 0 ? members[0].Settings.globalParameterAlwaysReset : string.Empty;
+                if (!string.IsNullOrEmpty(menuLocation))
+                {
+                    var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, menuLocation);
+                    if (menu != null)
+                    {
+                        if (!string.IsNullOrEmpty(globalParamReset))
+                        {
+                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamReset);
+                        }
+                        if (!string.IsNullOrEmpty(globalParamAlwaysReset))
+                        {
+                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamAlwaysReset);
+                        }
+                        VRCFuryHelper.AddMenuToggle(menu, "Collision Detection Reset", "CollisionDetection/Reset");
+                        VRCFuryHelper.AddMenuToggle(menu, "Collision Detection Always Reset", "CollisionDetection/AlwaysReset");
+                    }
+                }
+
                 var summaryLabel = key.IsIsolated
                     ? "Collision Detection (isolated)"
                     : $"Collision Detection group \"{key.CollisionGroupId}\"";

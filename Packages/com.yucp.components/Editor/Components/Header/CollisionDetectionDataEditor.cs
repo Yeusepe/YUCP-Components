@@ -17,6 +17,8 @@ namespace YUCP.Components.Editor
 
         private SerializedProperty alwaysResetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty globalParameterResetProp;
+        private SerializedProperty globalParameterAlwaysResetProp;
         private SerializedProperty collisionLayersProp;
         private SerializedProperty useTriggersProp;
         private SerializedProperty particleScaleProp;
@@ -33,6 +35,8 @@ namespace YUCP.Components.Editor
 
             alwaysResetProp = serializedObject.FindProperty("alwaysReset");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            globalParameterResetProp = serializedObject.FindProperty("globalParameterReset");
+            globalParameterAlwaysResetProp = serializedObject.FindProperty("globalParameterAlwaysReset");
             collisionLayersProp = serializedObject.FindProperty("collisionLayers");
             useTriggersProp = serializedObject.FindProperty("useTriggers");
             particleScaleProp = serializedObject.FindProperty("particleScale");
@@ -77,6 +81,9 @@ namespace YUCP.Components.Editor
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(alwaysResetProp, "Always Reset"));
             optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, IsColliding resets immediately after collision stops. When disabled, it stays on until Reset is triggered.", YUCPUIToolkitHelper.MessageType.Info));
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterResetProp, "Global Parameter (Reset)"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterAlwaysResetProp, "Global Parameter (Always Reset)"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("OPTIONAL: When set, these parameters will be registered as global parameters that can be controlled by VRChat worlds or external sources. Leave empty to use local parameters only.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(optionsCard);
             
             var collisionCard = YUCPUIToolkitHelper.CreateCard("Collision Settings", "Configure particle system collision detection.");

@@ -17,6 +17,7 @@ namespace YUCP.Components.Editor
 
         private SerializedProperty launcherTargetProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty globalParameterControlProp;
         private SerializedProperty launchSpeedProp;
         private SerializedProperty maximumForceProp;
         private SerializedProperty collisionLayersProp;
@@ -33,6 +34,7 @@ namespace YUCP.Components.Editor
 
             launcherTargetProp = serializedObject.FindProperty("launcherTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            globalParameterControlProp = serializedObject.FindProperty("globalParameterControl");
             launchSpeedProp = serializedObject.FindProperty("launchSpeed");
             maximumForceProp = serializedObject.FindProperty("maximumForce");
             collisionLayersProp = serializedObject.FindProperty("collisionLayers");
@@ -82,6 +84,8 @@ namespace YUCP.Components.Editor
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure rigidbody launcher behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterControlProp, "Global Parameter (Control)"));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("OPTIONAL: When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(optionsCard);
             
             var launchCard = YUCPUIToolkitHelper.CreateCard("Launch Settings", "Configure launch speed, force, and collision.");

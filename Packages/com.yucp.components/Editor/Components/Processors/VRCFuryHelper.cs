@@ -1,15 +1,90 @@
 using System.Collections;
+using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
+using VRC.SDK3.Avatars.ScriptableObjects;
 using com.vrcfury.api;
 
 namespace YUCP.Components.Editor
 {
     public static class VRCFuryHelper
     {
+        public static VRCExpressionsMenu GetMenuFromLocation(VRCAvatarDescriptor descriptor, string location)
+        {
+            if (descriptor == null || descriptor.expressionsMenu == null)
+            {
+                return null;
+            }
+
+            VRCExpressionsMenu menu = descriptor.expressionsMenu;
+            if (string.IsNullOrEmpty(location))
+            {
+                return menu;
+            }
+
+            string trimmed = location.Trim();
+            if (trimmed.StartsWith("/"))
+            {
+                trimmed = trimmed.Substring(1);
+            }
+            if (trimmed.EndsWith("/"))
+            {
+                trimmed = trimmed.Substring(0, trimmed.Length - 1);
+            }
+
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return menu;
+            }
+
+            string[] menus = trimmed.Split('/');
+
+            for (int i = 0; i < menus.Length; i++)
+            {
+                string nextMenu = menus[i];
+                if (menu.controls == null) return null;
+
+                VRCExpressionsMenu.Control nextMenuControl = menu.controls
+                    .Where(x => x.type == VRCExpressionsMenu.Control.ControlType.SubMenu)
+                    .FirstOrDefault(x => x.name == nextMenu);
+                if (nextMenuControl == null || nextMenuControl.subMenu == null) return null;
+
+                menu = nextMenuControl.subMenu;
+            }
+
+            if (menu.controls == null) return null;
+            return menu;
+        }
+
+        public static void AddMenuToggle(VRCExpressionsMenu menu, string name, string parameterName)
+        {
+            if (menu == null || menu.controls == null)
+            {
+                Debug.LogWarning("[YUCP VRCFuryHelper] Cannot add menu toggle: menu is null or has no controls.");
+                return;
+            }
+
+            if (menu.controls.Any(c => c.parameter != null && c.parameter.name == parameterName))
+            {
+                return;
+            }
+
+            menu.controls.Add(new VRCExpressionsMenu.Control()
+            {
+                name = name,
+                style = VRCExpressionsMenu.Control.Style.Style1,
+                type = VRCExpressionsMenu.Control.ControlType.Toggle,
+                parameter = new VRCExpressionsMenu.Control.Parameter()
+                {
+                    name = parameterName
+                }
+            });
+
+            EditorUtility.SetDirty(menu);
+        }
         public static void AddControllerToVRCFury(VRCAvatarDescriptor descriptor, AnimatorController controller, VRCAvatarDescriptor.AnimLayerType layerType = VRCAvatarDescriptor.AnimLayerType.FX)
         {
             Component existingVRCFury = FindExistingFullController(descriptor);
@@ -107,6 +182,42 @@ namespace YUCP.Components.Editor
             else
             {
                 Debug.LogWarning("[YUCP VRCFuryHelper] Could not find AddParams method on FullController. Parameters may not be added.");
+            }
+        }
+
+        public static void AddGlobalParamToVRCFury(VRCAvatarDescriptor descriptor, string parameterName)
+        {
+            Component existingVRCFury = FindExistingFullController(descriptor);
+            
+            if (existingVRCFury != null)
+            {
+                AddGlobalParamToExistingFullController(existingVRCFury, parameterName);
+            }
+            else
+            {
+                var fullController = FuryComponents.CreateFullController(descriptor.gameObject);
+                fullController.AddGlobalParam(parameterName);
+                EditorUtility.SetDirty(descriptor.gameObject);
+            }
+        }
+
+        private static void AddGlobalParamToExistingFullController(Component existingVRCFury, string parameterName)
+        {
+            var contentField = existingVRCFury.GetType().GetField("content", BindingFlags.Public | BindingFlags.Instance);
+            if (contentField == null) return;
+            
+            var content = contentField.GetValue(existingVRCFury);
+            if (content == null) return;
+            
+            var addGlobalParamMethod = content.GetType().GetMethod("AddGlobalParam", new[] { typeof(string) });
+            if (addGlobalParamMethod != null)
+            {
+                addGlobalParamMethod.Invoke(content, new object[] { parameterName });
+                EditorUtility.SetDirty(existingVRCFury);
+            }
+            else
+            {
+                Debug.LogWarning("[YUCP VRCFuryHelper] Could not find AddGlobalParam method on FullController. Global parameter may not be added.");
             }
         }
     }

@@ -152,6 +152,21 @@ namespace YUCP.Components.Editor
                     InstallSystem(descriptor, prefab, settings);
                 }
 
+                var menuLocation = members.Count > 0 ? members[0].Settings.menuLocation : string.Empty;
+                var globalParamStop = members.Count > 0 ? members[0].Settings.globalParameterStop : string.Empty;
+                if (!string.IsNullOrEmpty(menuLocation))
+                {
+                    var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, menuLocation);
+                    if (menu != null)
+                    {
+                        if (!string.IsNullOrEmpty(globalParamStop))
+                        {
+                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamStop);
+                        }
+                        VRCFuryHelper.AddMenuToggle(menu, "Follower Stop", "Follower/Stop");
+                    }
+                }
+
                 var summaryLabel = key.IsIsolated
                     ? "Follower (isolated)"
                     : $"Follower group \"{key.FollowerGroupId}\"";

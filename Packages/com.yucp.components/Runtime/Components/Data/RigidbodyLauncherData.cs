@@ -26,6 +26,9 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Launcher\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Launcher";
 
+        [Tooltip("OPTIONAL: Global parameter name for RigidbodyLauncher/Control. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        public string globalParameterControl = "";
+
         [Header("Launch Settings")]
         [Tooltip("Launch speed/velocity. Negative value for forward direction. This affects the Target Velocity in the animation clip.")]
         public float launchSpeed = -10f;
@@ -67,6 +70,7 @@ namespace YUCP.Components
             public GameObject targetObject;
             public Transform launcherTarget;
             public string menuLocation;
+            public string globalParameterControl;
             public float launchSpeed;
             public float maximumForce;
             public LayerMask collisionLayers;
@@ -108,6 +112,7 @@ namespace YUCP.Components
                 targetObject = gameObject,
                 launcherTarget = launcherTarget,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
+                globalParameterControl = globalParameterControl?.Trim() ?? string.Empty,
                 launchSpeed = launchSpeed,
                 maximumForce = Mathf.Clamp(maximumForce, 0f, 10000f),
                 collisionLayers = collisionLayers,
@@ -167,6 +172,7 @@ namespace YUCP.Components
             try
             {
                 menuLocation = source.menuLocation;
+                globalParameterControl = source.globalParameterControl;
                 launchSpeed = source.launchSpeed;
                 maximumForce = source.maximumForce;
                 collisionLayers = source.collisionLayers;

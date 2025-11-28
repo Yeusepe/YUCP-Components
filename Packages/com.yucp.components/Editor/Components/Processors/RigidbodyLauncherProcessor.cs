@@ -152,6 +152,21 @@ namespace YUCP.Components.Editor
                     InstallSystem(descriptor, prefab, settings);
                 }
 
+                var menuLocation = members.Count > 0 ? members[0].Settings.menuLocation : string.Empty;
+                var globalParamControl = members.Count > 0 ? members[0].Settings.globalParameterControl : string.Empty;
+                if (!string.IsNullOrEmpty(menuLocation))
+                {
+                    var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, menuLocation);
+                    if (menu != null)
+                    {
+                        if (!string.IsNullOrEmpty(globalParamControl))
+                        {
+                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamControl);
+                        }
+                        VRCFuryHelper.AddMenuToggle(menu, "Rigidbody Launcher Control", "RigidbodyLauncher/Control");
+                    }
+                }
+
                 var summaryLabel = key.IsIsolated
                     ? "Rigidbody Launcher (isolated)"
                     : $"Rigidbody Launcher group \"{key.LauncherGroupId}\"";

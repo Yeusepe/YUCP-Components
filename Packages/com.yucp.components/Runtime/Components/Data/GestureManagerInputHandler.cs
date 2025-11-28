@@ -72,6 +72,22 @@ namespace YUCP.Components
         private int inputEventCount;
         private int parameterSetCount;
 
+        // Rotation and flick detection state
+        private float _leftPrevAngleRad = 0f;
+        private float _rightPrevAngleRad = 0f;
+        private bool _leftInitialized = false;
+        private bool _rightInitialized = false;
+        private float _leftPrevX = 0f;
+        private float _leftPrevY = 0f;
+        private float _rightPrevX = 0f;
+        private float _rightPrevY = 0f;
+        private float _leftPrevMagnitude = 0f;
+        private float _rightPrevMagnitude = 0f;
+        private int _leftFlickFrameCount = 0;
+        private int _rightFlickFrameCount = 0;
+        private bool _leftFlickWasSent = false;
+        private bool _rightFlickWasSent = false;
+
         // Public properties for external access
         public Component GestureManager => gestureManager;
         public Dictionary<string, float> InputValues => inputValues;
@@ -207,8 +223,21 @@ namespace YUCP.Components
             
             if (string.IsNullOrEmpty(axisName) || axisName == "None") return 0f;
             
-            // Check if this is an angle axis that needs calculation from X/Y
             string axisLower = axisName.ToLower();
+            
+            // Check if this is a rotation direction axis
+            if (axisLower.Contains("rotation direction") || axisLower.Contains("rotationdirection"))
+            {
+                return GetStickRotationDirection(axisName);
+            }
+            
+            // Check if this is a flick detection axis
+            if (axisLower.Contains("flick"))
+            {
+                return GetStickFlick(axisName);
+            }
+            
+            // Check if this is an angle axis that needs calculation from X/Y
             if (axisLower == "left stick angle" || axisLower == "ls angle")
             {
                 return GetStickAngle("Horizontal", "Vertical");
@@ -937,6 +966,197 @@ namespace YUCP.Components
         private string GetInputKey(RuntimeInputMapping mapping)
         {
             return $"{mapping.inputType}_{mapping.parameterName}";
+        }
+
+        #endregion
+
+        #region Rotation and Flick Detection
+
+        private float CalculateRotationDirection(float currentX, float currentY, ref float prevAngleRad, ref bool initialized, float deadzone = 0.2f, float thresholdRad = 0.087f)
+        {
+            float r = Mathf.Sqrt(currentX * currentX + currentY * currentY);
+            
+            if (r < deadzone)
+            {
+                initialized = false;
+                return 0f;
+            }
+            
+            float angle = Mathf.Atan2(currentY, currentX);
+            
+            if (!initialized)
+            {
+                prevAngleRad = angle;
+                initialized = true;
+                return 0f;
+            }
+            
+            float delta = angle - prevAngleRad;
+            
+            if (delta > Mathf.PI)
+            {
+                delta -= 2f * Mathf.PI;
+            }
+            else if (delta < -Mathf.PI)
+            {
+                delta += 2f * Mathf.PI;
+            }
+            
+            prevAngleRad = angle;
+            
+            if (Mathf.Abs(delta) < thresholdRad)
+            {
+                return 0f;
+            }
+            
+            return delta > 0 ? -1f : 1f;
+        }
+
+        private bool DetectFlick(float currentX, float currentY, float prevX, float prevY, float prevMagnitude, ref int flickFrameCount, float velocityThreshold = 0.5f, float minRadius = 0.7f, float releaseRadius = 0.3f, int maxFrames = 6)
+        {
+            float r = Mathf.Sqrt(currentX * currentX + currentY * currentY);
+            float dx = currentX - prevX;
+            float dy = currentY - prevY;
+            float velocity = Mathf.Sqrt(dx * dx + dy * dy);
+            
+            if (velocity > velocityThreshold && prevMagnitude > minRadius)
+            {
+                flickFrameCount = 1;
+                return false;
+            }
+            
+            if (flickFrameCount > 0)
+            {
+                flickFrameCount++;
+                if (r < releaseRadius || flickFrameCount >= maxFrames)
+                {
+                    flickFrameCount = 0;
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+
+        private float GetStickRotationDirection(string axisName)
+        {
+            string axisLower = axisName.ToLower();
+            bool isLeft = axisLower.Contains("left") || axisLower.Contains("ls");
+            
+            string xAxis = isLeft ? "Horizontal" : "Mouse X";
+            string yAxis = isLeft ? "Vertical" : "Mouse Y";
+            
+            try
+            {
+                float x = Input.GetAxisRaw(xAxis);
+                float y = Input.GetAxisRaw(yAxis);
+                
+                float magnitude = Mathf.Sqrt(x * x + y * y);
+                if (magnitude < controllerDeadzone)
+                {
+                    if (isLeft)
+                    {
+                        _leftInitialized = false;
+                    }
+                    else
+                    {
+                        _rightInitialized = false;
+                    }
+                    return 0f;
+                }
+                
+                float rotationDirection;
+                if (isLeft)
+                {
+                    rotationDirection = CalculateRotationDirection(x, y, ref _leftPrevAngleRad, ref _leftInitialized, controllerDeadzone);
+                    _leftPrevX = x;
+                    _leftPrevY = y;
+                    _leftPrevMagnitude = magnitude;
+                }
+                else
+                {
+                    rotationDirection = CalculateRotationDirection(x, y, ref _rightPrevAngleRad, ref _rightInitialized, controllerDeadzone);
+                    _rightPrevX = x;
+                    _rightPrevY = y;
+                    _rightPrevMagnitude = magnitude;
+                }
+                
+                return rotationDirection;
+            }
+            catch (System.ArgumentException)
+            {
+                return 0f;
+            }
+        }
+
+        private float GetStickFlick(string axisName)
+        {
+            string axisLower = axisName.ToLower();
+            bool isLeft = axisLower.Contains("left") || axisLower.Contains("ls");
+            
+            string xAxis = isLeft ? "Horizontal" : "Mouse X";
+            string yAxis = isLeft ? "Vertical" : "Mouse Y";
+            
+            try
+            {
+                float x = Input.GetAxisRaw(xAxis);
+                float y = Input.GetAxisRaw(yAxis);
+                float magnitude = Mathf.Sqrt(x * x + y * y);
+                
+                bool flick;
+                if (isLeft)
+                {
+                    if (_leftFlickWasSent)
+                    {
+                        _leftFlickWasSent = false;
+                        _leftPrevX = x;
+                        _leftPrevY = y;
+                        _leftPrevMagnitude = magnitude;
+                        return 0f;
+                    }
+                    
+                    flick = DetectFlick(x, y, _leftPrevX, _leftPrevY, _leftPrevMagnitude, ref _leftFlickFrameCount);
+                    
+                    _leftPrevX = x;
+                    _leftPrevY = y;
+                    _leftPrevMagnitude = magnitude;
+                    
+                    if (flick)
+                    {
+                        _leftFlickWasSent = true;
+                        return 1f;
+                    }
+                }
+                else
+                {
+                    if (_rightFlickWasSent)
+                    {
+                        _rightFlickWasSent = false;
+                        _rightPrevX = x;
+                        _rightPrevY = y;
+                        _rightPrevMagnitude = magnitude;
+                        return 0f;
+                    }
+                    
+                    flick = DetectFlick(x, y, _rightPrevX, _rightPrevY, _rightPrevMagnitude, ref _rightFlickFrameCount);
+                    
+                    _rightPrevX = x;
+                    _rightPrevY = y;
+                    _rightPrevMagnitude = magnitude;
+                    
+                    if (flick)
+                    {
+                        _rightFlickWasSent = true;
+                        return 1f;
+                    }
+                }
+                
+                return 0f;
+            }
+            catch (System.ArgumentException)
+            {
+                return 0f;
+            }
         }
 
         #endregion
