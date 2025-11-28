@@ -1,5 +1,20 @@
 {
   "dependencies": {
+    "com.autodesk.fbx": {
+      "version": "4.2.1",
+      "depth": 1,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
+    "com.triturbo.blendshare": {
+      "version": "file:com.triturbo.blendshare",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.autodesk.fbx": "4.2.1"
+      }
+    },
     "com.unity.ai.navigation": {
       "version": "1.1.5",
       "depth": 0,
@@ -222,6 +237,58 @@
     },
     "com.yucp.components": {
       "version": "file:com.yucp.components",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.yucp.devtools": {
+      "version": "file:com.yucp.devtools",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.yucp.temp": {
+      "version": "file:com.yucp.temp",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "d4rkpl4y3r.d4rkavataroptimizer": {
+      "version": "file:d4rkpl4y3r.d4rkavataroptimizer",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "dev.vrlabs.custom-object-sync": {
+      "version": "file:dev.vrlabs.custom-object-sync",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "lyuma.av3emulator": {
+      "version": "file:lyuma.av3emulator",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "nadena.dev.modular-avatar": {
+      "version": "file:nadena.dev.modular-avatar",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "2.0.0"
+      }
+    },
+    "nadena.dev.ndmf": {
+      "version": "file:nadena.dev.ndmf",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.modules.animation": "1.0.0"
+      }
+    },
+    "vrchat.blackstartx.gesture-manager": {
+      "version": "file:vrchat.blackstartx.gesture-manager",
       "depth": 0,
       "source": "embedded",
       "dependencies": {}

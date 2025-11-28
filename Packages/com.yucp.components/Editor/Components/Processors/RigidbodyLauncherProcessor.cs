@@ -8,6 +8,7 @@ using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase.Editor.BuildPipeline;
 using VRLabs.CustomObjectSyncCreator;
 using static VRLabs.CustomObjectSyncCreator.ControllerGenerationMethods;
+using com.vrcfury.api;
 
 namespace YUCP.Components.Editor
 {
@@ -143,74 +144,7 @@ namespace YUCP.Components.Editor
 
             try
             {
-                descriptor.customizeAnimationLayers = true;
-                var existingController = descriptor.baseAnimationLayers
-                    .Where(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX)
-                    .Select(x => x.animatorController)
-                    .FirstOrDefault();
-
-                AnimatorController mergedController = existingController == null ? null : (AnimatorController)existingController;
-
-                System.IO.Directory.CreateDirectory("Assets/VRLabs/GeneratedAssets/RigidbodyLauncher/Animators/");
-                string uniqueControllerPath = AssetDatabase.GenerateUniqueAssetPath("Assets/VRLabs/GeneratedAssets/RigidbodyLauncher/Animators/RigidbodyLauncher.controller");
-
-                if (mergedController == null)
-                {
-                    mergedController = new AnimatorController();
-                    AssetDatabase.CreateAsset(mergedController, uniqueControllerPath);
-                }
-                else
-                {
-                    AssetDatabase.CopyAsset(AssetDatabase.GetAssetPath(mergedController), uniqueControllerPath);
-                }
-
-                AssetDatabase.SaveAssets();
-                AssetDatabase.Refresh();
-                mergedController = AssetDatabase.LoadAssetAtPath<AnimatorController>(uniqueControllerPath);
-
-                if (mergedController == null)
-                {
-                    Debug.LogError("[YUCP Rigidbody Launcher] Failed to create controller.");
-                    foreach (var member in members)
-                    {
-                        member.Component.SetBuildSummary("Build failed");
-                    }
-                    return false;
-                }
-
-                foreach (var layer in sourceController.layers)
-                {
-                    var clonedStateMachine = UnityEngine.Object.Instantiate(layer.stateMachine);
-                    var newLayer = new AnimatorControllerLayer
-                    {
-                        name = layer.name,
-                        defaultWeight = layer.defaultWeight,
-                        avatarMask = layer.avatarMask,
-                        blendingMode = layer.blendingMode,
-                        syncedLayerAffectsTiming = layer.syncedLayerAffectsTiming,
-                        syncedLayerIndex = layer.syncedLayerIndex,
-                        stateMachine = clonedStateMachine
-                    };
-                    mergedController.AddLayer(newLayer);
-                }
-
-                foreach (var param in sourceController.parameters)
-                {
-                    if (mergedController.parameters.All(p => p.name != param.name))
-                    {
-                        mergedController.AddParameter(param);
-                    }
-                }
-
-                ControllerGenerationMethods.SerializeController(mergedController);
-
-                var fxLayer = descriptor.baseAnimationLayers.FirstOrDefault(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
-                fxLayer.isDefault = false;
-                fxLayer.animatorController = mergedController;
-                var layers = descriptor.baseAnimationLayers.ToList();
-                var fxIndex = layers.FindIndex(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
-                layers[fxIndex] = fxLayer;
-                descriptor.baseAnimationLayers = layers.ToArray();
+                VRCFuryHelper.AddControllerToVRCFury(descriptor, sourceController);
 
                 foreach (var member in members)
                 {
