@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -30,22 +31,55 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                     return;
 
                 string scenePath = scene.path;
-                string summary = ComputeChangeSummary();
                 var service = RepositoryService.Instance;
-                string message = string.IsNullOrEmpty(scenePath)
-                    ? $"After Scene Save: {summary}"
-                    : $"After Scene Save: {scenePath} - {summary}";
                 
-                _ = service.CreateAutoStashAsync(message).ContinueWith(t =>
+                string baseMessage = string.IsNullOrEmpty(scenePath)
+                    ? "After Scene Save"
+                    : $"After Scene Save: {scenePath}";
+                
+                _ = GuardianTaskRunner.Run("Compute Scene Save Summary", ct =>
                 {
-                    if (t.IsFaulted)
+                    try
                     {
-                        Debug.LogWarning($"[Package Guardian] Failed to create scene save stash: {t.Exception?.GetBaseException().Message}");
+                        string summary = ComputeChangeSummary();
+                        return $"{baseMessage} - {summary}";
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        Debug.Log($"[Package Guardian] Auto-stash queued for scene save: {message}");
+                        Debug.LogWarning($"[Package Guardian] Failed to compute change summary: {ex.Message}");
+                        return baseMessage;
                     }
+                }).ContinueWith(summaryTask =>
+                {
+                    if (summaryTask.IsFaulted)
+                    {
+                        Debug.LogWarning($"[Package Guardian] Failed to compute change summary: {summaryTask.Exception?.GetBaseException().Message}");
+                        _ = service.CreateAutoStashAsync(baseMessage).ContinueWith(stashTask =>
+                        {
+                            if (stashTask.IsFaulted)
+                            {
+                                Debug.LogWarning($"[Package Guardian] Failed to create scene save stash: {stashTask.Exception?.GetBaseException().Message}");
+                            }
+                            else
+                            {
+                                Debug.Log($"[Package Guardian] Auto-stash queued for scene save");
+                            }
+                        });
+                        return;
+                    }
+                    
+                    string message = summaryTask.Result;
+                    _ = service.CreateAutoStashAsync(message).ContinueWith(stashTask =>
+                    {
+                        if (stashTask.IsFaulted)
+                        {
+                            Debug.LogWarning($"[Package Guardian] Failed to create scene save stash: {stashTask.Exception?.GetBaseException().Message}");
+                        }
+                        else
+                        {
+                            Debug.Log($"[Package Guardian] Auto-stash queued for scene save");
+                        }
+                    });
                 });
             }
             catch (Exception ex)

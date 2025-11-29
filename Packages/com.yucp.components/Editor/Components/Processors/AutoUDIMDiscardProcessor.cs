@@ -95,11 +95,14 @@ namespace YUCP.Components.Editor
                     }
 
                     // Apply UDIM discard for this region
+                    // Use UV1 by default (AutoUDIMDiscard uses UV1)
+                    int targetUVChannel = 1;
                     Mesh modifiedMesh = UDIMManipulator.ApplyUDIMDiscard(
                         data.targetBodyMesh.sharedMesh,
                         hiddenVertices,
                         region.assignedRow,
-                        region.assignedColumn
+                        region.assignedColumn,
+                        targetUVChannel
                     );
 
                     if (modifiedMesh != null)

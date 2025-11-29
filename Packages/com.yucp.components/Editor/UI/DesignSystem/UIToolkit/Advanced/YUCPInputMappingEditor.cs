@@ -444,7 +444,9 @@ namespace YUCP.UI.DesignSystem.Utilities
         private List<string> GetControllerAxisOptions()
         {
             return new List<string> { "None", "Left Stick X", "Left Stick Y", "Left Stick Angle",
-                "Right Stick X", "Right Stick Y", "Right Stick Angle" };
+                "Left Stick Rotation Direction", "Left Stick Flick",
+                "Right Stick X", "Right Stick Y", "Right Stick Angle",
+                "Right Stick Rotation Direction", "Right Stick Flick" };
         }
         
         private List<string> GetControllerTriggerOptions()

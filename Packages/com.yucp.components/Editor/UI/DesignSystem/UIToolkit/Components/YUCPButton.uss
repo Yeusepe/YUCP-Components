@@ -21,50 +21,50 @@
 }
 
 .yucp-button-primary {
-    background-color: var(--yucp-accent-primary);
+    background-color: #2a9d8f;
     color: #ffffff;
     -unity-font-style: bold;
 }
 
 .yucp-button-primary:hover {
-    background-color: var(--yucp-accent-primary-hover);
+    background-color: #36BFB1;
     scale: 1.01 1.01;
 }
 
 .yucp-button-primary:active {
-    background-color: var(--yucp-accent-primary-active);
+    background-color: #21867a;
     scale: 0.99 0.99;
 }
 
 .yucp-button-secondary {
-    background-color: rgb(70, 70, 70);
-    color: var(--yucp-text-primary);
+    background-color: rgb(60, 60, 60);
+    color: #ffffff;
     -unity-font-style: normal;
 }
 
 .yucp-button-secondary:hover {
-    background-color: rgb(100, 100, 100);
+    background-color: rgb(85, 85, 85);
     scale: 1.01 1.01;
 }
 
 .yucp-button-secondary:active {
-    background-color: rgb(50, 50, 50);
+    background-color: rgb(45, 45, 45);
     scale: 0.99 0.99;
 }
 
 .yucp-button-danger {
-    background-color: var(--yucp-accent-danger);
+    background-color: #d32f2f;
     color: #ffffff;
     -unity-font-style: bold;
 }
 
 .yucp-button-danger:hover {
-    background-color: rgba(236, 60, 60, 1);
+    background-color: #e53935;
     scale: 1.01 1.01;
 }
 
 .yucp-button-danger:active {
-    background-color: rgba(200, 40, 40, 1);
+    background-color: #b71c1c;
     scale: 0.99 0.99;
 }
 

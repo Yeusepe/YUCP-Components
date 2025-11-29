@@ -18,37 +18,78 @@ namespace YUCP.Components.Editor.MeshUtils
             Vector2[] bodyUV0,
             YUCPProgressWindow progressWindow = null)
         {
-            switch (data.detectionMethod)
+            // Manual detection doesn't use clothing meshes
+            if (data.detectionMethod == DetectionMethod.Manual)
+            {
+                return DetectByManualMask(data, bodyUV0, progressWindow);
+            }
+            
+            // Get all valid clothing meshes
+            var clothingMeshes = data.GetClothingMeshes();
+            if (clothingMeshes == null || clothingMeshes.Length == 0)
+            {
+                Debug.LogWarning("[VertexDetection] No valid clothing meshes specified.");
+                return new bool[bodyVertices.Length];
+            }
+            
+            // For multiple meshes, combine results using union (if any mesh hides a vertex, it's hidden)
+            bool[] combinedResult = new bool[bodyVertices.Length];
+            
+            for (int meshIndex = 0; meshIndex < clothingMeshes.Length; meshIndex++)
+            {
+                var clothingMesh = clothingMeshes[meshIndex];
+                
+                if (progressWindow != null && clothingMeshes.Length > 1)
+                {
+                    progressWindow.Progress(
+                        (float)meshIndex / clothingMeshes.Length,
+                        $"Processing clothing mesh {meshIndex + 1}/{clothingMeshes.Length}: {clothingMesh.name}..."
+                    );
+                }
+                
+                bool[] meshResult;
+                switch (data.detectionMethod)
             {
                 case DetectionMethod.Raycast:
-                    return DetectByRaycast(data, bodyVertices, bodyNormals, progressWindow);
-                
+                        meshResult = DetectByRaycast(data, clothingMesh, bodyVertices, bodyNormals, progressWindow);
+                        break;
                 case DetectionMethod.Proximity:
-                    return DetectByProximity(data, bodyVertices, progressWindow);
-                
+                        meshResult = DetectByProximity(data, clothingMesh, bodyVertices, progressWindow);
+                        break;
                 case DetectionMethod.Hybrid:
-                    return DetectByHybrid(data, bodyVertices, bodyNormals, progressWindow);
-                
+                        meshResult = DetectByHybrid(data, clothingMesh, bodyVertices, bodyNormals, progressWindow);
+                        break;
                 case DetectionMethod.Smart:
-                    return DetectBySmart(data, bodyVertices, bodyNormals, progressWindow);
+                        meshResult = DetectBySmart(data, clothingMesh, bodyVertices, bodyNormals, progressWindow);
+                        break;
+                    default:
+                        meshResult = new bool[bodyVertices.Length];
+                        break;
+                }
                 
-                case DetectionMethod.Manual:
-                    return DetectByManualMask(data, bodyUV0, progressWindow);
-                
-                default:
-                    return new bool[bodyVertices.Length];
+                // Combine: if any mesh hides a vertex, mark it as hidden
+                for (int i = 0; i < combinedResult.Length && i < meshResult.Length; i++)
+                {
+                    if (meshResult[i])
+                    {
+                        combinedResult[i] = true;
+                    }
+                }
             }
+            
+            return combinedResult;
         }
 
         private static bool[] DetectByRaycast(
             AutoBodyHiderData data,
+            SkinnedMeshRenderer clothingMeshRenderer,
             Vector3[] bodyVertices,
             Vector3[] bodyNormals,
             YUCPProgressWindow progressWindow = null)
         {
             bool[] hidden = new bool[bodyVertices.Length];
             
-            if (data.clothingMesh == null)
+            if (clothingMeshRenderer == null || clothingMeshRenderer.sharedMesh == null)
             {
                 Debug.LogWarning("[VertexDetection] No clothing mesh specified for raycast detection.");
                 return hidden;
@@ -67,8 +108,8 @@ namespace YUCP.Components.Editor.MeshUtils
                         bodyVertices,
                         bodyNormals,
                         data.targetBodyMesh.transform,
-                        data.clothingMesh.sharedMesh,
-                        data.clothingMesh.transform,
+                        clothingMeshRenderer.sharedMesh,
+                        clothingMeshRenderer.transform,
                         data.raycastDistance
                     );
                     
@@ -90,8 +131,8 @@ namespace YUCP.Components.Editor.MeshUtils
                 progressWindow.Progress(0.1f, "Raycast detection: Using CPU...");
             }
             
-            Mesh clothingMesh = data.clothingMesh.sharedMesh;
-            Transform clothingTransform = data.clothingMesh.transform;
+            Mesh clothingMesh = clothingMeshRenderer.sharedMesh;
+            Transform clothingTransform = clothingMeshRenderer.transform;
             
             var clothingTriangles = GetWorldSpaceTriangles(clothingMesh, clothingTransform);
 
@@ -119,20 +160,21 @@ namespace YUCP.Components.Editor.MeshUtils
 
         private static bool[] DetectByProximity(
             AutoBodyHiderData data,
+            SkinnedMeshRenderer clothingMeshRenderer,
             Vector3[] bodyVertices,
             YUCPProgressWindow progressWindow = null)
         {
             bool[] hidden = new bool[bodyVertices.Length];
             
-            if (data.clothingMesh == null)
+            if (clothingMeshRenderer == null || clothingMeshRenderer.sharedMesh == null)
             {
                 Debug.LogWarning("[VertexDetection] No clothing mesh specified for proximity detection.");
                 return hidden;
             }
 
-            Mesh clothingMesh = data.clothingMesh.sharedMesh;
+            Mesh clothingMesh = clothingMeshRenderer.sharedMesh;
             Vector3[] clothingVertices = clothingMesh.vertices;
-            Transform clothingTransform = data.clothingMesh.transform;
+            Transform clothingTransform = clothingMeshRenderer.transform;
             
             Vector3[] clothingWorldVerts = new Vector3[clothingVertices.Length];
             for (int i = 0; i < clothingVertices.Length; i++)
@@ -171,13 +213,14 @@ namespace YUCP.Components.Editor.MeshUtils
 
         private static bool[] DetectByHybrid(
             AutoBodyHiderData data,
+            SkinnedMeshRenderer clothingMeshRenderer,
             Vector3[] bodyVertices,
             Vector3[] bodyNormals,
             YUCPProgressWindow progressWindow = null)
         {
             bool[] hidden = new bool[bodyVertices.Length];
             
-            if (data.clothingMesh == null)
+            if (clothingMeshRenderer == null || clothingMeshRenderer.sharedMesh == null)
             {
                 Debug.LogWarning("[VertexDetection] No clothing mesh specified for hybrid detection.");
                 return hidden;
@@ -189,14 +232,13 @@ namespace YUCP.Components.Editor.MeshUtils
             }
             
             float expandedThreshold = data.proximityThreshold * data.hybridExpansionFactor;
-            var proximityData = new AutoBodyHiderData
+            var tempData = new AutoBodyHiderData
             {
-                clothingMesh = data.clothingMesh,
                 targetBodyMesh = data.targetBodyMesh,
                 proximityThreshold = expandedThreshold
             };
             
-            bool[] proximityResults = DetectByProximity(proximityData, bodyVertices, null);
+            bool[] proximityResults = DetectByProximity(tempData, clothingMeshRenderer, bodyVertices, null);
             
             int candidateCount = 0;
             for (int i = 0; i < proximityResults.Length; i++)
@@ -209,7 +251,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 progressWindow.Progress(0.4f, $"Hybrid detection: Phase 2 - Raycasting {candidateCount} candidates...");
             }
             
-            var clothingTriangles = GetWorldSpaceTriangles(data.clothingMesh.sharedMesh, data.clothingMesh.transform);
+            var clothingTriangles = GetWorldSpaceTriangles(clothingMeshRenderer.sharedMesh, clothingMeshRenderer.transform);
             
             int processed = 0;
             for (int i = 0; i < bodyVertices.Length; i++)
@@ -241,13 +283,14 @@ namespace YUCP.Components.Editor.MeshUtils
 
         private static bool[] DetectBySmart(
             AutoBodyHiderData data,
+            SkinnedMeshRenderer clothingMeshRenderer,
             Vector3[] bodyVertices,
             Vector3[] bodyNormals,
             YUCPProgressWindow progressWindow = null)
         {
             bool[] hidden = new bool[bodyVertices.Length];
             
-            if (data.clothingMesh == null)
+            if (clothingMeshRenderer == null || clothingMeshRenderer.sharedMesh == null)
             {
                 Debug.LogWarning("[VertexDetection] No clothing mesh specified for smart detection.");
                 return hidden;
@@ -266,8 +309,8 @@ namespace YUCP.Components.Editor.MeshUtils
                         bodyVertices,
                         bodyNormals,
                         data.targetBodyMesh.transform,
-                        data.clothingMesh.sharedMesh,
-                        data.clothingMesh.transform,
+                        clothingMeshRenderer.sharedMesh,
+                        clothingMeshRenderer.transform,
                         data.raycastDistance,
                         data.smartRayDirections,
                         data.smartUseNormals,
@@ -297,7 +340,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 progressWindow.Progress(0.1f, "Smart detection: Using CPU (this may take a while)...");
             }
 
-            var clothingTriangles = GetWorldSpaceTriangles(data.clothingMesh.sharedMesh, data.clothingMesh.transform);
+            var clothingTriangles = GetWorldSpaceTriangles(clothingMeshRenderer.sharedMesh, clothingMeshRenderer.transform);
             
             Vector3[] testDirections = GenerateFibonacciSphere(data.smartRayDirections);
             

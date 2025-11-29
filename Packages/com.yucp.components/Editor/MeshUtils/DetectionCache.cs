@@ -52,8 +52,16 @@ namespace YUCP.Components.Editor.MeshUtils
             if (data == null || bodyMesh == null)
                 return false;
 
+            // Get all clothing meshes
+            var clothingMeshes = data.GetClothingMeshes();
+            Mesh[] clothingMeshArray = new Mesh[clothingMeshes.Length];
+            for (int i = 0; i < clothingMeshes.Length; i++)
+            {
+                clothingMeshArray[i] = clothingMeshes[i].sharedMesh;
+            }
+
             // Generate hash for current state
-            string hash = GenerateHash(data, bodyMesh, clothingMesh);
+            string hash = GenerateHash(data, bodyMesh, clothingMeshArray);
             
             // Check cache
             if (_cache.TryGetValue(hash, out CachedDetectionResult cached))
@@ -89,7 +97,15 @@ namespace YUCP.Components.Editor.MeshUtils
             if (data == null || bodyMesh == null || hiddenVertices == null)
                 return;
 
-            string hash = GenerateHash(data, bodyMesh, clothingMesh);
+            // Get all clothing meshes
+            var clothingMeshes = data.GetClothingMeshes();
+            Mesh[] clothingMeshArray = new Mesh[clothingMeshes.Length];
+            for (int i = 0; i < clothingMeshes.Length; i++)
+            {
+                clothingMeshArray[i] = clothingMeshes[i].sharedMesh;
+            }
+
+            string hash = GenerateHash(data, bodyMesh, clothingMeshArray);
             
             var cached = new CachedDetectionResult
             {
@@ -112,7 +128,7 @@ namespace YUCP.Components.Editor.MeshUtils
         private static string GenerateHash(
             AutoBodyHiderData data,
             Mesh bodyMesh,
-            Mesh clothingMesh)
+            Mesh[] clothingMeshes)
         {
             using (var sha256 = SHA256.Create())
             {
@@ -120,9 +136,17 @@ namespace YUCP.Components.Editor.MeshUtils
                 
                 sb.Append(GetMeshHash(bodyMesh));
                 
-                if (clothingMesh != null)
+                // Hash all clothing meshes
+                if (clothingMeshes != null && clothingMeshes.Length > 0)
                 {
-                    sb.Append(GetMeshHash(clothingMesh));
+                    sb.Append($"meshes_{clothingMeshes.Length}_");
+                    foreach (var mesh in clothingMeshes)
+                    {
+                        if (mesh != null)
+                {
+                            sb.Append(GetMeshHash(mesh));
+                        }
+                    }
                 }
                 
                 sb.Append(data.detectionMethod.ToString());
@@ -151,12 +175,20 @@ namespace YUCP.Components.Editor.MeshUtils
                     sb.Append(t.lossyScale.ToString());
                 }
                 
-                if (data.clothingMesh != null)
+                // Hash transforms of all clothing meshes
+                var clothingMeshRenderers = data.GetClothingMeshes();
+                if (clothingMeshRenderers != null && clothingMeshRenderers.Length > 0)
                 {
-                    var t = data.clothingMesh.transform;
+                    foreach (var renderer in clothingMeshRenderers)
+                    {
+                        if (renderer != null)
+                {
+                            var t = renderer.transform;
                     sb.Append(t.position.ToString());
                     sb.Append(t.rotation.ToString());
                     sb.Append(t.lossyScale.ToString());
+                        }
+                    }
                 }
                 
                 byte[] inputBytes = Encoding.UTF8.GetBytes(sb.ToString());

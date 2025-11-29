@@ -79,26 +79,40 @@ namespace YUCP.Components.Editor
             // Group components by target body mesh
             Dictionary<SkinnedMeshRenderer, BodyMeshGroup> bodyMeshGroups = new Dictionary<SkinnedMeshRenderer, BodyMeshGroup>();
             
+            // Collect all components that will use UDIM discard (including AutoDetect that resolves to UDIMDiscard)
             foreach (var data in allComponents)
             {
                 if (data.targetBodyMesh == null) continue;
                 
-                // Only coordinate UDIM discard mode
+                // Determine application mode (handles AutoDetect by checking materials)
                 ApplicationMode mode = DetermineApplicationMode(data);
-                if (mode != ApplicationMode.UDIMDiscard) continue;
                 
-                if (!bodyMeshGroups.ContainsKey(data.targetBodyMesh))
+                // Coordinate all components that will use UDIM discard
+                // This automatically includes multiple meshes/components in AutoDetect mode
+                if (mode == ApplicationMode.UDIMDiscard)
                 {
-                    bodyMeshGroups[data.targetBodyMesh] = new BodyMeshGroup { bodyMesh = data.targetBodyMesh };
+                    if (!bodyMeshGroups.ContainsKey(data.targetBodyMesh))
+                    {
+                        bodyMeshGroups[data.targetBodyMesh] = new BodyMeshGroup { bodyMesh = data.targetBodyMesh };
+                    }
+                    
+                    // Add if not already in the list to avoid duplicates
+                    if (!bodyMeshGroups[data.targetBodyMesh].clothingPieces.Contains(data))
+                    {
+                        bodyMeshGroups[data.targetBodyMesh].clothingPieces.Add(data);
+                    }
                 }
-                
-                bodyMeshGroups[data.targetBodyMesh].clothingPieces.Add(data);
             }
             
             // Assign unique UDIM tiles to each clothing piece in each group
+            // Multiple meshes/components automatically use the orchestrator
             foreach (var group in bodyMeshGroups.Values)
             {
-                AssignUDIMTiles(group);
+                if (group.clothingPieces.Count > 0)
+                {
+                    // Coordinate when there are components
+                    AssignUDIMTiles(group);
+                }
             }
             
             // Store groups for processor to access
@@ -135,30 +149,48 @@ namespace YUCP.Components.Editor
             List<AutoBodyHiderData> needsAssignment = new List<AutoBodyHiderData>();
             List<AutoBodyHiderData> skippedPieces = new List<AutoBodyHiderData>();
             
-            // Collect user-specified tiles
+            // Separate clothing pieces into auto-assign and manual-assign groups
+            List<AutoBodyHiderData> autoAssignPieces = new List<AutoBodyHiderData>();
+            List<AutoBodyHiderData> manualAssignPieces = new List<AutoBodyHiderData>();
+            
             foreach (var data in group.clothingPieces)
+            {
+                if (data.autoAssignUDIMTile)
+                {
+                    autoAssignPieces.Add(data);
+                }
+                else
+                {
+                    manualAssignPieces.Add(data);
+                }
+            }
+            
+            // Collect manually-specified tiles when not auto-assigning
+            foreach (var data in manualAssignPieces)
             {
                 var tile = (data.udimDiscardRow, data.udimDiscardColumn);
                 
                 if (usedTiles.Contains(tile))
                 {
-                    Debug.LogWarning($"[AutoBodyHiderCoordinator] Clothing '{data.name}' wants tile ({tile.Item1}, {tile.Item2}) but it's already used. Will auto-assign.", data);
-                    needsAssignment.Add(data);
+                    Debug.LogWarning($"[AutoBodyHiderCoordinator] Clothing '{data.name}' wants tile ({tile.Item1}, {tile.Item2}) but it's already used. Will auto-assign instead.", data);
+                    autoAssignPieces.Add(data); // Move to auto-assign if conflict
                 }
                 else
                 {
                     usedTiles.Add(tile);
                     group.assignedTiles[data] = tile;
-                    Debug.Log($"[AutoBodyHiderCoordinator] Clothing '{data.name}' using tile ({tile.Item1}, {tile.Item2})");
+                    Debug.Log($"[AutoBodyHiderCoordinator] Clothing '{data.name}' using manually-specified tile ({tile.Item1}, {tile.Item2})");
                 }
             }
             
-            // Auto-assign tiles
+            // Auto-assign tiles for all pieces that need it
+            // Start from (1, 0) to avoid common texture tiles (0,0) through (0,3)
             int nextRow = 1;
             int nextCol = 0;
             
-            foreach (var data in needsAssignment)
+            foreach (var data in autoAssignPieces)
             {
+                // Find next available tile
                 while (usedTiles.Contains((nextRow, nextCol)))
                 {
                     nextCol++;
@@ -177,14 +209,18 @@ namespace YUCP.Components.Editor
                 
                 if (nextRow >= 4) continue;
                 
+                // Assign the tile
                 var tile = (nextRow, nextCol);
                 usedTiles.Add(tile);
                 group.assignedTiles[data] = tile;
+                
+                // Update the data component with the assigned tile
                 data.udimDiscardRow = nextRow;
                 data.udimDiscardColumn = nextCol;
                 
                 Debug.Log($"[AutoBodyHiderCoordinator] Auto-assigned tile ({nextRow}, {nextCol}) to clothing '{data.name}'");
                 
+                // Move to next tile for next assignment
                 nextCol++;
                 if (nextCol >= 4)
                 {

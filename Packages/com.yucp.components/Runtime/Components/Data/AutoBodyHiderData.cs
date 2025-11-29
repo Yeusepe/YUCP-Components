@@ -36,8 +36,11 @@ namespace YUCP.Components
         [Tooltip("The body mesh that should have parts hidden (usually the avatar body).")]
         public SkinnedMeshRenderer targetBodyMesh;
 
-        [Tooltip("The clothing mesh that covers the body (usually the object this component is on).")]
-        public SkinnedMeshRenderer clothingMesh;
+        [Tooltip("The clothing mesh(es) that cover the body. Can specify multiple meshes for layered clothing.\n\n" +
+                 "For single clothing piece: Add one mesh\n" +
+                 "For layered clothing: Add multiple meshes (e.g., shirt + jacket)\n" +
+                 "All meshes will be used together to detect hidden body parts.")]
+        public SkinnedMeshRenderer[] clothingMeshes = new SkinnedMeshRenderer[0];
 
         [Header("Detection Settings")]
         [Tooltip("Choose how to detect which body parts to hide.\n\n" +
@@ -157,31 +160,66 @@ namespace YUCP.Components
                  "• UDIM Discard: Non-destructive, requires Poiyomi or FastFur shader\n" +
                  "• Mesh Deletion: Works with any shader, reduces poly count")]
         public ApplicationMode applicationMode = ApplicationMode.AutoDetect;
+        
+        [Tooltip("Optional: Select specific material(s) from the body mesh to configure.\n\n" +
+                 "If empty, the component will automatically find all compatible materials (Poiyomi/FastFur).\n" +
+                 "You can select multiple materials if your body mesh uses multiple Poiyomi/FastFur materials.\n" +
+                 "All selected materials will have UDIM discard configured.")]
+        public Material[] targetMaterials = new Material[0];
 
         [Header("UDIM Discard Settings (Poiyomi/FastFur)")]
-        [Tooltip("Which UV channel to use for UDIM discard.\n\n" +
-                 "• UV0 (Channel 0): Main UV, most common\n" +
-                 "• UV1-3: Alternative channels if UV0 is used for other purposes\n\n" +
-                 "Usually leave at 0 unless you know your body mesh uses a different channel.")]
+        [Tooltip("Automatically detect the best UV channel for discard.\n\n" +
+                 "The system will prefer UV1 (where discard coordinates are written) and fall back to UV0 if needed.\n" +
+                 "Disable this to manually specify a UV channel in Advanced Options.")]
+        public bool autoDetectUVChannel = true;
+        
+        [Tooltip("Which UV channel to use for UDIM discard (only used when Auto Detect is disabled).\n\n" +
+                 "• UV1 (Channel 1): Recommended - where discard coordinates are written\n" +
+                 "• UV0 (Channel 0): Main texture UV, use only if UV1 is unavailable\n" +
+                 "• UV2-3: Alternative channels if needed\n\n" +
+                 "Note: The system always writes discard coordinates to UV1, so UV1 is the recommended channel.")]
         [Range(0, 3)]
-        public int udimUVChannel = 0;
+        public int udimUVChannel = 1;
+
+        [Tooltip("Automatically assign UDIM tile row/column via the orchestrator.\n\n" +
+                 "When enabled:\n" +
+                 "• The orchestrator automatically assigns unique tiles to each clothing piece\n" +
+                 "• Prevents tile conflicts when multiple clothing pieces share the same body mesh\n" +
+                 "• Tile assignment is optimized for layered clothing\n\n" +
+                 "When disabled:\n" +
+                 "• You can manually specify the tile row/column in Advanced Options\n" +
+                 "• Use when you need specific tile assignments for compatibility reasons")]
+        public bool autoAssignUDIMTile = true;
 
         [Tooltip("Which UDIM tile row to use for discarding (0-3).\n\n" +
+                 "Only used when 'Auto Assign UDIM Tile' is disabled.\n" +
                  "The shader will hide vertices with UVs in this tile.\n" +
-                 "Row 3 (default) is usually safe as it's rarely used for textures.")]
+                 "When auto-assigned, this value is set by the orchestrator.")]
         [Range(0, 3)]
         public int udimDiscardRow = 3;
 
         [Tooltip("Which UDIM tile column to use for discarding (0-3).\n\n" +
+                 "Only used when 'Auto Assign UDIM Tile' is disabled.\n" +
                  "The shader will hide vertices with UVs in this tile.\n" +
-                 "Column 3 (default) is usually safe as it's rarely used for textures.")]
+                 "When auto-assigned, this value is set by the orchestrator.")]
         [Range(0, 3)]
         public int udimDiscardColumn = 3;
 
         [Header("UDIM Toggle Settings (Optional)")]
+        [Tooltip("Use an existing VRCFury toggle component instead of creating a new one.\n\n" +
+                 "When enabled, you can select a VRCFury toggle from this GameObject or its children.\n" +
+                 "The UDIM discard animation will be added to the selected toggle automatically.")]
+        public bool useExistingToggle = false;
+        
+        [Tooltip("The VRCFury toggle component to use (from this GameObject or its children).\n\n" +
+                 "Only used when 'Use Existing Toggle' is enabled.\n" +
+                 "Leave empty to auto-detect the first VRCFury toggle on this GameObject.")]
+        public Component selectedToggle;
+        
         [Tooltip("Create a toggle to enable/disable the body hiding effect.\n\n" +
                  "When enabled, adds a menu toggle that can turn the UDIM discard on/off.\n\n" +
-                 "Note: Only works with UDIM Discard mode, not Mesh Deletion.")]
+                 "Note: Only works with UDIM Discard mode, not Mesh Deletion.\n" +
+                 "Disabled when 'Use Existing Toggle' is enabled.")]
         public bool createToggle = false;
 
         [Tooltip("Save generated animation clip as asset for debugging.\n\n" +
@@ -328,6 +366,27 @@ namespace YUCP.Components
         {
             hiddenVertexCount = vertexCount;
             appliedMode = mode;
+        }
+        
+        /// <summary>
+        /// Gets all valid clothing meshes.
+        /// </summary>
+        public SkinnedMeshRenderer[] GetClothingMeshes()
+        {
+            var meshes = new List<SkinnedMeshRenderer>();
+            
+            if (clothingMeshes != null)
+            {
+                foreach (var mesh in clothingMeshes)
+                {
+                    if (mesh != null && mesh.sharedMesh != null)
+                    {
+                        meshes.Add(mesh);
+                    }
+                }
+            }
+            
+            return meshes.ToArray();
         }
     }
 }

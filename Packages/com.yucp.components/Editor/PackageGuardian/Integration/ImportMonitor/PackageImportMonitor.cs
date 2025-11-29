@@ -3,6 +3,7 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using YUCP.Components.PackageGuardian.Editor.Services;
 using YUCP.Components.PackageGuardian.Editor.Settings;
@@ -120,19 +121,52 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                 if (!manifestChanged)
                     return false;
                 
-                string summary = ComputeChangeSummary();
                 var service = RepositoryService.Instance;
-                _ = service.CreateAutoStashAsync($"After VPM change: {summary}").ContinueWith(t =>
+                
+                _ = GuardianTaskRunner.Run("Compute VPM Change Summary", ct =>
                 {
-                    if (t.IsFaulted)
+                    try
                     {
-                        Debug.LogWarning($"[Package Guardian] Failed to queue VPM stash: {t.Exception?.GetBaseException().Message}");
+                        return ComputeChangeSummary();
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        Debug.Log($"[Package Guardian] Auto-stash queued for VPM change: {summary}");
+                        Debug.LogWarning($"[Package Guardian] Failed to compute change summary: {ex.Message}");
+                        return "changes recorded";
                     }
+                }).ContinueWith(summaryTask =>
+                {
+                    if (summaryTask.IsFaulted)
+                    {
+                        Debug.LogWarning($"[Package Guardian] Failed to compute change summary: {summaryTask.Exception?.GetBaseException().Message}");
+                        _ = service.CreateAutoStashAsync("After VPM change: changes recorded").ContinueWith(stashTask =>
+                        {
+                            if (stashTask.IsFaulted)
+                            {
+                                Debug.LogWarning($"[Package Guardian] Failed to queue VPM stash: {stashTask.Exception?.GetBaseException().Message}");
+                            }
+                            else
+                            {
+                                Debug.Log($"[Package Guardian] Auto-stash queued for VPM change");
+                            }
+                        });
+                        return;
+                    }
+                    
+                    string summary = summaryTask.Result;
+                    _ = service.CreateAutoStashAsync($"After VPM change: {summary}").ContinueWith(stashTask =>
+                    {
+                        if (stashTask.IsFaulted)
+                        {
+                            Debug.LogWarning($"[Package Guardian] Failed to queue VPM stash: {stashTask.Exception?.GetBaseException().Message}");
+                        }
+                        else
+                        {
+                            Debug.Log($"[Package Guardian] Auto-stash queued for VPM change: {summary}");
+                        }
+                    });
                 });
+                
                 return true;
             }
             catch (Exception ex)
@@ -298,8 +332,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                     return;
                 }
                 
-                // Validate package changes
-                ValidatePackageChanges(args);
+                // Validate package changes asynchronously (non-blocking - deferred to next frame)
+                EditorApplication.delayCall += () => ValidatePackageChanges(args);
                 
                 string description = "";
                 string reason = "UPM";
