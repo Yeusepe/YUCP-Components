@@ -44,7 +44,7 @@ namespace PackageGuardian.Core.Repository
             // Build snapshot
             string commitId = _snapshots.BuildSnapshotCommit(message, author, author, parentCommitId);
             
-            // Calculate detailed diff summary for naming
+            // Calculate detailed diff summary for naming (optional - stash will be created even if this fails)
             string enhancedMessage = message;
             if (!string.IsNullOrEmpty(parentCommitId))
             {
@@ -105,8 +105,16 @@ namespace PackageGuardian.Core.Repository
                         }
                     }
                 }
+                catch (System.Threading.ThreadAbortException)
+                {
+                    // Thread abort during diff calculation - stash commit already created, continue with basic message
+                    // Reset abort to prevent it from propagating and blocking stash ref creation
+                    System.Threading.Thread.ResetAbort();
+                    UnityEngine.Debug.LogWarning("[Package Guardian] Thread aborted during stash diff calculation - using basic message");
+                }
                 catch (Exception ex)
                 {
+                    // Other exceptions during diff calculation - non-critical, continue with basic message
                     UnityEngine.Debug.LogWarning($"[Package Guardian] Failed to calculate stash diff summary: {ex.Message}");
                 }
             }

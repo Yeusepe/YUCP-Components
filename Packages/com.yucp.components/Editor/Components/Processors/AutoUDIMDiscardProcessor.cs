@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEditor;
 using VRC.SDKBase.Editor.BuildPipeline;
+using VRC.SDK3.Avatars.Components;
 using com.vrcfury.api;
 using YUCP.Components;
 using YUCP.Components.Editor.MeshUtils;
@@ -52,19 +53,48 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                // Check if body has compatible material (Poiyomi or FastFur)
-                Material poiyomiMaterial = FindPoiyomiMaterial(data.targetBodyMesh);
-                if (poiyomiMaterial == null)
+                // Find compatible materials (use targetMaterials if specified, otherwise auto-detect)
+                List<Material> targetMaterials = new List<Material>();
+                if (data.targetMaterials != null && data.targetMaterials.Length > 0)
+                {
+                    foreach (var mat in data.targetMaterials)
+                    {
+                        if (mat != null && UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                        {
+                            targetMaterials.Add(mat);
+                        }
+                    }
+                }
+                
+                // If no target materials specified, auto-detect all compatible materials
+                if (targetMaterials.Count == 0)
+                {
+                    if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
+                    {
+                        foreach (var mat in data.targetBodyMesh.sharedMaterials)
+                        {
+                            if (mat != null && UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                            {
+                                targetMaterials.Add(mat);
+                            }
+                        }
+                    }
+                }
+                
+                if (targetMaterials.Count == 0)
                 {
                     Debug.LogError($"[AutoUDIMDiscard] Body mesh doesn't have a Poiyomi or FastFur material with UDIM support!", data);
                     return;
                 }
                 
-                string shaderName = UDIMManipulator.GetShaderDisplayName(poiyomiMaterial);
-                Debug.Log($"[AutoUDIMDiscard] Using {shaderName} shader for UDIM discard", data);
+                string shaderName = UDIMManipulator.GetShaderDisplayName(targetMaterials[0]);
+                Debug.Log($"[AutoUDIMDiscard] Using {shaderName} shader for UDIM discard on {targetMaterials.Count} material(s)", data);
 
                 // Detect UV regions from clothing mesh
-                List<AutoUDIMDiscardData.UVRegion> regions = DetectUVRegions(clothingRenderer.sharedMesh, data);
+                int effectiveUVChannel = data.autoDetectUVChannel 
+                    ? UDIMManipulator.DetectBestUVChannel(clothingRenderer.sharedMesh)
+                    : data.uvChannel;
+                List<AutoUDIMDiscardData.UVRegion> regions = DetectUVRegions(clothingRenderer.sharedMesh, data, effectiveUVChannel);
 
                 if (regions == null || regions.Count == 0)
                 {
@@ -79,6 +109,8 @@ namespace YUCP.Components.Editor
 
                 // Process each region
                 List<string> usedTiles = new List<string>();
+                Mesh originalBodyMesh = data.targetBodyMesh.sharedMesh;
+                
                 for (int i = 0; i < regions.Count; i++)
                 {
                     var region = regions[i];
@@ -95,40 +127,34 @@ namespace YUCP.Components.Editor
                     }
 
                     // Apply UDIM discard for this region
-                    // Use UV1 by default (AutoUDIMDiscard uses UV1)
-                    int targetUVChannel = 1;
                     Mesh modifiedMesh = UDIMManipulator.ApplyUDIMDiscard(
-                        data.targetBodyMesh.sharedMesh,
+                        originalBodyMesh,
                         hiddenVertices,
                         region.assignedRow,
                         region.assignedColumn,
-                        targetUVChannel
+                        effectiveUVChannel
                     );
 
                     if (modifiedMesh != null)
                     {
                         data.targetBodyMesh.sharedMesh = modifiedMesh;
+                        originalBodyMesh = modifiedMesh; // Use modified mesh for next iteration
                     }
 
-                    // Configure material for this tile
-                    ConfigurePoiyomiMaterial(poiyomiMaterial, region.assignedRow, region.assignedColumn, data);
+                    // Configure all target materials for this tile
+                    foreach (var material in targetMaterials)
+                    {
+                        ConfigurePoiyomiMaterial(material, region.assignedRow, region.assignedColumn, data, originalBodyMesh, effectiveUVChannel);
+                    }
 
                     usedTiles.Add($"Row{region.assignedRow}_Col{region.assignedColumn}");
 
-                    // Create toggle if enabled
-                    if (data.createToggles)
+                    // Register global parameter for this region
+                    string globalParamName = GetGlobalParameterName(data, i);
+                    if (!string.IsNullOrEmpty(globalParamName))
                     {
-                        string togglePath = data.useMasterToggle ? data.masterTogglePath : $"{data.toggleMenuPath}/{region.name}";
-                        CreateRegionToggle(data, poiyomiMaterial, region, togglePath, i);
+                        RegisterGlobalParameter(data, globalParamName, targetMaterials[0], region);
                     }
-                }
-
-                // Create master toggle if enabled
-                if (data.useMasterToggle && data.createToggles)
-                {
-                    // Master toggle would control all regions together
-                    // For now, individual toggles are created under the master path
-                    Debug.Log($"[AutoUDIMDiscard] Master toggle mode: all regions grouped under '{data.masterTogglePath}'", data);
                 }
 
                 // Store stats
@@ -143,26 +169,12 @@ namespace YUCP.Components.Editor
             }
         }
 
-        private Material FindPoiyomiMaterial(SkinnedMeshRenderer renderer)
+        private List<AutoUDIMDiscardData.UVRegion> DetectUVRegions(Mesh mesh, AutoUDIMDiscardData data, int uvChannel)
         {
-            if (renderer == null || renderer.sharedMaterials == null)
-                return null;
-
-            foreach (var mat in renderer.sharedMaterials)
-            {
-                if (UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
-                    return mat;
-            }
-
-            return null;
-        }
-
-        private List<AutoUDIMDiscardData.UVRegion> DetectUVRegions(Mesh mesh, AutoUDIMDiscardData data)
-        {
-            Vector2[] uvs = GetUVChannel(mesh, data.uvChannel);
+            Vector2[] uvs = GetUVChannel(mesh, uvChannel);
             if (uvs == null || uvs.Length == 0)
             {
-                Debug.LogError($"[AutoUDIMDiscard] No UV{data.uvChannel} data found on mesh!", data);
+                Debug.LogError($"[AutoUDIMDiscard] No UV{uvChannel} data found on mesh!", data);
                 return null;
             }
 
@@ -261,57 +273,117 @@ namespace YUCP.Components.Editor
 
         private void AssignUDIMTiles(List<AutoUDIMDiscardData.UVRegion> regions, AutoUDIMDiscardData data)
         {
-            int currentRow = data.startRow;
-            int currentColumn = data.startColumn;
-
-            foreach (var region in regions)
+            if (data.autoAssignUDIMTile)
             {
-                region.assignedRow = currentRow;
-                region.assignedColumn = currentColumn;
-
-                // Move to next tile
-                currentColumn++;
-                if (currentColumn > 3)
+                // Use orchestrator-assigned starting tile
+                int currentRow = data.startRow >= 0 ? data.startRow : 3;
+                int currentColumn = data.startColumn >= 0 ? data.startColumn : 0;
+                
+                // Check if coordinator has assigned tiles for this component
+                if (AutoBodyHiderCoordinator.UDIMDiscardGroups.ContainsKey(data.targetBodyMesh))
                 {
-                    currentColumn = 0;
-                    currentRow++;
-                    if (currentRow > 3)
+                    var group = AutoBodyHiderCoordinator.UDIMDiscardGroups[data.targetBodyMesh];
+                    if (group.assignedTiles.ContainsKey(data) && group.assignedTiles[data].Count > 0)
                     {
-                        Debug.LogWarning($"[AutoUDIMDiscard] Ran out of UDIM tiles! Some regions may not be assigned.", data);
-                        currentRow = 3;
-                        currentColumn = 3;
+                        // Use coordinator-assigned starting tile
+                        var firstTile = group.assignedTiles[data][0];
+                        currentRow = firstTile.row;
+                        currentColumn = firstTile.col;
+                    }
+                }
+                
+                foreach (var region in regions)
+                {
+                    region.assignedRow = currentRow;
+                    region.assignedColumn = currentColumn;
+                    
+                    currentColumn++;
+                    if (currentColumn > 3)
+                    {
+                        currentColumn = 0;
+                        currentRow++;
+                        if (currentRow > 3)
+                        {
+                            Debug.LogWarning($"[AutoUDIMDiscard] Ran out of UDIM tiles! Some regions may not be assigned.", data);
+                            currentRow = 3;
+                            currentColumn = 3;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Manual assignment
+                int currentRow = data.startRow >= 0 ? data.startRow : 3;
+                int currentColumn = data.startColumn >= 0 ? data.startColumn : 0;
+
+                foreach (var region in regions)
+                {
+                    region.assignedRow = currentRow;
+                    region.assignedColumn = currentColumn;
+
+                    currentColumn++;
+                    if (currentColumn > 3)
+                    {
+                        currentColumn = 0;
+                        currentRow++;
+                        if (currentRow > 3)
+                        {
+                            Debug.LogWarning($"[AutoUDIMDiscard] Ran out of UDIM tiles! Some regions may not be assigned.", data);
+                            currentRow = 3;
+                            currentColumn = 3;
+                        }
                     }
                 }
             }
         }
 
-        private void ConfigurePoiyomiMaterial(Material material, int row, int column, AutoUDIMDiscardData data)
+        private void ConfigurePoiyomiMaterial(Material material, int row, int column, AutoUDIMDiscardData data, Mesh mesh, int uvChannel)
         {
             string shaderNameLower = material.shader.name.ToLower();
             
-            material.SetFloat("_EnableUDIMDiscardOptions", 1f);
-            
-            // Enable appropriate shader keyword
+            // Configure based on shader type
             if (shaderNameLower.Contains("poiyomi"))
             {
+                material.SetFloat("_EnableUDIMDiscardOptions", 1f);
                 material.EnableKeyword("POI_UDIMDISCARD");
             }
-            else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("wffs"))
+            else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("fast fur") || shaderNameLower.Contains("wffs") || shaderNameLower.Contains("warren"))
             {
-                material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
+                // FastFur: Install UV Discard module first
                 if (material.HasProperty("_WFFS_FEATURES_UVDISCARD"))
                 {
-                    material.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
+                    float currentValue = material.GetFloat("_WFFS_FEATURES_UVDISCARD");
+                    if (currentValue < 0.5f)
+                    {
+                        material.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
+                        try { material.SetInt("_WFFS_FEATURES_UVDISCARD", 1); } catch { }
+                        material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
+                        EditorUtility.SetDirty(material);
+                        material.name = material.name;
+                    }
+                    else
+                    {
+                        material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
+                    }
+                }
+                
+                // Enable UDIM discard option
+                if (material.HasProperty("_EnableUDIMDiscardOptions"))
+                {
+                    material.SetFloat("_EnableUDIMDiscardOptions", 1f);
+                    try { material.SetInt("_EnableUDIMDiscardOptions", 1); } catch { }
+                    EditorUtility.SetDirty(material);
+                    material.name = material.name;
                 }
             }
             
-            material.SetFloat("_UDIMDiscardMode", 0f); // Vertex mode
-            material.SetFloat("_UDIMDiscardUV", 1); // UV1
+            material.SetFloat("_UDIMDiscardMode", 0f);
+            material.SetFloat("_UDIMDiscardUV", uvChannel);
 
             string tilePropertyName = $"_UDIMDiscardRow{row}_{column}";
             if (material.HasProperty(tilePropertyName))
             {
-                // Material base = 0 (discard OFF when toggle is OFF)
                 material.SetFloat(tilePropertyName, 0f);
                 material.SetOverrideTag(tilePropertyName + "Animated", "1");
             }
@@ -319,61 +391,185 @@ namespace YUCP.Components.Editor
             EditorUtility.SetDirty(material);
         }
 
-        private void CreateRegionToggle(AutoUDIMDiscardData data, Material poiyomiMaterial, 
-            AutoUDIMDiscardData.UVRegion region, string menuPath, int regionIndex)
+        private string GetGlobalParameterName(AutoUDIMDiscardData data, int regionIndex)
+        {
+            if (data.useSingleGlobalParameter)
+            {
+                return string.IsNullOrEmpty(data.singleGlobalParameterName) ? "AutoUDIMDiscard_All" : data.singleGlobalParameterName;
+            }
+            else
+            {
+                string baseName = string.IsNullOrEmpty(data.globalParameterBaseName) ? "AutoUDIMDiscard" : data.globalParameterBaseName;
+                return $"{baseName}_{regionIndex + 1}";
+            }
+        }
+        
+        private void RegisterGlobalParameter(AutoUDIMDiscardData data, string parameterName, Material poiyomiMaterial, AutoUDIMDiscardData.UVRegion region)
         {
             try
             {
-                // Disable the clothing object by default (toggle OFF state)
-                if (regionIndex == 0 && !data.gameObject.activeSelf)
+                var descriptor = data.transform.root.GetComponent<VRCAvatarDescriptor>();
+                if (descriptor == null)
                 {
-                    data.gameObject.SetActive(false);
+                    Debug.LogWarning($"[AutoUDIMDiscard] No VRCAvatarDescriptor found on avatar root. Global parameter '{parameterName}' will not be registered.", data);
+                    return;
                 }
-
-                var toggle = FuryComponents.CreateToggle(data.gameObject);
-                toggle.SetMenuPath(menuPath);
-
-                if (data.toggleSaved)
-                    toggle.SetSaved();
-
-                var actions = toggle.GetActions();
-
-                // Always use ObjectToggle for now
-                actions.AddTurnOn(data.gameObject);
-
-                // Create animation for this region's UDIM tile
-                AnimationClip toggleAnimation = CreateRegionAnimation(data, poiyomiMaterial, region);
-
-                if (toggleAnimation != null)
+                
+                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, parameterName);
+                
+                // Find existing VRCFury toggles that use this global parameter
+                var availableToggles = ScanVRCFuryTogglesForGlobalParameter(data.gameObject, parameterName);
+                
+                if (availableToggles.Count > 0)
                 {
-                    actions.AddAnimationClip(toggleAnimation);
-
-                    // Set motion field via reflection
-                    var toggleType = toggle.GetType();
-                    var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    var toggleModel = cField.GetValue(toggle);
-                    var stateField = toggleModel.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    var state = stateField.GetValue(toggleModel);
-                    var actionsField = state.GetType().GetField("actions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    var actionsList = actionsField.GetValue(state) as System.Collections.IList;
-
-                    if (actionsList != null && actionsList.Count > 0)
+                    // Add animation to existing toggle(s) that use this parameter
+                    foreach (var toggle in availableToggles)
                     {
-                        var lastAction = actionsList[actionsList.Count - 1];
-                        var motionField = lastAction.GetType().GetField("motion", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (motionField != null)
-                        {
-                            motionField.SetValue(lastAction, toggleAnimation);
-                        }
+                        AddAnimationToToggle(toggle, data, poiyomiMaterial, region, parameterName);
                     }
                 }
-
-                Debug.Log($"[AutoUDIMDiscard] Created toggle for {region.name} at '{menuPath}'", data);
+                else
+                {
+                    // Create a new toggle with this global parameter
+                    var toggle = FuryComponents.CreateToggle(data.gameObject);
+                    toggle.SetGlobalParameter(parameterName);
+                    
+                    // Disable menu item creation for global parameter only mode
+                    var toggleType = toggle.GetType();
+                    var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (cField != null)
+                    {
+                        var toggleModel = cField.GetValue(toggle);
+                        var addMenuItemField = toggleModel.GetType().GetField("addMenuItem", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        if (addMenuItemField != null)
+                        {
+                            addMenuItemField.SetValue(toggleModel, false);
+                        }
+                    }
+                    
+                    AddAnimationToToggle(toggle, data, poiyomiMaterial, region, parameterName);
+                    Debug.Log($"[AutoUDIMDiscard] Created toggle with global parameter '{parameterName}' for {region.name}", data);
+                }
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[AutoUDIMDiscard] Error creating toggle for {region.name}: {ex.Message}", data);
+                Debug.LogError($"[AutoUDIMDiscard] Error registering global parameter '{parameterName}' for {region.name}: {ex.Message}", data);
                 Debug.LogException(ex);
+            }
+        }
+        
+        private List<object> ScanVRCFuryTogglesForGlobalParameter(GameObject root, string globalParameter)
+        {
+            var matchingToggles = new List<object>();
+            
+            // Check root GameObject
+            var rootComponents = root.GetComponents<Component>();
+            foreach (var comp in rootComponents)
+            {
+                if (comp != null && comp.GetType().Name == "VRCFury")
+                {
+                    string toggleParam = GetGlobalParameterFromToggle(comp);
+                    if (toggleParam == globalParameter)
+                    {
+                        matchingToggles.Add(comp);
+                    }
+                }
+            }
+            
+            // Check all children
+            foreach (Transform child in root.transform)
+            {
+                var childComponents = child.GetComponents<Component>();
+                foreach (var comp in childComponents)
+                {
+                    if (comp != null && comp.GetType().Name == "VRCFury")
+                    {
+                        string toggleParam = GetGlobalParameterFromToggle(comp);
+                        if (toggleParam == globalParameter)
+                        {
+                            matchingToggles.Add(comp);
+                        }
+                    }
+                }
+            }
+            
+            return matchingToggles;
+        }
+        
+        private string GetGlobalParameterFromToggle(Component toggle)
+        {
+            try
+            {
+                var toggleType = toggle.GetType();
+                var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (cField == null) return null;
+                
+                var toggleModel = cField.GetValue(toggle);
+                if (toggleModel == null) return null;
+                
+                var stateField = toggleModel.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (stateField == null) return null;
+                
+                var state = stateField.GetValue(toggleModel);
+                if (state == null) return null;
+                
+                var globalParameterField = state.GetType().GetField("globalParameter", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (globalParameterField == null) return null;
+                
+                return globalParameterField.GetValue(state) as string;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        
+        private void AddAnimationToToggle(object toggleComponent, AutoUDIMDiscardData data, Material poiyomiMaterial, AutoUDIMDiscardData.UVRegion region, string parameterName)
+        {
+            try
+            {
+                AnimationClip toggleAnimation = CreateRegionAnimation(data, poiyomiMaterial, region);
+                if (toggleAnimation == null) return;
+                
+                var toggleType = toggleComponent.GetType();
+                var actionsMethod = toggleType.GetMethod("GetActions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (actionsMethod != null)
+                {
+                    var actions = actionsMethod.Invoke(toggleComponent, null) as dynamic;
+                    if (actions != null)
+                    {
+                        actions.AddAnimationClip(toggleAnimation);
+                        
+                        var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        if (cField != null)
+                        {
+                            var toggleModel = cField.GetValue(toggleComponent);
+                            var stateField = toggleModel.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                            if (stateField != null)
+                            {
+                                var state = stateField.GetValue(toggleModel);
+                                var actionsField = state.GetType().GetField("actions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                                if (actionsField != null)
+                                {
+                                    var actionsList = actionsField.GetValue(state) as System.Collections.IList;
+                                    if (actionsList != null && actionsList.Count > 0)
+                                    {
+                                        var lastAction = actionsList[actionsList.Count - 1];
+                                        var motionField = lastAction.GetType().GetField("motion", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                                        if (motionField != null)
+                                        {
+                                            motionField.SetValue(lastAction, toggleAnimation);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[AutoUDIMDiscard] Error adding animation to toggle: {ex.Message}", data);
             }
         }
 

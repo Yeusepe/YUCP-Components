@@ -137,6 +137,12 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                     var result = _work(_token);
                     _tcs.TrySetResult(result);
                 }
+                catch (ThreadAbortException)
+                {
+                    Thread.ResetAbort();
+                    _tcs.TrySetCanceled();
+                    Debug.LogWarning("[Package Guardian] Task cancelled due to thread abort");
+                }
                 catch (OperationCanceledException oce)
                 {
                     _tcs.TrySetCanceled(oce.CancellationToken == default ? _token : oce.CancellationToken);
