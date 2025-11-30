@@ -30,6 +30,16 @@ namespace YUCP.Components
         [Range(0.01f, 1f)]
         public float dampingWeight = 0.15f;
 
+        [Header("Constraint Settings")]
+        [Tooltip("Position offset from the target. Applied in local or world space.")]
+        public Vector3 positionOffset = Vector3.zero;
+
+        [Tooltip("Position at rest. Default position when constraint weight is 0 or axis is frozen.")]
+        public Vector3 positionAtRest = Vector3.zero;
+
+        [Tooltip("Source position offset. Position offset applied to the constraint source.")]
+        public Vector3 sourcePositionOffset = Vector3.zero;
+
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared constraint setup.")]
         public bool enableGrouping = false;
@@ -61,6 +71,9 @@ namespace YUCP.Components
             public Transform targetTransform;
             public Transform positionTarget;
             public float dampingWeight;
+            public Vector3 positionOffset;
+            public Vector3 positionAtRest;
+            public Vector3 sourcePositionOffset;
             public string constraintGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -100,6 +113,9 @@ namespace YUCP.Components
                 targetTransform = targetObject,
                 positionTarget = positionTarget,
                 dampingWeight = Mathf.Clamp(dampingWeight, 0.01f, 1f),
+                positionOffset = positionOffset,
+                positionAtRest = positionAtRest,
+                sourcePositionOffset = sourcePositionOffset,
                 constraintGroupId = enableGrouping ? NormalizeGroupId(constraintGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,

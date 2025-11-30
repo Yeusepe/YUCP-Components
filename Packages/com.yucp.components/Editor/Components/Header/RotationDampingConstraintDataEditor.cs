@@ -104,6 +104,20 @@ namespace YUCP.Components.Editor
             dampingContent.Add(dampingSlider);
             dampingContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Lower values create stronger damping effect. The constraint uses a feedback loop where the object targets itself at full weight and another source at this weight.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(dampingCard);
+
+            var constraintCard = YUCPUIToolkitHelper.CreateCard("Constraint Settings", "Control offsets and constraint behavior.");
+            var constraintContent = YUCPUIToolkitHelper.GetCardContent(constraintCard);
+            
+            constraintContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rotationOffset"), "Rotation Offset"));
+            constraintContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Rotation offset from the target in Euler angles (degrees).", YUCPUIToolkitHelper.MessageType.Info));
+            
+            constraintContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rotationAtRest"), "Rotation At Rest"));
+            constraintContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Default rotation when constraint weight is 0 (Euler angles in degrees).", YUCPUIToolkitHelper.MessageType.Info));
+            
+            constraintContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("sourceRotationOffset"), "Source Rotation Offset"));
+            constraintContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Rotation offset applied to the constraint source (Euler angles in degrees).", YUCPUIToolkitHelper.MessageType.Info));
+            
+            root.Add(constraintCard);
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);

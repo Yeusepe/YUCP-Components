@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using VRC.Dynamics;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase.Editor.BuildPipeline;
 using VRLabs.CustomObjectSyncCreator;
@@ -170,6 +171,15 @@ namespace YUCP.Components.Editor
 
         private static void InstallConstraint(VRCAvatarDescriptor descriptor, GameObject prefab, RotationDampingConstraintData.Settings settings)
         {
+            Vector3 targetWorldPosition = Vector3.zero;
+            Quaternion targetWorldRotation = Quaternion.identity;
+            
+            if (settings.targetObject != null)
+            {
+                targetWorldPosition = settings.targetObject.transform.position;
+                targetWorldRotation = settings.targetObject.transform.rotation;
+            }
+
             var rootObject = descriptor.gameObject;
             var constraintSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
             constraintSystem.name = constraintSystem.name.Replace("(Clone)", "");
@@ -181,6 +191,12 @@ namespace YUCP.Components.Editor
                 return;
             }
 
+            if (settings.targetObject != null)
+            {
+                container.position = targetWorldPosition;
+                container.rotation = targetWorldRotation;
+            }
+
             var rotationTarget = constraintSystem.transform.Find("Rotation Target");
             if (rotationTarget == null)
             {
@@ -188,29 +204,45 @@ namespace YUCP.Components.Editor
                 return;
             }
 
+            Transform targetToFollow = null;
             if (settings.rotationTarget != null)
             {
-                var oldPath = AnimationUtility.CalculateTransformPath(rotationTarget.transform, descriptor.transform);
-                rotationTarget.parent = settings.rotationTarget.parent;
-                rotationTarget.localPosition = settings.rotationTarget.localPosition;
-                rotationTarget.localRotation = settings.rotationTarget.localRotation;
-                rotationTarget.localScale = settings.rotationTarget.localScale;
-                var newPath = AnimationUtility.CalculateTransformPath(rotationTarget.transform, descriptor.transform);
-
-                var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
-                    .Where(x => x.animatorController != null)
-                    .SelectMany(x => x.animatorController.animationClips)
-                    .ToArray();
-
-                CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+                targetToFollow = settings.rotationTarget;
             }
             else if (settings.targetTransform != null)
             {
+                targetToFollow = settings.targetTransform;
+            }
+
+            if (targetToFollow != null)
+            {
                 var oldPath = AnimationUtility.CalculateTransformPath(rotationTarget.transform, descriptor.transform);
-                rotationTarget.parent = settings.targetTransform.parent;
-                rotationTarget.localPosition = settings.targetTransform.localPosition;
-                rotationTarget.localRotation = settings.targetTransform.localRotation;
-                rotationTarget.localScale = settings.targetTransform.localScale;
+                
+                rotationTarget.parent = descriptor.transform;
+                rotationTarget.position = targetToFollow.position;
+                rotationTarget.rotation = targetToFollow.rotation;
+                rotationTarget.localScale = Vector3.one;
+                
+                var parentConstraint = rotationTarget.gameObject.GetComponent<VRC.SDK3.Dynamics.Constraint.Components.VRCParentConstraint>();
+                if (parentConstraint == null)
+                {
+                    parentConstraint = rotationTarget.gameObject.AddComponent<VRC.SDK3.Dynamics.Constraint.Components.VRCParentConstraint>();
+                }
+
+                parentConstraint.IsActive = false;
+                parentConstraint.Locked = false;
+                parentConstraint.Sources.Clear();
+                parentConstraint.Sources.Add(new VRCConstraintSource(targetToFollow, 1.0f, Vector3.zero, Vector3.zero));
+                parentConstraint.AffectsPositionX = false;
+                parentConstraint.AffectsPositionY = false;
+                parentConstraint.AffectsPositionZ = false;
+                parentConstraint.AffectsRotationX = true;
+                parentConstraint.AffectsRotationY = true;
+                parentConstraint.AffectsRotationZ = true;
+                parentConstraint.RebakeOffsetsWhenUnfrozen = true;
+                parentConstraint.Locked = true;
+                parentConstraint.IsActive = true;
+
                 var newPath = AnimationUtility.CalculateTransformPath(rotationTarget.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -221,15 +253,14 @@ namespace YUCP.Components.Editor
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
             }
 
-            var constraint = container.GetComponent<VRC.SDK3.Dynamics.Constraint.Components.VRCRotationConstraint>();
+            var constraint = container.GetComponent<VRC.SDK3.Dynamics.Constraint.Components.VRCParentConstraint>();
             if (constraint != null && constraint.Sources.Count >= 2)
             {
                 var source = constraint.Sources[1];
-                Transform targetTransformToUse = settings.rotationTarget != null 
-                    ? settings.rotationTarget 
-                    : (settings.targetTransform != null ? settings.targetTransform : rotationTarget);
-                source.SourceTransform = targetTransformToUse;
+                source.SourceTransform = rotationTarget;
                 source.Weight = settings.dampingWeight;
+                source.ParentPositionOffset = Vector3.zero;
+                source.ParentRotationOffset = settings.sourceRotationOffset;
                 constraint.Sources[1] = source;
             }
 
@@ -237,6 +268,8 @@ namespace YUCP.Components.Editor
             {
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
                 settings.targetObject.transform.parent = container;
+                settings.targetObject.transform.localPosition = Vector3.zero;
+                settings.targetObject.transform.localRotation = Quaternion.identity;
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)

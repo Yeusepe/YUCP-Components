@@ -104,6 +104,20 @@ namespace YUCP.Components.Editor
             dampingContent.Add(dampingSlider);
             dampingContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Lower values create stronger damping effect. The constraint uses a feedback loop where the object targets itself at full weight and another source at this weight.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(dampingCard);
+
+            var constraintCard = YUCPUIToolkitHelper.CreateCard("Constraint Settings", "Control offsets and constraint behavior.");
+            var constraintContent = YUCPUIToolkitHelper.GetCardContent(constraintCard);
+            
+            constraintContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("positionOffset"), "Position Offset"));
+            constraintContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Position offset from the target.", YUCPUIToolkitHelper.MessageType.Info));
+            
+            constraintContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("positionAtRest"), "Position At Rest"));
+            constraintContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Default position when constraint weight is 0 or axis is not constrained.", YUCPUIToolkitHelper.MessageType.Info));
+            
+            constraintContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("sourcePositionOffset"), "Source Position Offset"));
+            constraintContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Position offset applied to the constraint source.", YUCPUIToolkitHelper.MessageType.Info));
+            
+            root.Add(constraintCard);
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);

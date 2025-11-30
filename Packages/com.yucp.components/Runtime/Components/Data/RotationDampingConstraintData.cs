@@ -30,6 +30,16 @@ namespace YUCP.Components
         [Range(0.01f, 1f)]
         public float dampingWeight = 0.15f;
 
+        [Header("Constraint Settings")]
+        [Tooltip("Rotation offset from the target. Applied as Euler angles in degrees.")]
+        public Vector3 rotationOffset = Vector3.zero;
+
+        [Tooltip("Rotation at rest. Default rotation when constraint weight is 0 or axis is frozen.")]
+        public Vector3 rotationAtRest = Vector3.zero;
+
+        [Tooltip("Source rotation offset. Rotation offset applied to the constraint source (Euler angles in degrees).")]
+        public Vector3 sourceRotationOffset = Vector3.zero;
+
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared constraint setup.")]
         public bool enableGrouping = false;
@@ -61,6 +71,9 @@ namespace YUCP.Components
             public Transform targetTransform;
             public Transform rotationTarget;
             public float dampingWeight;
+            public Vector3 rotationOffset;
+            public Vector3 rotationAtRest;
+            public Vector3 sourceRotationOffset;
             public string constraintGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -100,6 +113,9 @@ namespace YUCP.Components
                 targetTransform = targetObject,
                 rotationTarget = rotationTarget,
                 dampingWeight = Mathf.Clamp(dampingWeight, 0.01f, 1f),
+                rotationOffset = rotationOffset,
+                rotationAtRest = rotationAtRest,
+                sourceRotationOffset = sourceRotationOffset,
                 constraintGroupId = enableGrouping ? NormalizeGroupId(constraintGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,
