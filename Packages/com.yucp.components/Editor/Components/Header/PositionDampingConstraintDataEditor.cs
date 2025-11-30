@@ -83,8 +83,20 @@ namespace YUCP.Components.Editor
             var dampingSlider = new Slider("Damping Weight", 0.01f, 1f);
             dampingSlider.value = dampingWeightProp.floatValue;
             dampingSlider.AddToClassList("yucp-field-input");
+            bool isSliderDragging = false;
+            dampingSlider.RegisterCallback<MouseCaptureEvent>(evt =>
+            {
+                isSliderDragging = true;
+            });
+            dampingSlider.RegisterValueChangedCallback(evt =>
+            {
+                dampingWeightProp.floatValue = evt.newValue;
+                serializedObject.ApplyModifiedProperties();
+                EditorUtility.SetDirty(data);
+            });
             dampingSlider.RegisterCallback<MouseCaptureOutEvent>(evt =>
             {
+                isSliderDragging = false;
                 dampingWeightProp.floatValue = dampingSlider.value;
                 serializedObject.ApplyModifiedProperties();
                 EditorUtility.SetDirty(data);
@@ -157,7 +169,10 @@ namespace YUCP.Components.Editor
                 UpdateOverviewCard(overviewCard, data, descriptor);
                 
                 dampingSlider.SetEnabled(true);
-                dampingSlider.value = dampingWeightProp.floatValue;
+                if (!isSliderDragging)
+                {
+                    dampingSlider.value = dampingWeightProp.floatValue;
+                }
                 
                 groupIdField.SetEnabled(enableGroupingProp.boolValue);
                 

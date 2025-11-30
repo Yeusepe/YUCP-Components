@@ -225,6 +225,10 @@ namespace YUCP.Components.Editor
             if (constraint != null && constraint.Sources.Count >= 2)
             {
                 var source = constraint.Sources[1];
+                Transform targetTransformToUse = settings.rotationTarget != null 
+                    ? settings.rotationTarget 
+                    : (settings.targetTransform != null ? settings.targetTransform : rotationTarget);
+                source.SourceTransform = targetTransformToUse;
                 source.Weight = settings.dampingWeight;
                 constraint.Sources[1] = source;
             }

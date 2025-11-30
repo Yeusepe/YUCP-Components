@@ -121,6 +121,14 @@
 .yucp-sliders-scroll {
     max-height: 220px;
     min-height: 80px;
+    width: 100%;
+    overflow: hidden;
+}
+
+.yucp-sliders-scroll > .unity-scroll-view__content-container {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .yucp-slider-item {

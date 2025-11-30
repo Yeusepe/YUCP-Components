@@ -87,6 +87,8 @@ namespace YUCP.Components
         private int _rightFlickFrameCount = 0;
         private bool _leftFlickWasSent = false;
         private bool _rightFlickWasSent = false;
+        private float _leftAccumulatedRotationDelta = 0f;
+        private float _rightAccumulatedRotationDelta = 0f;
 
         // Public properties for external access
         public Component GestureManager => gestureManager;
@@ -972,13 +974,14 @@ namespace YUCP.Components
 
         #region Rotation and Flick Detection
 
-        private float CalculateRotationDirection(float currentX, float currentY, ref float prevAngleRad, ref bool initialized, float deadzone = 0.2f, float thresholdRad = 0.087f)
+        private float CalculateRotationDirection(float currentX, float currentY, ref float prevAngleRad, ref bool initialized, ref float accumulatedDelta, float deadzone = 0.2f, float minDeltaRad = 0.001f, float pulseThresholdRad = 0.02f)
         {
             float r = Mathf.Sqrt(currentX * currentX + currentY * currentY);
             
             if (r < deadzone)
             {
                 initialized = false;
+                accumulatedDelta = 0f;
                 return 0f;
             }
             
@@ -988,6 +991,7 @@ namespace YUCP.Components
             {
                 prevAngleRad = angle;
                 initialized = true;
+                accumulatedDelta = 0f;
                 return 0f;
             }
             
@@ -1004,12 +1008,24 @@ namespace YUCP.Components
             
             prevAngleRad = angle;
             
-            if (Mathf.Abs(delta) < thresholdRad)
+            // Ignore extremely small deltas (noise filtering)
+            if (Mathf.Abs(delta) < minDeltaRad)
             {
                 return 0f;
             }
             
-            return delta > 0 ? -1f : 1f;
+            // Accumulate delta
+            accumulatedDelta += delta;
+            
+            // Send pulse when accumulated delta exceeds threshold
+            if (Mathf.Abs(accumulatedDelta) >= pulseThresholdRad)
+            {
+                float result = accumulatedDelta > 0 ? -1f : 1f;
+                accumulatedDelta = 0f; // Reset accumulator
+                return result;
+            }
+            
+            return 0f;
         }
 
         private bool DetectFlick(float currentX, float currentY, float prevX, float prevY, float prevMagnitude, ref int flickFrameCount, float velocityThreshold = 0.5f, float minRadius = 0.7f, float releaseRadius = 0.3f, int maxFrames = 6)
@@ -1057,10 +1073,12 @@ namespace YUCP.Components
                     if (isLeft)
                     {
                         _leftInitialized = false;
+                        _leftAccumulatedRotationDelta = 0f;
                     }
                     else
                     {
                         _rightInitialized = false;
+                        _rightAccumulatedRotationDelta = 0f;
                     }
                     return 0f;
                 }
@@ -1068,14 +1086,14 @@ namespace YUCP.Components
                 float rotationDirection;
                 if (isLeft)
                 {
-                    rotationDirection = CalculateRotationDirection(x, y, ref _leftPrevAngleRad, ref _leftInitialized, controllerDeadzone);
+                    rotationDirection = CalculateRotationDirection(x, y, ref _leftPrevAngleRad, ref _leftInitialized, ref _leftAccumulatedRotationDelta, controllerDeadzone);
                     _leftPrevX = x;
                     _leftPrevY = y;
                     _leftPrevMagnitude = magnitude;
                 }
                 else
                 {
-                    rotationDirection = CalculateRotationDirection(x, y, ref _rightPrevAngleRad, ref _rightInitialized, controllerDeadzone);
+                    rotationDirection = CalculateRotationDirection(x, y, ref _rightPrevAngleRad, ref _rightInitialized, ref _rightAccumulatedRotationDelta, controllerDeadzone);
                     _rightPrevX = x;
                     _rightPrevY = y;
                     _rightPrevMagnitude = magnitude;

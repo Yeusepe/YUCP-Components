@@ -59,18 +59,6 @@ namespace YUCP.Components
         public Vector3 averageNormal;
     }
 
-    [Serializable]
-    public class BlendshapeAnimationData
-    {
-        [Tooltip("Name of the blendshape being tracked")]
-        public string blendshapeName;
-        
-        [Tooltip("Generated animation clip for this blendshape")]
-        public AnimationClip animationClip;
-        
-        [Tooltip("Number of keyframes in the animation")]
-        public int keyframeCount;
-    }
 
     [BetaWarning("This component is in BETA and may not work as intended. Blendshape attachment is experimental and may require manual configuration.")]
     [AddComponentMenu("YUCP/Attach to Blendshape")]
@@ -78,9 +66,14 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     public class AttachToBlendshapeData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target Mesh")]
+        [Header("Source Mesh")]
         [Tooltip("The skinned mesh with blendshapes to attach to (usually the avatar head/body).")]
         public SkinnedMeshRenderer targetMesh;
+
+        [Header("Target Mesh to Modify")]
+        [Tooltip("The mesh that will receive the transferred blendshapes. Can be a SkinnedMeshRenderer or MeshFilter.\n\n" +
+                 "If not set, will attempt to use a SkinnedMeshRenderer or MeshFilter on this GameObject.")]
+        public UnityEngine.Object targetMeshToModify;
 
         [Header("Blendshape Tracking")]
         [Tooltip("Which blendshapes to track:\n\n" +
@@ -169,19 +162,9 @@ namespace YUCP.Components
         [Tooltip("Optional bone path offset for fine-tuning.")]
         public string boneOffset = "";
 
-        [Header("Animation Generation")]
-        [Tooltip("Create direct FX layer integration (requires manual Animator Controller setup).\n\n" +
-                 "When enabled, animations are saved to Assets/Generated for manual wiring.\n" +
-                 "When disabled, animations are temporary (build-time only).")]
-        public bool createDirectAnimations = true;
-
-        [Tooltip("Automatically create a viseme FX layer when Tracking Mode = Visemes Only.\n\n" +
-                 "This generates a VRCFury controller that reacts to the avatar's Viseme parameter " +
-                 "and applies the sampled attachment poses for each viseme.")]
-        public bool autoCreateVisemeFxLayer = true;
-
-        [Tooltip("Number of sample points per blendshape (2-10).\n\n" +
-                 "More samples = smoother animation but larger file size.\n" +
+        [Header("Blendshape Transfer")]
+        [Tooltip("Number of keyframes per blendshape (2-10).\n\n" +
+                 "More keyframes = smoother deformation but larger file size.\n" +
                  "Recommended: 5 for most cases.")]
         [Range(2, 10)]
         public int samplesPerBlendshape = 5;
@@ -192,9 +175,6 @@ namespace YUCP.Components
         public float smartDetectionThreshold = 0.001f;
 
         [Header("Advanced Options")]
-        [Tooltip("Save generated animation clips as assets for debugging.")]
-        public bool debugSaveAnimations = false;
-
         [Tooltip("Enable debug logging during build.")]
         public bool debugMode = false;
 
@@ -208,8 +188,8 @@ namespace YUCP.Components
         [Tooltip("Blendshapes that were tracked")]
         [SerializeField] private List<string> trackedBlendshapes = new List<string>();
 
-        [Tooltip("Number of animation clips generated")]
-        [SerializeField] private int generatedAnimationCount = 0;
+        [Tooltip("Number of blendshapes transferred")]
+        [SerializeField] private int transferredBlendshapeCount = 0;
 
         [Tooltip("Selected bone path")]
         [SerializeField] private string selectedBonePath = "";
@@ -234,20 +214,26 @@ namespace YUCP.Components
         [System.NonSerialized] public bool previewHasBaseSolver;
         [System.NonSerialized] public Vector3 previewPositionOffset;
         [System.NonSerialized] public Quaternion previewRotationOffset = Quaternion.identity;
+        [System.NonSerialized] public SkinnedMeshRenderer previewTempSkinnedMesh; // Temporary SkinnedMeshRenderer for MeshFilter preview
+        [System.NonSerialized] public MeshFilter previewOriginalMeshFilter; // Original MeshFilter for restoration
+        [System.NonSerialized] public MeshRenderer previewOriginalMeshRenderer; // Original MeshRenderer for restoration (stored before disabling)
+        [System.NonSerialized] public Mesh previewOriginalMesh; // Original mesh before blendshape transfer (for restoration)
+        [System.NonSerialized] public Mesh previewWorkingMesh; // Working mesh copy with transferred blendshapes
+        [System.NonSerialized] public Mesh previewOriginalTargetMesh; // Original target mesh (before any transfers) for categorization
 
         public SurfaceCluster DetectedCluster => detectedCluster;
         public List<string> TrackedBlendshapes => trackedBlendshapes;
-        public int GeneratedAnimationCount => generatedAnimationCount;
+        public int TransferredBlendshapeCount => transferredBlendshapeCount;
         public string SelectedBonePath => selectedBonePath;
 
         public int PreprocessOrder => 0;
         public bool OnPreprocess() => true;
 
-        public void SetBuildStats(SurfaceCluster cluster, List<string> blendshapes, int animCount, string bonePath)
+        public void SetBuildStats(SurfaceCluster cluster, List<string> blendshapes, int transferredCount, string bonePath)
         {
             detectedCluster = cluster;
             trackedBlendshapes = new List<string>(blendshapes);
-            generatedAnimationCount = animCount;
+            transferredBlendshapeCount = transferredCount;
             selectedBonePath = bonePath;
         }
 
@@ -259,7 +245,6 @@ namespace YUCP.Components
             solverMode = SolverMode.Rigid;
             alignRotationToSurface = true;
             rotationSmoothingFactor = 0.3f;
-            createDirectAnimations = true;
             samplesPerBlendshape = 5;
             smartDetectionThreshold = 0.001f;
             attachToClosestBone = true;
@@ -267,7 +252,6 @@ namespace YUCP.Components
             rbfDriverPointCount = 6;
             rbfRadiusMultiplier = 1.5f;
             useGPUAcceleration = true;
-            autoCreateVisemeFxLayer = true;
         }
 
         private void Awake()
