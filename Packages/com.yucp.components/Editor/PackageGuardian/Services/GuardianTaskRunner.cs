@@ -85,7 +85,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 }
                 catch (ThreadAbortException)
                 {
-                    Debug.LogWarning("[Package Guardian] Background worker aborted (domain reload). Pending task may be cancelled.");
+                    // Domain reloads are expected - use Debug.Log instead of LogWarning to reduce noise
+                    Debug.Log("[Package Guardian] Background worker aborted (domain reload). Pending task may be cancelled.");
                     _activeTaskName = null;
                     Thread.ResetAbort();
                     break;
@@ -141,7 +142,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 {
                     Thread.ResetAbort();
                     _tcs.TrySetCanceled();
-                    Debug.LogWarning("[Package Guardian] Task cancelled due to thread abort");
+                    // Domain reloads are expected - use Debug.Log instead of LogWarning to reduce noise
+                    Debug.Log("[Package Guardian] Task cancelled due to thread abort");
                 }
                 catch (OperationCanceledException oce)
                 {

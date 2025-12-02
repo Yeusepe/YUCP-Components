@@ -110,7 +110,8 @@ namespace PackageGuardian.Core.Repository
                     // Thread abort during diff calculation - stash commit already created, continue with basic message
                     // Reset abort to stop propagation
                     System.Threading.Thread.ResetAbort();
-                    UnityEngine.Debug.LogWarning("[Package Guardian] Thread aborted during stash diff calculation - using basic message");
+                    // Domain reloads are expected - use Debug.Log instead of LogWarning to reduce noise
+                    UnityEngine.Debug.Log("[Package Guardian] Thread aborted during stash diff calculation - using basic message");
                 }
                 catch (Exception ex)
                 {
