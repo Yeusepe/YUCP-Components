@@ -51,7 +51,7 @@ namespace YUCP.Components.HandPoses
         #region Public Methods
 
         /// <summary>
-        ///     Gets the given hand descriptor, based on the <see cref="PoseType" />.
+        ///     Gets the given hand descriptor using the <see cref="PoseType" />.
         /// </summary>
         /// <param name="handSide">Hand to get the descriptor for</param>
         /// <param name="blendPoseType">

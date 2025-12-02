@@ -5,6 +5,7 @@ using VRC.SDKBase;
 
 namespace YUCP.Components
 {
+	[SupportBanner]
 	[AddComponentMenu("YUCP/Conditional Deletion")]
 	[HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
 	[DisallowMultipleComponent]

@@ -5,7 +5,7 @@ namespace YUCP.Components.Editor.MeshUtils
 {
     /// <summary>
     /// Analyzes avatar hand structure to extract finger bones and associated mesh vertices.
-    /// Used for contact-based grip generation.
+    /// Used for contact grip generation.
     /// </summary>
     public static class HandAnalyzer
     {

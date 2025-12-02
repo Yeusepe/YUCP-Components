@@ -133,7 +133,7 @@ namespace YUCP.Components.Editor
 				return;
 			}
 
-			// Always use ParentConstraint for consistent offsets across modes
+			// Use ParentConstraint for consistent offsets across modes
 			var parC = data.GetComponent<ParentConstraint>();
 			if (parC == null) parC = data.gameObject.AddComponent<ParentConstraint>();
 			parC.enabled = true;

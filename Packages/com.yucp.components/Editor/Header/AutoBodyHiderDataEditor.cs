@@ -33,7 +33,7 @@ namespace YUCP.Components.Editor
         private Texture2D lastManualMask;
         private float lastManualMaskThreshold;
         
-        // Track previous values to prevent unnecessary UI updates
+        // Track previous values to reduce unnecessary UI updates
         private Component previousVrcFuryToggle = null;
         private string previousValidationError = null;
         private bool previousCreateToggle = false;
@@ -45,7 +45,7 @@ namespace YUCP.Components.Editor
         private SkinnedMeshRenderer previousTargetBodyMesh = null;
         private Mesh previousDetectedMesh = null;
         private int cachedDetectedUVChannel = 1;
-        private Material[] previousBodyMeshMaterials = null; // Track materials on body mesh to avoid unnecessary rebuilds
+        private Material[] previousBodyMeshMaterials = null; // Track materials on body mesh
 
         // Foldout states
         private bool showSmartDetection = false;
@@ -356,7 +356,7 @@ namespace YUCP.Components.Editor
             
             YUCPUIToolkitHelper.AddSpacing(previewCardContent, 8);
             
-            // Single context-sensitive button that changes based on preview state
+            // Single context-sensitive button
             var previewActionButton = YUCPUIToolkitHelper.CreateButton("Generate Preview", () => 
             {
                 if (data.previewGenerated)
@@ -495,7 +495,7 @@ namespace YUCP.Components.Editor
                     manualUVSection.style.display = autoDetectEnabled ? DisplayStyle.None : DisplayStyle.Flex;
                 }
                 
-                // Show/hide material picker based on application mode for UDIM Discard or Auto-Detect
+                // Show/hide material picker for UDIM Discard or Auto-Detect
                 bool showMaterialField = (appModeValue == ApplicationMode.UDIMDiscard || appModeValue == ApplicationMode.AutoDetect);
                 materialPickerContainer.style.display = showMaterialField ? DisplayStyle.Flex : DisplayStyle.None;
                 
@@ -569,7 +569,7 @@ namespace YUCP.Components.Editor
                 
                 UpdatePreviewInfo(previewInfo, data);
                 
-                // Update tile assignment UI based on auto-assign setting
+                // Update tile assignment UI
                 var autoAssignTileProp = serializedObject.FindProperty("autoAssignUDIMTile");
                 bool autoAssign = autoAssignTileProp.boolValue;
                 
@@ -596,7 +596,7 @@ namespace YUCP.Components.Editor
                     manualTileContainer.style.display = autoAssign ? DisplayStyle.None : DisplayStyle.Flex;
                 }
                 
-                // Update context-sensitive button based on preview state
+                // Update context-sensitive button
                 var previewActionButton = root.Q<Button>("preview-action-button");
                 if (previewActionButton != null)
                 {
@@ -699,7 +699,7 @@ namespace YUCP.Components.Editor
             var appMode = so.FindProperty("applicationMode");
             var appModeValue = (ApplicationMode)appMode.enumValueIndex;
             
-            // Show toggle section with content based on mode
+            // Show toggle section with content
             if (appModeValue != ApplicationMode.UDIMDiscard && appModeValue != ApplicationMode.AutoDetect)
             {
                 // Show message that toggle is available for UDIM Discard mode
@@ -1096,7 +1096,7 @@ namespace YUCP.Components.Editor
                 toggle.SetMenuPath("Clothing/Hide Body");
                 toggle.SetSaved();
                 
-                // Don't set any actions - the user can add blend shapes, animations, etc. via the VRCFury inspector
+                // The user can add blend shapes, animations, etc. via the VRCFury inspector
                 // The Auto Body Hider processor will automatically add the UDIM discard animation during build
                 
                 EditorUtility.SetDirty(data.gameObject);
@@ -1579,7 +1579,7 @@ namespace YUCP.Components.Editor
                 {
                     if (child is VisualElement card && card.userData is Material cardMaterial)
                     {
-                        // Update border color based on selection
+                        // Update border color
                         bool isSelected = selectedMaterials != null && selectedMaterials.Contains(cardMaterial);
                         var borderColor = isSelected
                             ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f))
@@ -1761,7 +1761,7 @@ namespace YUCP.Components.Editor
                 card.style.scale = new Scale(new Vector2(1f, 1f));
             });
             
-            // Update border color based on selection state with animation
+            // Update border color with animation
             if (isSelected)
             {
                 card.style.borderTopColor = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f));

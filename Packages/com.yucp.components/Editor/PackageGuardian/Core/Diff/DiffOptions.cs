@@ -25,7 +25,7 @@ namespace PackageGuardian.Core.Diff
         public float RenameThreshold { get; set; } = 0.5f;
 
         /// <summary>
-        /// Maximum number of files to check for renames (to prevent O(n²) explosion).
+        /// Maximum number of files to check for renames.
         /// Set to -1 for unlimited. Default is 1000 (Git's default is 400).
         /// </summary>
         public int RenameLimit { get; set; } = 1000;

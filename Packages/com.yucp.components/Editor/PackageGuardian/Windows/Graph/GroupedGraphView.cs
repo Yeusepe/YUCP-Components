@@ -9,7 +9,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.Graph
 {
     /// <summary>
     /// Graph view with virtualization, grouping, and organized commit display.
-    /// Uses ListView for performance and groups commits by time period.
+    /// Uses ListView and groups commits by time period.
     /// </summary>
     public class GroupedGraphView : VisualElement
     {

@@ -10,7 +10,7 @@ namespace YUCP.Components.Editor.MeshUtils
     public static class ContactPlanner
     {
         /// <summary>
-        /// Plan contact points for all fingers based on grip type and object geometry.
+        /// Plan contact points for all fingers using grip type and object geometry.
         /// </summary>
         public static FingerTargets PlanContacts(
             Transform grippedObject,
@@ -294,7 +294,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
         
         /// <summary>
-        /// Score candidates based on various criteria.
+        /// Score candidates using various criteria.
         /// </summary>
         private static void ScoreCandidates(
             List<ContactCandidate> candidates,
@@ -312,7 +312,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 // Normal alignment score (pad should align with surface)
                 float normalScore = 1f - Mathf.Abs(Vector3.Dot(candidate.normal, Vector3.up));
                 
-                // Separation score (avoid duplicates)
+                // Separation score
                 float separationScore = 1f;
                 foreach (var selected in selectedContacts)
                 {

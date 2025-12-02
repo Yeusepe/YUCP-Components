@@ -14,7 +14,7 @@ namespace YUCP.Components
         
         public SupportBannerAttribute()
         {
-            Message = "This project stays free because of you. Every tip directly supports maintenance and new releases. If it helped you, please consider supporting my work!";
+            Message = "Enjoying these tools? Your support keeps them free and helps create more amazing features!";
         }
         
         public SupportBannerAttribute(string customMessage)

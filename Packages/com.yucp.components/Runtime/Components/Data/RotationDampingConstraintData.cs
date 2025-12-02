@@ -11,7 +11,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Rotation Damping Constraint")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Rotation-Damping-Constraint")]
-    [SupportBanner("This component ports VRLabs Damping Constraints (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class RotationDampingConstraintData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Objects")]

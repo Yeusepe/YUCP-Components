@@ -16,7 +16,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Custom Object Sync")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Custom-Object-Sync")]
-    [SupportBanner("This component ports VRLabs Custom Object Sync (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class CustomObjectSyncData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         public const string DefaultGroupId = "Default";

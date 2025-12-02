@@ -125,7 +125,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                     }
                     else
                     {
-                        // On background thread, return empty list to avoid Unity API calls
+                        // On background thread, return empty list
                         return new List<ValidationIssue>();
                     }
                 }

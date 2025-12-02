@@ -7,6 +7,7 @@ namespace YUCP.Components
 
     public enum EyeAlignment { None, LeftEye, RightEye }
 
+    [SupportBanner]
     [DefaultExecutionOrder(-100)]
     [AddComponentMenu("YUCP/View Position & Head Auto-Link")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]

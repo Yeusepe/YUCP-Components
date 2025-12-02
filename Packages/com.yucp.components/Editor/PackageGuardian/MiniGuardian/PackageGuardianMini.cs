@@ -12,7 +12,7 @@ namespace YUCP.PackageGuardian.Mini
     /// <summary>
     /// Lightweight Package Guardian for bundling with YUCP packages.
     /// Focuses on import protection: duplicate detection, error reversion, and ensuring error-free imports.
-    /// Uses the same core methods as the full guardian for consistency.
+    /// Uses the same core methods as the full guardian.
     /// </summary>
     [InitializeOnLoad]
     public class PackageGuardianMini : AssetPostprocessor
@@ -163,7 +163,7 @@ namespace YUCP.PackageGuardian.Mini
                 foreach (var guardian in guardians)
                 {
                     string normalizedPath = Path.GetFullPath(guardian).Replace('\\', '/');
-                    // Don't remove if it was just imported (part of current import)
+                    // Skip if it was just imported (part of current import)
                     if (importedPaths.Contains(normalizedPath))
                         continue;
                         
@@ -341,7 +341,7 @@ namespace YUCP.PackageGuardian.Mini
         {
             string lastImportHash = EditorPrefs.GetString(PREF_KEY_LAST_IMPORT, "");
             
-            // Compute current import hash (based on package files)
+            // Compute current import hash using package files
             string currentHash = ComputeImportHash();
             
             if (!string.IsNullOrEmpty(lastImportHash) && lastImportHash == currentHash)

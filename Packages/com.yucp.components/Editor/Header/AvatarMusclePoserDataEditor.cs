@@ -32,7 +32,7 @@ namespace YUCP.Components.Editor
         private string[] toggleComponentNames;
         private int selectedToggleIndex = 0;
         
-        // Track previous values to prevent unnecessary UI updates
+        // Track previous values to reduce unnecessary UI updates
         private GameObject previousToggleObject = null;
         private string[] previousToggleComponentNames = null;
         private Component previousSelectedToggle = null;

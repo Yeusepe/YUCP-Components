@@ -8,6 +8,7 @@ namespace YUCP.Components
     /// Component for objects that can be gripped with hand poses.
     /// References a hand pose asset that defines how the hand should grip this object.
     /// </summary>
+    [SupportBanner]
     [AddComponentMenu("YUCP/Grippable Object")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     [DisallowMultipleComponent]

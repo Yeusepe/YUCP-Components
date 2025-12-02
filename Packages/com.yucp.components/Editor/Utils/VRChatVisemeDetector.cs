@@ -202,7 +202,7 @@ namespace YUCP.Components.Editor.Utils
         }
 
         /// <summary>
-        /// Get visemes from avatar, with fallback to name-based detection.
+        /// Get visemes from avatar, with fallback to name detection.
         /// </summary>
         public static List<string> GetVisemeBlendshapes(
             SkinnedMeshRenderer renderer,
@@ -224,7 +224,7 @@ namespace YUCP.Components.Editor.Utils
                 }
             }
 
-            // Fallback to name-based detection
+            // Fallback to name detection
             if (renderer != null && renderer.sharedMesh != null)
             {
                 visemes = DetectVisemesByNaming(renderer.sharedMesh);

@@ -9,6 +9,7 @@ namespace YUCP.Components
     /// Hover over body parts in Scene view to see rotation rings, then drag to pose.
     /// Records poses as animations that play when the toggle activates.
     /// </summary>
+    [SupportBanner]
     [AddComponentMenu("YUCP/Avatar Muscle Poser")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     [DisallowMultipleComponent]

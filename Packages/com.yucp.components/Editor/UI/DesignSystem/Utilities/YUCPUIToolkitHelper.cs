@@ -326,7 +326,7 @@ namespace YUCP.UI.DesignSystem.Utilities
         }
         
         /// <summary>
-        /// Creates a preset selector for optimization presets.
+        /// Creates a preset selector for presets.
         /// </summary>
         public static YUCPPresetSelector CreatePresetSelector(Action<YUCPPresetSelector.Preset> onPresetSelected)
         {

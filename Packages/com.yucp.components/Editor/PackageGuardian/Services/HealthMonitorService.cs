@@ -156,7 +156,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 var service = RepositoryService.Instance;
                 var issues = new List<ValidationIssue>();
                 
-                // Lite check to avoid blocking main thread; full check available via manual command.
+                // Lite check; full check available via manual command.
                 issues.AddRange(service.ValidatePendingChanges());
                 return issues;
             });

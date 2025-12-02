@@ -378,7 +378,7 @@ namespace YUCP.UI.DesignSystem.Utilities
                 
                 void CreateTab(string label, List<string> blendshapes, int index, bool isSelected)
                 {
-                    // Always create tab, even if empty (to show all tabs exist)
+                    // Create tab, even if empty (to show all tabs exist)
                     var tabButton = new Button();
                     tabButton.text = $"{label} ({blendshapes.Count})";
                     tabButton.AddToClassList("yucp-tab");

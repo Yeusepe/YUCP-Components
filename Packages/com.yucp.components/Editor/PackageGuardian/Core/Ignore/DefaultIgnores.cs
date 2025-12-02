@@ -8,7 +8,7 @@ namespace PackageGuardian.Core.Ignore
     public static class DefaultIgnores
     {
         /// <summary>
-        /// Hard-coded Unity ignore patterns that are always applied.
+        /// Hard-coded Unity ignore patterns that are applied.
         /// </summary>
         public static readonly IReadOnlyList<string> Patterns = new List<string>
         {

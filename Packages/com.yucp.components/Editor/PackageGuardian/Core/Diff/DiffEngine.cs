@@ -386,7 +386,7 @@ namespace PackageGuardian.Core.Diff
             if (added.Count == 0 || deleted.Count == 0)
                 return changes; // Nothing to detect
 
-            // Apply rename limit to prevent performance issues
+            // Apply rename limit
             int renameLimit = options.RenameLimit;
             if (renameLimit > 0 && added.Count * deleted.Count > renameLimit * renameLimit)
             {

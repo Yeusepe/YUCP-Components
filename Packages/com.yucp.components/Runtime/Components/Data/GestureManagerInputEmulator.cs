@@ -45,6 +45,7 @@ namespace YUCP.Components
         public bool enabled;
     }
 
+    [SupportBanner]
     [BetaWarning("This component is in BETA and may not work as intended. Gesture Manager input emulation is experimental and may require manual parameter configuration.")]
     public class GestureManagerInputEmulator : MonoBehaviour
     {

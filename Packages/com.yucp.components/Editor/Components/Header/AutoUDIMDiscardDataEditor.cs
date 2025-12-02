@@ -19,7 +19,7 @@ namespace YUCP.Components.Editor.UI
         private AutoUDIMDiscardData data;
         private bool isGeneratingPreview = false;
         
-        // State tracking to prevent UI flickering
+        // State tracking
         private Material[] previousTargetMaterials = null;
         private SkinnedMeshRenderer previousTargetBodyMesh = null;
         private Mesh previousDetectedMesh = null;

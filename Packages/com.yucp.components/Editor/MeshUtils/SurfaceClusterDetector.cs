@@ -118,7 +118,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 Vector3 bary = CalculateBarycentricCoordinates(localTarget, tri.v0, tri.v1, tri.v2);
 
                 // Weight calculation: inverse distance with smoothing
-                // Add small epsilon to prevent division by zero
+                // Add small epsilon
                 float weight = 1f / (tri.distanceToTarget + 0.001f);
                 totalWeight += weight;
 

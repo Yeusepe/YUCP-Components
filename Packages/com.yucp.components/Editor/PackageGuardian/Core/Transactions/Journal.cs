@@ -7,7 +7,7 @@ namespace PackageGuardian.Core.Transactions
 {
     /// <summary>
     /// Write-ahead log for atomic ref updates.
-    /// Ensures crash safety during ref operations.
+    /// Provides crash safety during ref operations.
     /// </summary>
     public sealed class Journal
     {

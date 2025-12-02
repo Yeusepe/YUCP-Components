@@ -11,7 +11,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Contact Tracker")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Contact-Tracker")]
-    [SupportBanner("This component ports VRLabs Contact Tracker (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class ContactTrackerData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Objects")]

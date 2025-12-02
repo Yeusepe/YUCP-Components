@@ -11,6 +11,7 @@ namespace YUCP.Components
     /// Captures keyboard and controller inputs and sends them directly to Gesture Manager parameters.
     /// This component is automatically added by the processor during build.
     /// </summary>
+    [SupportBanner]
     [BetaWarning("This component is in BETA and may not work as intended. Gesture Manager input handling is experimental and may require manual configuration.")]
     public class GestureManagerInputHandler : MonoBehaviour
     {
@@ -456,7 +457,7 @@ namespace YUCP.Components
 
         private void SendGestureManagerParameter(RuntimeInputMapping mapping, float inputValue)
         {
-            // Convert input value to parameter value based on type
+            // Convert input value to parameter value
             float parameterValue = ConvertInputToParameterValue(mapping, inputValue);
 
             try
@@ -589,7 +590,7 @@ namespace YUCP.Components
 
         private void SendAnimatorParameter(RuntimeInputMapping mapping, float inputValue)
         {
-            // Convert input value to parameter value based on type
+            // Convert input value to parameter value
             float parameterValue = ConvertInputToParameterValue(mapping, inputValue);
 
             try

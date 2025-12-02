@@ -17,7 +17,7 @@ namespace YUCP.Components.Editor
         private bool showAdvancedToggle = false;
         private bool showDebug = false;
         
-        // Track previous values to prevent unnecessary UI updates
+        // Track previous values to reduce unnecessary UI updates
         private string previousMenuPath = null;
         private string previousGlobalParameter = null;
         private SkinnedMeshRenderer previousTargetBodyMesh = null;

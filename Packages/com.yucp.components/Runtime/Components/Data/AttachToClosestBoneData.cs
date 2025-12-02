@@ -3,6 +3,7 @@ using VRC.SDKBase;  // for IEditorOnly & IPreprocessCallbackBehaviour
 
 namespace YUCP.Components
 {
+    [SupportBanner]
     [AddComponentMenu("YUCP/Closest Bone Auto-Link")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     [DisallowMultipleComponent]

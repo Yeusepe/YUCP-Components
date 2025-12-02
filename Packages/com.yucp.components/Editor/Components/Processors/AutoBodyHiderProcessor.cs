@@ -236,7 +236,7 @@ namespace YUCP.Components.Editor
                     currentStep++;
                 }
                 
-                // Check if any component has optimization enabled
+                // Check if any component has tile usage enabled
                 bool anyOptimizationEnabled = validComponents.Any(c => c.optimizeTileUsage);
                 
                 if (anyOptimizationEnabled)
@@ -856,7 +856,7 @@ namespace YUCP.Components.Editor
                             try { material.SetInt("_WFFS_FEATURES_UVDISCARD", 1); } catch { }
                         }
                         
-                        // Also explicitly enable the keyword to ensure it's active
+                        // Also explicitly enable the keyword
                         material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
                         
                         // Force update the material
@@ -1109,7 +1109,7 @@ namespace YUCP.Components.Editor
                 if (toggleAnimation != null)
                 {
                     // Use reflection to set the motion field directly
-                    // This ensures runtime-created clips work with VRCFury
+                    // Runtime-created clips work with VRCFury
                     actions.AddAnimationClip(toggleAnimation);
                     
                     // Now use reflection to access the last added action and set its motion field
@@ -1483,7 +1483,6 @@ namespace YUCP.Components.Editor
         /// <summary>
         /// Detect ACTUAL overlaps by comparing hidden vertex arrays
         /// Creates overlap tiles when clothing pieces share vertices
-        /// Implements coverage-based optimization when enabled
         /// </summary>
         private void DetectAndAssignActualOverlaps(BodyMeshProcessing group)
         {
@@ -1502,15 +1501,15 @@ namespace YUCP.Components.Editor
             int actualOverlaps = 0;
             int optimizationSkips = 0;
             
-            // Check if optimization is enabled on any component
+            // Check if tile usage is enabled on any component
             bool optimizationEnabled = validPieces.Any(p => p.optimizeTileUsage);
             
             Debug.Log($"[AutoBodyHiderProcessor] Analyzing {potentialOverlaps} potential overlaps between {validPieces.Count} clothing pieces (Optimization: {optimizationEnabled})...");
             
-            // Track which vertices are already "claimed" by larger pieces (for optimization)
+            // Track which vertices are already "claimed" by larger pieces
             bool[] claimedVertices = new bool[group.originalMesh.vertexCount];
             
-            // If optimization enabled, process pieces in order (largest coverage first)
+            // If tile usage enabled, process pieces in order (largest coverage first)
             // Mark vertices as "claimed" by pieces with larger coverage
             if (optimizationEnabled)
             {
@@ -1565,10 +1564,10 @@ namespace YUCP.Components.Editor
                             // If 95%+ of piece2's coverage overlaps with piece1, skip this overlap tile
                             if (coverageRatio >= 0.95f)
                             {
-                                Debug.Log($"[AutoBodyHiderProcessor] ⚡ OPTIMIZATION: Skipping overlap tile for '{piece1.name}' + '{piece2.name}' " +
+                                Debug.Log($"[AutoBodyHiderProcessor] ⚡ Skipping overlap tile for '{piece1.name}' + '{piece2.name}' " +
                                          $"({coverageRatio:P0} overlap, piece2 has no toggle, fully covered by piece1)");
                                 optimizationSkips++;
-                                continue; // Don't create overlap tile
+                                continue;
                             }
                         }
                         
@@ -1580,7 +1579,7 @@ namespace YUCP.Components.Editor
                             
                             if (coverageRatio >= 0.95f)
                             {
-                                Debug.Log($"[AutoBodyHiderProcessor] ⚡ OPTIMIZATION: Skipping overlap tile for '{piece1.name}' + '{piece2.name}' " +
+                                Debug.Log($"[AutoBodyHiderProcessor] ⚡ Skipping overlap tile for '{piece1.name}' + '{piece2.name}' " +
                                          $"({coverageRatio:P0} overlap, piece1 has no toggle, fully covered by piece2)");
                                 optimizationSkips++;
                                 continue;
@@ -1588,7 +1587,7 @@ namespace YUCP.Components.Editor
                         }
                     }
                     
-                    // Create overlap tile if there are shared vertices (and not optimized away)
+                    // Create overlap tile if there are shared vertices
                     if (sharedCount > 0)
                     {
                         // Try to allocate a tile
@@ -1812,7 +1811,7 @@ namespace YUCP.Components.Editor
                                 try { materialCopy.SetInt("_WFFS_FEATURES_UVDISCARD", 1); } catch { }
                             }
                             
-                            // Also explicitly enable the keyword to ensure it's active
+                            // Also explicitly enable the keyword
                             materialCopy.EnableKeyword("WFFS_FEATURES_UVDISCARD");
                             
                             // Force update the material

@@ -60,7 +60,7 @@ namespace PackageGuardian.Core.Diff
         }
 
         /// <summary>
-        /// Calculate similarity based on matching blocks.
+        /// Calculate similarity using matching blocks.
         /// This is a simplified version of Git's approach using a rolling hash.
         /// </summary>
         private static float CalculateBlockSimilarity(byte[] oldData, byte[] newData)
@@ -159,7 +159,7 @@ namespace PackageGuardian.Core.Diff
         }
 
         /// <summary>
-        /// Calculate name similarity score based on path similarity.
+        /// Calculate name similarity score using path similarity.
         /// Returns a value between 0.0 (completely different) and 1.0 (identical).
         /// </summary>
         public static float CalculateNameSimilarity(string path1, string path2)

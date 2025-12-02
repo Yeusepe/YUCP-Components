@@ -128,7 +128,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             // Create new settings with safe defaults
             var newSettings = CreateInstance<PackageGuardianSettings>();
             newSettings.enabled = false; // Disabled by default
-            newSettings.autoSnapshotOnSave = false; // Disabled by default to avoid import loops
+            newSettings.autoSnapshotOnSave = false;
             newSettings.autoStashOnUPM = true; // Enabled by default to track package changes
             newSettings.autoStashOnAssetImport = true; // Enabled to stash after imports
             newSettings.autoStashOnSceneSave = true; // Enabled to stash on scene save

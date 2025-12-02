@@ -7,7 +7,7 @@ namespace YUCP.Components.Editor.MeshUtils
 {
     /// <summary>
     /// Detects which body vertices are hidden by clothing using various algorithms.
-    /// Supports GPU acceleration for raycast-based methods with CPU fallback.
+    /// Supports GPU acceleration for raycast methods with CPU fallback.
     /// </summary>
     public static class VertexDetection
     {
@@ -349,7 +349,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 Vector3 worldPos = data.targetBodyMesh.transform.TransformPoint(bodyVertices[i]);
                 Vector3 worldNormal = data.targetBodyMesh.transform.TransformDirection(bodyNormals[i]).normalized;
                 
-                // Apply ray offset to prevent self-intersection
+                // Apply ray offset
                 Vector3 rayStart = worldPos + worldNormal * data.smartRayOffset;
                 
                 int occludedCount = 0;
@@ -409,7 +409,7 @@ namespace YUCP.Components.Editor.MeshUtils
                             }
                             else
                             {
-                                // Not truly enclosed, don't count this direction as occluded
+                                // Not truly enclosed, skip this direction
                                 occludedCount--;
                             }
                         }

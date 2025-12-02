@@ -56,6 +56,7 @@ namespace YUCP.Components
         public List<ParameterCondition> conditions = new List<ParameterCondition>();
     }
 
+    [SupportBanner]
     [AddComponentMenu("YUCP/Parameter Toggle")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     public class ParameterToggleData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour

@@ -24,7 +24,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         
         static PackageImportMonitor()
         {
-            // Delay initialization to avoid issues during Unity startup
+            // Delay initialization
             EditorApplication.delayCall += Initialize;
         }
         
@@ -69,7 +69,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
             if (UnityEditor.EditorApplication.isUpdating || UnityEditor.EditorApplication.isCompiling)
                 return;
             
-            // Try to get settings, but don't fail if unavailable
+            // Try to get settings, continue if unavailable
             PackageGuardianSettings settings = null;
             try
             {

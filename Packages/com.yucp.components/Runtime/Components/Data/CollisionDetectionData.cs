@@ -11,7 +11,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Collision Detection")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Collision-Detection")]
-    [SupportBanner("This component ports VRLabs Collision Detection (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class CollisionDetectionData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Object")]

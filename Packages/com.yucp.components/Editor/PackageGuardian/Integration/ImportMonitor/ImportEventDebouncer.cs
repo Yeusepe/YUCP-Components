@@ -5,7 +5,7 @@ using UnityEditor;
 namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
 {
     /// <summary>
-    /// Debounces rapid import events to avoid creating too many stashes.
+    /// Debounces rapid import events.
     /// </summary>
     public sealed class ImportEventDebouncer
     {
@@ -31,7 +31,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
             if (assets != null && assets.Length > 0)
                 _pendingAssets.AddRange(assets);
 
-            // Always keep the latest callback (caller already filters significance)
+            // Keep the latest callback (caller already filters significance)
             _pendingCallback = callback;
 
             if (!_updateSubscribed)
@@ -43,7 +43,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
 
         private void OnEditorUpdate()
         {
-            // Avoid executing during heavy editor states; lightly reschedule
+            // Skip execution during heavy editor states; reschedule
             if (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
                 _executeAtTime = EditorApplication.timeSinceStartup + 0.2f;
@@ -72,7 +72,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
             }
             catch (Exception)
             {
-                // Swallow to avoid breaking editor loop; callers handle logging
+                // Swallow exception; callers handle logging
             }
         }
     }

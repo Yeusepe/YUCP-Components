@@ -11,7 +11,7 @@ namespace YUCP.Components.Editor.MeshUtils
 {
     /// <summary>
     /// Caches vertex detection results to disk. Reduces build time when mesh and settings haven't changed.
-    /// Cache invalidates automatically based on hash of mesh data, transforms, and detection parameters.
+    /// Cache invalidates automatically using hash of mesh data, transforms, and detection parameters.
     /// </summary>
     public static class DetectionCache
     {

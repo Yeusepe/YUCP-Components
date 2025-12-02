@@ -291,7 +291,7 @@ namespace PackageGuardian.Core.Validation
                 // Find all prefabs and scenes
                 var prefabs = AssetDatabase.FindAssets("t:Prefab")
                     .Select(guid => AssetDatabase.GUIDToAssetPath(guid))
-                    .Take(100) // Limit to avoid performance issues
+                    .Take(100)
                     .ToList();
                 
                 var brokenPrefabs = new List<string>();
@@ -386,7 +386,7 @@ namespace PackageGuardian.Core.Validation
                         if (scene != null)
                         {
                             // For scenes, we need to load them to check for missing scripts
-                            // Skip for now to avoid loading all scenes
+                            // Skip for now
                         }
                         
                         processed++;
@@ -842,7 +842,7 @@ namespace PackageGuardian.Core.Validation
             {
                 var metaFiles = Directory.GetFiles(_projectRoot, "*.meta", SearchOption.AllDirectories)
                     .Where(f => !f.Contains("Library") && !f.Contains("Temp") && !f.Contains(".git"))
-                    .Take(5000); // Limit for performance
+                    .Take(5000);
                 
                 foreach (var metaFile in metaFiles)
                 {

@@ -92,7 +92,7 @@ namespace PackageGuardian.Core.Repository
             // Update index
             _index.Save();
             
-            // If there were locked files, just warn but don't fail the rollback
+            // If there were locked files, just warn and continue
             if (_lockedFiles.Count > 0)
             {
                 // Deduplicate locked files list

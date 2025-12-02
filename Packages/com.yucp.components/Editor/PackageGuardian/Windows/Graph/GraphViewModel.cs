@@ -144,7 +144,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.Graph
                 // Add refs to nodes
                 AnnotateRefs(nodes, repo);
                 
-                // Sort topologically (timestamp-based for simplicity)
+                // Sort topologically using timestamp
                 var sortedNodes = nodes.Values.OrderByDescending(n => n.Timestamp).ToList();
                 
                 // Assign row numbers

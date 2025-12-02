@@ -7,7 +7,7 @@ using PackageGuardian.Core.Utilities;
 namespace PackageGuardian.Core.Storage
 {
     /// <summary>
-    /// File-based object storage with compression.
+    /// File object storage with compression.
     /// Objects stored at .pg/objects/{first2hex}/{remaining38hex}
     /// </summary>
     public sealed class FileObjectStore : IObjectStore

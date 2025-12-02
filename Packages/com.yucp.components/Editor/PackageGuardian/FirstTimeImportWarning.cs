@@ -12,13 +12,13 @@ namespace YUCP.Components.PackageGuardian
         
         static FirstTimeImportWarning()
         {
-            // Use EditorApplication.delayCall to ensure Unity is fully loaded
+            // Use EditorApplication.delayCall
             EditorApplication.delayCall += ShowFirstTimeWarning;
         }
         
         private static void ShowFirstTimeWarning()
         {
-            // Remove the callback to prevent multiple calls
+            // Remove the callback
             EditorApplication.delayCall -= ShowFirstTimeWarning;
             
             // Check if the warning has already been shown

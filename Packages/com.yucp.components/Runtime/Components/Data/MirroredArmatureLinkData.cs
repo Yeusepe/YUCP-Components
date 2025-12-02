@@ -5,6 +5,7 @@ using VRC.SDKBase; // for IEditorOnly & IPreprocessCallbackBehaviour
 
 namespace YUCP.Components
 {
+	[SupportBanner]
 	[AddComponentMenu("YUCP/Mirrored Armature Link")]
 	[HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
 	[DisallowMultipleComponent]

@@ -160,7 +160,7 @@ namespace YUCP.Components.Editor
                 originalPlugin.SetBuildStats(true, true, "", appliedCount);
                 UnityEditor.EditorUtility.SetDirty(originalPlugin);
                 
-                // For scene objects, mark the scene dirty to ensure persistence (only in edit mode)
+                // For scene objects, mark the scene dirty (only in edit mode)
                 if (!UnityEditor.EditorUtility.IsPersistent(originalPlugin) && !Application.isPlaying)
                 {
                     UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(originalPlugin.gameObject.scene);

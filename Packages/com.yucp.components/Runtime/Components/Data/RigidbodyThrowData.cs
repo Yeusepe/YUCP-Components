@@ -11,7 +11,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Rigidbody Throw")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Rigidbody-Throw")]
-    [SupportBanner("This component ports VRLabs Rigidbody Throw (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class RigidbodyThrowData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Objects")]

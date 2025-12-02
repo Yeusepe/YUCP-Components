@@ -70,7 +70,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         private bool _isOverlayOpen = false;
         private bool _leftPaneInOverlayMode = false;
         
-        // Resize throttling to prevent lag during window resize
+        // Resize throttling
         private IVisualElementScheduledItem _resizeThrottleScheduler;
         private float _lastProcessedWidth = -1f;
         private const float RESIZE_DEBOUNCE_MS = 150f;
@@ -120,7 +120,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             _contentContainer.Add(_leftPane);
             
             // Note: We'll move the left pane into overlay position instead of duplicating it
-            // This avoids lag from rendering GraphView twice
+            // Reduces lag from rendering GraphView twice
 
             _contentContainer.Add(CreateRightPane());
 
@@ -140,7 +140,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             // Load pending changes asynchronously with progress
             LoadPendingChangesAsync();
 
-            // Responsive: toggle compact layout based on window width
+            // Responsive: toggle compact layout
             root.RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
             
             // Schedule initial responsive check after layout is ready
@@ -1524,7 +1524,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         }
 
         /// <summary>
-        /// Categorize a file based on its extension and path.
+        /// Categorize a file using its extension and path.
         /// </summary>
         private string CategorizeFile(string path)
         {
@@ -2006,7 +2006,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             root.RemoveFromClassList("pg-window-wide");
             root.RemoveFromClassList("pg-compact");
             
-            // Apply appropriate class based on width
+            // Apply appropriate class
             if (width < 700f)
             {
                 root.AddToClassList("pg-window-narrow");

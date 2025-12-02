@@ -65,7 +65,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
             try
             {
-                // Get colliders for collision detection (object + avatar), avatar used for clearance to prevent clipping
+                // Get colliders for collision detection (object + avatar), avatar used for clearance
                 Collider[] objectColliders = grippedObject != null ? YUCP.Components.Editor.MeshUtils.SurfaceQuery.GetAllColliders(grippedObject) : new Collider[0];
                 Collider[] avatarColliders = animator != null ? animator.GetComponentsInChildren<Collider>(true) : new Collider[0];
                 var combinedColliders = new List<Collider>();
@@ -161,7 +161,7 @@ namespace YUCP.Components.Editor.MeshUtils
             Vector3 validatedTarget = targetTip;
             if (objectColliders != null && objectColliders.Length > 0)
             {
-                // Filter out colliders that belong to this finger chain to avoid self-collision
+                // Filter out colliders that belong to this finger chain
                 var filteredCols = new List<Collider>();
                 foreach (var col in objectColliders)
                 {
@@ -234,7 +234,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 {
                     if (VerboseLogs) Debug.LogWarning($"[FingerTipSolver] {fingerName} has unnatural curl - adjusting target closer");
                     
-                    // Move target closer with smoothing to prevent oscillation
+                    // Move target closer with smoothing
                     Vector3 adjustedTarget = AdjustTargetForNaturalCurlSmoothed(fingerKey, boneTransforms, validatedTarget, ikResult.solvedPositions, fingerName);
                     
                     // Re-solve IK with adjusted target
@@ -357,7 +357,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
         /// <summary>
         /// Adjust target position to allow natural finger curl.
-        /// Moves target closer to finger base to prevent backward bending.
+        /// Moves target closer to finger base.
         /// </summary>
         private static Vector3 AdjustTargetForNaturalCurl(Transform[] bones, Vector3 currentTarget, Vector3[] solvedPositions, string fingerName)
         {
@@ -376,10 +376,10 @@ namespace YUCP.Components.Editor.MeshUtils
             // Natural finger curl uses 50-70% of full extension, not 80-100%
             float maxNaturalReach = totalLength * 0.65f;
             
-            // Always ensure target is within natural reach
+            // Ensure target is within natural reach
             if (currentDistance > maxNaturalReach)
             {
-                // Move target much closer to prevent overextension
+                // Move target much closer
                 Vector3 adjustedTarget = fingerBase + direction * maxNaturalReach;
                 Debug.LogWarning($"[FingerTipSolver] {fingerName} target TOO FAR! Moved from {currentDistance * 100f:F1}cm to {maxNaturalReach * 100f:F1}cm (max natural: {maxNaturalReach * 100f:F1}cm)");
                 return adjustedTarget;
@@ -393,14 +393,14 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Smoothed adjustment to avoid oscillation: lerp toward adjusted target and clamp per-frame delta.
+        /// Smoothed adjustment: lerp toward adjusted target and clamp per-frame delta.
         /// </summary>
         private static Vector3 AdjustTargetForNaturalCurlSmoothed(string fingerKey, Transform[] bones, Vector3 currentTarget, Vector3[] solvedPositions, string fingerName)
         {
             // Compute the raw adjusted target using existing heuristic
             Vector3 rawAdjusted = AdjustTargetForNaturalCurl(bones, currentTarget, solvedPositions, fingerName);
 
-            // Smooth the change to avoid large jumps
+            // Smooth the change
             Vector3 fingerBase = bones[0].position;
             float currentDist = Vector3.Distance(fingerBase, currentTarget);
             float targetDist = Vector3.Distance(fingerBase, rawAdjusted);
@@ -413,7 +413,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
             Vector3 finalTarget = fingerBase + (rawAdjusted - fingerBase).normalized * finalDist;
 
-            // Debounce: if very close to last adjusted target (<0.5 mm), keep last to avoid micro-churn
+            // Debounce: if very close to last adjusted target (<0.5 mm), keep last
             if (s_LastAdjustedTarget.TryGetValue(fingerKey, out var last) && (finalTarget - last).sqrMagnitude < (0.0005f * 0.0005f))
             {
                 return last;
@@ -468,9 +468,9 @@ namespace YUCP.Components.Editor.MeshUtils
                 
                 if (isAvatarBlocker)
                 {
-                    // Avatar blocking: don't pull target closer; nudge it away from avatar slightly
+                    // Avatar blocking: nudge target away from avatar slightly
                     Vector3 awayFromAvatar = nearestHitPoint + nearestNormal * 0.01f; // 1cm clearance
-                    // Only use adjusted target if it's further than original (don't curl tighter)
+                    // Only use adjusted target if it's further than original
                     float origDist = Vector3.Distance(fingerBase, targetPosition);
                     float awayDist = Vector3.Distance(fingerBase, awayFromAvatar);
                     if (awayDist >= origDist * 0.9f)
@@ -480,7 +480,7 @@ namespace YUCP.Components.Editor.MeshUtils
                     }
                     else
                     {
-                        // Target would be pulled closer - keep original to avoid over-curl
+                        // Target would be pulled closer - keep original
                         if (VerboseLogs) Debug.Log($"[FingerTipSolver] {fingerName} avatar blocking but keeping original target to prevent over-curl");
                         return targetPosition;
                     }
@@ -731,7 +731,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Initialize finger tip positions to reasonable defaults based on object.
+        /// Initialize finger tip positions to reasonable defaults.
         /// </summary>
         public static FingerTipTarget InitializeFingerTips(Transform grippedObject, bool isLeftHand)
         {

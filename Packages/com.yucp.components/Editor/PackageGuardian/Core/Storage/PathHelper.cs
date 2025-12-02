@@ -5,7 +5,7 @@ using System.Linq;
 namespace PackageGuardian.Core.Storage
 {
     /// <summary>
-    /// Safe path manipulation to prevent traversal attacks and ensure valid paths.
+    /// Safe path manipulation.
     /// </summary>
     public static class PathHelper
     {

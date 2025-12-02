@@ -7,6 +7,7 @@ namespace YUCP.Components
     /// Example template for creating custom YUCP components.
     /// Implement build-time logic in OnPreprocess().
     /// </summary>
+    [SupportBanner]
     [AddComponentMenu("YUCP/Examples/My Custom Component")]
     public class MyCustomComponent : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {

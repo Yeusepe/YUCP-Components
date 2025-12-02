@@ -11,7 +11,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Follower")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Follower")]
-    [SupportBanner("This component ports VRLabs Follower (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class FollowerData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Objects")]

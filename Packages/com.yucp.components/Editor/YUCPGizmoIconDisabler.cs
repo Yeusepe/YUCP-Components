@@ -8,7 +8,7 @@ namespace YUCP.Components.Editor
 {
     /// <summary>
     /// Disables 3D gizmo icons in Scene view for YUCP components while keeping Add Component menu icons.
-    /// Based on Modular Avatar's approach using Unity's internal AnnotationUtility.
+    /// Uses Modular Avatar's approach with Unity's internal AnnotationUtility.
     /// </summary>
     [InitializeOnLoad]
     public static class YUCPGizmoIconDisabler
@@ -18,7 +18,7 @@ namespace YUCP.Components.Editor
 
         static YUCPGizmoIconDisabler()
         {
-            // Run after a delay to ensure types are registered
+            // Run after a delay
             EditorApplication.delayCall += () =>
             {
                 EditorApplication.update += DisableYUCPSceneGizmos;

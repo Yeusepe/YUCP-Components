@@ -5,6 +5,7 @@ namespace YUCP.Components
     /// <summary>
     /// Simple test component to verify debug overlay functionality
     /// </summary>
+    [SupportBanner]
     public class DebugTestComponent : MonoBehaviour
     {
         private bool showOverlay = false;
@@ -30,7 +31,7 @@ namespace YUCP.Components
         {
             if (!Application.isPlaying) return;
 
-            // Always show a small indicator
+            // Show a small indicator
             GUI.Box(new Rect(10, 10, 200, 30), "");
             GUI.Label(new Rect(15, 15, 190, 20), "Debug Test Active - Press F1");
 

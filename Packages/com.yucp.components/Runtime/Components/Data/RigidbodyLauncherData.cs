@@ -11,7 +11,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Rigidbody Launcher")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Rigidbody-Launcher")]
-    [SupportBanner("This component ports VRLabs Rigidbody Launcher (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class RigidbodyLauncherData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Objects")]

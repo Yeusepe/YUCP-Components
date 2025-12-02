@@ -176,7 +176,7 @@ namespace YUCP.Components.Editor.MeshUtils
                             try { material.SetInt("_WFFS_FEATURES_UVDISCARD", 1); } catch { }
                         }
                         
-                        // Also explicitly enable the keyword to ensure it's active
+                        // Also explicitly enable the keyword
                         material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
                         
                         // Force update the material

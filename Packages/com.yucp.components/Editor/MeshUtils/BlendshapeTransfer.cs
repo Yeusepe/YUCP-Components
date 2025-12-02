@@ -241,8 +241,8 @@ namespace YUCP.Components.Editor.MeshUtils
                 }
 
                 // Store original mesh and working mesh for restoration
-                // Always update previewOriginalMesh to the current targetMesh (in case it changed after restore)
-                // This ensures we always restore to the correct original mesh
+                // Update previewOriginalMesh to the current targetMesh (in case it changed after restore)
+                // Restore to the correct original mesh
                 data.previewOriginalMesh = targetMesh;
                 data.previewWorkingMesh = workingMesh;
                 // Store the original target mesh (before any transfers) for categorization
@@ -402,7 +402,7 @@ namespace YUCP.Components.Editor.MeshUtils
             {
                 // Blendshape already exists - we need to remove it first since Unity doesn't allow
                 // adding frames to existing blendshapes if they conflict, and we can't modify existing frames
-                // The only way is to recreate the mesh without this blendshape, then add it fresh
+                // Recreate the mesh without this blendshape, then add it fresh
                 // For now, skip it and log a warning - the user should clear preview first
                 Debug.LogWarning($"[BlendshapeTransfer] Blendshape '{blendshapeName}' already exists on target mesh. Skipping transfer. Clear preview first to regenerate.", data);
                 return false;
@@ -420,7 +420,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 for (int i = 0; i < vertices.Length; i++)
                 {
                     deltas[i] = vertices[i] - baseVertices[i];
-                    // For simplicity, use zero normals/tangents (Unity will recalculate)
+                    // Use zero normals/tangents (Unity will recalculate)
                     normals[i] = Vector3.zero;
                     tangents[i] = Vector3.zero;
                 }

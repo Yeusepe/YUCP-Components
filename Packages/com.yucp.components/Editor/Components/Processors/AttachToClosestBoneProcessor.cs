@@ -40,7 +40,7 @@ namespace YUCP.Components.Editor
                     // Find all potential bones in the armature
                     var allBones = FindAllBones(animator, data.transform);
                     
-                    // Filter bones based on settings
+                    // Filter bones using settings
                     var filteredBones = FilterBones(allBones, data, animator);
                     
                     if (filteredBones.Count == 0)

@@ -11,7 +11,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Raycast Prefab")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Raycast-Prefab")]
-    [SupportBanner("This component ports VRLabs Raycast Prefab (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class RaycastPrefabData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Objects")]

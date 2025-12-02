@@ -80,7 +80,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.Graph
                 string groupSubtitle;
                 DateTimeOffset groupDate;
                 
-                // Determine group based on time
+                // Determine group using time
                 if (timeDiff.TotalHours < 1)
                 {
                     groupTitle = "Just Now";

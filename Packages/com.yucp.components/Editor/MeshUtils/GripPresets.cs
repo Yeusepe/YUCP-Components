@@ -50,7 +50,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 return;
             }
 
-            // Use SDF-based contact planner for mathematical surface placement
+            // Use SDF contact planner for mathematical surface placement
             var weights = SDFContactPlanner.CostWeights.GetDefaults();
             var targets = SDFContactPlanner.PlanContacts(grippedObject, animator, handTransform, weights);
             

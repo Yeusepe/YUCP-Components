@@ -97,7 +97,7 @@ namespace YUCP.UI.DesignSystem.Utilities
                 // Start expanded by default
                 foldout.value = true;
                 
-                // Set initial display state based on foldout value
+                // Set initial display state
                 if (mappingContentContainer != null)
                 {
                     mappingContentContainer.style.display = DisplayStyle.Flex;

@@ -168,7 +168,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
                 if (stashes.Count > 100)
                 {
                     Debug.Log($"[Package Guardian] Loading {stashes.Count} stashes (showing first 100 in UI for performance)...");
-                    // Limit UI display to first 100 for performance
+                    // Limit UI display to first 100
                     foreach (var stash in stashes.Take(100))
                     {
                         var stashItem = CreateStashItem(stash);

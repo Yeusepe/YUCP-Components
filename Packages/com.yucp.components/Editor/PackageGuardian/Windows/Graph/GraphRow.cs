@@ -109,7 +109,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.Graph
                     var node = new VisualElement();
                     node.AddToClassList("pg-graph-node");
                     
-                    // Style based on commit type
+                    // Style using commit type
                     if (_node.IsStash)
                     {
                         node.AddToClassList("pg-graph-node-stash");

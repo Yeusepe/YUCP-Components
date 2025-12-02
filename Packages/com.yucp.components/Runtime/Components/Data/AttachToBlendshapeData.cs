@@ -60,6 +60,7 @@ namespace YUCP.Components
     }
 
 
+    [SupportBanner]
     [BetaWarning("This component is in BETA and may not work as intended. Blendshape attachment is experimental and may require manual configuration.")]
     [AddComponentMenu("YUCP/Attach to Blendshape")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]

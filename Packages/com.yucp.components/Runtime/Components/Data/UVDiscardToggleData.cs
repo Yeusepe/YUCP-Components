@@ -10,6 +10,7 @@ namespace YUCP.Components
     /// and uses UDIM discard to toggle its visibility.
     /// Optionally integrates with AutoBodyHider for automatic body hiding.
     /// </summary>
+    [SupportBanner]
     [BetaWarning("This component is in BETA and may not work as intended. UV Discard Toggle is experimental and may require manual UDIM configuration.")]
     [AddComponentMenu("YUCP/UV Discard Toggle")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]

@@ -12,7 +12,7 @@ namespace YUCP.Components.Editor
 {
     /// <summary>
     /// Custom editor for Avatar Optimizer Plugin with settings and modern UI.
-    /// Provides preset-based configuration and detailed per-category controls.
+    /// Provides preset configuration and detailed per-category controls.
     /// Shows prominent install button when d4rkAvatarOptimizer is not installed.
     /// </summary>
     [CustomEditor(typeof(AvatarOptimizerPluginData))]
@@ -25,7 +25,7 @@ namespace YUCP.Components.Editor
         // UI Mode
         private enum UIMode
         {
-            Preset,      // Preset-based configuration (simple)
+            Preset,      // Preset configuration (simple)
             Advanced     // Full detailed control
         }
         
@@ -44,7 +44,7 @@ namespace YUCP.Components.Editor
         private bool showInspectorOptions = false;
         private bool showBuildStats = false;
         
-        // Track previous values to prevent unnecessary UI updates
+        // Track previous values to reduce unnecessary UI updates
         private UIMode previousMode = (UIMode)(-1);
         private VRC.SDK3.Avatars.Components.VRCAvatarDescriptor previousAvatarDescriptor = null;
         private bool previousUseAutoSettings = false;
@@ -825,7 +825,7 @@ namespace YUCP.Components.Editor
                 }
             }).Every(100);
             
-            // Material Optimization Foldout
+            // Material Foldout
             var materialFoldout = YUCPUIToolkitHelper.CreateFoldout("Material Optimization", showMaterialOptimization);
             materialFoldout.RegisterValueChangedCallback(evt => { showMaterialOptimization = evt.newValue; });
             materialFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeDifferentPropertyMaterials"), "Merge Different Property Materials"));
@@ -857,7 +857,7 @@ namespace YUCP.Components.Editor
                 }
             }).Every(100);
             
-            // FX Layer Optimization Foldout
+            // FX Layer Foldout
             var fxLayerFoldout = YUCPUIToolkitHelper.CreateFoldout("FX Layer Optimization", showFXLayer);
             fxLayerFoldout.RegisterValueChangedCallback(evt => { showFXLayer = evt.newValue; });
             fxLayerFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("optimizeFXLayer"), "Optimize FX Layer"));
@@ -882,7 +882,7 @@ namespace YUCP.Components.Editor
             componentsFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("0=Off, 1=Safe, 2=Aggressive", YUCPUIToolkitHelper.MessageType.None));
             container.Add(componentsFoldout);
             
-            // Blendshape Optimization Foldout
+            // Blendshape Foldout
             var blendshapeFoldout = YUCPUIToolkitHelper.CreateFoldout("Blendshape Optimization", showBlendshapes);
             blendshapeFoldout.RegisterValueChangedCallback(evt => { showBlendshapes = evt.newValue; });
             blendshapeFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeSameRatioBlendShapes"), "Merge Same-Ratio Blendshapes"));
@@ -1157,7 +1157,7 @@ namespace YUCP.Components.Editor
             data.deleteUnusedComponents = true;
             data.deleteUnusedGameObjects = 2; // Aggressive
             data.mergeSameRatioBlendShapes = true;
-            data.mmdCompatibility = false; // Disable for maximum optimization
+            data.mmdCompatibility = false;
             data.writePropertiesAsStaticValues = true;
             data.useRingFingerAsFootCollider = true;
             

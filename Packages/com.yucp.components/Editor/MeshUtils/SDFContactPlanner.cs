@@ -6,7 +6,7 @@ using UnityEditor;
 namespace YUCP.Components.Editor.MeshUtils
 {
     /// <summary>
-    /// Mathematical contact planner using SDF projection and cost function optimization.
+    /// Mathematical contact planner using SDF projection and cost function.
     /// Implements the proper mathematical formulation for finger contact planning.
     /// </summary>
     public static class SDFContactPlanner
@@ -37,7 +37,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Cost function weights for contact optimization.
+        /// Cost function weights for contact planning.
         /// </summary>
         [System.Serializable]
         public struct CostWeights
@@ -73,7 +73,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Plan contacts using SDF projection and cost function optimization.
+        /// Plan contacts using SDF projection and cost function.
         /// </summary>
         public static ContactTargets PlanContacts(
             Transform grippedObject,
@@ -357,7 +357,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Get bounds-based contact as fallback.
+        /// Get bounds contact as fallback.
         /// </summary>
         private static SurfaceContact GetBoundsContact(Transform obj, Vector3 point)
         {
@@ -385,9 +385,9 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Select best contacts using two-stage optimization.
+        /// Select best contacts using two-stage selection.
         /// Stage 1: Choose contact points by evaluating cost over candidates
-        /// Stage 2: Optimize joint angles with fixed contact points
+        /// Stage 2: Adjust joint angles with fixed contact points
         /// </summary>
         private static Dictionary<string, SurfaceContact> SelectBestContacts(
             Dictionary<string, SurfaceContact> surfaceContacts,
@@ -400,7 +400,7 @@ namespace YUCP.Components.Editor.MeshUtils
             // Stage 1: Generate multiple candidates per finger and select best
             var candidateContacts = GenerateMultipleCandidates(surfaceContacts, mcpPositions, weights);
             
-            // Stage 2: Optimize joint angles for selected contacts
+            // Stage 2: Adjust joint angles for selected contacts
             selectedContacts = OptimizeJointAngles(candidateContacts, mcpPositions, weights);
             
             return selectedContacts;
@@ -468,7 +468,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Optimize joint angles with fixed contact points (Stage 2).
+        /// Adjust joint angles with fixed contact points (Stage 2).
         /// </summary>
         private static Dictionary<string, SurfaceContact> OptimizeJointAngles(
             Dictionary<string, List<SurfaceContact>> candidateContacts,
@@ -478,7 +478,7 @@ namespace YUCP.Components.Editor.MeshUtils
             var optimizedContacts = new Dictionary<string, SurfaceContact>();
             var fingerNames = new[] { "thumb", "index", "middle", "ring", "little" };
             
-            // Select best candidate per finger based on cost
+            // Select best candidate per finger using cost
             foreach (string fingerName in fingerNames)
             {
                 if (candidateContacts.ContainsKey(fingerName) && mcpPositions.ContainsKey(fingerName))
@@ -508,7 +508,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Apply local optimization to a contact point.
+        /// Apply local adjustment to a contact point.
         /// </summary>
         private static SurfaceContact OptimizeContactLocally(
             SurfaceContact contact,
@@ -627,7 +627,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Compute joint comfort based on finger chain kinematics.
+        /// Compute joint comfort using finger chain kinematics.
         /// </summary>
         private static float ComputeJointComfort(Vector3 mcpPos, Vector3 fingertipTarget)
         {

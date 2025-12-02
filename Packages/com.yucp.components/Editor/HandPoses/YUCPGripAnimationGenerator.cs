@@ -52,13 +52,13 @@ namespace YUCP.Components.HandPoses
             YUCPUniversalLocalAxes handLocalAxes = YUCPAvatarRigHelper.DetectHandAxes(handBone, avatarRoot);
             YUCPUniversalLocalAxes fingerLocalAxes = new YUCPUniversalLocalAxes(Vector3.right, Vector3.up, Vector3.forward);
 
-            // Get hand descriptor based on pose type and blend value
+            // Get hand descriptor using pose type and blend value
             YUCPHandSide handSide = isLeftHand ? YUCPHandSide.Left : YUCPHandSide.Right;
             YUCPHandDescriptor handDescriptor = null;
 
             if (handPoseAsset.PoseType == YUCPHandPoseType.Blend)
             {
-                // Interpolate between open and closed based on blend value
+                // Interpolate between open and closed using blend value
                 YUCPHandDescriptor openDescriptor = handPoseAsset.GetHandDescriptor(handSide, YUCPHandPoseType.Blend, YUCPBlendPoseType.OpenGrip);
                 YUCPHandDescriptor closedDescriptor = handPoseAsset.GetHandDescriptor(handSide, YUCPHandPoseType.Blend, YUCPBlendPoseType.ClosedGrip);
                 

@@ -10,6 +10,7 @@ namespace YUCP.Components
     /// Must be placed on the avatar root (same level as VRCAvatarDescriptor).
     /// Only works if d4rkAvatarOptimizer is installed in the project.
     /// </summary>
+    [SupportBanner]
     [BetaWarning("This component is in BETA and may not work as intended. Avatar optimization integration is experimental and may require manual configuration.")]
     [AddComponentMenu("YUCP/Avatar Optimizer Plugin")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
@@ -240,7 +241,7 @@ namespace YUCP.Components
         }
         
         /// <summary>
-        /// Get count of enabled optimization features
+        /// Get count of enabled features
         /// </summary>
         public int GetEnabledOptimizationCount()
         {

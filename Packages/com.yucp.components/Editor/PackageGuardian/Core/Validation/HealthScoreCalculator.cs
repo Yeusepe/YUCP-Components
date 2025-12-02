@@ -4,7 +4,7 @@ using System.Linq;
 namespace PackageGuardian.Core.Validation
 {
     /// <summary>
-    /// Calculates project health score based on validation issues.
+    /// Calculates project health score using validation issues.
     /// </summary>
     public static class HealthScoreCalculator
     {

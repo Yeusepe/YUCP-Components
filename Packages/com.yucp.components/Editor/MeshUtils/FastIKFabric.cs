@@ -98,8 +98,8 @@ namespace YUCP.Components.Editor.MeshUtils
                     startDirections[i] = (startPositions[i + 1] - startPositions[i]).normalized;
                 }
 
-                // Always use FABRIK algorithm - never do linear stretch for fingers
-                // This ensures the root bone (MCP joint) position is always respected
+                // Use FABRIK algorithm for fingers
+                // The root bone (MCP joint) position is respected
                 result.solvedPositions = new Vector3[startPositions.Length];
                 System.Array.Copy(startPositions, result.solvedPositions, startPositions.Length);
 
@@ -114,7 +114,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
                 for (int iteration = 0; iteration < iterations; iteration++)
                 {
-                    // Backward pass - always try to reach the target
+                    // Backward pass - try to reach the target
                     result.solvedPositions[bones.Length - 1] = targetPosition;
                     for (int i = bones.Length - 2; i >= 0; i--)
                     {
@@ -201,8 +201,8 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Calculate bone rotations based on solved positions.
-        /// For distal bone, blends target rotation with IK chain direction to prevent extreme twisting.
+        /// Calculate bone rotations.
+        /// For distal bone, blends target rotation with IK chain direction.
         /// </summary>
         private static void CalculateRotations(
             Vector3[] solvedPositions,
@@ -412,8 +412,8 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Apply joint angle constraints to bone rotations to prevent unrealistic bending.
-        /// Checks bend angles based on solved positions, not rotations.
+        /// Apply joint angle constraints to bone rotations.
+        /// Checks bend angles using solved positions, not rotations.
         /// </summary>
         private static void ApplyJointConstraints(
             Quaternion[] solvedRotations,
@@ -422,11 +422,9 @@ namespace YUCP.Components.Editor.MeshUtils
             string fingerName)
         {
             // Joint constraints are now handled by detecting unnatural curl in FingerTipSolver
-            // and adjusting targets accordingly. This prevents fingers from getting into
-            // bad poses in the first place, rather than trying to fix rotations after the fact.
+            // and adjusting targets accordingly. Joint constraints handled by curl detection system.
             
-            // We keep this method but make it less aggressive to avoid interfering with
-            // the curl detection system
+            // This method is less aggressive to work with the curl detection system
             if (VerboseLogs) Debug.Log($"[FastIKFabric] Joint constraints for {fingerName} handled by curl detection");
         }
 

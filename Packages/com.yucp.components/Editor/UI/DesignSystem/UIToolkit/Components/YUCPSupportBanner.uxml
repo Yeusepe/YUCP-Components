@@ -1,21 +1,22 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
     <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss" />
     <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPButton.uss" />
-    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPCard.uss" />
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPSupportBanner.uss" />
     
-    <ui:VisualElement class="yucp-card yucp-support-banner">
-        <ui:VisualElement class="yucp-card-header">
-            <ui:Label name="support-heart" class="yucp-support-heart" text="♥" />
-            <ui:Label name="support-title" class="yucp-support-title" text="Support YUCP" />
+    <ui:VisualElement class="yucp-support-banner">
+        <ui:VisualElement class="yucp-support-content">
+            <ui:Image name="support-icon" class="yucp-support-icon" />
+            <ui:VisualElement class="yucp-support-text">
+                <ui:Label name="support-title" class="yucp-support-title" text="Your Support Keeps This Free" />
+                <ui:Label name="support-subtitle" class="yucp-support-message" />
+            </ui:VisualElement>
             <ui:VisualElement style="flex-grow: 1;" />
-            <ui:Button name="support-close" class="yucp-support-close" text="×" />
-        </ui:VisualElement>
-        <ui:VisualElement class="yucp-card-content">
-            <ui:Label name="support-message" class="yucp-support-message" />
             <ui:VisualElement class="yucp-support-actions">
-                <ui:Button name="support-button" class="yucp-button yucp-button-primary" text="Support" />
-                <ui:VisualElement style="flex-grow: 1;" />
-                <ui:Button name="support-never" class="yucp-support-never" text="Never show again" />
+                <ui:Button name="support-button" class="yucp-support-button" text="Support" />
+                <ui:VisualElement class="yucp-support-links">
+                    <ui:Button name="support-dismiss" class="yucp-support-link" text="Dismiss" />
+                    <ui:Button name="support-never" class="yucp-support-link" text="Never show" />
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>

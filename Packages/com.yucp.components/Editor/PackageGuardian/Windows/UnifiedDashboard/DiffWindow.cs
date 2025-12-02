@@ -109,7 +109,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows.UnifiedDashboard
             container.style.paddingLeft = 8;
             container.style.paddingRight = 8;
             
-            // Background color based on type
+            // Background color
             Color bgColor;
             Color textColor = Color.white;
             string prefix = " ";

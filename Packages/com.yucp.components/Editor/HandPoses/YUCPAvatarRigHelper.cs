@@ -86,7 +86,7 @@ namespace YUCP.Components.HandPoses
 
         /// <summary>
         /// Detects universal local axes for finger bones.
-        /// Uses a simplified detection based on bone direction.
+        /// Uses a simplified detection using bone direction.
         /// </summary>
         public static YUCPUniversalLocalAxes DetectFingerAxes(Transform fingerBone, Transform parentBone)
         {

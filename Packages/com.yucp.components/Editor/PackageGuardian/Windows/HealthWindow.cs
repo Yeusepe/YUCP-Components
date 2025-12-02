@@ -39,7 +39,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         
         private void OnFocus()
         {
-            // Light refresh when window gains focus - don't re-run full scan
+            // Light refresh when window gains focus
             // User must click "Full Scan" to trigger async validation
         }
     }

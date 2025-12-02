@@ -342,7 +342,7 @@ namespace YUCP.Components.Editor
         {
             string shaderNameLower = material.shader.name.ToLower();
             
-            // Configure based on shader type
+            // Configure shader
             if (shaderNameLower.Contains("poiyomi"))
             {
                 material.SetFloat("_EnableUDIMDiscardOptions", 1f);
@@ -596,7 +596,7 @@ namespace YUCP.Components.Editor
             discardCurve.AddKey(0f, animValue);
             discardCurve.AddKey(1f / 60f, animValue);
 
-            // Unity always uses "material.PropertyName" format
+            // Unity uses "material.PropertyName" format
             string propertyPath = $"material.{tilePropertyName}";
 
             EditorCurveBinding binding = EditorCurveBinding.FloatCurve(

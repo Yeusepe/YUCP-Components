@@ -198,7 +198,7 @@ namespace YUCP.Components.Editor
                 Debug.Log($"[GestureManagerInputEmulatorProcessor] Found existing runtime input handler for '{data.name}'", inputHandler);
             }
             
-            // Ensure the runtime handler is preserved during build
+            // Preserve the runtime handler during build
             inputHandler.hideFlags = HideFlags.None;
 
             // Configure input handler
@@ -244,7 +244,7 @@ namespace YUCP.Components.Editor
                 return data.gestureManagerMode;
             }
 
-            // Auto-detect based on Gesture Manager type
+            // Auto-detect using Gesture Manager type
             if (gestureManager != null)
             {
                 string typeName = gestureManager.GetType().Name.ToLower();

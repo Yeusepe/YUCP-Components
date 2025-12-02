@@ -11,7 +11,7 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Position Damping Constraint")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Position-Damping-Constraint")]
-    [SupportBanner("This component ports VRLabs Damping Constraints (MIT). Please support VRLabs!")]
+    [SupportBanner]
     public class PositionDampingConstraintData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Objects")]

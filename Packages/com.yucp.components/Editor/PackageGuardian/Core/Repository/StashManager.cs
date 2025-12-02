@@ -81,7 +81,7 @@ namespace PackageGuardian.Core.Repository
                         
                         var details = new List<string>();
                         
-                        // Always show file counts first
+                        // Show file counts first
                         if (added > 0) details.Add($"{added}+");
                         if (modified > 0) details.Add($"{modified}~");
                         if (deleted > 0) details.Add($"{deleted}-");
@@ -108,7 +108,7 @@ namespace PackageGuardian.Core.Repository
                 catch (System.Threading.ThreadAbortException)
                 {
                     // Thread abort during diff calculation - stash commit already created, continue with basic message
-                    // Reset abort to prevent it from propagating and blocking stash ref creation
+                    // Reset abort to stop propagation
                     System.Threading.Thread.ResetAbort();
                     UnityEngine.Debug.LogWarning("[Package Guardian] Thread aborted during stash diff calculation - using basic message");
                 }

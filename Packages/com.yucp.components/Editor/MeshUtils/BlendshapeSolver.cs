@@ -5,7 +5,7 @@ using UnityEngine;
 namespace YUCP.Components.Editor.MeshUtils
 {
     /// <summary>
-    /// Solves object transforms based on surface cluster deformation.
+    /// Solves object transforms using surface cluster deformation.
     /// Supports multiple solver modes for different attachment types.
     /// </summary>
     public static class BlendshapeSolver
@@ -71,7 +71,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
             try
             {
-                // Apply tangent smoothing to prevent flips
+                // Apply tangent smoothing
                 Vector3 stabilizedTangent = clusterTangent;
                 if (previousTangent.HasValue && smoothingFactor > 0f)
                 {
@@ -210,7 +210,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 return result;
             }
 
-            // Calculate scale based on surface deformation
+            // Calculate scale using surface deformation
             // Compare deformed frame to base frame
             float baseSize = baseClusterTangent.magnitude;
             float deformedSize = clusterTangent.magnitude;
@@ -219,7 +219,7 @@ namespace YUCP.Components.Editor.MeshUtils
             {
                 float scaleRatio = deformedSize / baseSize;
                 
-                // Clamp scale to reasonable range to prevent extreme deformation
+                // Clamp scale to reasonable range
                 scaleRatio = Mathf.Clamp(scaleRatio, 0.8f, 1.2f);
                 
                 result.scale = new Vector3(scaleRatio, scaleRatio, scaleRatio);
@@ -229,7 +229,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Stabilize tangent vector to prevent flipping using smoothing.
+        /// Stabilize tangent vector using smoothing.
         /// </summary>
         private static Vector3 StabilizeTangent(
             Vector3 currentTangent,
@@ -254,7 +254,7 @@ namespace YUCP.Components.Editor.MeshUtils
         }
 
         /// <summary>
-        /// Apply Gram-Schmidt orthonormalization to ensure frame is perfectly orthonormal.
+        /// Apply Gram-Schmidt orthonormalization.
         /// </summary>
         private static SurfaceFrame OrthonormalizeFrame(SurfaceFrame frame)
         {
@@ -548,7 +548,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 float pivot = aug[i, i];
                 if (Mathf.Abs(pivot) < 0.00001f)
                 {
-                    pivot = 0.00001f; // Avoid division by zero
+                    pivot = 0.00001f;
                 }
 
                 for (int k = 0; k < 2 * n; k++)

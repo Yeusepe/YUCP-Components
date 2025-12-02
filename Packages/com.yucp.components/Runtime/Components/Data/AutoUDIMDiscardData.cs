@@ -8,6 +8,7 @@ namespace YUCP.Components
     /// Automatically detects UV islands in clothing meshes and creates UDIM discard toggles
     /// for each detected region. No manual UV setup required.
     /// </summary>
+    [SupportBanner]
     [BetaWarning("This component is in BETA and may not work as intended. Automatic UV region detection is experimental.")]
     [AddComponentMenu("YUCP/Auto UDIM Discard")]
     [RequireComponent(typeof(SkinnedMeshRenderer))]

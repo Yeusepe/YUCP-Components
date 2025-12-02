@@ -5,7 +5,7 @@ using UnityEngine;
 namespace YUCP.Components.PackageGuardian.Editor.Services
 {
     /// <summary>
-    /// Circuit breaker pattern to prevent infinite failure loops
+    /// Circuit breaker pattern
     /// </summary>
     public static class CircuitBreakerService
     {

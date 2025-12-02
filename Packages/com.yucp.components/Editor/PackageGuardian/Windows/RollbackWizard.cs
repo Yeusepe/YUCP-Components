@@ -63,7 +63,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             header.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f);
             header.style.borderBottomWidth = 1;
             header.style.borderBottomColor = new Color(0.16f, 0.16f, 0.16f);
-            header.style.flexShrink = 0; // Don't shrink
+            header.style.flexShrink = 0;
             
             var title = new Label("Rollback to Previous State");
             title.AddToClassList("pg-title");
@@ -168,7 +168,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             
             root.Add(content);
             
-            // Footer (don't shrink)
+            // Footer
             var footer = new VisualElement();
             footer.style.flexDirection = FlexDirection.Row;
             footer.style.justifyContent = Justify.FlexEnd;
@@ -179,7 +179,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             footer.style.borderTopWidth = 1;
             footer.style.borderTopColor = new Color(0.16f, 0.16f, 0.16f);
             footer.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f);
-            footer.style.flexShrink = 0; // Don't shrink
+            footer.style.flexShrink = 0;
             
             _cancelButton = new Button(Close);
             _cancelButton.text = "Cancel";

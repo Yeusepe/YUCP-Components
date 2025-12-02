@@ -9,7 +9,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
 {
     /// <summary>
     /// Serializes heavy Package Guardian operations onto a single background worker.
-    /// Prevents multiple snapshots/stashes from running simultaneously on the main thread.
+    /// Manages multiple snapshots/stashes running on the main thread.
     /// </summary>
     [InitializeOnLoad]
     public static class GuardianTaskRunner

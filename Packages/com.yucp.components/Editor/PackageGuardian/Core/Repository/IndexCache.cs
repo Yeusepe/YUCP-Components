@@ -8,7 +8,7 @@ using System.Threading;
 namespace PackageGuardian.Core.Repository
 {
     /// <summary>
-    /// Index cache to avoid rehashing unchanged files.
+    /// Index cache for unchanged files.
     /// Stored as JSON at .pg/index.json.
     /// </summary>
     public sealed class IndexCache

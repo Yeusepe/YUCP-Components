@@ -9,7 +9,7 @@ namespace YUCP.Components.Editor
 {
     /// <summary>
     /// Automatically assigns the YUCP icon to all component scripts in the package.
-    /// Runs once on editor startup to ensure all components have the custom icon.
+    /// Runs once on editor startup.
     /// </summary>
     [InitializeOnLoad]
     public static class YUCPIconAssigner

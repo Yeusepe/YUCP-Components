@@ -11,7 +11,7 @@ namespace YUCP.Components.Editor
 {
 	/// <summary>
 	/// Processes conditional deletion components during avatar build.
-	/// Evaluates configurable conditions on the avatar and deletes specified GameObjects based on logical gate evaluation.
+	/// Evaluates configurable conditions on the avatar and deletes specified GameObjects using logical gate evaluation.
 	/// </summary>
 	public class ConditionalDeletionProcessor : IVRCSDKPreprocessAvatarCallback
 	{

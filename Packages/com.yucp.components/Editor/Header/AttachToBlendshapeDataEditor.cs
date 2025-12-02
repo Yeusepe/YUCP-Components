@@ -37,11 +37,11 @@ namespace YUCP.Components.Resources
         private Vector2 previewSliderScrollPos;
         private Mesh previewBakeMesh;
 
-        // Cache to prevent recalculation spam
+        // Cache to reduce recalculation
         private List<string> cachedDetectedVisemes;
         private int cachedVisemeFrameCount = -1;
         
-        // Track previous values to prevent unnecessary UI updates
+        // Track previous values to reduce unnecessary UI updates
         private SkinnedMeshRenderer previousTargetMesh = null;
         private int previousManualTriangleIndex = -2;
         private SolverMode previousSolverMode = (SolverMode)(-1);
@@ -358,7 +358,7 @@ namespace YUCP.Components.Resources
                     UpdateTrackingModeContent(root.Q<VisualElement>("tracking-mode-content"));
                 }
                 
-                // Update preview tools only when preview state actually changes (to avoid resetting scroll/sliders)
+                // Update preview tools when preview state changes
                 bool previewStateChanged = data.previewGenerated != previousPreviewGenerated ||
                     (data.previewBlendshapes?.Count ?? -1) != previousPreviewBlendshapeCount;
                 if (previewStateChanged)
@@ -374,7 +374,6 @@ namespace YUCP.Components.Resources
                     previewToolsInstance.RefreshButtons();
                 }
                 
-                // Don't update Data constantly - it triggers RefreshUI which clears sliders
                 // The sliders update themselves via callbacks when values change
                 
                 // Update build statistics only when relevant data changes
@@ -754,9 +753,8 @@ namespace YUCP.Components.Resources
                 container.Add(previewToolsInstance);
             }
             
-            // Only update Data when preview state changes (setting Data triggers RefreshUI which clears sliders)
+            // Only update Data when preview state changes
             // For weight updates, the sliders update themselves via the setWeight callback
-            // So we don't need to constantly update Data here
         }
 
         public override void OnInspectorGUI()
@@ -851,7 +849,7 @@ namespace YUCP.Components.Resources
                 targetSkinnedMesh = data.previewTempSkinnedMesh;
             }
             
-            // CRITICAL: Ensure the SkinnedMeshRenderer is using the working mesh (with transferred blendshapes)
+            // The SkinnedMeshRenderer uses the working mesh (with transferred blendshapes)
             if (targetSkinnedMesh != null && data.previewWorkingMesh != null && targetSkinnedMesh.sharedMesh != data.previewWorkingMesh)
             {
                 Debug.Log($"[AttachToBlendshape Preview] Updating SkinnedMeshRenderer to use working mesh before applying weight. Current: {targetSkinnedMesh.sharedMesh.name}, Working: {data.previewWorkingMesh.name}", data);
@@ -867,7 +865,7 @@ namespace YUCP.Components.Resources
                     targetSkinnedMesh.SetBlendShapeWeight(targetIndex, value);
                     Debug.Log($"[AttachToBlendshape Preview] Applied blendshape '{name}' weight {value} to target mesh '{targetSkinnedMesh.name}' (index: {targetIndex}, mesh: {targetSkinnedMesh.sharedMesh.name}, blendShapeCount: {targetSkinnedMesh.sharedMesh.blendShapeCount})", data);
                     
-                    // Force immediate update - multiple methods to ensure it works
+                    // Force immediate update using multiple methods
                     EditorUtility.SetDirty(targetSkinnedMesh);
                     EditorUtility.SetDirty(targetSkinnedMesh.sharedMesh);
                     
@@ -1134,14 +1132,14 @@ namespace YUCP.Components.Resources
                 return;
             }
             
-            // Ensure we're using the working mesh (with transferred blendshapes)
+            // Use the working mesh (with transferred blendshapes)
             if (data.previewWorkingMesh != null && targetMeshInstance != data.previewWorkingMesh)
             {
                 Debug.Log($"[AttachToBlendshape Preview] Switching to working mesh. Original: {targetMeshInstance.name} ({targetMeshInstance.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)", data);
                 targetMeshInstance = data.previewWorkingMesh;
             }
 
-            // Update blendshape weights on target mesh based on source mesh blendshape weights
+            // Update blendshape weights on target mesh
             // The blendshapes should have been transferred during GeneratePreview
             // Now we just need to sync the weights
             SkinnedMeshRenderer activeSkinnedMesh = targetSkinnedMesh;
@@ -1188,7 +1186,7 @@ namespace YUCP.Components.Resources
                 
                 activeSkinnedMesh = data.previewTempSkinnedMesh;
                 
-                // CRITICAL: Ensure the temporary SkinnedMeshRenderer is using the working mesh (with transferred blendshapes)
+                // The temporary SkinnedMeshRenderer uses the working mesh (with transferred blendshapes)
                 if (data.previewWorkingMesh != null && activeSkinnedMesh.sharedMesh != data.previewWorkingMesh)
                 {
                     Debug.Log($"[AttachToBlendshape Preview] Updating temp SkinnedMeshRenderer to use working mesh. Current: {activeSkinnedMesh.sharedMesh.name} ({activeSkinnedMesh.sharedMesh.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)", data);
@@ -1197,7 +1195,7 @@ namespace YUCP.Components.Resources
             }
             else if (targetSkinnedMesh != null)
             {
-                // For SkinnedMeshRenderer, ensure it's using the working mesh
+                // For SkinnedMeshRenderer, use the working mesh
                 if (data.previewWorkingMesh != null && targetSkinnedMesh.sharedMesh != data.previewWorkingMesh)
                 {
                     Debug.Log($"[AttachToBlendshape Preview] Updating SkinnedMeshRenderer to use working mesh. Current: {targetSkinnedMesh.sharedMesh.name} ({targetSkinnedMesh.sharedMesh.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)", data);
@@ -1427,7 +1425,7 @@ namespace YUCP.Components.Resources
                     return;
                 }
 
-                // Determine blendshapes based on mode
+                // Determine blendshapes
                 GameObject avatarRoot = null;
                 var avatarDescriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
                 if (avatarDescriptor != null)
@@ -1592,14 +1590,13 @@ namespace YUCP.Components.Resources
                     data.previewWorkingMesh = null;
                 }
                 
-                // Don't clear previewOriginalMesh - we need it for the next preview generation
                 // It will be overwritten when generating preview again
             }
             
             // Remove temporary SkinnedMeshRenderer if it was created for MeshFilter preview
             if (data.previewTempSkinnedMesh != null)
             {
-                // Restore MeshRenderer if it was hidden (don't destroy it, just enable it)
+                // Restore MeshRenderer if it was hidden
                 // Use stored reference first, then fallback to GetComponent
                 MeshRenderer meshRenderer = data.previewOriginalMeshRenderer;
                 

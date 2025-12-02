@@ -1,6 +1,6 @@
 #if UNITY_EDITOR
 // Portions adapted from UltimateXR (MIT License) by VRMADA
-// Based on UxrHandPoseEditorWindow functionality, adapted for VRChat avatars and UI Toolkit.
+// Adapted from UxrHandPoseEditorWindow functionality for VRChat avatars and UI Toolkit.
 
 using System;
 using System.Collections.Generic;

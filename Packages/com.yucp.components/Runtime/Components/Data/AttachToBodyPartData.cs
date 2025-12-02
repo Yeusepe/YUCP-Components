@@ -3,6 +3,7 @@ using VRC.SDKBase;  // for IEditorOnly & IPreprocessCallbackBehaviour
 
 namespace YUCP.Components
 {
+    [SupportBanner]
     [AddComponentMenu("YUCP/Symmetric Armature Auto-Link")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")] // ← Optional link-out button
     [DisallowMultipleComponent]

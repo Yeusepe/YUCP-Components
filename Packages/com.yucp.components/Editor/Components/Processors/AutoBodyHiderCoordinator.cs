@@ -307,7 +307,7 @@ namespace YUCP.Components.Editor
             }
             
             // Auto-assign tiles for all pieces that need it
-            // Start from (1, 0) to avoid common texture tiles (0,0) through (0,3)
+            // Start from (1, 0)
             int nextRow = 1;
             int nextCol = 0;
             
