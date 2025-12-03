@@ -57,7 +57,7 @@ namespace YUCP.Components.HandPoses.Editor
         private YUCPHandSide _selectedHand = YUCPHandSide.Left;
         private float _previewBlend;
 
-        [MenuItem("Tools/YUCP/Hand Pose Editor")]
+        [MenuItem("Tools/YUCP/Others/Components/Hand Pose Editor")]
         public static void ShowWindow()
         {
             var window = GetWindow<YUCPHandPoseEditorWindow>("Hand Pose Editor");
