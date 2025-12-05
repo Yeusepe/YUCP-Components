@@ -24,7 +24,8 @@
         "VRC.SDK3.Dynamics.Contact.dll",
         "VRC.SDK3.Dynamics.PhysBone.dll",
         "Newtonsoft.Json.dll",
-        "ICSharpCode.SharpZipLib.dll"
+        "ICSharpCode.SharpZipLib.dll",
+        "0Harmony.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],

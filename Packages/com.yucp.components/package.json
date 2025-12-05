@@ -12,6 +12,8 @@
     "com.vrcfury.vrcfury": ">=1.1258.0",
     "com.vrchat.core.vpm-resolver": ">=0.1.27"
   },
-  "legacyPackages": []
+  "legacyPackages": [
+    "one.razgriz.harmony-vpm"
+  ]
 }
 

@@ -1,0 +1,359 @@
+/* ============================================================================
+   YUCP Package Manager - Styles   
+   ============================================================================ */
+
+/* ============================================================================
+   SCROLL CONTENT
+   ============================================================================ */
+.yucp-scroll-content {
+    flex-grow: 1;
+}
+
+/* ============================================================================
+   SPACER
+   ============================================================================ */
+.yucp-spacer {
+    flex-grow: 1;
+    min-height: 1px;
+}
+
+/* ============================================================================
+   CONTENT WRAPPER
+   ============================================================================ */
+.yucp-content-wrapper {
+    flex-shrink: 0;
+    position: relative;
+}
+
+/* ============================================================================
+   BANNER SECTION
+   ============================================================================ */
+.yucp-banner-container {
+    position: relative;
+    height: 75%;
+    width: 100%;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.yucp-banner-image-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-size: cover;
+    background-position: center;
+}
+
+.yucp-banner-gradient-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* ============================================================================
+   METADATA SECTION - Hero-style layout (Read-only)
+   ============================================================================ */
+.yucp-section {
+    background-color: rgba(22, 22, 22, 0.1);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.yucp-metadata-section {
+    padding: 20px;
+    margin-left: 20px;
+    margin-right: 20px;
+    margin-bottom: 20px;
+    background-color: transparent;
+}
+
+.yucp-metadata-header {
+    padding-bottom: 16px;
+    border-bottom-width: 0;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.yucp-action-buttons-container {
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+.yucp-metadata-icon-container {
+    width: 80px;
+    height: 80px;
+    min-width: 80px;
+    min-height: 80px;
+    background-color: rgba(42, 42, 42, 0.3);
+    border-width: 0;
+    border-radius: 8px;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.yucp-metadata-icon-image-container {
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.yucp-metadata-icon-image {
+    position: absolute;
+    width: 107%;
+    height: 107%;
+    left: -3.5%;
+    top: -3.5%;
+}
+
+.yucp-metadata-name-field {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    margin-bottom: 0;
+}
+
+.yucp-ellipsis-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yucp-metadata-section Label {
+    color: #ffffff;
+}
+
+.yucp-product-link-container {
+}
+
+.yucp-product-link-label {
+}
+
+/* ============================================================================
+   DETAILS TOGGLE BUTTON
+   ============================================================================ */
+.yucp-details-toggle-button {
+    margin-top: 8px;
+    margin-bottom: 12px;
+    margin-left: 20px;
+    margin-right: 20px;
+    padding: 4px 10px;
+    min-height: 24px;
+    max-height: 24px;
+    font-size: 11px;
+    background-color: transparent;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    transition-property: opacity;
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-details-toggle-button:hover {
+    opacity: 0.7;
+}
+
+.yucp-details-toggle-button:active {
+    opacity: 0.5;
+}
+
+/* ============================================================================
+   ACTION BUTTONS (Import/Cancel)
+   ============================================================================ */
+.yucp-action-button {
+    min-width: 80px;
+    min-height: 28px;
+    padding: 6px 16px;
+    font-size: 12px;
+    border-radius: 3px;
+    margin-left: 8px;
+    transition-property: background-color, opacity;
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-cancel-button {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.2);
+    border-right-color: rgba(255, 255, 255, 0.2);
+    border-bottom-color: rgba(255, 255, 255, 0.2);
+    border-left-color: rgba(255, 255, 255, 0.2);
+}
+
+.yucp-cancel-button:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.yucp-import-button {
+    background-color: rgba(100, 150, 255, 0.3);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(100, 150, 255, 0.5);
+    border-right-color: rgba(100, 150, 255, 0.5);
+    border-bottom-color: rgba(100, 150, 255, 0.5);
+    border-left-color: rgba(100, 150, 255, 0.5);
+}
+
+.yucp-import-button:hover {
+    background-color: rgba(100, 150, 255, 0.4);
+}
+
+/* ============================================================================
+   CONTENTS SECTION - Smooth animation
+   ============================================================================ */
+.yucp-contents-section {
+    transition-property: max-height;
+    transition-duration: 0.35s;
+    transition-timing-function: ease-in-out;
+    overflow: hidden;
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN
+   ============================================================================ */
+@media (max-width: 800px) {
+    .yucp-metadata-header {
+        flex-wrap: wrap;
+    }
+
+    .yucp-action-buttons-container {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 12px;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 600px) {
+    .yucp-metadata-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .yucp-metadata-icon-container {
+        margin-bottom: 12px;
+    }
+
+    .yucp-metadata-name-field {
+        font-size: 18px;
+    }
+
+    .yucp-action-buttons-container {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 12px;
+        justify-content: flex-start;
+    }
+}
+
+/* ============================================================================
+   TREE VIEW
+   ============================================================================ */
+.yucp-tree-item {
+    min-height: 20px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.yucp-tree-item-content {
+    min-height: 20px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.yucp-tree-expand-button {
+    min-width: 20px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    margin-right: 4px;
+    background-color: transparent;
+    border-width: 0;
+    font-size: 10px;
+    color: #cccccc;
+}
+
+.yucp-tree-expand-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.yucp-tree-checkbox {
+    margin-right: 6px;
+    margin-left: 0;
+}
+
+.yucp-tree-checkbox-mixed {
+    /* Mixed state - checkbox appears checked but with opacity to indicate mixed */
+    opacity: 0.7;
+}
+
+.yucp-tree-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    font-size: 14px;
+}
+
+.yucp-tree-folder-icon {
+    color: #4a9eff;
+}
+
+.yucp-tree-file-icon {
+    color: #cccccc;
+}
+
+.yucp-tree-label {
+    flex-grow: 1;
+    font-size: 12px;
+    color: #cccccc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yucp-tree-folder-label {
+    color: #ffffff;
+    -unity-font-style: normal;
+}
+
+.yucp-tree-file-label {
+    color: #cccccc;
+}
+
+.yucp-tree-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.yucp-tree-item-exists {
+    opacity: 0.8;
+}
+
+.yucp-tree-item-conflict {
+    background-color: rgba(255, 100, 100, 0.1);
+}
+
+.yucp-tree-item-conflict:hover {
+    background-color: rgba(255, 100, 100, 0.15);
+}
+
