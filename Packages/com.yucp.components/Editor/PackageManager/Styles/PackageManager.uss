@@ -357,3 +357,18 @@
     background-color: rgba(255, 100, 100, 0.15);
 }
 
+/* ============================================================================
+   VERIFICATION ICON
+   ============================================================================ */
+.yucp-verification-icon {
+    margin-left: 8px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.yucp-verification-icon Image {
+    width: 20px;
+    height: 20px;
+}
+

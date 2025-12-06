@@ -15,6 +15,8 @@ namespace YUCP.Components.Editor.PackageManager
     {
         private const string MetadataFileName = "YUCP_PackageInfo.json";
         private const string MetadataAssetPath = "Assets/YUCP_PackageInfo.json";
+        private const string PackageJsonFileName = "package.json";
+        private const string PackageJsonAssetPath = "Assets/package.json";
 
         private static Type _importPackageItemType;
         private static FieldInfo _destinationAssetPathField;
@@ -35,23 +37,24 @@ namespace YUCP.Components.Editor.PackageManager
         /// <summary>
         /// Extract metadata from ImportPackageItem array.
         /// Looks for YUCP_PackageInfo.json in the package.
+        /// Also extracts icon from packageIconPath if provided (for packages without YUCP metadata).
         /// </summary>
-        public static PackageMetadata ExtractMetadataFromImportItems(System.Array importItems, string packagePath)
+        public static PackageMetadata ExtractMetadataFromImportItems(System.Array importItems, string packagePath, string packageIconPath = null)
         {
             Debug.Log($"[YUCP PackageManager] Extracting metadata from {importItems?.Length ?? 0} import items");
             
             if (importItems == null || importItems.Length == 0)
             {
                 Debug.Log("[YUCP PackageManager] No import items, creating fallback metadata");
-                return CreateFallbackMetadata(packagePath);
+                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
 
             // Find metadata item in import items
             object metadataItem = FindMetadataItem(importItems);
             if (metadataItem == null)
             {
-                Debug.Log("[YUCP PackageManager] Metadata item not found, creating fallback metadata");
-                return CreateFallbackMetadata(packagePath);
+                Debug.Log("[YUCP PackageManager] Metadata item not found, creating fallback metadata with icon extraction");
+                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
 
             Debug.Log("[YUCP PackageManager] Metadata item found");
@@ -66,7 +69,7 @@ namespace YUCP.Components.Editor.PackageManager
             if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
             {
                 Debug.LogWarning("[YUCP PackageManager] Source folder or exported path is empty, creating fallback metadata");
-                return CreateFallbackMetadata(packagePath);
+                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
 
             // Read JSON from extracted location
@@ -76,7 +79,7 @@ namespace YUCP.Components.Editor.PackageManager
             if (string.IsNullOrEmpty(json))
             {
                 Debug.LogWarning("[YUCP PackageManager] Failed to read metadata file, creating fallback metadata");
-                return CreateFallbackMetadata(packagePath);
+                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
 
             Debug.Log($"[YUCP PackageManager] Metadata JSON read successfully ({json.Length} characters)");
@@ -87,7 +90,7 @@ namespace YUCP.Components.Editor.PackageManager
                 var metadataJson = JsonUtility.FromJson<PackageMetadataJson>(json);
                 if (metadataJson == null)
                 {
-                    return CreateFallbackMetadata(packagePath);
+                    return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
                 }
 
                 // Convert to PackageMetadata
@@ -174,13 +177,16 @@ namespace YUCP.Components.Editor.PackageManager
                     Debug.Log("[YUCP PackageManager] No banner path in metadata");
                 }
 
+                // Extract dependencies from package.json if available
+                ExtractDependenciesFromPackageJson(metadata, importItems);
+
                 Debug.Log($"[YUCP PackageManager] Metadata extraction complete: {metadata.packageName} v{metadata.version} by {metadata.author}");
                 return metadata;
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[YUCP PackageManager] Failed to parse metadata JSON: {ex.Message}");
-                return CreateFallbackMetadata(packagePath);
+                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
         }
 
@@ -354,6 +360,62 @@ namespace YUCP.Components.Editor.PackageManager
             return null;
         }
 
+        /// <summary>
+        /// Load texture from a disk file path (relative to Unity project root).
+        /// Used for Unity's temporary package icon paths (e.g., "Temp/Export Package/.../.icon.png").
+        /// </summary>
+        private static Texture2D LoadTextureFromDiskPath(string relativePath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(relativePath))
+                {
+                    Debug.LogWarning("[YUCP PackageManager] LoadTextureFromDiskPath: relativePath is empty");
+                    return null;
+                }
+
+                // Construct full path relative to Unity project root
+                // Application.dataPath is "ProjectRoot/Assets", so we need to go up one level
+                string projectRoot = Path.GetDirectoryName(Application.dataPath);
+                string fullPath = Path.Combine(projectRoot, relativePath);
+                
+                // Normalize path separators
+                fullPath = Path.GetFullPath(fullPath);
+                
+                Debug.Log($"[YUCP PackageManager] Loading texture from disk path: {fullPath}");
+                
+                if (!File.Exists(fullPath))
+                {
+                    Debug.LogWarning($"[YUCP PackageManager] Texture file does not exist: {fullPath}");
+                    return null;
+                }
+
+                byte[] data = File.ReadAllBytes(fullPath);
+                Debug.Log($"[YUCP PackageManager] Read {data.Length} bytes from texture file");
+                
+                Texture2D texture = new Texture2D(2, 2);
+                if (texture.LoadImage(data))
+                {
+                    Debug.Log($"[YUCP PackageManager] Texture loaded successfully: {texture.width}x{texture.height}, format: {texture.format}");
+                    return texture;
+                }
+                else
+                {
+                    Debug.LogWarning($"[YUCP PackageManager] Failed to load image data from: {fullPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[YUCP PackageManager] Exception loading texture from disk path {relativePath}: {ex.Message}\n{ex.StackTrace}");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Load texture from a full file system path.
+        /// Used for textures extracted from package contents (via ImportPackageItem).
+        /// </summary>
         private static Texture2D LoadTextureFromPath(string fullPath)
         {
             try
@@ -401,13 +463,235 @@ namespace YUCP.Components.Editor.PackageManager
             return default(T);
         }
 
-        internal static PackageMetadata CreateFallbackMetadata(string packagePath, string packageName = null)
+        internal static PackageMetadata CreateFallbackMetadata(string packagePath, string packageName = null, string packageIconPath = null, System.Array importItems = null)
         {
             if (string.IsNullOrEmpty(packageName))
             {
                 packageName = Path.GetFileNameWithoutExtension(packagePath);
             }
-            return new PackageMetadata(packageName);
+            
+            var metadata = new PackageMetadata(packageName);
+            
+            // Extract icon from packageIconPath if provided (Unity's standard package icon)
+            // packageIconPath is a temporary disk path, not an asset path within the package
+            if (!string.IsNullOrEmpty(packageIconPath))
+            {
+                Debug.Log($"[YUCP PackageManager] Extracting icon from Unity's packageIconPath (disk path): {packageIconPath}");
+                metadata.icon = LoadTextureFromDiskPath(packageIconPath);
+                if (metadata.icon != null)
+                {
+                    Debug.Log($"[YUCP PackageManager] Icon loaded from packageIconPath successfully ({metadata.icon.width}x{metadata.icon.height})");
+                }
+                else
+                {
+                    Debug.LogWarning($"[YUCP PackageManager] Failed to load icon from packageIconPath: {packageIconPath}");
+                }
+            }
+            
+            // Extract dependencies from package.json if available (even for fallback metadata)
+            ExtractDependenciesFromPackageJson(metadata, importItems);
+            
+            return metadata;
+        }
+
+        /// <summary>
+        /// Extract dependencies from package.json file in the package.
+        /// </summary>
+        private static void ExtractDependenciesFromPackageJson(PackageMetadata metadata, System.Array importItems)
+        {
+            if (importItems == null || importItems.Length == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                // Find package.json item in import items
+                object packageJsonItem = FindPackageJsonItem(importItems);
+                if (packageJsonItem == null)
+                {
+                    Debug.Log("[YUCP PackageManager] package.json not found in package");
+                    return;
+                }
+
+                Debug.Log("[YUCP PackageManager] package.json found, extracting dependencies");
+
+                // Read package.json file from extracted package location
+                string sourceFolder = GetFieldValue<string>(packageJsonItem, _sourceFolderField);
+                string exportedPath = GetFieldValue<string>(packageJsonItem, _exportedAssetPathField);
+
+                if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Source folder or exported path is empty for package.json");
+                    return;
+                }
+
+                // Read JSON from extracted location
+                string json = ReadMetadataFile(sourceFolder, exportedPath);
+                
+                if (string.IsNullOrEmpty(json))
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Failed to read package.json file");
+                    return;
+                }
+
+                Debug.Log($"[YUCP PackageManager] package.json read successfully ({json.Length} characters)");
+
+                // Parse package.json to extract vpmDependencies
+                ParsePackageJsonDependencies(metadata, json);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to extract dependencies from package.json: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Find package.json item in ImportPackageItem array.
+        /// package.json can be at Assets/package.json or Assets/YUCP_TempInstall_{guid}.json
+        /// </summary>
+        private static object FindPackageJsonItem(System.Array importItems)
+        {
+            if (_destinationAssetPathField == null) return null;
+
+            foreach (var item in importItems)
+            {
+                if (item == null) continue;
+
+                string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
+                if (destinationPath == null) continue;
+
+                // Check for exact match (Assets/package.json)
+                if (destinationPath.Equals(PackageJsonAssetPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.Log($"[YUCP PackageManager] Found package.json at exact path: {destinationPath}");
+                    return item;
+                }
+
+                // Check for temporary install path pattern (Assets/YUCP_TempInstall_{guid}.json)
+                if (destinationPath.StartsWith("Assets/YUCP_TempInstall_", StringComparison.OrdinalIgnoreCase) &&
+                    destinationPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.Log($"[YUCP PackageManager] Found package.json at temporary path: {destinationPath}");
+                    return item;
+                }
+            }
+
+            Debug.Log("[YUCP PackageManager] package.json not found in package (searched for Assets/package.json and Assets/YUCP_TempInstall_*.json)");
+            return null;
+        }
+
+        /// <summary>
+        /// Parse package.json JSON to extract vpmDependencies.
+        /// Uses simple string parsing since JsonUtility doesn't support Dictionary.
+        /// </summary>
+        private static void ParsePackageJsonDependencies(PackageMetadata metadata, string json)
+        {
+            try
+            {
+                metadata.dependencies.Clear();
+
+                // Find vpmDependencies section in JSON
+                int vpmDepsIndex = json.IndexOf("\"vpmDependencies\"", StringComparison.OrdinalIgnoreCase);
+                if (vpmDepsIndex < 0)
+                {
+                    Debug.Log("[YUCP PackageManager] No vpmDependencies found in package.json");
+                    return;
+                }
+
+                // Find the opening brace after "vpmDependencies"
+                int startIndex = json.IndexOf('{', vpmDepsIndex);
+                if (startIndex < 0)
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Invalid vpmDependencies format in package.json");
+                    return;
+                }
+
+                // Find the matching closing brace
+                int braceCount = 0;
+                int endIndex = startIndex;
+                for (int i = startIndex; i < json.Length; i++)
+                {
+                    if (json[i] == '{')
+                        braceCount++;
+                    else if (json[i] == '}')
+                    {
+                        braceCount--;
+                        if (braceCount == 0)
+                        {
+                            endIndex = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (endIndex <= startIndex)
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Could not find end of vpmDependencies in package.json");
+                    return;
+                }
+
+                // Extract the vpmDependencies JSON object
+                string vpmDepsJson = json.Substring(startIndex, endIndex - startIndex + 1);
+                
+                // Parse each key-value pair
+                // Format: "packageName": "version"
+                int currentIndex = 1; // Skip opening brace
+                while (currentIndex < vpmDepsJson.Length - 1)
+                {
+                    // Find next quote (start of key)
+                    int keyStart = vpmDepsJson.IndexOf('"', currentIndex);
+                    if (keyStart < 0) break;
+
+                    // Find end of key
+                    int keyEnd = vpmDepsJson.IndexOf('"', keyStart + 1);
+                    if (keyEnd < 0) break;
+
+                    string packageName = vpmDepsJson.Substring(keyStart + 1, keyEnd - keyStart - 1);
+
+                    // Find colon
+                    int colonIndex = vpmDepsJson.IndexOf(':', keyEnd);
+                    if (colonIndex < 0) break;
+
+                    // Find value (quoted string)
+                    int valueStart = vpmDepsJson.IndexOf('"', colonIndex);
+                    if (valueStart < 0) break;
+
+                    int valueEnd = vpmDepsJson.IndexOf('"', valueStart + 1);
+                    if (valueEnd < 0) break;
+
+                    string version = vpmDepsJson.Substring(valueStart + 1, valueEnd - valueStart - 1);
+
+                    // Add dependency
+                    if (!string.IsNullOrEmpty(packageName) && !string.IsNullOrEmpty(version))
+                    {
+                        metadata.dependencies[packageName] = version;
+                        Debug.Log($"[YUCP PackageManager] Found dependency: {packageName}@{version}");
+                    }
+
+                    // Move to next entry (skip comma if present)
+                    currentIndex = valueEnd + 1;
+                    if (currentIndex < vpmDepsJson.Length && vpmDepsJson[currentIndex] == ',')
+                        currentIndex++;
+                }
+
+                if (metadata.dependencies.Count > 0)
+                {
+                    Debug.Log($"[YUCP PackageManager] Extracted {metadata.dependencies.Count} dependencies from package.json:");
+                    foreach (var dep in metadata.dependencies)
+                    {
+                        Debug.Log($"[YUCP PackageManager]   - {dep.Key}@{dep.Value}");
+                    }
+                }
+                else
+                {
+                    Debug.Log("[YUCP PackageManager] No dependencies found in package.json (vpmDependencies was empty or missing)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse package.json dependencies: {ex.Message}\n{ex.StackTrace}");
+            }
         }
     }
 }

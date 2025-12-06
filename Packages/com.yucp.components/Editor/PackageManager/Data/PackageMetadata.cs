@@ -20,6 +20,7 @@ namespace YUCP.Components.Editor.PackageManager
         public List<ProductLink> productLinks = new List<ProductLink>();
         public string versionRule = "semver";
         public string versionRuleName = "semver";
+        public Dictionary<string, string> dependencies = new Dictionary<string, string>(); // package name -> version
 
         public PackageMetadata()
         {

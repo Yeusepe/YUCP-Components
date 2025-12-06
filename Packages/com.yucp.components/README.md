@@ -62,6 +62,13 @@ Access Pakacage Guardian via `Tools > YUCP > Pakacage Guardian`:
 - **Stashes Tab**: Manage automatic and manual snapshots
 - **Full Diff Engine**: Line-by-line comparison for text files
 
+### Package Manager
+
+Access Package Manager via `Tools > YUCP > Package Manager`:
+- **Custom Import UI**: Beautiful package import window with banner, metadata, and product links
+- **Read-Only Metadata Display**: View package information (icon, author, description, links) during import
+- **Future**: Full package management system for downloading and updating packages
+
 ### Avatar Components
 
 1. Add YUCP components to your avatar from `Component > YUCP` menu

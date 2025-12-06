@@ -6,6 +6,11 @@ using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
+using YUCP.Components.Editor.PackageVerifier;
+using YUCP.Components.Editor.PackageVerifier.Core;
+using YUCP.Components.Editor.PackageVerifier.Data;
+using YUCP.UI.DesignSystem.Utilities;
+using PackageVerifierCore = YUCP.Components.Editor.PackageVerifier.Core;
 
 namespace YUCP.Components.Editor.PackageManager
 {
@@ -55,23 +60,46 @@ namespace YUCP.Components.Editor.PackageManager
         private const string DefaultGridPlaceholderPath = "Packages/com.yucp.devtools/Resources/DefaultGrid.png";
         private PackageItemTreeView _treeView;
         private ScrollView _treeScrollView;
-        private System.Array _currentImportItems; // Unity's ImportPackageItem[] array
+        private System.Array _currentImportItems; // Unity's ImportPackageItem[] array (current step)
+        private System.Array _allImportItems; // Unity's ImportPackageItem[] array (all items in package)
         private string _currentPackagePath;
         private string _currentPackageIconPath;
         private object _packageImportWizardInstance; // For multi-step wizard support
         private bool _isProjectSettingsStep = false;
+        
+        // Verification state
+        private PackageVerifierCore.VerificationResult _verificationResult;
+        private VisualElement _verificationStatusElement;
+        private bool _isPackageSigned = false; // Track if package has signing data (even if invalid)
+        
+        // Domain reload prevention
+        private bool _isImportMode = false; // Track if window is in import mode (prevents domain reload)
 
         private void OnEnable()
         {
             CreateGUI();
             LoadResources();
             AssetDatabase.importPackageStarted += OnImportPackageStarted;
+            
+            // Set minimum window size
+            minSize = new Vector2(500, 600);
+            
+            // Ensure TrustedAuthority is initialized with root public key
+            TrustedAuthority.ReloadRootPublicKey();
         }
 
         private void OnDisable()
         {
             AssetDatabase.importPackageStarted -= OnImportPackageStarted;
             DestroyCreatedTextures();
+            
+            // Unlock assembly reload if we were in import mode
+            if (_isImportMode)
+            {
+                EditorApplication.UnlockReloadAssemblies();
+                _isImportMode = false;
+                Debug.Log("[YUCP PackageManager] Unlocked assembly reload (window closed)");
+            }
         }
 
         // Override ShowButton to hide any custom buttons (like lock button)
@@ -123,6 +151,9 @@ namespace YUCP.Components.Editor.PackageManager
             
             root.style.flexDirection = FlexDirection.Column;
 
+            // Load design system styles
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
+            
             // Load stylesheet
             var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>("Packages/com.yucp.components/Editor/PackageManager/Styles/PackageManager.uss");
             if (styleSheet != null)
@@ -427,6 +458,13 @@ namespace YUCP.Components.Editor.PackageManager
             nameVersionColumn.style.minWidth = 0; // Allow shrinking for ellipsis
             nameVersionColumn.style.overflow = Overflow.Hidden;
 
+            // Package Name row with verification icon
+            var nameRow = new VisualElement();
+            nameRow.style.flexDirection = FlexDirection.Row;
+            nameRow.style.alignItems = Align.Center;
+            nameRow.style.flexShrink = 1;
+            nameRow.style.minWidth = 0;
+            
             // Package Name - large, prominent (Label, not TextField) with ellipsis
             string packageName = string.IsNullOrEmpty(_currentMetadata?.packageName) ? "Untitled Package" : _currentMetadata.packageName;
             var nameLabel = new Label(packageName);
@@ -435,7 +473,25 @@ namespace YUCP.Components.Editor.PackageManager
             nameLabel.style.fontSize = 20;
             nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             nameLabel.tooltip = packageName; // Show full text on hover
-            nameVersionColumn.Add(nameLabel);
+            nameLabel.style.flexShrink = 1;
+            nameLabel.style.minWidth = 0;
+            nameRow.Add(nameLabel);
+            
+            // Verification icon (beside package name)
+            var verificationIcon = CreateVerificationIcon();
+            if (verificationIcon != null)
+            {
+                verificationIcon.style.flexShrink = 0; // Don't shrink the icon
+                nameRow.Add(verificationIcon);
+            }
+            
+            // Spacer to push icon next to name (allows row to expand for ellipsis while keeping icon close)
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1;
+            spacer.style.flexShrink = 0;
+            nameRow.Add(spacer);
+            
+            nameVersionColumn.Add(nameRow);
 
             // Author (below package name, above version) with ellipsis
             if (!string.IsNullOrEmpty(_currentMetadata?.author))
@@ -514,6 +570,10 @@ namespace YUCP.Components.Editor.PackageManager
                 section.Add(descValueLabel);
             }
 
+            // Verification Status
+            _verificationStatusElement = CreateVerificationStatusElement();
+            section.Add(_verificationStatusElement);
+
             // Product Links (icon only, tooltip on hover)
             if (_currentMetadata?.productLinks != null && _currentMetadata.productLinks.Count > 0)
             {
@@ -578,6 +638,277 @@ namespace YUCP.Components.Editor.PackageManager
             return section;
         }
 
+        private void VerifyPackage(string packagePath)
+        {
+            if (string.IsNullOrEmpty(packagePath) || !File.Exists(packagePath))
+            {
+                _verificationResult = null;
+                _isPackageSigned = false;
+                return;
+            }
+
+            try
+            {
+                Debug.Log($"[YUCP PackageManager] Starting verification for: {packagePath}");
+
+                // Reload root public key in case it was updated
+                TrustedAuthority.ReloadRootPublicKey();
+
+                // Extract manifest and signature
+                // Pass ImportPackageItem array if available (during import) - this avoids needing SharpZipLib
+                // Use _allImportItems to ensure we check all package contents, not just current step
+                var extractionResult = PackageVerifierCore.ManifestExtractor.ExtractSigningData(packagePath, _allImportItems);
+
+                // Check if package has signing data (manifest or signature found)
+                _isPackageSigned = extractionResult.manifest != null && extractionResult.signature != null;
+
+                if (!extractionResult.success || !_isPackageSigned)
+                {
+                    // Package not signed - this is OK, just not verified
+                    // This is expected if the package was exported without signing or signing failed during export
+                    _verificationResult = new PackageVerifierCore.VerificationResult
+                    {
+                        valid = false,
+                        errors = { extractionResult.error ?? "Package is not signed. This package was exported without a signature." }
+                    };
+                    Debug.Log($"[YUCP PackageManager] Package not signed (this is normal for unsigned packages): {extractionResult.error ?? "Package is not signed"}");
+                    return;
+                }
+
+                Debug.Log("[YUCP PackageManager] Package has signing data, verifying...");
+
+                // Verify package
+                _verificationResult = PackageVerifierCore.PackageVerifier.VerifyPackage(
+                    packagePath,
+                    extractionResult.manifest,
+                    extractionResult.signature
+                );
+
+                if (_verificationResult.valid)
+                {
+                    Debug.Log($"[YUCP PackageManager] Package verified successfully. Publisher: {_verificationResult.publisherId}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[YUCP PackageManager] Package verification failed: {string.Join(", ", _verificationResult.errors)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _isPackageSigned = false;
+                _verificationResult = new PackageVerifierCore.VerificationResult
+                {
+                    valid = false,
+                    errors = { $"Verification error: {ex.Message}" }
+                };
+                Debug.LogError($"[YUCP PackageManager] Verification exception: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private bool IsPackagePlus()
+        {
+            // Check if package is a Package+ (has YUCP manifest)
+            // Package+ packages have YUCP_PackageInfo.json in their import items
+            if (_allImportItems == null || _allImportItems.Length == 0)
+            {
+                return false;
+            }
+
+            var itemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
+            if (itemType == null) return false;
+
+            var destinationPathField = itemType.GetField("destinationAssetPath");
+            if (destinationPathField == null) return false;
+
+            foreach (var item in _allImportItems)
+            {
+                if (item == null) continue;
+                string destinationPath = destinationPathField.GetValue(item) as string;
+                if (destinationPath != null && destinationPath.Equals("Assets/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private VisualElement CreateVerificationIcon()
+        {
+            // Only show icon if package is a Package+ (has manifest)
+            if (!IsPackagePlus())
+            {
+                return null; // Not a Package+, no verification icon
+            }
+
+            // Only show icon if package is signed
+            if (!_isPackageSigned || _verificationResult == null)
+            {
+                return null; // Not signed, no icon
+            }
+
+            var iconContainer = new VisualElement();
+            iconContainer.AddToClassList("yucp-verification-icon");
+            iconContainer.style.marginLeft = 8; // Add spacing between name and icon
+
+            if (_verificationResult.valid)
+            {
+                // Package is signed and verified - show Verified.png
+                var verifiedIcon = new Image();
+                string verifiedIconPath = "Packages/com.yucp.components/Editor/PackageManager/Resources/Verified.png";
+                Texture2D verifiedTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(verifiedIconPath);
+                
+                // Build comprehensive tooltip
+                string tooltipText = "✓ Package Verified\n\n";
+                tooltipText += "This package has been cryptographically signed and verified by YUCP.\n\n";
+                
+                if (!string.IsNullOrEmpty(_verificationResult.publisherId))
+                {
+                    tooltipText += $"Publisher: {_verificationResult.publisherId}\n";
+                }
+                
+                tooltipText += "\nBenefits:\n";
+                tooltipText += "• Authentic: Confirmed to be from the verified publisher\n";
+                tooltipText += "• Integrity: Package contents have not been tampered with\n";
+                tooltipText += "• Security: Protected against malicious modifications\n";
+                tooltipText += "• Trust: Signed with Ed25519 cryptographic signatures\n\n";
+                tooltipText += "The package's signature, certificate chain, and content hash have all been validated.";
+                
+                if (verifiedTexture != null)
+                {
+                    verifiedIcon.image = verifiedTexture;
+                    verifiedIcon.style.width = 20;
+                    verifiedIcon.style.height = 20;
+                    verifiedIcon.tooltip = tooltipText;
+                    iconContainer.Add(verifiedIcon);
+                }
+                else
+                {
+                    // Fallback to checkmark if icon not found
+                    var checkLabel = new Label("✓");
+                    checkLabel.style.fontSize = 16;
+                    checkLabel.style.color = new Color(0.2f, 0.8f, 0.4f);
+                    checkLabel.tooltip = tooltipText;
+                    iconContainer.Add(checkLabel);
+                }
+            }
+            else
+            {
+                // Package is signed but doesn't match - show warning
+                var warningIcon = new Label("⚠");
+                warningIcon.style.fontSize = 16;
+                warningIcon.style.color = new Color(0.8f, 0.6f, 0.2f);
+                
+                // Build comprehensive tooltip with error details
+                string tooltipText = "⚠ Verification Failed\n\n";
+                tooltipText += "This package is signed, but verification failed. The package may have been tampered with or the signature is invalid.\n\n";
+                
+                if (_verificationResult.errors != null && _verificationResult.errors.Count > 0)
+                {
+                    tooltipText += "Error Details:\n";
+                    foreach (var error in _verificationResult.errors)
+                    {
+                        tooltipText += $"• {error}\n";
+                    }
+                    tooltipText += "\n";
+                }
+                
+                tooltipText += "Warning:\n";
+                tooltipText += "• Do not import if you did not expect this error\n";
+                tooltipText += "• The package may have been modified or corrupted\n";
+                tooltipText += "• Contact the publisher if you believe this is an error";
+                
+                warningIcon.tooltip = tooltipText;
+                
+                iconContainer.Add(warningIcon);
+            }
+
+            return iconContainer;
+        }
+
+        private VisualElement CreateVerificationStatusElement()
+        {
+            var container = new VisualElement();
+            container.style.marginTop = 12;
+            container.style.marginBottom = 8;
+
+            // Only show verification status for Package+ packages
+            if (!IsPackagePlus())
+            {
+                return container; // Not a Package+, no verification status
+            }
+
+            if (_verificationResult == null)
+            {
+                // No verification attempted yet
+                return container;
+            }
+
+            // Only show status if verification FAILED (don't show success message)
+            if (_verificationResult.valid)
+            {
+                // Verified successfully - don't show any message, just the icon
+                return container;
+            }
+            else
+            {
+                // Verification failed or not signed
+                var warningContainer = new VisualElement();
+                warningContainer.style.flexDirection = FlexDirection.Column;
+                warningContainer.style.paddingLeft = 12;
+                warningContainer.style.paddingRight = 12;
+                warningContainer.style.paddingTop = 8;
+                warningContainer.style.paddingBottom = 8;
+                warningContainer.style.backgroundColor = new Color(0.6f, 0.5f, 0.2f, 0.2f);
+                warningContainer.style.borderLeftWidth = 3;
+                warningContainer.style.borderLeftColor = new Color(0.8f, 0.6f, 0.2f);
+                warningContainer.style.borderTopLeftRadius = 4;
+                warningContainer.style.borderTopRightRadius = 4;
+                warningContainer.style.borderBottomLeftRadius = 4;
+                warningContainer.style.borderBottomRightRadius = 4;
+
+                var warningRow = new VisualElement();
+                warningRow.style.flexDirection = FlexDirection.Row;
+                warningRow.style.alignItems = Align.Center;
+
+                var warningIcon = new Label("⚠");
+                warningIcon.style.fontSize = 14;
+                warningIcon.style.color = new Color(0.8f, 0.6f, 0.2f);
+                warningIcon.style.marginRight = 8;
+                warningRow.Add(warningIcon);
+
+                var statusText = new Label("Package Not Verified");
+                statusText.style.fontSize = 12;
+                statusText.style.unityFontStyleAndWeight = FontStyle.Bold;
+                statusText.style.color = new Color(1f, 0.9f, 0.7f);
+                warningRow.Add(statusText);
+
+                warningContainer.Add(warningRow);
+
+                // Show error details if available
+                if (_verificationResult.errors != null && _verificationResult.errors.Count > 0)
+                {
+                    var errorText = new Label(_verificationResult.errors[0]);
+                    errorText.style.fontSize = 11;
+                    errorText.style.color = new Color(0.9f, 0.8f, 0.6f);
+                    errorText.style.marginTop = 4;
+                    errorText.style.whiteSpace = WhiteSpace.Normal;
+                    warningContainer.Add(errorText);
+                }
+
+                var noteText = new Label("You can still import this package, but it may be unsafe.");
+                noteText.style.fontSize = 10;
+                noteText.style.color = new Color(0.8f, 0.7f, 0.5f);
+                noteText.style.marginTop = 4;
+                noteText.style.whiteSpace = WhiteSpace.Normal;
+                warningContainer.Add(noteText);
+
+                container.Add(warningContainer);
+            }
+
+            return container;
+        }
+
         private Button CreateDetailsToggleButton()
         {
             var button = new Button(OnDetailsToggleClicked);
@@ -594,9 +925,19 @@ namespace YUCP.Components.Editor.PackageManager
             
             // Text label
             var buttonText = new Label("Details");
+            buttonText.name = "details-text";
             buttonText.style.marginRight = 4;
             buttonText.style.fontSize = 11;
             buttonContent.Add(buttonText);
+            
+            // Dependencies indicator (if any)
+            var depsIndicator = new Label();
+            depsIndicator.name = "dependencies-indicator";
+            depsIndicator.style.display = DisplayStyle.None;
+            depsIndicator.style.marginRight = 4;
+            depsIndicator.style.fontSize = 10;
+            depsIndicator.style.color = new Color(0.6f, 0.8f, 1f);
+            buttonContent.Add(depsIndicator);
             
             // Arrow icon (down arrow when collapsed, up when expanded)
             var arrowIcon = new Label("▼");
@@ -706,10 +1047,16 @@ namespace YUCP.Components.Editor.PackageManager
             section.style.paddingTop = 10;
             section.style.paddingBottom = 10;
 
+            // Dependencies section container (will be populated/refreshed when metadata is available)
+            var dependenciesContainer = new VisualElement();
+            dependenciesContainer.name = "dependencies-container";
+            section.Add(dependenciesContainer);
+
             var titleLabel = new Label("Package Contents");
             titleLabel.style.fontSize = 14;
             titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             titleLabel.style.marginBottom = 10;
+            titleLabel.style.marginTop = 0;
             section.Add(titleLabel);
 
             // Tree view scroll container
@@ -726,6 +1073,166 @@ namespace YUCP.Components.Editor.PackageManager
             ShowSampleTree();
 
             return section;
+        }
+
+        private void RefreshDependenciesSection()
+        {
+            if (_contentsSection == null) return;
+
+            var dependenciesContainer = _contentsSection.Q<VisualElement>("dependencies-container");
+            if (dependenciesContainer == null) return;
+
+            // Clear existing dependencies
+            dependenciesContainer.Clear();
+
+            // Add new dependencies section if metadata has dependencies
+            var dependenciesSection = CreateDependenciesSection();
+            if (dependenciesSection != null)
+            {
+                dependenciesContainer.Add(dependenciesSection);
+                
+                // Update Package Contents title margin
+                var titleLabel = _contentsSection.Q<Label>();
+                if (titleLabel != null)
+                {
+                    titleLabel.style.marginTop = 20;
+                }
+            }
+            else
+            {
+                // No dependencies, remove margin from Package Contents title
+                var titleLabel = _contentsSection.Q<Label>();
+                if (titleLabel != null)
+                {
+                    titleLabel.style.marginTop = 0;
+                }
+            }
+
+            // Update details button indicator
+            UpdateDetailsButtonDependenciesIndicator();
+        }
+
+        private void UpdateDetailsButtonDependenciesIndicator()
+        {
+            if (_detailsToggleButton == null) return;
+
+            var indicator = _detailsToggleButton.Q<Label>("dependencies-indicator");
+            if (indicator == null) return;
+
+            if (_currentMetadata != null && _currentMetadata.dependencies != null && _currentMetadata.dependencies.Count > 0)
+            {
+                indicator.text = $"({_currentMetadata.dependencies.Count} required package{(_currentMetadata.dependencies.Count > 1 ? "s" : "")})";
+                indicator.style.display = DisplayStyle.Flex;
+            }
+            else
+            {
+                indicator.style.display = DisplayStyle.None;
+            }
+        }
+
+        private VisualElement CreateDependenciesSection()
+        {
+            if (_currentMetadata == null || _currentMetadata.dependencies == null || _currentMetadata.dependencies.Count == 0)
+            {
+                return null;
+            }
+
+            var container = new VisualElement();
+            container.style.marginBottom = 20;
+
+            // Title
+            var titleLabel = new Label("Required Packages");
+            titleLabel.style.fontSize = 14;
+            titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            titleLabel.style.marginBottom = 12;
+            container.Add(titleLabel);
+
+            // Info text
+            var infoText = new Label("The following packages will be automatically installed:");
+            infoText.style.fontSize = 11;
+            infoText.style.color = new Color(0.7f, 0.7f, 0.7f);
+            infoText.style.marginBottom = 10;
+            infoText.style.whiteSpace = WhiteSpace.Normal;
+            container.Add(infoText);
+
+            // Dependencies list
+            var dependenciesList = new VisualElement();
+            dependenciesList.style.flexDirection = FlexDirection.Column;
+
+            foreach (var dependency in _currentMetadata.dependencies)
+            {
+                var depItem = new VisualElement();
+                depItem.style.flexDirection = FlexDirection.Row;
+                depItem.style.alignItems = Align.Center;
+                depItem.style.paddingLeft = 12;
+                depItem.style.paddingRight = 12;
+                depItem.style.paddingTop = 8;
+                depItem.style.paddingBottom = 8;
+                depItem.style.marginBottom = 6;
+                depItem.style.backgroundColor = new Color(0.15f, 0.15f, 0.15f, 0.5f);
+                depItem.style.borderTopLeftRadius = 4;
+                depItem.style.borderTopRightRadius = 4;
+                depItem.style.borderBottomLeftRadius = 4;
+                depItem.style.borderBottomRightRadius = 4;
+
+                // Package icon - use Unity's built-in Package Manager icon
+                // Try both light and dark theme variants
+                Texture2D packageIcon = null;
+                string[] iconNames = { 
+                    "Package Manager",           // Light theme
+                    "d_Package Manager",         // Dark theme
+                    "Installed",                 // Alternative: installed package icon
+                    "d_Installed",               // Dark theme installed icon
+                    "DefaultAsset Icon"          // Fallback - always available
+                };
+                
+                foreach (string iconName in iconNames)
+                {
+                    var iconContent = EditorGUIUtility.IconContent(iconName);
+                    if (iconContent != null && iconContent.image != null)
+                    {
+                        packageIcon = iconContent.image as Texture2D;
+                        if (packageIcon != null) break;
+                    }
+                }
+                
+                if (packageIcon != null)
+                {
+                    var iconImage = new Image { image = packageIcon };
+                    iconImage.style.width = 16;
+                    iconImage.style.height = 16;
+                    iconImage.style.marginRight = 10;
+                    depItem.Add(iconImage);
+                }
+                else
+                {
+                    // Fallback if no icon found - use a simple bullet point
+                    var iconLabel = new Label("•");
+                    iconLabel.style.fontSize = 12;
+                    iconLabel.style.marginRight = 10;
+                    iconLabel.style.color = new Color(0.6f, 0.8f, 1f);
+                    depItem.Add(iconLabel);
+                }
+
+                // Package name
+                var nameLabel = new Label(dependency.Key);
+                nameLabel.style.fontSize = 12;
+                nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                nameLabel.style.flexGrow = 1;
+                depItem.Add(nameLabel);
+
+                // Version
+                var versionLabel = new Label($"v{dependency.Value}");
+                versionLabel.style.fontSize = 11;
+                versionLabel.style.color = new Color(0.6f, 0.8f, 1f);
+                depItem.Add(versionLabel);
+
+                dependenciesList.Add(depItem);
+            }
+
+            container.Add(dependenciesList);
+
+            return container;
         }
 
         private void BuildTreeFromImportItems()
@@ -879,27 +1386,50 @@ namespace YUCP.Components.Editor.PackageManager
             Debug.Log($"[YUCP PackageManager] Package icon path: {packageIconPath}");
             Debug.Log($"[YUCP PackageManager] Is project settings step: {isProjectSettingsStep}");
             
+            // Lock assembly reload to prevent domain reload during import (like Unity's original window)
+            if (!_isImportMode)
+            {
+                EditorApplication.LockReloadAssemblies();
+                _isImportMode = true;
+                Debug.Log("[YUCP PackageManager] Locked assembly reload to prevent domain reload during import");
+            }
+            
+            // Store import items first (needed for verification)
             _currentPackagePath = packagePath;
             _currentImportItems = importItems;
+            _allImportItems = allImportItems ?? importItems; // Store all items for verification
             _currentPackageIconPath = packageIconPath;
             _packageImportWizardInstance = wizardInstance;
             _isProjectSettingsStep = isProjectSettingsStep;
 
             // Set window title to match Unity's default
             titleContent = new GUIContent("Import Unity Package");
+            
+            // Set minimum window size
+            minSize = new Vector2(500, 600);
+
+            // Verify package signature FIRST (synchronously) before setting up UI
+            // This ensures verification completes before UI elements are displayed
+            Debug.Log("[YUCP PackageManager] Verifying package signature (before UI setup)...");
+            VerifyPackage(packagePath);
+            Debug.Log("[YUCP PackageManager] Verification complete, proceeding with UI setup...");
 
             // Update button visibility and text based on wizard state
             UpdateButtonStates();
 
             // Extract metadata from ALL import items (not just current step) to find icon/banner
+            // Also pass packageIconPath to extract icon even if no YUCP metadata exists
             Debug.Log("[YUCP PackageManager] Extracting metadata...");
-            var metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(allImportItems ?? importItems, packagePath);
+            var metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(allImportItems ?? importItems, packagePath, packageIconPath);
             Debug.Log($"[YUCP PackageManager] Metadata extracted: {metadata?.packageName ?? "null"}");
             SetMetadata(metadata);
 
             // Build tree from current step's import items
             Debug.Log("[YUCP PackageManager] Building tree view...");
             SetImportItems(importItems);
+
+            // Refresh UI now that everything is set up (including verification result)
+            RefreshUI();
 
             // Make window modal and prevent closing
             MakeWindowModal();
@@ -914,10 +1444,11 @@ namespace YUCP.Components.Editor.PackageManager
             // Prevent window from being closed by user
             wantsMouseMove = true;
             
-            // Show as utility window (modal) - this prevents clicking off and makes it modal
-            ShowUtility();
+            // Show as modal utility window - this prevents clicking off and makes it truly modal
+            // ShowModalUtility() blocks all interaction with Unity Editor until window is closed
+            ShowModalUtility();
             
-            // Try to hide the close button using reflection
+            // Try to hide the title bar and close button using reflection
             try
             {
                 // Get the HostView (parent container)
@@ -943,19 +1474,33 @@ namespace YUCP.Components.Editor.PackageManager
                                     {
                                         var containerWindowType = containerWindow.GetType();
                                         
-                                        // Try to modify m_ButtonCount to hide close button
-                                        // On Windows, m_ButtonCount = 2 means both minimize and close buttons
-                                        // Setting it to 1 would hide the close button (only show minimize)
+                                        // Try to hide the title bar by setting m_ButtonCount to 0
+                                        // This removes all window buttons (minimize, maximize, close)
                                         var buttonCountField = containerWindowType.GetField("m_ButtonCount", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         if (buttonCountField != null)
                                         {
-                                            // Set button count to 1 (only minimize button, no close button)
-                                            buttonCountField.SetValue(containerWindow, 1);
-                                            Debug.Log("[YUCP PackageManager] Close button hidden by setting m_ButtonCount to 1");
+                                            // Set button count to 0 to hide all buttons (and potentially the title bar)
+                                            buttonCountField.SetValue(containerWindow, 0);
+                                            Debug.Log("[YUCP PackageManager] Window buttons hidden by setting m_ButtonCount to 0");
                                         }
-                                        else
+                                        
+                                        // Try to hide the title by setting it to empty
+                                        var titleField = containerWindowType.GetField("m_Title", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        if (titleField != null)
                                         {
-                                            Debug.LogWarning("[YUCP PackageManager] Could not find m_ButtonCount field in ContainerWindow");
+                                            titleField.SetValue(containerWindow, "");
+                                            Debug.Log("[YUCP PackageManager] Window title cleared");
+                                        }
+                                        
+                                        // Try to set window to have no title bar using m_WindowFlags
+                                        // This is platform-specific and may not work on all platforms
+                                        var windowFlagsField = containerWindowType.GetField("m_WindowFlags", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        if (windowFlagsField != null)
+                                        {
+                                            // Try to modify window flags to remove title bar
+                                            // Note: This is experimental and may not work
+                                            var currentFlags = windowFlagsField.GetValue(containerWindow);
+                                            Debug.Log($"[YUCP PackageManager] Current window flags: {currentFlags}");
                                         }
                                     }
                                 }
@@ -966,8 +1511,8 @@ namespace YUCP.Components.Editor.PackageManager
             }
             catch (Exception ex)
             {
-                // Reflection failed - that's okay, ShowUtility() is enough for modal behavior
-                Debug.LogWarning($"[YUCP PackageManager] Could not hide close button via reflection: {ex.Message}");
+                // Reflection failed - that's okay, ShowModalUtility() is enough for modal behavior
+                Debug.LogWarning($"[YUCP PackageManager] Could not hide title bar via reflection: {ex.Message}");
             }
             
             Debug.Log("[YUCP PackageManager] Window set to modal mode");
@@ -1103,6 +1648,9 @@ namespace YUCP.Components.Editor.PackageManager
                 _metadataSection = newSection;
             }
 
+            // Refresh dependencies section in details view
+            RefreshDependenciesSection();
+
             if (_bannerImageContainer != null)
             {
                 Texture2D displayBanner = _currentMetadata?.banner;
@@ -1114,6 +1662,18 @@ namespace YUCP.Components.Editor.PackageManager
                 {
                     _bannerImageContainer.style.backgroundImage = new StyleBackground(displayBanner);
                 }
+            }
+
+            // Refresh verification status if it exists
+            if (_verificationStatusElement != null && _verificationStatusElement.parent != null)
+            {
+                var parent = _verificationStatusElement.parent;
+                int index = parent.IndexOf(_verificationStatusElement);
+                _verificationStatusElement.RemoveFromHierarchy();
+                
+                var newStatus = CreateVerificationStatusElement();
+                parent.Insert(index, newStatus);
+                _verificationStatusElement = newStatus;
             }
         }
 
@@ -1204,6 +1764,15 @@ namespace YUCP.Components.Editor.PackageManager
                 }
 
                 Debug.Log("[YUCP PackageManager] Import completed, closing window");
+                
+                // Unlock assembly reload before closing (import is complete)
+                if (_isImportMode)
+                {
+                    EditorApplication.UnlockReloadAssemblies();
+                    _isImportMode = false;
+                    Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import complete)");
+                }
+                
                 try
                 {
                     Close();
@@ -1264,6 +1833,15 @@ namespace YUCP.Components.Editor.PackageManager
                 }
 
                 Debug.Log("[YUCP PackageManager] Closing window after cancel");
+                
+                // Unlock assembly reload before closing (import cancelled)
+                if (_isImportMode)
+                {
+                    EditorApplication.UnlockReloadAssemblies();
+                    _isImportMode = false;
+                    Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import cancelled)");
+                }
+                
                 try
                 {
                     Close();
@@ -1354,8 +1932,7 @@ namespace YUCP.Components.Editor.PackageManager
                         string childPath = destinationPathField.GetValue(childItem) as string;
                         if (string.IsNullOrEmpty(childPath)) continue;
 
-                        if (childPath.StartsWith(folderPath + "/", StringComparison.OrdinalIgnoreCase) ||
-                            childPath.Equals(folderPath, StringComparison.OrdinalIgnoreCase))
+                        if (childPath.StartsWith(folderPath + "/", StringComparison.OrdinalIgnoreCase))
                         {
                             int status = (int)(enabledStatusField.GetValue(childItem) ?? -1);
                             if (status > 0) hasSelected = true;

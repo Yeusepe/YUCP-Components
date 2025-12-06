@@ -111,30 +111,33 @@ namespace YUCP.Components.Editor.PackageManager
         {
             _customWindowShown = false;
             
-            int attempts = 0;
-            EditorApplication.update += CheckAndIntercept;
-
-            void CheckAndIntercept()
+            // Only use early polling fallback if Harmony patch is NOT available
+            if (!_harmonyPatched)
             {
-                attempts++;
-                
-                object wizardInstance = GetWizardInstance();
-                if (wizardInstance == null)
+                Debug.Log("[YUCP PackageManager] Harmony not available, using early polling fallback (CheckAndIntercept)");
+                int attempts = 0;
+                EditorApplication.update += CheckAndIntercept;
+
+                void CheckAndIntercept()
                 {
-                    if (attempts > 20)
+                    attempts++;
+                    
+                    object wizardInstance = GetWizardInstance();
+                    if (wizardInstance == null)
                     {
-                        EditorApplication.update -= CheckAndIntercept;
+                        if (attempts > 20)
+                        {
+                            EditorApplication.update -= CheckAndIntercept;
+                        }
+                        return;
                     }
-                    return;
-                }
-                
-                string packagePath = GetFieldValue<string>(wizardInstance, _mPackagePathField);
-                System.Array allItems = GetFieldValue<System.Array>(wizardInstance, _mInitialImportItemsField);
-                
-                if (!string.IsNullOrEmpty(packagePath) && allItems != null && allItems.Length > 0)
-                {
-                    if (HasYUCPMetadata(allItems))
+                    
+                    string packagePath = GetFieldValue<string>(wizardInstance, _mPackagePathField);
+                    System.Array allItems = GetFieldValue<System.Array>(wizardInstance, _mInitialImportItemsField);
+                    
+                    if (!string.IsNullOrEmpty(packagePath) && allItems != null && allItems.Length > 0)
                     {
+                        // Always intercept - no metadata check needed
                         object window = GetFieldValue<object>(wizardInstance, _mImportWindowField);
                         if (window != null)
                         {
@@ -161,17 +164,18 @@ namespace YUCP.Components.Editor.PackageManager
                             }
                         }
                     }
-                    else
+                    
+                    if (attempts > 20)
                     {
                         EditorApplication.update -= CheckAndIntercept;
-                        return;
                     }
                 }
-                
-                if (attempts > 20)
-                {
-                    EditorApplication.update -= CheckAndIntercept;
-                }
+            }
+            else
+            {
+                // Harmony is patched, StartImportPrefix will handle interception
+                // No need to register CheckAndIntercept callback
+                Debug.Log("[YUCP PackageManager] Harmony patch active, StartImportPrefix will handle interception");
             }
         }
         private static bool TryInterceptImportEarly()
@@ -184,7 +188,7 @@ namespace YUCP.Components.Editor.PackageManager
                 System.Array allItems = GetFieldValue<System.Array>(wizardInstance, _mInitialImportItemsField);
                 if (allItems == null || allItems.Length == 0) return false;
 
-                if (!HasYUCPMetadata(allItems)) return true;
+                // Always intercept - no metadata check needed
 
                 object existingWindow = GetFieldValue<object>(wizardInstance, _mImportWindowField);
                 if (existingWindow != null)
@@ -326,7 +330,8 @@ namespace YUCP.Components.Editor.PackageManager
                     }
                 }
                 
-                var window = EditorWindow.GetWindow<PackageManagerWindow>(true, "Import Unity Package");
+                // Create window - InitializeForImport will make it modal via MakeWindowModal()
+                var window = EditorWindow.GetWindow<PackageManagerWindow>(false, "Import Unity Package");
                 window.InitializeForImport(packagePath, items, allItems, iconPath, wizard, isProjectStep);
                 window.Focus();
             }
@@ -454,6 +459,7 @@ namespace YUCP.Components.Editor.PackageManager
                         null
                     });
                     _harmonyPatched = true;
+                    Debug.Log("[YUCP PackageManager] Harmony patch applied successfully. Using StartImportPrefix for interception.");
                 }
                 catch (Exception patchEx)
                 {
@@ -476,7 +482,8 @@ namespace YUCP.Components.Editor.PackageManager
                     return true;
                 }
                 
-                if (itemsArray == null || !HasYUCPMetadata(itemsArray))
+                // Always intercept - no metadata check needed
+                if (itemsArray == null)
                 {
                     return true;
                 }
@@ -489,9 +496,16 @@ namespace YUCP.Components.Editor.PackageManager
                 {
                     try
                     {
+                        if (_customWindowShown)
+                        {
+                            Debug.LogWarning("[YUCP PackageManager] Custom window already shown, skipping duplicate call");
+                            return;
+                        }
+                        
                         bool isProjectStep = GetFieldValue<bool>(__instance, _mIsProjectSettingStepField);
                         System.Array stepItems = itemsArray;
                         
+                        _customWindowShown = true;
                         ShowCustomImportWindow(__instance, stepItems, itemsArray, packagePath, packageIconPath);
                     }
                     catch (Exception ex)
