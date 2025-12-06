@@ -41,11 +41,8 @@ namespace YUCP.Components.Editor.PackageManager
         /// </summary>
         public static PackageMetadata ExtractMetadataFromImportItems(System.Array importItems, string packagePath, string packageIconPath = null)
         {
-            Debug.Log($"[YUCP PackageManager] Extracting metadata from {importItems?.Length ?? 0} import items");
-            
             if (importItems == null || importItems.Length == 0)
             {
-                Debug.Log("[YUCP PackageManager] No import items, creating fallback metadata");
                 return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
 
@@ -53,18 +50,12 @@ namespace YUCP.Components.Editor.PackageManager
             object metadataItem = FindMetadataItem(importItems);
             if (metadataItem == null)
             {
-                Debug.Log("[YUCP PackageManager] Metadata item not found, creating fallback metadata with icon extraction");
                 return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
-
-            Debug.Log("[YUCP PackageManager] Metadata item found");
 
             // Read metadata file from extracted package location
             string sourceFolder = GetFieldValue<string>(metadataItem, _sourceFolderField);
             string exportedPath = GetFieldValue<string>(metadataItem, _exportedAssetPathField);
-
-            Debug.Log($"[YUCP PackageManager] Source folder: {sourceFolder}");
-            Debug.Log($"[YUCP PackageManager] Exported path: {exportedPath}");
 
             if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
             {
@@ -82,7 +73,6 @@ namespace YUCP.Components.Editor.PackageManager
                 return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
 
-            Debug.Log($"[YUCP PackageManager] Metadata JSON read successfully ({json.Length} characters)");
 
             try
             {
@@ -107,29 +97,18 @@ namespace YUCP.Components.Editor.PackageManager
                 // Convert product links
                 if (metadataJson.productLinks != null)
                 {
-                    Debug.Log($"[YUCP PackageManager] Found {metadataJson.productLinks.Count} product links in metadata");
                     foreach (var link in metadataJson.productLinks)
                     {
-                        Debug.Log($"[YUCP PackageManager] Processing product link: label='{link.label}', url='{link.url}', icon='{link.icon ?? "null"}'");
                         var productLink = new ProductLink(link.url ?? "", link.label ?? "");
                         
                         // Resolve custom icon if path is provided
                         if (!string.IsNullOrEmpty(link.icon))
                         {
-                            Debug.Log($"[YUCP PackageManager] Resolving product link icon from path: {link.icon}");
                             productLink.customIcon = ResolveTextureFromPath(link.icon, importItems);
-                            if (productLink.customIcon != null)
-                            {
-                                Debug.Log($"[YUCP PackageManager] Product link icon loaded successfully ({productLink.customIcon.width}x{productLink.customIcon.height})");
-                            }
-                            else
+                            if (productLink.customIcon == null)
                             {
                                 Debug.LogWarning($"[YUCP PackageManager] Failed to load product link icon from path: {link.icon}");
                             }
-                        }
-                        else
-                        {
-                            Debug.Log($"[YUCP PackageManager] Product link has no icon path (icon field is null or empty)");
                         }
                         
                         metadata.productLinks.Add(productLink);
@@ -137,50 +116,30 @@ namespace YUCP.Components.Editor.PackageManager
                 }
                 else
                 {
-                    Debug.Log("[YUCP PackageManager] No product links found in metadata");
                 }
 
                 // Resolve icon and banner textures from paths
                 if (!string.IsNullOrEmpty(metadataJson.icon))
                 {
-                    Debug.Log($"[YUCP PackageManager] Resolving icon from path: {metadataJson.icon}");
                     metadata.icon = ResolveTextureFromPath(metadataJson.icon, importItems);
-                    if (metadata.icon != null)
-                    {
-                        Debug.Log($"[YUCP PackageManager] Icon loaded successfully ({metadata.icon.width}x{metadata.icon.height})");
-                    }
-                    else
+                    if (metadata.icon == null)
                     {
                         Debug.LogWarning($"[YUCP PackageManager] Failed to load icon from path: {metadataJson.icon}");
                     }
                 }
-                else
-                {
-                    Debug.Log("[YUCP PackageManager] No icon path in metadata");
-                }
 
                 if (!string.IsNullOrEmpty(metadataJson.banner))
                 {
-                    Debug.Log($"[YUCP PackageManager] Resolving banner from path: {metadataJson.banner}");
                     metadata.banner = ResolveTextureFromPath(metadataJson.banner, importItems);
-                    if (metadata.banner != null)
-                    {
-                        Debug.Log($"[YUCP PackageManager] Banner loaded successfully ({metadata.banner.width}x{metadata.banner.height})");
-                    }
-                    else
+                    if (metadata.banner == null)
                     {
                         Debug.LogWarning($"[YUCP PackageManager] Failed to load banner from path: {metadataJson.banner}");
                     }
-                }
-                else
-                {
-                    Debug.Log("[YUCP PackageManager] No banner path in metadata");
                 }
 
                 // Extract dependencies from package.json if available
                 ExtractDependenciesFromPackageJson(metadata, importItems);
 
-                Debug.Log($"[YUCP PackageManager] Metadata extraction complete: {metadata.packageName} v{metadata.version} by {metadata.author}");
                 return metadata;
             }
             catch (Exception ex)
@@ -240,26 +199,19 @@ namespace YUCP.Components.Editor.PackageManager
                     return null;
                 }
 
-                // In Unity's package extraction, files are stored in GUID folders
-                // The actual file content is in a file named "asset" inside the sourceFolder
                 string assetFilePath = Path.Combine(sourceFolder, "asset");
-                Debug.Log($"[YUCP PackageManager] Attempting to read metadata from: {assetFilePath}");
                 
                 if (File.Exists(assetFilePath))
                 {
-                    Debug.Log($"[YUCP PackageManager] Metadata file found at: {assetFilePath}");
                     string content = File.ReadAllText(assetFilePath);
-                    Debug.Log($"[YUCP PackageManager] Successfully read {content.Length} characters from metadata file");
                     return content;
                 }
                 else
                 {
                     Debug.LogWarning($"[YUCP PackageManager] Metadata file does not exist at: {assetFilePath}");
-                    // Try alternative path (in case Unity uses a different structure)
                     string altPath = Path.Combine(sourceFolder, exportedPath);
                     if (File.Exists(altPath))
                     {
-                        Debug.Log($"[YUCP PackageManager] Found metadata at alternative path: {altPath}");
                         return File.ReadAllText(altPath);
                     }
                 }
@@ -288,8 +240,6 @@ namespace YUCP.Components.Editor.PackageManager
 
         private static string ResolveTexturePath(string relativePath, System.Array importItems)
         {
-            Debug.Log($"[YUCP PackageManager] ResolveTexturePath called for: {relativePath}");
-            
             if (string.IsNullOrEmpty(relativePath) || _destinationAssetPathField == null || 
                 _sourceFolderField == null || _exportedAssetPathField == null)
             {
@@ -303,37 +253,25 @@ namespace YUCP.Components.Editor.PackageManager
             {
                 normalizedPath = "Assets/" + normalizedPath;
             }
-            
-            Debug.Log($"[YUCP PackageManager] Normalized path: {normalizedPath}");
 
             // Find matching ImportPackageItem
-            int itemIndex = 0;
             foreach (var item in importItems)
             {
                 if (item == null) continue;
 
                 string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
-                Debug.Log($"[YUCP PackageManager] Item {itemIndex}: destinationPath = {destinationPath}");
                 
                 if (destinationPath != null && destinationPath.Equals(normalizedPath, StringComparison.OrdinalIgnoreCase))
                 {
-                    Debug.Log($"[YUCP PackageManager] Found matching item at index {itemIndex}");
                     string sourceFolder = GetFieldValue<string>(item, _sourceFolderField);
                     string exportedPath = GetFieldValue<string>(item, _exportedAssetPathField);
                     
-                    Debug.Log($"[YUCP PackageManager] sourceFolder: {sourceFolder}");
-                    Debug.Log($"[YUCP PackageManager] exportedPath: {exportedPath}");
-                    
                     if (!string.IsNullOrEmpty(sourceFolder))
                     {
-                        // In Unity's package extraction, the actual file is at sourceFolder/asset
                         string fullPath = Path.Combine(sourceFolder, "asset");
-                        Debug.Log($"[YUCP PackageManager] Resolved full path (using 'asset'): {fullPath}");
                         
-                        // Verify file exists
                         if (File.Exists(fullPath))
                         {
-                            Debug.Log($"[YUCP PackageManager] Texture file exists at: {fullPath}");
                             return fullPath;
                         }
                         else
@@ -343,7 +281,6 @@ namespace YUCP.Components.Editor.PackageManager
                             string altPath = Path.Combine(sourceFolder, exportedPath);
                             if (File.Exists(altPath))
                             {
-                                Debug.Log($"[YUCP PackageManager] Found texture at alternative path: {altPath}");
                                 return altPath;
                             }
                         }
@@ -353,7 +290,6 @@ namespace YUCP.Components.Editor.PackageManager
                         Debug.LogWarning("[YUCP PackageManager] Source folder is empty");
                     }
                 }
-                itemIndex++;
             }
 
             Debug.LogWarning($"[YUCP PackageManager] No matching item found for path: {normalizedPath}");
@@ -382,8 +318,6 @@ namespace YUCP.Components.Editor.PackageManager
                 // Normalize path separators
                 fullPath = Path.GetFullPath(fullPath);
                 
-                Debug.Log($"[YUCP PackageManager] Loading texture from disk path: {fullPath}");
-                
                 if (!File.Exists(fullPath))
                 {
                     Debug.LogWarning($"[YUCP PackageManager] Texture file does not exist: {fullPath}");
@@ -391,12 +325,10 @@ namespace YUCP.Components.Editor.PackageManager
                 }
 
                 byte[] data = File.ReadAllBytes(fullPath);
-                Debug.Log($"[YUCP PackageManager] Read {data.Length} bytes from texture file");
                 
                 Texture2D texture = new Texture2D(2, 2);
                 if (texture.LoadImage(data))
                 {
-                    Debug.Log($"[YUCP PackageManager] Texture loaded successfully: {texture.width}x{texture.height}, format: {texture.format}");
                     return texture;
                 }
                 else
@@ -510,11 +442,8 @@ namespace YUCP.Components.Editor.PackageManager
                 object packageJsonItem = FindPackageJsonItem(importItems);
                 if (packageJsonItem == null)
                 {
-                    Debug.Log("[YUCP PackageManager] package.json not found in package");
                     return;
                 }
-
-                Debug.Log("[YUCP PackageManager] package.json found, extracting dependencies");
 
                 // Read package.json file from extracted package location
                 string sourceFolder = GetFieldValue<string>(packageJsonItem, _sourceFolderField);
@@ -535,7 +464,6 @@ namespace YUCP.Components.Editor.PackageManager
                     return;
                 }
 
-                Debug.Log($"[YUCP PackageManager] package.json read successfully ({json.Length} characters)");
 
                 // Parse package.json to extract vpmDependencies
                 ParsePackageJsonDependencies(metadata, json);
@@ -564,7 +492,6 @@ namespace YUCP.Components.Editor.PackageManager
                 // Check for exact match (Assets/package.json)
                 if (destinationPath.Equals(PackageJsonAssetPath, StringComparison.OrdinalIgnoreCase))
                 {
-                    Debug.Log($"[YUCP PackageManager] Found package.json at exact path: {destinationPath}");
                     return item;
                 }
 
@@ -572,12 +499,9 @@ namespace YUCP.Components.Editor.PackageManager
                 if (destinationPath.StartsWith("Assets/YUCP_TempInstall_", StringComparison.OrdinalIgnoreCase) &&
                     destinationPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
                 {
-                    Debug.Log($"[YUCP PackageManager] Found package.json at temporary path: {destinationPath}");
                     return item;
                 }
             }
-
-            Debug.Log("[YUCP PackageManager] package.json not found in package (searched for Assets/package.json and Assets/YUCP_TempInstall_*.json)");
             return null;
         }
 
@@ -595,7 +519,6 @@ namespace YUCP.Components.Editor.PackageManager
                 int vpmDepsIndex = json.IndexOf("\"vpmDependencies\"", StringComparison.OrdinalIgnoreCase);
                 if (vpmDepsIndex < 0)
                 {
-                    Debug.Log("[YUCP PackageManager] No vpmDependencies found in package.json");
                     return;
                 }
 
@@ -666,7 +589,6 @@ namespace YUCP.Components.Editor.PackageManager
                     if (!string.IsNullOrEmpty(packageName) && !string.IsNullOrEmpty(version))
                     {
                         metadata.dependencies[packageName] = version;
-                        Debug.Log($"[YUCP PackageManager] Found dependency: {packageName}@{version}");
                     }
 
                     // Move to next entry (skip comma if present)
@@ -675,18 +597,6 @@ namespace YUCP.Components.Editor.PackageManager
                         currentIndex++;
                 }
 
-                if (metadata.dependencies.Count > 0)
-                {
-                    Debug.Log($"[YUCP PackageManager] Extracted {metadata.dependencies.Count} dependencies from package.json:");
-                    foreach (var dep in metadata.dependencies)
-                    {
-                        Debug.Log($"[YUCP PackageManager]   - {dep.Key}@{dep.Value}");
-                    }
-                }
-                else
-                {
-                    Debug.Log("[YUCP PackageManager] No dependencies found in package.json (vpmDependencies was empty or missing)");
-                }
             }
             catch (Exception ex)
             {

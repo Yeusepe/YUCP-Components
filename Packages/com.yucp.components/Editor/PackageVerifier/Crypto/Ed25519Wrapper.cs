@@ -39,15 +39,12 @@ namespace YUCP.Components.Editor.PackageVerifier.Crypto
                     }
                 }
 
-                // If not found in loaded assemblies, try to load from Plugins folder
                 if (!chaosNaClAvailable)
                 {
-                    // Get the root project folder (parent of Assets)
                     string projectRoot = Path.GetDirectoryName(Application.dataPath);
                     
                     string[] possiblePaths = new[]
                     {
-                        // Root Plugins folder (where it actually is!)
                         Path.Combine(projectRoot, "Plugins", "Chaos.NaCl.dll"),
                         // Main project Plugins
                         Path.Combine(Application.dataPath, "Plugins", "Chaos.NaCl.dll"),
@@ -63,7 +60,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Crypto
                             {
                                 Assembly.LoadFrom(dllPath);
                                 chaosNaClAvailable = true;
-                                Debug.Log($"[Ed25519Wrapper] Loaded Chaos.NaCl from {dllPath}");
                                 break;
                             }
                             catch (Exception ex)
@@ -81,7 +77,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Crypto
                     {
                         _useChaosNaCl = true;
                         _initialized = true;
-                        UnityEngine.Debug.Log("[Ed25519Wrapper] Using Chaos.NaCl library");
                         return;
                     }
                 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using YUCP.Components.Editor.PackageVerifier.Settings;
 
 namespace YUCP.Components.Editor.PackageVerifier
 {
@@ -14,6 +15,8 @@ namespace YUCP.Components.Editor.PackageVerifier
         public const string DisplayName = "YUCP Signing Authority";
         public const string ApiBaseUrl = "https://signing.yucp.club"; // configurable
 
+        private const string YUCP_ROOT_CA_PUBLIC_KEY_BASE64 = "u+sK1+JxPQdbB8SC8B8OkhyAmof9txJLX2dith0pIrg=";
+
         private static Dictionary<string, byte[]> _publicKeysByKeyId;
         private static bool _initialized = false;
 
@@ -23,7 +26,7 @@ namespace YUCP.Components.Editor.PackageVerifier
         }
 
         /// <summary>
-        /// Initialize trusted authority with root public key from settings
+        /// Initialize trusted authority with hardcoded root CA key and URL-fetched keys
         /// </summary>
         private static void Initialize()
         {
@@ -31,21 +34,102 @@ namespace YUCP.Components.Editor.PackageVerifier
 
             _publicKeysByKeyId = new Dictionary<string, byte[]>();
             
-            // Try to load root public key from SigningSettings
-            byte[] rootKey = LoadRootPublicKeyFromSettings();
-            
-            if (rootKey != null && rootKey.Length == 32)
+            // 1. Load hardcoded YUCP root CA key
+            byte[] hardcodedRootKey = LoadHardcodedRootKey();
+            if (hardcodedRootKey != null && hardcodedRootKey.Length == 32)
             {
-                _publicKeysByKeyId["yucp-authority-2025"] = rootKey;
-                _publicKeysByKeyId["yucp-root-2025"] = rootKey; // Also support the key ID used in certificates
-                Debug.Log("[TrustedAuthority] Loaded root public key from SigningSettings");
+                // Support multiple key IDs that might reference the YUCP root
+                _publicKeysByKeyId["yucp-authority-2025"] = hardcodedRootKey;
+                _publicKeysByKeyId["yucp-root-2025"] = hardcodedRootKey;
+                _publicKeysByKeyId["yucp-root-ca"] = hardcodedRootKey;
             }
             else
             {
-                Debug.LogWarning("[TrustedAuthority] Root public key not configured in SigningSettings. Package verification will fail.");
+                Debug.LogWarning("[TrustedAuthority] Hardcoded YUCP root CA key not configured. Package verification may fail.");
             }
+            
+            byte[] settingsRootKey = LoadRootPublicKeyFromSettings();
+            if (settingsRootKey != null && settingsRootKey.Length == 32)
+            {
+                _publicKeysByKeyId["yucp-authority-2025"] = settingsRootKey;
+                _publicKeysByKeyId["yucp-root-2025"] = settingsRootKey;
+            }
+            
+            // 3. Load keys from URL-fetched cache
+            LoadCachedAuthorityKeys();
 
             _initialized = true;
+        }
+
+        /// <summary>
+        /// Load hardcoded YUCP root CA public key
+        /// </summary>
+        private static byte[] LoadHardcodedRootKey()
+        {
+            if (string.IsNullOrEmpty(YUCP_ROOT_CA_PUBLIC_KEY_BASE64))
+            {
+                return null;
+            }
+
+            try
+            {
+                byte[] key = Convert.FromBase64String(YUCP_ROOT_CA_PUBLIC_KEY_BASE64);
+                if (key.Length == 32)
+                {
+                    return key;
+                }
+                else
+                {
+                    Debug.LogError($"[TrustedAuthority] Hardcoded root CA key has invalid length: {key.Length} (expected 32)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[TrustedAuthority] Failed to parse hardcoded root CA key: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Load cached authority keys from TrustedAuthoritiesSettings
+        /// </summary>
+        private static void LoadCachedAuthorityKeys()
+        {
+            try
+            {
+                var cachedKeys = TrustedAuthoritiesSettings.GetCachedKeys();
+                int loadedCount = 0;
+
+                foreach (var kvp in cachedKeys)
+                {
+                    if (string.IsNullOrEmpty(kvp.Value?.publicKey))
+                        continue;
+
+                    try
+                    {
+                        byte[] keyBytes = Convert.FromBase64String(kvp.Value.publicKey);
+                        if (keyBytes.Length == 32)
+                        {
+                            _publicKeysByKeyId[kvp.Key] = keyBytes;
+                            loadedCount++;
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[TrustedAuthority] Cached key '{kvp.Key}' has invalid length: {keyBytes.Length} (expected 32)");
+                        }
+                    }
+                    catch (FormatException)
+                    {
+                        Debug.LogWarning($"[TrustedAuthority] Failed to parse cached key '{kvp.Key}': invalid base64");
+                    }
+                }
+
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[TrustedAuthority] Failed to load cached authority keys: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -133,7 +217,14 @@ namespace YUCP.Components.Editor.PackageVerifier
                 return key;
             }
             
-            // Try to reload from settings in case it was updated
+            // Try to reload from cache in case keys were updated
+            LoadCachedAuthorityKeys();
+            
+            if (_publicKeysByKeyId.TryGetValue(keyId, out key))
+            {
+                return key;
+            }
+            
             byte[] rootKey = LoadRootPublicKeyFromSettings();
             if (rootKey != null && rootKey.Length == 32)
             {
@@ -162,12 +253,34 @@ namespace YUCP.Components.Editor.PackageVerifier
         }
 
         /// <summary>
-        /// Reload root public key from settings (call after settings are updated)
+        /// Reload all public keys (hardcoded root, settings, and cached URL keys)
+        /// Call this after settings are updated or keys are fetched from URLs
         /// </summary>
-        public static void ReloadRootPublicKey()
+        public static void ReloadAllKeys()
         {
             _initialized = false;
             Initialize();
+        }
+
+        /// <summary>
+        /// Reload root public key from settings
+        /// </summary>
+        [System.Obsolete("Use ReloadAllKeys() instead")]
+        public static void ReloadRootPublicKey()
+        {
+            ReloadAllKeys();
+        }
+
+        /// <summary>
+        /// Check if a key ID is trusted (exists in our trusted keys)
+        /// </summary>
+        public static bool IsTrustedKey(string keyId)
+        {
+            if (!_initialized)
+            {
+                Initialize();
+            }
+            return _publicKeysByKeyId.ContainsKey(keyId);
         }
     }
 }

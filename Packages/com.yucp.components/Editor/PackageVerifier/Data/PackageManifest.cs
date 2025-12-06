@@ -14,8 +14,10 @@ namespace YUCP.Components.Editor.PackageVerifier.Data
         public string archiveSha256;
         public string vrchatAuthorUserId;
         public Dictionary<string, string> fileHashes;
+        public CertificateData[] certificateChain; // Certificate chain: [Publisher, Intermediate?, Root]
     }
 }
+
 
 
 

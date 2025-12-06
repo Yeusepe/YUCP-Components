@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEditor.UIElements;
@@ -84,8 +85,8 @@ namespace YUCP.Components.Editor.PackageManager
             // Set minimum window size
             minSize = new Vector2(500, 600);
             
-            // Ensure TrustedAuthority is initialized with root public key
-            TrustedAuthority.ReloadRootPublicKey();
+            // Ensure TrustedAuthority is initialized with all keys (root, cached, etc.)
+            TrustedAuthority.ReloadAllKeys();
         }
 
         private void OnDisable()
@@ -102,11 +103,8 @@ namespace YUCP.Components.Editor.PackageManager
             }
         }
 
-        // Override ShowButton to hide any custom buttons (like lock button)
-        // Note: This doesn't hide the native close button, but prevents custom buttons from showing
         protected virtual void ShowButton(Rect rect)
         {
-            // Do nothing - hide any custom buttons
         }
 
         private void LoadResources()
@@ -231,7 +229,6 @@ namespace YUCP.Components.Editor.PackageManager
                 float currentHeight = _bannerContainer.resolvedStyle.height;
                 float newHeight = rootVisualElement.resolvedStyle.height * 0.75f;
                 
-                // Only update if height changed significantly (more than 1 pixel)
                 if (Mathf.Abs(currentHeight - newHeight) > 1f)
                 {
                     UpdateBannerHeight();
@@ -253,7 +250,6 @@ namespace YUCP.Components.Editor.PackageManager
             var bannerHeight = rootHeight * 0.75f; // 3/4 of window height
             _bannerContainer.style.height = bannerHeight;
 
-            // Only regenerate gradient if height changed significantly
             int newGradientHeight = Mathf.RoundToInt(bannerHeight);
             if (_bannerGradientTexture == null || Mathf.Abs(_cachedGradientHeight - newGradientHeight) > 5)
             {
@@ -358,17 +354,14 @@ namespace YUCP.Components.Editor.PackageManager
                 height = 400; // Better fallback
             }
 
-            // Only recreate gradient if height changed significantly (more than 5 pixels)
             if (_bannerGradientTexture != null && Mathf.Abs(_cachedGradientHeight - height) <= 5)
             {
-                // Height hasn't changed significantly, reuse existing texture
                 return;
             }
 
             // Cache the height we're creating
             _cachedGradientHeight = height;
 
-            // Destroy old texture if it exists
             if (_bannerGradientTexture != null)
             {
                 UnityEngine.Object.DestroyImmediate(_bannerGradientTexture);
@@ -481,7 +474,7 @@ namespace YUCP.Components.Editor.PackageManager
             var verificationIcon = CreateVerificationIcon();
             if (verificationIcon != null)
             {
-                verificationIcon.style.flexShrink = 0; // Don't shrink the icon
+                verificationIcon.style.flexShrink = 0;
                 nameRow.Add(verificationIcon);
             }
             
@@ -527,7 +520,7 @@ namespace YUCP.Components.Editor.PackageManager
             buttonContainer.style.flexDirection = FlexDirection.Row;
             buttonContainer.style.alignItems = Align.Center;
             buttonContainer.style.marginLeft = 16;
-            buttonContainer.style.flexShrink = 0; // Don't shrink buttons
+            buttonContainer.style.flexShrink = 0;
 
             // Cancel button
             _cancelButton = new Button(OnCancelClicked)
@@ -649,10 +642,9 @@ namespace YUCP.Components.Editor.PackageManager
 
             try
             {
-                Debug.Log($"[YUCP PackageManager] Starting verification for: {packagePath}");
 
-                // Reload root public key in case it was updated
-                TrustedAuthority.ReloadRootPublicKey();
+                // Reload all keys (root, cached, etc.) in case they were updated
+                TrustedAuthority.ReloadAllKeys();
 
                 // Extract manifest and signature
                 // Pass ImportPackageItem array if available (during import) - this avoids needing SharpZipLib
@@ -671,11 +663,9 @@ namespace YUCP.Components.Editor.PackageManager
                         valid = false,
                         errors = { extractionResult.error ?? "Package is not signed. This package was exported without a signature." }
                     };
-                    Debug.Log($"[YUCP PackageManager] Package not signed (this is normal for unsigned packages): {extractionResult.error ?? "Package is not signed"}");
                     return;
                 }
 
-                Debug.Log("[YUCP PackageManager] Package has signing data, verifying...");
 
                 // Verify package
                 _verificationResult = PackageVerifierCore.PackageVerifier.VerifyPackage(
@@ -686,7 +676,6 @@ namespace YUCP.Components.Editor.PackageManager
 
                 if (_verificationResult.valid)
                 {
-                    Debug.Log($"[YUCP PackageManager] Package verified successfully. Publisher: {_verificationResult.publisherId}");
                 }
                 else
                 {
@@ -765,14 +754,20 @@ namespace YUCP.Components.Editor.PackageManager
                 if (!string.IsNullOrEmpty(_verificationResult.publisherId))
                 {
                     tooltipText += $"Publisher: {_verificationResult.publisherId}\n";
+                    tooltipText += "(Extracted from verified certificate chain)\n";
                 }
                 
-                tooltipText += "\nBenefits:\n";
-                tooltipText += "• Authentic: Confirmed to be from the verified publisher\n";
-                tooltipText += "• Integrity: Package contents have not been tampered with\n";
-                tooltipText += "• Security: Protected against malicious modifications\n";
-                tooltipText += "• Trust: Signed with Ed25519 cryptographic signatures\n\n";
-                tooltipText += "The package's signature, certificate chain, and content hash have all been validated.";
+                tooltipText += "\nCertificate Chain Validation:\n";
+                tooltipText += "• Root CA certificate verified (trusted authority)\n";
+                tooltipText += "• Certificate chain validated (Root → Intermediate → Publisher)\n";
+                tooltipText += "• Publisher certificate signature verified\n";
+                tooltipText += "• Manifest signature verified with publisher certificate\n";
+                tooltipText += "• Certificate validity dates checked\n\n";
+                
+                tooltipText += "Additional Security:\n";
+                tooltipText += "• Package content hash verified (integrity check)\n";
+                tooltipText += "• All signatures validated with Ed25519 cryptography\n\n";
+                tooltipText += "The package's complete certificate chain, signatures, and content hash have all been validated.";
                 
                 if (verifiedTexture != null)
                 {
@@ -801,7 +796,7 @@ namespace YUCP.Components.Editor.PackageManager
                 
                 // Build comprehensive tooltip with error details
                 string tooltipText = "⚠ Verification Failed\n\n";
-                tooltipText += "This package is signed, but verification failed. The package may have been tampered with or the signature is invalid.\n\n";
+                tooltipText += "This package is signed, but verification failed. The package may have been tampered with, the certificate chain is invalid, or the signature verification failed.\n\n";
                 
                 if (_verificationResult.errors != null && _verificationResult.errors.Count > 0)
                 {
@@ -811,11 +806,27 @@ namespace YUCP.Components.Editor.PackageManager
                         tooltipText += $"• {error}\n";
                     }
                     tooltipText += "\n";
+                    
+                    // Check for certificate chain specific errors
+                    bool hasChainError = _verificationResult.errors.Any(e => 
+                        e.Contains("certificate", StringComparison.OrdinalIgnoreCase) ||
+                        e.Contains("chain", StringComparison.OrdinalIgnoreCase) ||
+                        e.Contains("root", StringComparison.OrdinalIgnoreCase));
+                    
+                    if (hasChainError)
+                    {
+                        tooltipText += "Certificate Chain Issues:\n";
+                        tooltipText += "• Root CA may not be trusted\n";
+                        tooltipText += "• Certificate chain may be incomplete or malformed\n";
+                        tooltipText += "• Certificate signatures may be invalid\n";
+                        tooltipText += "• Certificates may have expired\n\n";
+                    }
                 }
                 
                 tooltipText += "Warning:\n";
                 tooltipText += "• Do not import if you did not expect this error\n";
                 tooltipText += "• The package may have been modified or corrupted\n";
+                tooltipText += "• The certificate chain may be invalid or untrusted\n";
                 tooltipText += "• Contact the publisher if you believe this is an error";
                 
                 warningIcon.tooltip = tooltipText;
@@ -844,10 +855,8 @@ namespace YUCP.Components.Editor.PackageManager
                 return container;
             }
 
-            // Only show status if verification FAILED (don't show success message)
             if (_verificationResult.valid)
             {
-                // Verified successfully - don't show any message, just the icon
                 return container;
             }
             else
@@ -1317,7 +1326,6 @@ namespace YUCP.Components.Editor.PackageManager
             var root = new PackageItemNode("Assets", "Assets", true, 0);
             root.IsExpanded = true;
 
-            // Create sample folder structure
             var componentsFolder = new PackageItemNode("YUCP", "Assets/YUCP", true, 1);
             componentsFolder.IsExpanded = true;
             componentsFolder.IsSelected = true;
@@ -1379,19 +1387,11 @@ namespace YUCP.Components.Editor.PackageManager
         /// </summary>
         public void InitializeForImport(string packagePath, System.Array importItems, System.Array allImportItems, string packageIconPath, object wizardInstance, bool isProjectSettingsStep)
         {
-            Debug.Log($"[YUCP PackageManager] InitializeForImport called");
-            Debug.Log($"[YUCP PackageManager] Package path: {packagePath}");
-            Debug.Log($"[YUCP PackageManager] Import items count: {importItems?.Length ?? 0}");
-            Debug.Log($"[YUCP PackageManager] All import items count: {allImportItems?.Length ?? 0}");
-            Debug.Log($"[YUCP PackageManager] Package icon path: {packageIconPath}");
-            Debug.Log($"[YUCP PackageManager] Is project settings step: {isProjectSettingsStep}");
-            
             // Lock assembly reload to prevent domain reload during import (like Unity's original window)
             if (!_isImportMode)
             {
                 EditorApplication.LockReloadAssemblies();
                 _isImportMode = true;
-                Debug.Log("[YUCP PackageManager] Locked assembly reload to prevent domain reload during import");
             }
             
             // Store import items first (needed for verification)
@@ -1410,22 +1410,17 @@ namespace YUCP.Components.Editor.PackageManager
 
             // Verify package signature FIRST (synchronously) before setting up UI
             // This ensures verification completes before UI elements are displayed
-            Debug.Log("[YUCP PackageManager] Verifying package signature (before UI setup)...");
             VerifyPackage(packagePath);
-            Debug.Log("[YUCP PackageManager] Verification complete, proceeding with UI setup...");
 
             // Update button visibility and text based on wizard state
             UpdateButtonStates();
 
             // Extract metadata from ALL import items (not just current step) to find icon/banner
             // Also pass packageIconPath to extract icon even if no YUCP metadata exists
-            Debug.Log("[YUCP PackageManager] Extracting metadata...");
             var metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(allImportItems ?? importItems, packagePath, packageIconPath);
-            Debug.Log($"[YUCP PackageManager] Metadata extracted: {metadata?.packageName ?? "null"}");
             SetMetadata(metadata);
 
             // Build tree from current step's import items
-            Debug.Log("[YUCP PackageManager] Building tree view...");
             SetImportItems(importItems);
 
             // Refresh UI now that everything is set up (including verification result)
@@ -1436,7 +1431,6 @@ namespace YUCP.Components.Editor.PackageManager
 
             // Focus window
             Focus();
-            Debug.Log("[YUCP PackageManager] Window initialized successfully");
         }
 
         private void MakeWindowModal()
@@ -1498,7 +1492,6 @@ namespace YUCP.Components.Editor.PackageManager
                                         if (windowFlagsField != null)
                                         {
                                             // Try to modify window flags to remove title bar
-                                            // Note: This is experimental and may not work
                                             var currentFlags = windowFlagsField.GetValue(containerWindow);
                                             Debug.Log($"[YUCP PackageManager] Current window flags: {currentFlags}");
                                         }
@@ -1515,7 +1508,6 @@ namespace YUCP.Components.Editor.PackageManager
                 Debug.LogWarning($"[YUCP PackageManager] Could not hide title bar via reflection: {ex.Message}");
             }
             
-            Debug.Log("[YUCP PackageManager] Window set to modal mode");
         }
 
         private void UpdateButtonStates()
@@ -1547,7 +1539,6 @@ namespace YUCP.Components.Editor.PackageManager
 
         private void OnBackClicked()
         {
-            Debug.Log("[YUCP PackageManager] Back button clicked");
             try
             {
                 if (_packageImportWizardInstance == null || _currentImportItems == null)
@@ -1582,7 +1573,6 @@ namespace YUCP.Components.Editor.PackageManager
                 catch (ExitGUIException)
                 {
                     // Expected
-                    Debug.Log("[YUCP PackageManager] ExitGUIException during back (expected)");
                 }
             }
             catch (ExitGUIException)
@@ -1704,7 +1694,6 @@ namespace YUCP.Components.Editor.PackageManager
 
         private void OnImportClicked()
         {
-            Debug.Log("[YUCP PackageManager] Import button clicked");
             
             try
             {
@@ -1742,7 +1731,6 @@ namespace YUCP.Components.Editor.PackageManager
                 if (isMultiStep && !isProjectStep)
                 {
                     // Not final step - call DoNextStep
-                    Debug.Log("[YUCP PackageManager] Moving to next step of multi-step wizard");
                     PackageUtilityReflection.DoNextStep(_packageImportWizardInstance, _currentImportItems);
                 }
                 else
@@ -1781,7 +1769,6 @@ namespace YUCP.Components.Editor.PackageManager
                 catch (ExitGUIException)
                 {
                     // Expected when closing modal windows
-                    Debug.Log("[YUCP PackageManager] ExitGUIException during import (expected)");
                 }
             }
             catch (ExitGUIException)
@@ -1798,7 +1785,6 @@ namespace YUCP.Components.Editor.PackageManager
 
         private void OnCancelClicked()
         {
-            Debug.Log("[YUCP PackageManager] Cancel button clicked");
             try
             {
                 if (_currentImportItems == null || _currentImportItems.Length == 0)
@@ -1850,7 +1836,6 @@ namespace YUCP.Components.Editor.PackageManager
                 catch (ExitGUIException)
                 {
                     // ExitGUIException is expected and normal when closing modal windows
-                    Debug.Log("[YUCP PackageManager] ExitGUIException during cancel (expected)");
                 }
             }
             catch (ExitGUIException)
@@ -1909,8 +1894,6 @@ namespace YUCP.Components.Editor.PackageManager
                     enabledStatusField.SetValue(item, isSelected ? 1 : -1);
                 }
 
-                // Second pass: update folder states (mixed if children have mixed selection)
-                // This is simplified - full implementation would traverse tree hierarchy
                 foreach (var item in _currentImportItems)
                 {
                     if (item == null) continue;
@@ -1940,7 +1923,6 @@ namespace YUCP.Components.Editor.PackageManager
                         }
                     }
 
-                    // Set folder state: 2=mixed, 1=all selected, -1=none selected
                     if (hasSelected && hasUnselected)
                     {
                         enabledStatusField.SetValue(item, 2); // Mixed

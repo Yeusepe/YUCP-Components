@@ -47,41 +47,91 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                     return result;
                 }
 
-                // 2. Get public key
-                byte[] publicKey = TrustedAuthority.GetPublicKey(signature.keyId);
-                if (publicKey == null)
+                // 2. Extract and validate certificate chain (required - no legacy support)
+                if (manifest.certificateChain == null || manifest.certificateChain.Length == 0)
                 {
                     result.valid = false;
-                    result.errors.Add($"Unknown key ID: {signature.keyId}. Root public key may not be configured in SigningSettings.");
+                    result.errors.Add("Certificate chain is required. Package must include a valid certificate chain in the manifest.");
                     return result;
                 }
 
-                // Check if public key is valid (not empty/zero)
-                bool isZeroKey = true;
-                for (int i = 0; i < publicKey.Length; i++)
+                List<CertificateData> certificateChain = new List<CertificateData>(manifest.certificateChain);
+
+                if (manifest.certificateChain == null)
                 {
-                    if (publicKey[i] != 0)
+                    Debug.LogWarning("[PackageVerifier] manifest.certificateChain is null");
+                }
+
+                // 3. Validate certificate chain
+                var chainValidationResult = CertificateChainValidator.ValidateChain(manifest, certificateChain);
+                if (!chainValidationResult.valid)
+                {
+                    result.valid = false;
+                    result.errors.AddRange(chainValidationResult.errors);
+                    return result;
+                }
+
+                // 4. Get the certificate that signed the manifest
+                // The certificateIndex from the server response is the authoritative source
+                int certIndex = 0; // Default to Publisher certificate (index 0)
+                
+                // Primary: Use certificateIndex from server response if valid
+                if (signature.certificateIndex >= 0 && signature.certificateIndex < certificateChain.Count)
+                {
+                    certIndex = signature.certificateIndex;
+                }
+                // Fallback: Try to match signature.keyId if certificateIndex is not provided or invalid
+                else if (!string.IsNullOrEmpty(signature.keyId))
+                {
+                    for (int i = 0; i < certificateChain.Count; i++)
                     {
-                        isZeroKey = false;
-                        break;
+                        if (certificateChain[i].keyId == signature.keyId)
+                        {
+                            certIndex = i;
+                            break;
+                        }
                     }
                 }
 
-                if (isZeroKey)
+                CertificateData signingCertificate = certificateChain[certIndex];
+                if (signingCertificate == null)
                 {
                     result.valid = false;
-                    result.errors.Add("Root public key not configured. Please set yucpRootPublicKeyBase64 in SigningSettings.");
+                    result.errors.Add($"Certificate at index {certIndex} not found in chain");
                     return result;
                 }
 
-                // 3. Canonicalize manifest
+                // 5. Parse public key from signing certificate
+                byte[] publicKey;
+                try
+                {
+                    if (string.IsNullOrEmpty(signingCertificate.publicKey))
+                    {
+                        result.valid = false;
+                        result.errors.Add($"Signing certificate '{signingCertificate.keyId}' missing publicKey");
+                        return result;
+                    }
+                    publicKey = Convert.FromBase64String(signingCertificate.publicKey);
+                    if (publicKey.Length != 32)
+                    {
+                        result.valid = false;
+                        result.errors.Add($"Signing certificate '{signingCertificate.keyId}' has invalid publicKey length: {publicKey.Length} (expected 32)");
+                        return result;
+                    }
+                }
+                catch (FormatException)
+                {
+                    result.valid = false;
+                    result.errors.Add($"Signing certificate '{signingCertificate.keyId}' has invalid publicKey format");
+                    return result;
+                }
+
+                // 6. Canonicalize manifest (INCLUDING certificateChain - server signs with chain included)
+                // The server adds the certificate chain to the manifest before signing it
                 string canonicalJson = CanonicalizeManifest(manifest);
                 byte[] manifestBytes = Encoding.UTF8.GetBytes(canonicalJson);
-                
-                Debug.Log($"[PackageVerifier] Canonicalized manifest JSON (first 500 chars): {canonicalJson.Substring(0, Math.Min(500, canonicalJson.Length))}...");
-                Debug.Log($"[PackageVerifier] Manifest bytes length: {manifestBytes.Length}");
 
-                // 4. Verify signature
+                // 7. Verify manifest signature using signing certificate's public key
                 if (string.IsNullOrEmpty(signature?.signature))
                 {
                     result.valid = false;
@@ -89,21 +139,34 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                     return result;
                 }
                 
-                byte[] signatureBytes = Convert.FromBase64String(signature.signature);
-                Debug.Log($"[PackageVerifier] Signature bytes length: {signatureBytes.Length} (expected: 64)");
-                Debug.Log($"[PackageVerifier] Public key length: {publicKey.Length} (expected: 32)");
-                
+                byte[] signatureBytes;
+                try
+                {
+                    signatureBytes = Convert.FromBase64String(signature.signature);
+                    if (signatureBytes.Length != 64)
+                    {
+                        result.valid = false;
+                        result.errors.Add($"Signature has invalid length: {signatureBytes.Length} (expected 64)");
+                        return result;
+                    }
+                }
+                catch (FormatException)
+                {
+                    result.valid = false;
+                    result.errors.Add("Signature has invalid format (not base64)");
+                    return result;
+                }
+
                 bool signatureValid = Ed25519Wrapper.Verify(manifestBytes, signatureBytes, publicKey);
-                Debug.Log($"[PackageVerifier] Signature verification result: {signatureValid}");
 
                 if (!signatureValid)
                 {
                     result.valid = false;
-                    result.errors.Add("Invalid signature");
+                    result.errors.Add($"Invalid manifest signature (not signed by certificate '{signingCertificate.keyId}')");
                     return result;
                 }
 
-                // 5. Verify package integrity (canonical hash over contents, excluding signing data)
+                // 8. Verify package integrity (canonical hash over contents, excluding signing data)
                 if (!File.Exists(packagePath))
                 {
                     result.valid = false;
@@ -126,9 +189,10 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                     return result;
                 }
 
-                // All checks passed (signature, certificate chain, and content hash)
+                // All checks passed (certificate chain, signature, and content hash)
                 result.valid = true;
-                result.publisherId = manifest.publisherId;
+                // Use publisherId from certificate (not manifest) - cannot be forged
+                result.publisherId = chainValidationResult.publisherId;
                 result.packageId = manifest.packageId;
                 result.version = manifest.version;
                 result.vrchatAuthorUserId = manifest.vrchatAuthorUserId;
@@ -142,6 +206,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                 return result;
             }
         }
+
 
         private static string CanonicalizeManifest(PackageManifest manifest)
         {
@@ -166,6 +231,9 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
             {
                 return "null";
             }
+            
+            // Get type early for enum checking
+            var objType = obj.GetType();
             
             if (obj is System.Collections.IList list)
             {
@@ -196,7 +264,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
             }
             
             // For other objects, use reflection to get fields/properties and sort them
-            var objType = obj.GetType();
             if (objType.IsClass && objType != typeof(string))
             {
                 var items = new System.Collections.Generic.List<string>();
@@ -275,6 +342,22 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
             if (obj is bool b)
             {
                 return b ? "true" : "false";
+            }
+            
+            // Handle enums - they need to be quoted like strings (matching JSON.stringify behavior)
+            // The server uses JSON.stringify('Publisher') which returns "Publisher" (quoted)
+            if (objType != null && objType.IsEnum)
+            {
+                string enumValue = obj.ToString();
+                var escaped = enumValue
+                    .Replace("\\", "\\\\")
+                    .Replace("\"", "\\\"")
+                    .Replace("\n", "\\n")
+                    .Replace("\r", "\\r")
+                    .Replace("\t", "\\t")
+                    .Replace("\b", "\\b")
+                    .Replace("\f", "\\f");
+                return "\"" + escaped + "\"";
             }
             
             if (obj is System.IConvertible && !(obj is string))

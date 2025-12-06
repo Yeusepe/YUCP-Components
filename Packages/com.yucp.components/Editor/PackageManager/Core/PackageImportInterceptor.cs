@@ -111,7 +111,6 @@ namespace YUCP.Components.Editor.PackageManager
         {
             _customWindowShown = false;
             
-            // Only use early polling fallback if Harmony patch is NOT available
             if (!_harmonyPatched)
             {
                 Debug.Log("[YUCP PackageManager] Harmony not available, using early polling fallback (CheckAndIntercept)");
@@ -137,7 +136,6 @@ namespace YUCP.Components.Editor.PackageManager
                     
                     if (!string.IsNullOrEmpty(packagePath) && allItems != null && allItems.Length > 0)
                     {
-                        // Always intercept - no metadata check needed
                         object window = GetFieldValue<object>(wizardInstance, _mImportWindowField);
                         if (window != null)
                         {
@@ -173,9 +171,6 @@ namespace YUCP.Components.Editor.PackageManager
             }
             else
             {
-                // Harmony is patched, StartImportPrefix will handle interception
-                // No need to register CheckAndIntercept callback
-                Debug.Log("[YUCP PackageManager] Harmony patch active, StartImportPrefix will handle interception");
             }
         }
         private static bool TryInterceptImportEarly()
@@ -187,8 +182,6 @@ namespace YUCP.Components.Editor.PackageManager
 
                 System.Array allItems = GetFieldValue<System.Array>(wizardInstance, _mInitialImportItemsField);
                 if (allItems == null || allItems.Length == 0) return false;
-
-                // Always intercept - no metadata check needed
 
                 object existingWindow = GetFieldValue<object>(wizardInstance, _mImportWindowField);
                 if (existingWindow != null)
@@ -330,7 +323,6 @@ namespace YUCP.Components.Editor.PackageManager
                     }
                 }
                 
-                // Create window - InitializeForImport will make it modal via MakeWindowModal()
                 var window = EditorWindow.GetWindow<PackageManagerWindow>(false, "Import Unity Package");
                 window.InitializeForImport(packagePath, items, allItems, iconPath, wizard, isProjectStep);
                 window.Focus();
@@ -364,7 +356,6 @@ namespace YUCP.Components.Editor.PackageManager
         {
             try
             {
-                // Try to access ScriptableSingleton<PackageImportWizard>.instance via reflection
                 var scriptableSingletonType = Type.GetType("UnityEditor.ScriptableSingleton`1, UnityEditor.CoreModule");
                 if (scriptableSingletonType != null && _packageImportWizardType != null)
                 {
@@ -482,7 +473,6 @@ namespace YUCP.Components.Editor.PackageManager
                     return true;
                 }
                 
-                // Always intercept - no metadata check needed
                 if (itemsArray == null)
                 {
                     return true;

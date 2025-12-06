@@ -58,11 +58,9 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                 // Method 1: Extract from ImportPackageItem array (preferred during import)
                 if (importItems != null && importItems.Length > 0)
                 {
-                    Debug.Log("[ManifestExtractor] Attempting extraction from ImportPackageItem array...");
                     bool extracted = TryExtractFromImportItems(importItems, out manifest, out signature);
                     if (extracted && manifest != null && signature != null)
                     {
-                        Debug.Log("[ManifestExtractor] Successfully extracted from ImportPackageItem array");
                         return new ExtractionResult
                         {
                             success = true,
@@ -71,11 +69,8 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                         };
                     }
                     
-                    // If ImportItems were provided but extraction failed, check if signing data is missing
-                    // (don't fall back to SharpZipLib if we already know signing data isn't in ImportItems)
                     if (manifest == null || signature == null)
                     {
-                        Debug.Log("[ManifestExtractor] Package is not signed: Signing data not found in ImportPackageItem array");
                         return new ExtractionResult
                         {
                             success = false,
@@ -84,8 +79,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                             signature = null
                         };
                     }
-                    
-                    Debug.Log("[ManifestExtractor] Extraction from ImportPackageItem array failed, trying SharpZipLib...");
                 }
 
                 // Method 2: Try to use SharpZipLib if available
@@ -151,9 +144,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                 return false;
             }
 
-            Debug.Log($"[ManifestExtractor] Searching through {importItems.Length} import items for signing data...");
-            Debug.Log($"[ManifestExtractor] Looking for manifest at: {ManifestPath}");
-            Debug.Log($"[ManifestExtractor] Looking for signature at: {SignaturePath}");
 
             try
             {
@@ -177,72 +167,35 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                         continue;
                     }
 
-                    // Debug: Log first few items to see what paths we're getting
-                    if (itemIndex < 5)
-                    {
-                        Debug.Log($"[ManifestExtractor] Item {itemIndex}: destinationPath = {destinationPath}");
-                    }
-
                     if (destinationPath.Equals(ManifestPath, StringComparison.OrdinalIgnoreCase))
                     {
                         manifestItem = item;
-                        Debug.Log($"[ManifestExtractor] Found manifest item at index {itemIndex}");
                     }
                     else if (destinationPath.Equals(SignaturePath, StringComparison.OrdinalIgnoreCase))
                     {
                         signatureItem = item;
-                        Debug.Log($"[ManifestExtractor] Found signature item at index {itemIndex}");
                     }
                     
                     itemIndex++;
                 }
 
-                if (manifestItem == null)
-                {
-                    Debug.Log($"[ManifestExtractor] Package is not signed: Manifest file ({ManifestPath}) not found in package. Searched {importItems.Length} items.");
-                    // Log all paths for debugging
-                    Debug.Log($"[ManifestExtractor] Available paths in package (first 10):");
-                    int logged = 0;
-                    foreach (var item in importItems)
-                    {
-                        if (item == null || logged >= 10) continue;
-                        string path = GetFieldValue<string>(item, _destinationAssetPathField);
-                        if (path != null)
-                        {
-                            Debug.Log($"[ManifestExtractor]   - {path}");
-                            logged++;
-                        }
-                    }
-                }
-                if (signatureItem == null)
-                {
-                    Debug.Log($"[ManifestExtractor] Package is not signed: Signature file ({SignaturePath}) not found in package.");
-                }
 
                 // Extract manifest
                 if (manifestItem != null)
                 {
                     string sourceFolder = GetFieldValue<string>(manifestItem, _sourceFolderField);
-                    Debug.Log($"[ManifestExtractor] Manifest sourceFolder: {sourceFolder ?? "null"}");
                     
                     if (!string.IsNullOrEmpty(sourceFolder))
                     {
                         string assetFile = Path.Combine(sourceFolder, "asset");
-                        Debug.Log($"[ManifestExtractor] Checking manifest asset file: {assetFile}");
-                        Debug.Log($"[ManifestExtractor] File exists: {File.Exists(assetFile)}");
                         
                         if (File.Exists(assetFile))
                         {
                             try
                             {
                                 string manifestJson = File.ReadAllText(assetFile);
-                                Debug.Log($"[ManifestExtractor] Manifest JSON length: {manifestJson.Length} characters");
                                 manifest = JsonUtility.FromJson<PackageManifest>(manifestJson);
-                                if (manifest != null)
-                                {
-                                    Debug.Log($"[ManifestExtractor] Manifest parsed successfully: {manifest.packageId} v{manifest.version}");
-                                }
-                                else
+                                if (manifest == null)
                                 {
                                     Debug.LogWarning("[ManifestExtractor] Manifest JSON deserialization returned null");
                                 }
@@ -256,12 +209,10 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                         {
                             // Try alternative path
                             string altPath = Path.Combine(sourceFolder, "PackageManifest.json");
-                            Debug.Log($"[ManifestExtractor] Trying alternative path: {altPath}");
                             if (File.Exists(altPath))
                             {
                                 string manifestJson = File.ReadAllText(altPath);
                                 manifest = JsonUtility.FromJson<PackageManifest>(manifestJson);
-                                Debug.Log("[ManifestExtractor] Manifest extracted from alternative path");
                             }
                             else
                             {
@@ -279,26 +230,18 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                 if (signatureItem != null)
                 {
                     string sourceFolder = GetFieldValue<string>(signatureItem, _sourceFolderField);
-                    Debug.Log($"[ManifestExtractor] Signature sourceFolder: {sourceFolder ?? "null"}");
                     
                     if (!string.IsNullOrEmpty(sourceFolder))
                     {
                         string assetFile = Path.Combine(sourceFolder, "asset");
-                        Debug.Log($"[ManifestExtractor] Checking signature asset file: {assetFile}");
-                        Debug.Log($"[ManifestExtractor] File exists: {File.Exists(assetFile)}");
                         
                         if (File.Exists(assetFile))
                         {
                             try
                             {
                                 string signatureJson = File.ReadAllText(assetFile);
-                                Debug.Log($"[ManifestExtractor] Signature JSON length: {signatureJson.Length} characters");
                                 signature = JsonUtility.FromJson<SignatureData>(signatureJson);
-                                if (signature != null)
-                                {
-                                    Debug.Log($"[ManifestExtractor] Signature parsed successfully: keyId={signature.keyId}");
-                                }
-                                else
+                                if (signature == null)
                                 {
                                     Debug.LogWarning("[ManifestExtractor] Signature JSON deserialization returned null");
                                 }
@@ -312,12 +255,10 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                         {
                             // Try alternative path
                             string altPath = Path.Combine(sourceFolder, "PackageManifest.sig");
-                            Debug.Log($"[ManifestExtractor] Trying alternative path: {altPath}");
                             if (File.Exists(altPath))
                             {
                                 string signatureJson = File.ReadAllText(altPath);
                                 signature = JsonUtility.FromJson<SignatureData>(signatureJson);
-                                Debug.Log("[ManifestExtractor] Signature extracted from alternative path");
                             }
                             else
                             {

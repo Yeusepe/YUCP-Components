@@ -133,7 +133,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Tests
             TestModifiedManifestFields(packagePath, sb);
             sb.AppendLine();
 
-            // Test 6: Removed signing data (should fail - unsigned package)
             sb.AppendLine("TEST 6: Removed Signing Data");
             sb.AppendLine("-----------------------------------");
             TestRemovedSigningData(packagePath, sb);
@@ -292,8 +291,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Tests
                 sb.AppendLine($"     Modified size: {modifiedContent.Length} bytes");
 
                 sb.AppendLine($"  Step 4: Computing hash from modified contents (using ImportItems method)...");
-                // Modify the file in the sourceFolder that ImportItems points to
-                // This way we can recompute hash from ImportItems without repackaging
                 string sourceFileToModify = null;
                 string sourceFilePathname = null;
                 foreach (var item in importItems)
@@ -974,14 +971,11 @@ namespace YUCP.Components.Editor.PackageVerifier.Tests
         
         /// <summary>
         /// Create a package using Unity's exact TAR.GZ format
-        /// Preserves GUIDs from sourceFolder paths and uses Unity's exact structure
         /// </summary>
         private bool CreatePackageUsingUnityTools(System.Array importItems, string outputPath)
         {
             try
             {
-                // Unity's package format: TAR.GZ with entries {guid}/pathname and {guid}/asset
-                // Extract GUID from sourceFolder path (last folder name is the GUID)
                 using (var fileStream = File.Create(outputPath))
                 using (var gzipStream = new System.IO.Compression.GZipStream(fileStream, System.IO.Compression.CompressionLevel.Fastest))
                 {
@@ -997,7 +991,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Tests
                         if (string.IsNullOrEmpty(destPath) || string.IsNullOrEmpty(sourceFolder))
                             continue;
                         
-                        // Extract GUID from sourceFolder (it's the folder name)
                         string guid = Path.GetFileName(sourceFolder);
                         if (string.IsNullOrEmpty(guid) || guid.Length != 32)
                         {
@@ -1128,5 +1121,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Tests
         
     }
 }
+
 
 
