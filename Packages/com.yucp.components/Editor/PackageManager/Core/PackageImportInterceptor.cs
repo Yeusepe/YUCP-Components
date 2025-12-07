@@ -323,7 +323,8 @@ namespace YUCP.Components.Editor.PackageManager
                     }
                 }
                 
-                var window = EditorWindow.GetWindow<PackageManagerWindow>(false, "Import Unity Package");
+                // Create as a utility window (required for ShowModalUtility to work correctly)
+                var window = EditorWindow.GetWindow<PackageManagerWindow>(true, "Import Unity Package");
                 window.InitializeForImport(packagePath, items, allItems, iconPath, wizard, isProjectStep);
                 window.Focus();
             }

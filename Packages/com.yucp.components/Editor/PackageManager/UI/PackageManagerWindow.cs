@@ -75,6 +75,11 @@ namespace YUCP.Components.Editor.PackageManager
         
         // Domain reload prevention
         private bool _isImportMode = false; // Track if window is in import mode (prevents domain reload)
+        
+        // Fixed modal implementation state
+        private bool _isModalFixed = false;
+        private VisualElement _lastHoveredElement = null;
+        private VisualElement _currentTooltipElement = null;
 
         private void OnEnable()
         {
@@ -94,6 +99,21 @@ namespace YUCP.Components.Editor.PackageManager
             AssetDatabase.importPackageStarted -= OnImportPackageStarted;
             DestroyCreatedTextures();
             
+            // Clean up modal event handlers
+            if (_isModalFixed && rootVisualElement != null)
+            {
+                // Hide any active tooltip before cleanup
+                HideActiveTooltip();
+                
+                rootVisualElement.UnregisterCallback<MouseLeaveEvent>(OnRootMouseLeave);
+                rootVisualElement.UnregisterCallback<MouseMoveEvent>(OnRootMouseMove);
+                rootVisualElement.UnregisterCallback<MouseEnterEvent>(OnRootMouseEnter);
+                rootVisualElement.UnregisterCallback<TooltipEvent>(OnTooltipEvent);
+            }
+            
+            // Reset cursor state
+            ResetCursor();
+            
             // Unlock assembly reload if we were in import mode
             if (_isImportMode)
             {
@@ -101,6 +121,10 @@ namespace YUCP.Components.Editor.PackageManager
                 _isImportMode = false;
                 Debug.Log("[YUCP PackageManager] Unlocked assembly reload (window closed)");
             }
+            
+            _isModalFixed = false;
+            _lastHoveredElement = null;
+            _currentTooltipElement = null;
         }
 
         protected virtual void ShowButton(Rect rect)
@@ -861,7 +885,14 @@ namespace YUCP.Components.Editor.PackageManager
             }
             else
             {
-                // Verification failed or not signed
+                // Only show warning for signed packages that have been modified (verification failed)
+                // If package has metadata but is not signed, don't show a warning
+                if (!_isPackageSigned)
+                {
+                    return container; // Not signed, no warning
+                }
+
+                // Package is signed but verification failed - this means it was modified
                 var warningContainer = new VisualElement();
                 warningContainer.style.flexDirection = FlexDirection.Column;
                 warningContainer.style.paddingLeft = 12;
@@ -1426,88 +1457,324 @@ namespace YUCP.Components.Editor.PackageManager
             // Refresh UI now that everything is set up (including verification result)
             RefreshUI();
 
-            // Make window modal and prevent closing
-            MakeWindowModal();
+            // Make window modal using fixed implementation that preserves tooltip/cursor behavior
+            ShowModalUtilityFixed();
 
             // Focus window
             Focus();
         }
 
-        private void MakeWindowModal()
+        /// <summary>
+        /// Fixed version of ShowModalUtility that preserves tooltip and cursor behavior.
+        /// Based on Unity's implementation but skips the problematic EventDispatcher context push
+        /// that breaks UI Toolkit event handling.
+        /// </summary>
+        private void ShowModalUtilityFixed()
         {
-            // Prevent window from being closed by user
-            wantsMouseMove = true;
-            
-            // Show as modal utility window - this prevents clicking off and makes it truly modal
-            // ShowModalUtility() blocks all interaction with Unity Editor until window is closed
-            ShowModalUtility();
-            
-            // Try to hide the title bar and close button using reflection
+            if (_isModalFixed)
+                return;
+
             try
             {
-                // Get the HostView (parent container)
-                var hostViewType = typeof(EditorWindow).Assembly.GetType("UnityEditor.HostView");
-                if (hostViewType != null)
+                // Step 1: Get ShowMode enum type via reflection (ShowMode is internal)
+                var showModeType = typeof(EditorWindow).Assembly.GetType("UnityEditor.ShowMode");
+                if (showModeType == null)
                 {
-                    var parentField = typeof(EditorWindow).GetField("m_Parent", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (parentField != null)
+                    Debug.LogWarning("[YUCP PackageManager] Could not find ShowMode type, falling back to ShowModalUtility");
+                    ShowModalUtility();
+                    _isModalFixed = true;
+                    SetupModalEventHandlers();
+                    return;
+                }
+
+                // Step 2: Show window with ModalUtility mode (via reflection to access internal method)
+                var showWithModeMethod = typeof(EditorWindow).GetMethod("ShowWithMode",
+                    BindingFlags.NonPublic | BindingFlags.Instance,
+                    null,
+                    new[] { showModeType },
+                    null);
+
+                if (showWithModeMethod != null)
+                {
+                    var modalUtilityValue = Enum.Parse(showModeType, "ModalUtility");
+                    showWithModeMethod.Invoke(this, new object[] { modalUtilityValue });
+                }
+                else
+                {
+                    // Fallback to standard ShowModalUtility if reflection fails
+                    Debug.LogWarning("[YUCP PackageManager] Could not find ShowWithMode, falling back to ShowModalUtility");
+                    ShowModalUtility();
+                    _isModalFixed = true;
+                    SetupModalEventHandlers();
+                    return;
+                }
+
+                // Step 2: Try making modal without breaking event dispatcher
+                // NOTE: We're skipping Internal_MakeModal to avoid breaking tooltip/cursor events
+                // ShowWithMode(ModalUtility) should provide enough modal behavior
+                // If full modal blocking is needed, uncomment MakeModalFixed() below
+                // MakeModalFixed();
+
+                _isModalFixed = true;
+                SetupModalEventHandlers();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[YUCP PackageManager] Failed to show modal utility (fixed): {ex.Message}\n{ex.StackTrace}");
+                // Fallback to standard implementation
+                ShowModalUtility();
+                _isModalFixed = true;
+            }
+        }
+
+        /// <summary>
+        /// Makes the window modal without breaking event dispatcher context.
+        /// Calls Internal_MakeModal directly, skipping PushDispatcherContext that breaks tooltips/cursor.
+        /// </summary>
+        private void MakeModalFixed()
+        {
+            try
+            {
+                // Get the ContainerWindow from m_Parent.window
+                var parentField = typeof(EditorWindow).GetField("m_Parent",
+                    BindingFlags.NonPublic | BindingFlags.Instance);
+                if (parentField == null)
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Could not find m_Parent field");
+                    return;
+                }
+
+                var parent = parentField.GetValue(this);
+                if (parent == null)
+                {
+                    Debug.LogWarning("[YUCP PackageManager] m_Parent is null");
+                    return;
+                }
+
+                // Get window property from HostView
+                var hostViewType = typeof(EditorWindow).Assembly.GetType("UnityEditor.HostView");
+                if (hostViewType == null)
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Could not find HostView type");
+                    return;
+                }
+
+                var windowProperty = hostViewType.GetProperty("window",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (windowProperty == null)
+                {
+                    // Try field instead
+                    var windowField = hostViewType.GetField("m_Window",
+                        BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (windowField != null)
                     {
-                        var parent = parentField.GetValue(this);
-                        if (parent != null)
+                        var containerWindow = windowField.GetValue(parent);
+                        if (containerWindow != null)
                         {
-                            // HostView inherits from View, which has m_Window (ContainerWindow)
-                            // Try to get ContainerWindow from View base class
-                            var viewType = typeof(EditorWindow).Assembly.GetType("UnityEditor.View");
-                            if (viewType != null)
-                            {
-                                var windowField = viewType.GetField("m_Window", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                if (windowField != null)
-                                {
-                                    var containerWindow = windowField.GetValue(parent);
-                                    if (containerWindow != null)
-                                    {
-                                        var containerWindowType = containerWindow.GetType();
-                                        
-                                        // Try to hide the title bar by setting m_ButtonCount to 0
-                                        // This removes all window buttons (minimize, maximize, close)
-                                        var buttonCountField = containerWindowType.GetField("m_ButtonCount", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                        if (buttonCountField != null)
-                                        {
-                                            // Set button count to 0 to hide all buttons (and potentially the title bar)
-                                            buttonCountField.SetValue(containerWindow, 0);
-                                            Debug.Log("[YUCP PackageManager] Window buttons hidden by setting m_ButtonCount to 0");
-                                        }
-                                        
-                                        // Try to hide the title by setting it to empty
-                                        var titleField = containerWindowType.GetField("m_Title", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                        if (titleField != null)
-                                        {
-                                            titleField.SetValue(containerWindow, "");
-                                            Debug.Log("[YUCP PackageManager] Window title cleared");
-                                        }
-                                        
-                                        // Try to set window to have no title bar using m_WindowFlags
-                                        // This is platform-specific and may not work on all platforms
-                                        var windowFlagsField = containerWindowType.GetField("m_WindowFlags", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                        if (windowFlagsField != null)
-                                        {
-                                            // Try to modify window flags to remove title bar
-                                            var currentFlags = windowFlagsField.GetValue(containerWindow);
-                                            Debug.Log($"[YUCP PackageManager] Current window flags: {currentFlags}");
-                                        }
-                                    }
-                                }
-                            }
+                            CallInternalMakeModal(containerWindow);
                         }
+                    }
+                }
+                else
+                {
+                    var containerWindow = windowProperty.GetValue(parent);
+                    if (containerWindow != null)
+                    {
+                        CallInternalMakeModal(containerWindow);
                     }
                 }
             }
             catch (Exception ex)
             {
-                // Reflection failed - that's okay, ShowModalUtility() is enough for modal behavior
-                Debug.LogWarning($"[YUCP PackageManager] Could not hide title bar via reflection: {ex.Message}");
+                Debug.LogWarning($"[YUCP PackageManager] MakeModalFixed failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Calls Unity's Internal_MakeModal native function directly.
+        /// </summary>
+        private void CallInternalMakeModal(object containerWindow)
+        {
+            try
+            {
+                var internalMakeModalMethod = typeof(EditorWindow).GetMethod("Internal_MakeModal",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                if (internalMakeModalMethod != null)
+                {
+                    internalMakeModalMethod.Invoke(null, new[] { containerWindow });
+                }
+                else
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Could not find Internal_MakeModal method");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] CallInternalMakeModal failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Sets up event handlers to manually manage tooltips and cursor state in modal windows.
+        /// </summary>
+        private void SetupModalEventHandlers()
+        {
+            if (rootVisualElement == null)
+                return;
+
+            // Register mouse leave events to manually hide tooltips
+            rootVisualElement.RegisterCallback<MouseLeaveEvent>(OnRootMouseLeave, TrickleDown.TrickleDown);
+            rootVisualElement.RegisterCallback<MouseMoveEvent>(OnRootMouseMove, TrickleDown.TrickleDown);
+            rootVisualElement.RegisterCallback<MouseEnterEvent>(OnRootMouseEnter, TrickleDown.TrickleDown);
+
+            // Register tooltip events to track and manually manage tooltips
+            rootVisualElement.RegisterCallback<TooltipEvent>(OnTooltipEvent, TrickleDown.TrickleDown);
+            
+            // Also register on all child elements to catch tooltip events
+            RegisterTooltipHandlersRecursive(rootVisualElement);
+        }
+
+        private void RegisterTooltipHandlersRecursive(VisualElement element)
+        {
+            if (element == null)
+                return;
+
+            // Register mouse leave on each element to hide tooltips
+            element.RegisterCallback<MouseLeaveEvent>(OnElementMouseLeave);
+            
+            // Recursively register on children
+            foreach (var child in element.Children())
+            {
+                RegisterTooltipHandlersRecursive(child);
+            }
+        }
+
+        private void OnRootMouseLeave(MouseLeaveEvent evt)
+        {
+            // Hide any active tooltip
+            HideActiveTooltip();
+            
+            // Manually reset cursor when mouse leaves the window
+            ResetCursor();
+            
+            // Clear hover state
+            _lastHoveredElement = null;
+            _currentTooltipElement = null;
+        }
+
+        private void OnRootMouseEnter(MouseEnterEvent evt)
+        {
+            // Track mouse entering
+        }
+
+        private void OnElementMouseLeave(MouseLeaveEvent evt)
+        {
+            // When mouse leaves an element, hide its tooltip if it was showing
+            var element = evt.target as VisualElement;
+            if (element == _currentTooltipElement)
+            {
+                HideTooltipForElement(element);
+                _currentTooltipElement = null;
+            }
+        }
+
+        private void OnRootMouseMove(MouseMoveEvent evt)
+        {
+            // Track which element is being hovered
+            var hoveredElement = evt.target as VisualElement;
+            if (hoveredElement != _lastHoveredElement)
+            {
+                // Element changed - hide tooltip from previous element
+                if (_lastHoveredElement != null && _lastHoveredElement == _currentTooltipElement)
+                {
+                    HideTooltipForElement(_lastHoveredElement);
+                }
+                _lastHoveredElement = hoveredElement;
             }
             
+            // Periodically reset cursor to prevent it from getting stuck
+            // This is a workaround for the modal window cursor issue
+            if (Time.frameCount % 60 == 0) // Every 60 frames
+            {
+                ResetCursor();
+            }
+        }
+
+        private void OnTooltipEvent(TooltipEvent evt)
+        {
+            // Track which element is showing a tooltip
+            var element = evt.target as VisualElement;
+            if (element != null && !string.IsNullOrEmpty(evt.tooltip))
+            {
+                _currentTooltipElement = element;
+            }
+            else if (string.IsNullOrEmpty(evt.tooltip))
+            {
+                // Tooltip is being cleared
+                _currentTooltipElement = null;
+            }
+        }
+
+        /// <summary>
+        /// Manually hides the active tooltip by sending a TooltipEvent with null tooltip.
+        /// </summary>
+        private void HideActiveTooltip()
+        {
+            if (_currentTooltipElement != null)
+            {
+                HideTooltipForElement(_currentTooltipElement);
+                _currentTooltipElement = null;
+            }
+        }
+
+        /// <summary>
+        /// Hides tooltip for a specific element by sending a TooltipEvent with null tooltip.
+        /// </summary>
+        private void HideTooltipForElement(VisualElement element)
+        {
+            if (element == null)
+                return;
+
+            try
+            {
+                // Send a TooltipEvent with null tooltip to hide it
+                var hideEvent = TooltipEvent.GetPooled();
+                hideEvent.target = element;
+                hideEvent.tooltip = null;
+                hideEvent.rect = Rect.zero;
+                element.SendEvent(hideEvent);
+                hideEvent.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to hide tooltip: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Resets the cursor to default arrow.
+        /// </summary>
+        private void ResetCursor()
+        {
+            // Use EditorGUIUtility to reset cursor to default
+            EditorGUIUtility.AddCursorRect(new Rect(0, 0, 0, 0), MouseCursor.Arrow);
+            
+            // Also try to reset via reflection if available
+            try
+            {
+                var setCursorMethod = typeof(EditorGUIUtility).GetMethod("SetMouseCursor",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                if (setCursorMethod != null)
+                {
+                    var arrowCursorType = typeof(MouseCursor);
+                    var arrowValue = Enum.Parse(arrowCursorType, "Arrow");
+                    setCursorMethod.Invoke(null, new[] { arrowValue });
+                }
+            }
+            catch
+            {
+                // Reflection failed, that's okay
+            }
         }
 
         private void UpdateButtonStates()
