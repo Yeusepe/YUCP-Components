@@ -22,6 +22,13 @@ namespace YUCP.Components.Editor.PackageManager
     /// </summary>
     public class PackageManagerWindow : EditorWindow
     {
+        private enum ViewMode
+        {
+            InstalledPackages,
+            PackageDetails,
+            Installer
+        }
+
         [MenuItem("Tools/YUCP/Package Manager")]
         public static void ShowWindow()
         {
@@ -38,6 +45,15 @@ namespace YUCP.Components.Editor.PackageManager
             }
             window.minSize = new Vector2(500, 600);
             window.Show();
+            
+            // Ensure view is shown after window is displayed
+            EditorApplication.delayCall += () =>
+            {
+                if (window != null && !window._isImportMode)
+                {
+                    window.ShowInstalledPackagesView();
+                }
+            };
         }
 
         // UI Elements
@@ -80,9 +96,19 @@ namespace YUCP.Components.Editor.PackageManager
         private bool _isModalFixed = false;
         private VisualElement _lastHoveredElement = null;
         private VisualElement _currentTooltipElement = null;
+        
+        // View mode management
+        private ViewMode _currentViewMode = ViewMode.InstalledPackages;
+        private InstalledPackagesView _installedPackagesView;
+        private PackageDetailsView _packageDetailsView;
+        private InstalledPackageInfo _currentPackageInfo;
+        private VisualElement _currentViewContainer;
 
         private void OnEnable()
         {
+            // Initialize update checker
+            EditorApplication.update += PackageUpdater.Update;
+            
             CreateGUI();
             LoadResources();
             AssetDatabase.importPackageStarted += OnImportPackageStarted;
@@ -92,10 +118,24 @@ namespace YUCP.Components.Editor.PackageManager
             
             // Ensure TrustedAuthority is initialized with all keys (root, cached, etc.)
             TrustedAuthority.ReloadAllKeys();
+            
+            // Show default view if not in import mode
+            // Use delayCall to ensure GUI is fully initialized
+            if (!_isImportMode)
+            {
+                EditorApplication.delayCall += () =>
+                {
+                    if (!_isImportMode && _currentViewContainer != null)
+                    {
+                        ShowInstalledPackagesView();
+                    }
+                };
+            }
         }
 
         private void OnDisable()
         {
+            EditorApplication.update -= PackageUpdater.Update;
             AssetDatabase.importPackageStarted -= OnImportPackageStarted;
             DestroyCreatedTextures();
             
@@ -183,10 +223,17 @@ namespace YUCP.Components.Editor.PackageManager
                 root.styleSheets.Add(styleSheet);
             }
 
-            // Main scroll view
+            // Container for views (InstalledPackages, Details, or Installer)
+            _currentViewContainer = new VisualElement();
+            _currentViewContainer.style.flexGrow = 1;
+            _currentViewContainer.style.flexShrink = 1;
+            _currentViewContainer.style.minHeight = 0;
+            root.Add(_currentViewContainer);
+
+            // Main scroll view (for installer view only) - create but don't add to view container yet
             _mainScrollView = new ScrollView();
             _mainScrollView.style.flexGrow = 1;
-            root.Add(_mainScrollView);
+            _mainScrollView.style.display = DisplayStyle.None; // Hidden by default, shown only in installer mode
 
             // Get the scroll view's content container
             var scrollContent = _mainScrollView.contentContainer;
@@ -231,7 +278,9 @@ namespace YUCP.Components.Editor.PackageManager
 
             // Initialize with empty metadata - will be populated when import starts or via sample
             _currentMetadata = new PackageMetadata();
-            ShowSampleMetadata();
+            
+            // Only show sample metadata if in installer mode (InitializeForImport will handle this)
+            // Otherwise, views will be shown by ShowInstalledPackagesView or ShowPackageDetailsView
 
             // Update banner height when window resizes
             root.RegisterCallback<GeometryChangedEvent>(OnWindowGeometryChanged);
@@ -1439,6 +1488,9 @@ namespace YUCP.Components.Editor.PackageManager
             // Set minimum window size
             minSize = new Vector2(500, 600);
 
+            // Show installer view
+            ShowInstallerView();
+
             // Verify package signature FIRST (synchronously) before setting up UI
             // This ensures verification completes before UI elements are displayed
             VerifyPackage(packagePath);
@@ -2018,7 +2070,10 @@ namespace YUCP.Components.Editor.PackageManager
                     }
                 }
 
-                Debug.Log("[YUCP PackageManager] Import completed, closing window");
+                Debug.Log("[YUCP PackageManager] Import completed, registering package...");
+                
+                // Register package in registry
+                RegisterPackageAfterImport();
                 
                 // Unlock assembly reload before closing (import is complete)
                 if (_isImportMode)
@@ -2028,14 +2083,31 @@ namespace YUCP.Components.Editor.PackageManager
                     Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import complete)");
                 }
                 
+                // Switch to installed packages view instead of closing
+                // This allows user to see the newly installed package
                 try
                 {
-                    Close();
-                    GUIUtility.ExitGUI();
+                    ShowInstalledPackagesView();
+                    // Make window non-modal
+                    if (_isModalFixed)
+                    {
+                        // Window will remain open but no longer modal
+                        _isModalFixed = false;
+                    }
                 }
-                catch (ExitGUIException)
+                catch (Exception ex)
                 {
-                    // Expected when closing modal windows
+                    Debug.LogWarning($"[YUCP PackageManager] Failed to switch to installed packages view: {ex.Message}");
+                    // Fallback to closing
+                    try
+                    {
+                        Close();
+                        GUIUtility.ExitGUI();
+                    }
+                    catch (ExitGUIException)
+                    {
+                        // Expected when closing modal windows
+                    }
                 }
             }
             catch (ExitGUIException)
@@ -2207,6 +2279,194 @@ namespace YUCP.Components.Editor.PackageManager
             catch (Exception ex)
             {
                 Debug.LogWarning($"[YUCP PackageManager] Failed to update import item selections: {ex.Message}");
+            }
+        }
+
+        // View management methods
+        private void ShowInstalledPackagesView()
+        {
+            _currentViewMode = ViewMode.InstalledPackages;
+            _currentViewContainer.Clear();
+            
+            // Always create a new view to ensure it's fresh
+            _installedPackagesView = new InstalledPackagesView(OnPackageSelected);
+            
+            _installedPackagesView.RefreshPackages();
+            _currentViewContainer.Add(_installedPackagesView);
+            
+            // Hide installer UI
+            if (_mainScrollView != null)
+            {
+                _mainScrollView.style.display = DisplayStyle.None;
+            }
+            
+            Debug.Log("[PackageManager] Showing InstalledPackagesView");
+        }
+
+        private void ShowPackageDetailsView(InstalledPackageInfo packageInfo)
+        {
+            _currentViewMode = ViewMode.PackageDetails;
+            _currentPackageInfo = packageInfo;
+            _currentViewContainer.Clear();
+            
+            _packageDetailsView = new PackageDetailsView(
+                packageInfo,
+                OnBackToInstalledPackages,
+                OnUpdatePackage,
+                OnUninstallPackage
+            );
+            
+            _currentViewContainer.Add(_packageDetailsView);
+            
+            // Hide installer UI
+            if (_mainScrollView != null)
+            {
+                _mainScrollView.style.display = DisplayStyle.None;
+            }
+        }
+
+        private void ShowInstallerView()
+        {
+            _currentViewMode = ViewMode.Installer;
+            _currentViewContainer.Clear();
+            
+            // Show installer UI (mainScrollView with all installer components)
+            // The installer UI is already created in CreateGUI, just show it
+            if (_mainScrollView != null)
+            {
+                _mainScrollView.style.display = DisplayStyle.Flex;
+                _currentViewContainer.Add(_mainScrollView);
+            }
+        }
+
+        private void OnPackageSelected(InstalledPackageInfo packageInfo)
+        {
+            ShowPackageDetailsView(packageInfo);
+        }
+
+        private void OnBackToInstalledPackages()
+        {
+            ShowInstalledPackagesView();
+        }
+
+        private void OnUpdatePackage(InstalledPackageInfo packageInfo)
+        {
+            // TODO: Implement update functionality
+            EditorUtility.DisplayDialog("Update Package", 
+                $"Update functionality for '{packageInfo.packageName}' will be implemented soon.", 
+                "OK");
+        }
+
+        private void OnUninstallPackage(InstalledPackageInfo packageInfo)
+        {
+            if (PackageUninstaller.UninstallPackage(packageInfo.packageId))
+            {
+                // Refresh the view
+                if (_currentViewMode == ViewMode.InstalledPackages && _installedPackagesView != null)
+                {
+                    _installedPackagesView.RefreshPackages();
+                }
+                else
+                {
+                    ShowInstalledPackagesView();
+                }
+            }
+        }
+
+        private void RegisterPackageAfterImport()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_currentPackagePath))
+                    return;
+
+                // Extract metadata
+                var metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(
+                    _allImportItems ?? _currentImportItems, 
+                    _currentPackagePath, 
+                    _currentPackageIconPath);
+
+                // Extract manifest and packageId
+                string packageId = null;
+                string archiveSha256 = null;
+                string publisherId = null;
+                bool isVerified = false;
+
+                try
+                {
+                    var extractionResult = PackageVerifierCore.ManifestExtractor.ExtractSigningData(_currentPackagePath, _allImportItems);
+                    if (extractionResult != null && extractionResult.success && extractionResult.manifest != null)
+                    {
+                        var manifest = extractionResult.manifest;
+                        packageId = manifest.packageId;
+                        archiveSha256 = manifest.archiveSha256;
+                        publisherId = manifest.publisherId;
+                    }
+
+                    // Check verification
+                    if (_verificationResult != null)
+                    {
+                        isVerified = _verificationResult.valid;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[PackageManager] Failed to extract manifest: {ex.Message}");
+                }
+
+                // Collect installed files from import items
+                var installedFiles = new List<string>();
+                if (_allImportItems != null)
+                {
+                    var itemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
+                    if (itemType != null)
+                    {
+                        var destinationPathField = itemType.GetField("destinationAssetPath");
+                        if (destinationPathField != null)
+                        {
+                            foreach (var item in _allImportItems)
+                            {
+                                if (item == null) continue;
+                                string path = destinationPathField.GetValue(item) as string;
+                                if (!string.IsNullOrEmpty(path))
+                                {
+                                    installedFiles.Add(path);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Create InstalledPackageInfo
+                var installedInfo = new InstalledPackageInfo
+                {
+                    packageName = metadata.packageName,
+                    version = metadata.version,
+                    author = metadata.author,
+                    description = metadata.description,
+                    icon = metadata.icon,
+                    banner = metadata.banner,
+                    productLinks = metadata.productLinks,
+                    dependencies = metadata.dependencies,
+                    packageId = packageId ?? "",
+                    archiveSha256 = archiveSha256 ?? "",
+                    installedVersion = metadata.version,
+                    isVerified = isVerified,
+                    publisherId = publisherId ?? "",
+                    installedFiles = installedFiles
+                };
+                installedInfo.SetInstalledDateTime(DateTime.Now);
+
+                // Register in registry
+                var registry = InstalledPackageRegistry.GetOrCreate();
+                registry.RegisterPackage(installedInfo);
+
+                Debug.Log($"[PackageManager] Registered package: {installedInfo.packageName} (ID: {packageId})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[PackageManager] Failed to register package after import: {ex.Message}");
+                Debug.LogException(ex);
             }
         }
     }
