@@ -2050,31 +2050,15 @@ namespace YUCP.Components.Editor.PackageManager
                         Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import complete)");
                     }
 
-                    // Switch to installed packages view instead of closing
-                    // This allows user to see the newly installed package
+                    // Close the import window after successful import
                     try
                     {
-                        ShowInstalledPackagesView();
-                        // Make window non-modal
-                        if (_isModalFixed)
-                        {
-                            // Window will remain open but no longer modal
-                            _isModalFixed = false;
-                        }
+                        Close();
+                        GUIUtility.ExitGUI();
                     }
-                    catch (Exception ex)
+                    catch (ExitGUIException)
                     {
-                        Debug.LogWarning($"[YUCP PackageManager] Failed to switch to installed packages view: {ex.Message}");
-                        // Fallback to closing
-                        try
-                        {
-                            Close();
-                            GUIUtility.ExitGUI();
-                        }
-                        catch (ExitGUIException)
-                        {
-                            // Expected when closing modal windows
-                        }
+                        // Expected when closing modal windows
                     }
                 }
                 catch (Exception ex)
