@@ -104,6 +104,10 @@ namespace YUCP.Components.Editor.PackageManager
         private InstalledPackageInfo _currentPackageInfo;
         private VisualElement _currentViewContainer;
 
+        // Import completion tracking
+        private bool _waitingForImportCompletion = false;
+        private string _pendingPackageName;
+        
         private void OnEnable()
         {
             // Initialize update checker
@@ -112,6 +116,7 @@ namespace YUCP.Components.Editor.PackageManager
             CreateGUI();
             LoadResources();
             AssetDatabase.importPackageStarted += OnImportPackageStarted;
+            AssetDatabase.importPackageCompleted += OnImportPackageCompleted;
             
             // Set minimum window size
             minSize = new Vector2(500, 600);
@@ -137,6 +142,7 @@ namespace YUCP.Components.Editor.PackageManager
         {
             EditorApplication.update -= PackageUpdater.Update;
             AssetDatabase.importPackageStarted -= OnImportPackageStarted;
+            AssetDatabase.importPackageCompleted -= OnImportPackageCompleted;
             DestroyCreatedTextures();
             
             // Clean up modal event handlers
@@ -2011,6 +2017,73 @@ namespace YUCP.Components.Editor.PackageManager
             Focus();
         }
 
+        private void OnImportPackageCompleted(string packageName)
+        {
+            if (!_waitingForImportCompletion)
+                return;
+            
+            // If we have a specific pending package name, ensure this callback matches it
+            if (!string.IsNullOrEmpty(_pendingPackageName) &&
+                !string.Equals(_pendingPackageName, packageName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _waitingForImportCompletion = false;
+            _pendingPackageName = null;
+
+            Debug.Log($"[YUCP PackageManager] Import completed for '{packageName}', organizing assets and registering package...");
+
+            // Use delayCall to ensure Unity has fully finished processing the import
+            EditorApplication.delayCall += () =>
+            {
+                try
+                {
+                    // Register package in registry (also moves assets into installed-packages container)
+                    RegisterPackageAfterImport();
+
+                    // Unlock assembly reload (import is complete)
+                    if (_isImportMode)
+                    {
+                        EditorApplication.UnlockReloadAssemblies();
+                        _isImportMode = false;
+                        Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import complete)");
+                    }
+
+                    // Switch to installed packages view instead of closing
+                    // This allows user to see the newly installed package
+                    try
+                    {
+                        ShowInstalledPackagesView();
+                        // Make window non-modal
+                        if (_isModalFixed)
+                        {
+                            // Window will remain open but no longer modal
+                            _isModalFixed = false;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[YUCP PackageManager] Failed to switch to installed packages view: {ex.Message}");
+                        // Fallback to closing
+                        try
+                        {
+                            Close();
+                            GUIUtility.ExitGUI();
+                        }
+                        catch (ExitGUIException)
+                        {
+                            // Expected when closing modal windows
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[YUCP PackageManager] Error handling import completion: {ex.Message}\n{ex.StackTrace}");
+                }
+            };
+        }
+
         private void OnImportClicked()
         {
             
@@ -2070,45 +2143,11 @@ namespace YUCP.Components.Editor.PackageManager
                     }
                 }
 
-                Debug.Log("[YUCP PackageManager] Import completed, registering package...");
-                
-                // Register package in registry
-                RegisterPackageAfterImport();
-                
-                // Unlock assembly reload before closing (import is complete)
-                if (_isImportMode)
-                {
-                    EditorApplication.UnlockReloadAssemblies();
-                    _isImportMode = false;
-                    Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import complete)");
-                }
-                
-                // Switch to installed packages view instead of closing
-                // This allows user to see the newly installed package
-                try
-                {
-                    ShowInstalledPackagesView();
-                    // Make window non-modal
-                    if (_isModalFixed)
-                    {
-                        // Window will remain open but no longer modal
-                        _isModalFixed = false;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[YUCP PackageManager] Failed to switch to installed packages view: {ex.Message}");
-                    // Fallback to closing
-                    try
-                    {
-                        Close();
-                        GUIUtility.ExitGUI();
-                    }
-                    catch (ExitGUIException)
-                    {
-                        // Expected when closing modal windows
-                    }
-                }
+                Debug.Log("[YUCP PackageManager] Import initiated, waiting for completion...");
+
+                // Remember which package we're expecting completion for
+                _waitingForImportCompletion = true;
+                _pendingPackageName = packageName;
             }
             catch (ExitGUIException)
             {
@@ -2414,25 +2453,49 @@ namespace YUCP.Components.Editor.PackageManager
                     Debug.LogWarning($"[PackageManager] Failed to extract manifest: {ex.Message}");
                 }
 
-                // Collect installed files from import items
+                // Move imported assets into the dedicated installed-packages container and
+                // collect their final locations so uninstall/update flows can track them.
                 var installedFiles = new List<string>();
-                if (_allImportItems != null)
+                try
                 {
-                    var itemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
-                    if (itemType != null)
+                    if (_allImportItems != null && _allImportItems.Length > 0)
                     {
-                        var destinationPathField = itemType.GetField("destinationAssetPath");
-                        if (destinationPathField != null)
+                        installedFiles = InstalledPackagesOrganizer.MoveImportedAssetsToInstalledPackage(
+                            _allImportItems,
+                            packageId,
+                            metadata.packageName);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[PackageManager] Failed to organize installed files under '{InstalledPackagesOrganizer.RootAssetPath}': {ex.Message}");
+                    // Fallback: keep original destination paths if we can't move them
+                    installedFiles = new List<string>();
+                    if (_allImportItems != null)
+                    {
+                        try
                         {
-                            foreach (var item in _allImportItems)
+                            var itemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
+                            if (itemType != null)
                             {
-                                if (item == null) continue;
-                                string path = destinationPathField.GetValue(item) as string;
-                                if (!string.IsNullOrEmpty(path))
+                                var destinationPathField = itemType.GetField("destinationAssetPath");
+                                if (destinationPathField != null)
                                 {
-                                    installedFiles.Add(path);
+                                    foreach (var item in _allImportItems)
+                                    {
+                                        if (item == null) continue;
+                                        string path = destinationPathField.GetValue(item) as string;
+                                        if (!string.IsNullOrEmpty(path))
+                                        {
+                                            installedFiles.Add(path);
+                                        }
+                                    }
                                 }
                             }
+                        }
+                        catch
+                        {
+                            // ignore fallback errors
                         }
                     }
                 }

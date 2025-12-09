@@ -141,37 +141,62 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         /// </summary>
         private static void CleanupDuplicateGuardians()
         {
-            string editorPath = Path.Combine(Application.dataPath, "Editor");
-            if (!Directory.Exists(editorPath))
-                return;
-                
-            var guardians = Directory.GetFiles(editorPath, "*PackageGuardian*.cs", SearchOption.TopDirectoryOnly)
-                .Where(f => !f.Contains("Editor") && f.Contains("YUCP") || f.Contains("Guardian"))
-                .ToArray();
-                
-            if (guardians.Length > 1)
+            try
             {
-                Debug.LogWarning($"[Import Protection] Found {guardians.Length} guardian scripts - cleaning duplicates");
-                
-                // Keep the one in Packages, delete standalone ones
-                foreach (var guardian in guardians)
+                // First, clean up any standalone guardian scripts under Assets/Editor
+                string editorPath = Path.Combine(Application.dataPath, "Editor");
+                if (Directory.Exists(editorPath))
                 {
-                    if (guardian.Contains("Assets"))
+                    var guardians = Directory.GetFiles(editorPath, "*PackageGuardian*.cs", SearchOption.TopDirectoryOnly)
+                        .Where(f => (!f.Contains("Editor") && f.Contains("YUCP")) || f.Contains("Guardian"))
+                        .ToArray();
+                    
+                    if (guardians.Length > 1)
                     {
-                        try
+                        Debug.LogWarning($"[Import Protection] Found {guardians.Length} guardian scripts - cleaning duplicates");
+                        
+                        // Keep the one in Packages, delete standalone ones
+                        foreach (var guardian in guardians)
                         {
-                            File.Delete(guardian);
-                            File.Delete(guardian + ".meta");
-                            Debug.Log($"[Import Protection] Removed duplicate: {Path.GetFileName(guardian)}");
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.LogWarning($"[Import Protection] Failed to remove {Path.GetFileName(guardian)}: {ex.Message}");
+                            if (guardian.Contains("Assets"))
+                            {
+                                try
+                                {
+                                    File.Delete(guardian);
+                                    File.Delete(guardian + ".meta");
+                                    Debug.Log($"[Import Protection] Removed duplicate: {Path.GetFileName(guardian)}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.LogWarning($"[Import Protection] Failed to remove {Path.GetFileName(guardian)}: {ex.Message}");
+                                }
+                            }
                         }
                     }
                 }
-                
+
+                // Also remove the standalone mini guardian package if it exists.
+                // When com.yucp.components is installed, its built-in guardian replaces the bundled mini guardian.
+                string packagesRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Packages"));
+                string standaloneGuardianPath = Path.Combine(packagesRoot, "yucp.packageguardian");
+                if (Directory.Exists(standaloneGuardianPath))
+                {
+                    try
+                    {
+                        Directory.Delete(standaloneGuardianPath, true);
+                        Debug.Log("[Import Protection] Removed standalone mini guardian package at Packages/yucp.packageguardian");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[Import Protection] Failed to remove standalone mini guardian package: {ex.Message}");
+                    }
+                }
+
                 AssetDatabase.Refresh();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Import Protection] CleanupDuplicateGuardians failed: {ex.Message}");
             }
         }
         

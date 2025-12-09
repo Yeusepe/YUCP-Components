@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using YUCP.Components.Editor.PackageManager;
 
 namespace YUCP.Components.Editor.PackageManager
 {
@@ -148,20 +149,41 @@ namespace YUCP.Components.Editor.PackageManager
         /// </summary>
         public static InstalledPackageRegistry GetOrCreate()
         {
-            string registryPath = "Assets/YUCP/PackageRegistry.asset";
-            
-            // Ensure YUCP directory exists
-            string directory = Path.GetDirectoryName(registryPath);
-            if (!Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-                AssetDatabase.Refresh();
-            }
+            // Ensure the installed-packages container exists
+            InstalledPackagesOrganizer.EnsureInstalledPackagesRoot();
 
+            string registryPath = InstalledPackagesOrganizer.RegistryAssetPath;
+
+            // Try to load from new location first
             var registry = AssetDatabase.LoadAssetAtPath<InstalledPackageRegistry>(registryPath);
             
             if (registry == null)
             {
+                // If an old registry exists under Assets/YUCP, migrate it into the new package
+                const string legacyPath = "Assets/YUCP/PackageRegistry.asset";
+                var legacy = AssetDatabase.LoadAssetAtPath<InstalledPackageRegistry>(legacyPath);
+                if (legacy != null)
+                {
+                    // Ensure parent folders for new path exist
+                    string parentFolder = Path.GetDirectoryName(registryPath);
+                    if (!string.IsNullOrEmpty(parentFolder))
+                    {
+                        parentFolder = parentFolder.Replace("\\", "/");
+                        EnsureFolderHierarchy(parentFolder);
+                    }
+
+                    string error = AssetDatabase.MoveAsset(legacyPath, registryPath);
+                    if (!string.IsNullOrEmpty(error))
+                    {
+                        Debug.LogWarning($"[InstalledPackageRegistry] Failed to migrate legacy registry from '{legacyPath}' to '{registryPath}': {error}");
+                    }
+                    registry = AssetDatabase.LoadAssetAtPath<InstalledPackageRegistry>(registryPath);
+                }
+            }
+
+            if (registry == null)
+            {
+                // Create a fresh registry asset in the container package
                 registry = CreateInstance<InstalledPackageRegistry>();
                 AssetDatabase.CreateAsset(registry, registryPath);
                 AssetDatabase.SaveAssets();
@@ -175,10 +197,46 @@ namespace YUCP.Components.Editor.PackageManager
         /// </summary>
         public static InstalledPackageRegistry Load()
         {
-            string registryPath = "Assets/YUCP/PackageRegistry.asset";
+            string registryPath = InstalledPackagesOrganizer.RegistryAssetPath;
             return AssetDatabase.LoadAssetAtPath<InstalledPackageRegistry>(registryPath);
+        }
+
+        /// <summary>
+        /// Ensure that a folder hierarchy exists for a given AssetDatabase path.
+        /// </summary>
+        private static void EnsureFolderHierarchy(string assetFolderPath)
+        {
+            if (string.IsNullOrEmpty(assetFolderPath))
+                return;
+
+            assetFolderPath = assetFolderPath.Replace("\\", "/");
+
+            if (AssetDatabase.IsValidFolder(assetFolderPath))
+                return;
+
+            string[] segments = assetFolderPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length == 0)
+                return;
+
+            string current = segments[0];
+            if (!AssetDatabase.IsValidFolder(current) && (current == "Assets" || current == "Packages"))
+            {
+                // Root folders are managed by Unity; don't try to create them
+            }
+
+            for (int i = 1; i < segments.Length; i++)
+            {
+                string next = current + "/" + segments[i];
+                if (!AssetDatabase.IsValidFolder(next))
+                {
+                    AssetDatabase.CreateFolder(current, segments[i]);
+                }
+                current = next;
+            }
         }
     }
 }
+
+
 
 
