@@ -1,3 +1,5 @@
+#define YUCP_PACKAGE_MANAGER_DISABLED
+#if !YUCP_PACKAGE_MANAGER_DISABLED
 using System;
 using System.Linq;
 using System.Reflection;
@@ -34,6 +36,12 @@ namespace YUCP.Components.Editor.PackageManager
         {
             try
             {
+                if (!PackageManagerRuntimeSettings.IsEnabled())
+                {
+                    Debug.Log("[YUCP PackageManager] Package Manager is disabled in settings; import interception will not initialize.");
+                    return;
+                }
+
                 Initialize();
             }
             catch (Exception ex)
@@ -46,6 +54,8 @@ namespace YUCP.Components.Editor.PackageManager
         private static void Initialize()
         {
             if (_isInitialized) return;
+            if (!PackageManagerRuntimeSettings.IsEnabled())
+                return;
 
             try
             {
@@ -516,4 +526,5 @@ namespace YUCP.Components.Editor.PackageManager
 
     }
 }
+#endif
 

@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using UnityEditor;
 using UnityEngine;
 using PackageGuardian.Core.Transactions;
+using YUCP.Components.PackageGuardian.Editor.Settings;
 
 namespace YUCP.PackageGuardian.Mini
 {
@@ -66,6 +67,11 @@ namespace YUCP.PackageGuardian.Mini
         
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
+            // Respect Package Guardian's global enabled/disabled setting.
+            // Users expect "disabled" to mean no file operations (including .yucp_disabled resolution).
+            if (!PackageGuardianSettings.IsEnabled())
+                return;
+
             if (_hasProcessedThisSession || IsCircuitBroken())
                 return;
                 

@@ -1,9 +1,12 @@
+#define YUCP_PACKAGE_MANAGER_DISABLED
+#if !YUCP_PACKAGE_MANAGER_DISABLED
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
+using UnityEditor.Compilation;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -32,6 +35,12 @@ namespace YUCP.Components.Editor.PackageManager
         [MenuItem("Tools/YUCP/Package Manager")]
         public static void ShowWindow()
         {
+            if (!PackageManagerRuntimeSettings.IsEnabled())
+            {
+                Debug.LogWarning("[YUCP PackageManager] Package Manager is disabled (Tools > YUCP > Package Manager > Enable).");
+                return;
+            }
+
             var window = GetWindow<PackageManagerWindow>();
             var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.components/Resources/Icons/YUCPIcon.png");
             if (icon == null)
@@ -110,6 +119,13 @@ namespace YUCP.Components.Editor.PackageManager
         
         private void OnEnable()
         {
+            if (!PackageManagerRuntimeSettings.IsEnabled())
+            {
+                Debug.LogWarning("[YUCP PackageManager] Package Manager is disabled; closing window.");
+                EditorApplication.delayCall += Close;
+                return;
+            }
+
             // Initialize update checker
             EditorApplication.update += PackageUpdater.Update;
             
@@ -475,13 +491,29 @@ namespace YUCP.Components.Editor.PackageManager
 
         private void ApplyGradientToOverlay()
         {
-            if (_bannerGradientOverlay == null || _bannerGradientTexture == null)
+            if (_bannerGradientOverlay == null)
             {
                 return;
             }
 
-            _bannerGradientOverlay.style.backgroundImage = new StyleBackground(_bannerGradientTexture);
-            
+            // When details are expanded, fully grey-out the banner background.
+            // When collapsed, restore the transparent->grey gradient.
+            Color solidGrey = new Color(0.220f, 0.220f, 0.220f, 1f);
+
+            if (_detailsExpanded)
+            {
+                _bannerGradientOverlay.style.backgroundImage = StyleKeyword.None;
+                _bannerGradientOverlay.style.backgroundColor = solidGrey;
+            }
+            else
+            {
+                _bannerGradientOverlay.style.backgroundColor = new Color(0, 0, 0, 0);
+                if (_bannerGradientTexture != null)
+                {
+                    _bannerGradientOverlay.style.backgroundImage = new StyleBackground(_bannerGradientTexture);
+                }
+            }
+
             // Force a repaint
             _bannerGradientOverlay.MarkDirtyRepaint();
         }
@@ -869,12 +901,12 @@ namespace YUCP.Components.Editor.PackageManager
             else
             {
                 // Package is signed but doesn't match - show warning
-                var warningIcon = new Label("⚠");
+                var warningIcon = new Label("WARNING");
                 warningIcon.style.fontSize = 16;
                 warningIcon.style.color = new Color(0.8f, 0.6f, 0.2f);
                 
                 // Build comprehensive tooltip with error details
-                string tooltipText = "⚠ Verification Failed\n\n";
+                string tooltipText = "WARNING: Verification Failed\n\n";
                 tooltipText += "This package is signed, but verification failed. The package may have been tampered with, the certificate chain is invalid, or the signature verification failed.\n\n";
                 
                 if (_verificationResult.errors != null && _verificationResult.errors.Count > 0)
@@ -966,7 +998,7 @@ namespace YUCP.Components.Editor.PackageManager
                 warningRow.style.flexDirection = FlexDirection.Row;
                 warningRow.style.alignItems = Align.Center;
 
-                var warningIcon = new Label("⚠");
+                var warningIcon = new Label("WARNING");
                 warningIcon.style.fontSize = 14;
                 warningIcon.style.color = new Color(0.8f, 0.6f, 0.2f);
                 warningIcon.style.marginRight = 8;
@@ -1055,6 +1087,9 @@ namespace YUCP.Components.Editor.PackageManager
         private void AnimateDetailsToggle()
         {
             var arrowIcon = _detailsToggleButton.Q<Label>("details-arrow");
+
+            // Update banner overlay immediately based on expand/collapse state
+            ApplyGradientToOverlay();
             
             if (_detailsExpanded)
             {
@@ -1153,6 +1188,38 @@ namespace YUCP.Components.Editor.PackageManager
             titleLabel.style.marginBottom = 10;
             titleLabel.style.marginTop = 0;
             section.Add(titleLabel);
+
+            // Overwrite/keep existing quick actions
+            var overwriteActionsRow = new VisualElement();
+            overwriteActionsRow.style.flexDirection = FlexDirection.Row;
+            overwriteActionsRow.style.justifyContent = Justify.FlexEnd;
+            overwriteActionsRow.style.alignItems = Align.Center;
+            overwriteActionsRow.style.marginBottom = 8;
+
+            var overwriteExistingButton = new Button(() => _treeView?.SetOverwriteExisting(true))
+            {
+                text = "Overwrite Existing"
+            };
+            overwriteExistingButton.tooltip = "Select all items that already exist in the project (they will be overwritten on import).";
+            overwriteExistingButton.style.marginRight = 6;
+            overwriteExistingButton.style.minHeight = 22;
+            overwriteExistingButton.style.paddingLeft = 10;
+            overwriteExistingButton.style.paddingRight = 10;
+            overwriteExistingButton.style.fontSize = 11;
+
+            var keepExistingButton = new Button(() => _treeView?.SetOverwriteExisting(false))
+            {
+                text = "Keep Existing"
+            };
+            keepExistingButton.tooltip = "Deselect all items that already exist in the project (existing files will be kept).";
+            keepExistingButton.style.minHeight = 22;
+            keepExistingButton.style.paddingLeft = 10;
+            keepExistingButton.style.paddingRight = 10;
+            keepExistingButton.style.fontSize = 11;
+
+            overwriteActionsRow.Add(overwriteExistingButton);
+            overwriteActionsRow.Add(keepExistingButton);
+            section.Add(overwriteActionsRow);
 
             // Tree view scroll container
             _treeScrollView = new ScrollView();
@@ -1814,8 +1881,19 @@ namespace YUCP.Components.Editor.PackageManager
         /// </summary>
         private void ResetCursor()
         {
-            // Use EditorGUIUtility to reset cursor to default
-            EditorGUIUtility.AddCursorRect(new Rect(0, 0, 0, 0), MouseCursor.Arrow);
+            // Resetting cursor via AddCursorRect can throw/NRE when called outside a GUI event (e.g. OnDisable during domain reload).
+            // Keep this best-effort and non-fatal.
+            try
+            {
+                if (Event.current != null)
+                {
+                    EditorGUIUtility.AddCursorRect(new Rect(0, 0, 0, 0), MouseCursor.Arrow);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
             
             // Also try to reset via reflection if available
             try
@@ -2042,6 +2120,12 @@ namespace YUCP.Components.Editor.PackageManager
                     // Register package in registry (also moves assets into installed-packages container)
                     RegisterPackageAfterImport();
 
+                    // Critical: many installs trigger an immediate domain reload right after we unlock reload assemblies.
+                    // Any delayCall/update callbacks can be wiped. Persist a "pending resolve" so we can finish enabling
+                    // *.yucp_disabled files after the reload.
+                    Debug.Log("[YUCP PackageManager] Marking pending .yucp_disabled resolve (pre-unlock)...");
+                    YucpDisabledFileResolver.SetPendingResolve(timeoutSeconds: 60.0);
+
                     // Unlock assembly reload (import is complete)
                     if (_isImportMode)
                     {
@@ -2049,6 +2133,24 @@ namespace YUCP.Components.Editor.PackageManager
                         _isImportMode = false;
                         Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import complete)");
                     }
+
+                    // If the install pipeline moved/created files using System.IO (e.g. writing into Packages/),
+                    // Unity may not automatically pick up new scripts and trigger compilation.
+                    // Force a refresh and request script compilation after unlocking assemblies.
+                    EditorApplication.delayCall += () =>
+                    {
+                        try
+                        {
+                            Debug.Log("[YUCP PackageManager] Post-import: forcing AssetDatabase.Refresh + requesting script compilation...");
+                            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                            // Request compilation; if this triggers a domain reload, the pending resolver will resume.
+                            CompilationPipeline.RequestScriptCompilation();
+                        }
+                        catch (Exception refreshEx)
+                        {
+                            Debug.LogWarning($"[YUCP PackageManager] Post-import refresh/compile request failed: {refreshEx.Message}");
+                        }
+                    };
 
                     // Close the import window after successful import
                     try
@@ -2518,4 +2620,5 @@ namespace YUCP.Components.Editor.PackageManager
         }
     }
 }
+#endif
 

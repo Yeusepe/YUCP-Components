@@ -64,6 +64,20 @@ namespace YUCP.Components.Editor.PackageManager
             RenderNode(_rootNode, _container, 0);
         }
 
+        /// <summary>
+        /// Bulk helper: select/deselect files that already exist in the project.
+        /// Selecting an existing file means it will be imported (and therefore overwritten).
+        /// Deselecting an existing file means it will be skipped (and therefore kept).
+        /// </summary>
+        public void SetOverwriteExisting(bool overwriteExisting)
+        {
+            if (_rootNode == null) return;
+
+            ApplyOverwriteExistingRecursive(_rootNode, overwriteExisting);
+            _rootNode.UpdateSelectionState();
+            Refresh();
+        }
+
         public List<string> GetSelectedPaths()
         {
             var selectedPaths = new List<string>();
@@ -280,18 +294,24 @@ namespace YUCP.Components.Editor.PackageManager
             // Add status indicators
             if (hasConflict)
             {
-                nameLabel.text += " [Conflict]";
-                nameLabel.tooltip += "\n⚠ This file already exists and will be overwritten";
+                nameLabel.text += node.IsSelected ? " [Overwrite]" : " [Keep]";
+                nameLabel.tooltip += node.IsSelected
+                    ? "\nWARNING: Conflict: this file already exists and WILL be overwritten"
+                    : "\nINFO: Conflict: keeping existing file (this item will NOT be imported)";
             }
             else if (exists && isChanged)
             {
-                nameLabel.text += " [Modified]";
-                nameLabel.tooltip += "\n⚠ This file exists and will be updated";
+                nameLabel.text += node.IsSelected ? " [Overwrite]" : " [Keep]";
+                nameLabel.tooltip += node.IsSelected
+                    ? "\nWARNING: This file exists and WILL be overwritten/updated"
+                    : "\nINFO: Keeping existing file (this item will NOT be imported)";
             }
             else if (exists)
             {
-                nameLabel.text += " [Exists]";
-                nameLabel.tooltip += "\nℹ This file already exists";
+                nameLabel.text += node.IsSelected ? " [Overwrite]" : " [Keep]";
+                nameLabel.tooltip += node.IsSelected
+                    ? "\nWARNING: This file already exists and WILL be overwritten"
+                    : "\nINFO: Keeping existing file (this item will NOT be imported)";
             }
 
             content.Add(nameLabel);
@@ -387,6 +407,40 @@ namespace YUCP.Components.Editor.PackageManager
             if (item == null || AssetChangedProperty == null) return false;
             object value = AssetChangedProperty.GetValue(item);
             return value is bool b && b;
+        }
+        private bool ApplyOverwriteExistingRecursive(PackageItemNode node, bool overwriteExisting)
+        {
+            bool anyChanged = false;
+
+            if (!node.IsFolder)
+            {
+                bool exists = GetExists(node.ImportItem);
+                bool hasConflict = GetPathConflict(node.ImportItem);
+                bool isChanged = GetAssetChanged(node.ImportItem);
+
+                if (exists || hasConflict || isChanged)
+                {
+                    if (node.IsSelected != overwriteExisting)
+                    {
+                        node.IsSelected = overwriteExisting;
+                        anyChanged = true;
+                    }
+                }
+
+                return anyChanged;
+            }
+
+            foreach (var child in node.Children)
+            {
+                anyChanged |= ApplyOverwriteExistingRecursive(child, overwriteExisting);
+            }
+
+            if (anyChanged)
+            {
+                node.UpdateSelectionState();
+            }
+
+            return anyChanged;
         }
     }
 }

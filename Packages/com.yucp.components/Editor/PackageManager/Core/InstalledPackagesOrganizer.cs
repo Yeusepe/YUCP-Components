@@ -65,6 +65,10 @@ namespace YUCP.Components.Editor.PackageManager
   ""hideInEditor"": true
 }";
                     File.WriteAllText(packageJsonPath, packageJson);
+
+                    // Ensure Unity immediately sees this new local package on disk.
+                    // (Important when installation creates Packages/ content via System.IO.)
+                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
                 }
             }
             catch (Exception ex)
