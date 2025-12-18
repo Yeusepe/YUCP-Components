@@ -67,11 +67,6 @@ namespace YUCP.PackageGuardian.Mini
         
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
-            // Respect Package Guardian's global enabled/disabled setting.
-            // Users expect "disabled" to mean no file operations (including .yucp_disabled resolution).
-            if (!PackageGuardianSettings.IsEnabled())
-                return;
-
             if (_hasProcessedThisSession || IsCircuitBroken())
                 return;
                 
@@ -82,6 +77,27 @@ namespace YUCP.PackageGuardian.Mini
                 (a.Contains("Packages") && a.EndsWith("package.json")));
                 
             if (!hasYucpFiles)
+                return;
+
+            // ALWAYS resolve .yucp_disabled, even if Package Guardian is disabled.
+            // This is required for robust imports: if .meta isn't moved alongside .yucp_disabled,
+            // Unity will regenerate GUIDs and references will break.
+            //
+            // When Package Guardian is disabled we skip the rest of protection logic, but still run the resolver.
+            try
+            {
+                if (!YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                {
+                    // If installers are still moving files, poll for a while.
+                    YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Mini Guardian] Shared resolver failed: {ex.Message}");
+            }
+
+            if (!PackageGuardianSettings.IsEnabled())
                 return;
                 
             _hasProcessedThisSession = true;
@@ -134,13 +150,32 @@ namespace YUCP.PackageGuardian.Mini
             DetectAndRemoveDuplicates(importedAssets);
             
             // Step 2: Handle .yucp_disabled files
-            HandleDisabledFiles();
+            // Use the shared resolver (same implementation as Package Manager + Import Protection).
+            // This avoids behavior drift and ensures .meta is moved/restored properly.
+            try
+            {
+                if (!YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                {
+                    // If installers are still moving files, poll for a while.
+                    YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Mini Guardian] Shared resolver failed: {ex.Message} (falling back to legacy resolver)");
+                HandleDisabledFiles();
+            }
             
             // Step 3: Detect redundant imports
             DetectRedundantImport();
             
             // Step 4: Verify import integrity
-            VerifyImportIntegrity();
+            // NOTE: Resolution may be async when polling. If so, don't hard-fail here.
+            try { VerifyImportIntegrity(); }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Mini Guardian] VerifyImportIntegrity deferred: {ex.Message}");
+            }
         }
         
         /// <summary>

@@ -1,5 +1,3 @@
-#define YUCP_PACKAGE_MANAGER_DISABLED
-#if !YUCP_PACKAGE_MANAGER_DISABLED
 using System;
 using System.IO;
 using System.Linq;
@@ -7,6 +5,7 @@ using System.Security.Cryptography;
 using UnityEditor;
 using UnityEditor.Compilation;
 using UnityEngine;
+using System.Text.RegularExpressions;
 
 namespace YUCP.Components.Editor.PackageManager
 {
@@ -14,7 +13,9 @@ namespace YUCP.Components.Editor.PackageManager
     /// Resolves "*.yucp_disabled" files created by YUCP exports into their enabled counterparts.
     /// This runs as part of the import flow so it works even when Package Guardian is disabled.
     /// </summary>
-    internal static class YucpDisabledFileResolver
+    // Public because Package Guardian lives in a separate Editor assembly (separate .asmdef),
+    // but we need ONE shared resolver implementation that both PackageManager and PackageGuardian can call.
+    public static class YucpDisabledFileResolver
     {
         private const string DisabledSuffix = ".yucp_disabled";
         private const string PendingKey = "YUCP.PackageManager.ResolveYucpDisabled.Pending";
@@ -257,6 +258,43 @@ namespace YUCP.Components.Editor.PackageManager
             };
         }
 
+        /// <summary>
+        /// Attempts a single synchronous resolve pass (no polling).
+        /// Returns true if any .yucp_disabled files were found (handled or resolved), false otherwise.
+        /// Safe to call repeatedly; does nothing while Unity is compiling/updating.
+        /// </summary>
+        public static bool ResolveNow(bool requestCompilation = true)
+        {
+            try
+            {
+                if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+                    return false;
+
+                if (!TryResolveAll(out var stats))
+                    return false;
+
+                Log($"ResolveNow: enabled={stats.enabled}, updated={stats.updated}, duplicatesDeleted={stats.duplicatesDeleted}, rejected={stats.rejected}");
+
+                try
+                {
+                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                    if (requestCompilation)
+                        CompilationPipeline.RequestScriptCompilation();
+                }
+                catch (Exception ex)
+                {
+                    LogWarning($"ResolveNow: refresh/compile failed: {ex.Message}");
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"ResolveNow failed: {ex.Message}");
+                return false;
+            }
+        }
+
         private struct ResolveStats
         {
             public int enabled;
@@ -328,6 +366,7 @@ namespace YUCP.Components.Editor.PackageManager
                         if (IsVerbose()) Log($"Enable (no conflict): '{disabledFile}' -> '{enabledFile}'");
                         MoveFileIfExists(disabledFile, enabledFile);
                         MoveFileIfExists(disabledMeta, enabledMeta);
+                        TryRestoreOriginalGuidInMeta(enabledMeta);
                         stats.enabled++;
                         continue;
                     }
@@ -347,6 +386,7 @@ namespace YUCP.Components.Editor.PackageManager
 
                         MoveFileIfExists(disabledFile, enabledFile);
                         MoveFileIfExists(disabledMeta, enabledMeta);
+                        TryRestoreOriginalGuidInMeta(enabledMeta);
 
                         stats.updated++;
                         continue;
@@ -375,6 +415,21 @@ namespace YUCP.Components.Editor.PackageManager
                     LogWarning($"Failed to resolve '{Path.GetFileName(disabledFile)}': {ex.Message}");
                 }
             }
+
+            // Cleanup orphaned .yucp_disabled.meta files (common when other tools move/delete only the asset)
+            try
+            {
+                foreach (var root in roots)
+                {
+                    foreach (var meta in Directory.GetFiles(root, "*" + DisabledSuffix + ".meta", SearchOption.AllDirectories))
+                    {
+                        var disabled = meta.Substring(0, meta.Length - ".meta".Length);
+                        if (!File.Exists(disabled))
+                            DeleteFileIfExists(meta);
+                    }
+                }
+            }
+            catch { }
 
             return true;
         }
@@ -465,6 +520,72 @@ namespace YUCP.Components.Editor.PackageManager
             }
         }
 
+        private static void TryRestoreOriginalGuidInMeta(string metaPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(metaPath) || !File.Exists(metaPath))
+                    return;
+
+                string content = File.ReadAllText(metaPath);
+                string originalGuid = ExtractOriginalGuidFromMetaContent(content);
+                if (string.IsNullOrEmpty(originalGuid))
+                    return;
+
+                content = Regex.Replace(
+                    content,
+                    @"guid:\s*([a-f0-9]{32})",
+                    $"guid: {originalGuid}",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+
+                // Clean userData back to empty, Unity-style
+                content = Regex.Replace(
+                    content,
+                    @"(\s+userData:\s*)(?:['""])?YUCP_ORIGINAL_GUID=[a-f0-9]{32}(?:['""])?\s*$",
+                    "$1",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+                content = Regex.Replace(
+                    content,
+                    @"(\s+userData:\s*)\{\s*""originalGuid""\s*:\s*""[a-f0-9]{32}""\s*\}\s*$",
+                    "$1",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+
+                File.WriteAllText(metaPath, content);
+            }
+            catch
+            {
+                // best-effort
+            }
+        }
+
+        private static string ExtractOriginalGuidFromMetaContent(string metaContent)
+        {
+            try
+            {
+                var tokenMatch = Regex.Match(
+                    metaContent,
+                    @"userData:\s*(?:['""])?YUCP_ORIGINAL_GUID=([a-f0-9]{32})(?:['""])?\s*$",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+                if (tokenMatch.Success)
+                    return tokenMatch.Groups[1].Value;
+
+                var legacyMatch = Regex.Match(
+                    metaContent,
+                    @"userData:\s*(?:['""])?\{\s*""originalGuid""\s*:\s*""([a-f0-9]{32})""\s*\}(?:['""])?\s*$",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+                if (legacyMatch.Success)
+                    return legacyMatch.Groups[1].Value;
+            }
+            catch { }
+
+            return null;
+        }
+
         private static string ComputeFileHash(string filePath)
         {
             using (var md5 = MD5.Create())
@@ -476,6 +597,3 @@ namespace YUCP.Components.Editor.PackageManager
         }
     }
 }
-#endif
-
-

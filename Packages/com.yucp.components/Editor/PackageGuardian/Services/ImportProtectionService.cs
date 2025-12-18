@@ -230,7 +230,29 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         {
             if (CircuitBreakerService.IsCircuitBroken())
                 return;
-                
+
+            // Architecture note:
+            // Always prefer the shared resolver so .yucp_disabled handling stays identical across:
+            // - Package Manager flow (post-import/domain reload)
+            // - Mini Guardian (even when Package Guardian is disabled)
+            // - Full Guardian / Import Protection
+            //
+            // This resolver handles moving .meta alongside files, conflict decisions, orphan cleanup,
+            // and restoring original GUIDs from meta userData.
+            try
+            {
+                if (YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                    return;
+
+                // If nothing is found yet (installers may still be moving files), poll for a while.
+                YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Import Protection] Shared resolver failed: {ex.Message} (falling back to legacy resolver)");
+            }
+
             using (var transaction = new GuardianTransaction())
             {
                 try
@@ -253,17 +275,28 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                         try
                         {
                             string enabledFile = disabledFile.Substring(0, disabledFile.Length - ".yucp_disabled".Length);
+                            string disabledMeta = disabledFile + ".meta";
+                            string enabledMeta = enabledFile + ".meta";
                             
                             if (!File.Exists(enabledFile))
                             {
                                 // No conflict - just enable the file
                                 transaction.ExecuteFileOperation(disabledFile, enabledFile, FileOperationType.Move);
+                                // IMPORTANT: move meta alongside the file, otherwise Unity regenerates a new GUID
+                                if (File.Exists(disabledMeta))
+                                {
+                                    transaction.ExecuteFileOperation(disabledMeta, enabledMeta, FileOperationType.Move);
+                                    TryRestoreOriginalGuidInMeta(enabledMeta);
+                                }
                                 continue;
                             }
                             
                             // Backup both files
                             transaction.BackupFile(disabledFile);
                             transaction.BackupFile(enabledFile);
+                            // Backup meta files too (these drive GUID identity)
+                            transaction.BackupFile(disabledMeta);
+                            transaction.BackupFile(enabledMeta);
                             
                             // Determine resolution
                             var decision = DetermineConflictResolution(disabledFile, enabledFile);
@@ -405,10 +438,15 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         {
             try
             {
+                string disabledMeta = op.DisabledFile + ".meta";
+                string enabledMeta = op.EnabledFile + ".meta";
+
                 if (op.Decision.IsDuplicate)
                 {
                     // Just remove the disabled file
                     transaction.ExecuteFileOperation(op.DisabledFile, null, FileOperationType.Delete);
+                    if (File.Exists(disabledMeta))
+                        transaction.ExecuteFileOperation(disabledMeta, null, FileOperationType.Delete);
                     Debug.Log($"[Import Protection] Removed duplicate: {Path.GetFileName(op.DisabledFile)} ({op.Decision.Reason})");
                 }
                 else if (op.Decision.IsUpdate)
@@ -416,6 +454,15 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                     // Replace enabled with disabled
                     transaction.ExecuteFileOperation(op.EnabledFile, op.EnabledFile + ".old", FileOperationType.Move);
                     transaction.ExecuteFileOperation(op.DisabledFile, op.EnabledFile, FileOperationType.Move);
+
+                    // Move metas alongside to preserve GUIDs
+                    if (File.Exists(enabledMeta))
+                        transaction.ExecuteFileOperation(enabledMeta, enabledMeta + ".old", FileOperationType.Move);
+                    if (File.Exists(disabledMeta))
+                    {
+                        transaction.ExecuteFileOperation(disabledMeta, enabledMeta, FileOperationType.Move);
+                        TryRestoreOriginalGuidInMeta(enabledMeta);
+                    }
                     Debug.Log($"[Import Protection] Updated: {Path.GetFileName(op.EnabledFile)} ({op.Decision.Reason})");
                 }
             }
@@ -424,6 +471,79 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 Debug.LogError($"[Import Protection] Failed to resolve conflict for {Path.GetFileName(op.DisabledFile)}: {ex.Message}");
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Restores original GUID in a moved .meta file if YUCP stored it in userData.
+        /// Supports:
+        /// - userData: YUCP_ORIGINAL_GUID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        /// - userData: {"originalGuid":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"} (legacy)
+        /// </summary>
+        private static void TryRestoreOriginalGuidInMeta(string metaPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(metaPath) || !File.Exists(metaPath))
+                    return;
+
+                string content = File.ReadAllText(metaPath);
+                string originalGuid = ExtractOriginalGuidFromMetaContent(content);
+                if (string.IsNullOrEmpty(originalGuid))
+                    return;
+
+                // Replace guid line
+                content = Regex.Replace(
+                    content,
+                    @"guid:\s*([a-f0-9]{32})",
+                    $"guid: {originalGuid}",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+
+                // Clean userData back to Unity's empty form
+                content = Regex.Replace(
+                    content,
+                    @"(\s+userData:\s*)(?:['""])?YUCP_ORIGINAL_GUID=[a-f0-9]{32}(?:['""])?\s*$",
+                    "$1",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+                content = Regex.Replace(
+                    content,
+                    @"(\s+userData:\s*)\{\s*""originalGuid""\s*:\s*""[a-f0-9]{32}""\s*\}\s*$",
+                    "$1",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+
+                File.WriteAllText(metaPath, content);
+            }
+            catch
+            {
+                // Best-effort; never fail import protection because of meta patching
+            }
+        }
+
+        private static string ExtractOriginalGuidFromMetaContent(string metaContent)
+        {
+            try
+            {
+                var tokenMatch = Regex.Match(
+                    metaContent,
+                    @"userData:\s*(?:['""])?YUCP_ORIGINAL_GUID=([a-f0-9]{32})(?:['""])?\s*$",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+                if (tokenMatch.Success)
+                    return tokenMatch.Groups[1].Value;
+
+                var legacyMatch = Regex.Match(
+                    metaContent,
+                    @"userData:\s*(?:['""])?\{\s*""originalGuid""\s*:\s*""([a-f0-9]{32})""\s*\}(?:['""])?\s*$",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline
+                );
+                if (legacyMatch.Success)
+                    return legacyMatch.Groups[1].Value;
+            }
+            catch { }
+
+            return null;
         }
         
         /// <summary>
