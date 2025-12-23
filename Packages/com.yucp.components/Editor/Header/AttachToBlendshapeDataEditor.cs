@@ -988,6 +988,11 @@ namespace YUCP.Components.Resources
             var originalWeights = SaveAllBlendshapeWeights();
             var bakeMesh = GetPreviewBakeMesh();
             data.targetMesh.BakeMesh(bakeMesh);
+            // BakeMesh can produce a mesh without triangles; cluster evaluation needs triangle indices.
+            if (bakeMesh.triangles == null || bakeMesh.triangles.Length == 0)
+            {
+                bakeMesh.triangles = data.targetMesh.sharedMesh.triangles;
+            }
 
             SurfaceClusterDetector.EvaluateCluster(
                 data.previewCluster,
@@ -999,6 +1004,40 @@ namespace YUCP.Components.Resources
 
             data.previewBaseCaptured = true;
             data.previewHasLastTangent = false;
+
+            // Capture the solver base pose and compute offsets so the user's placed object position is preserved.
+            // We keep a local-space offset expressed in the solver frame.
+            try
+            {
+                var baseSolver = SolveClusterPose(
+                    data.previewBasePosition,
+                    data.previewBaseNormal,
+                    data.previewBaseTangent,
+                    null);
+
+                if (baseSolver.success)
+                {
+                    data.previewBaseSolverPosition = baseSolver.position;
+                    data.previewBaseSolverRotation = baseSolver.rotation;
+
+                    // Position offset in solver local frame (so it rotates with the surface).
+                    data.previewPositionOffset = Quaternion.Inverse(baseSolver.rotation) *
+                                                (data.transform.localPosition - baseSolver.position);
+                    // Rotation offset relative to solver frame.
+                    data.previewRotationOffset = Quaternion.Inverse(baseSolver.rotation) *
+                                                data.transform.localRotation;
+
+                    data.previewHasBaseSolver = true;
+                }
+                else
+                {
+                    data.previewHasBaseSolver = false;
+                }
+            }
+            catch
+            {
+                data.previewHasBaseSolver = false;
+            }
 
             RestoreAllBlendshapeWeights(originalWeights);
         }
@@ -1255,6 +1294,73 @@ namespace YUCP.Components.Resources
                 Debug.LogWarning("[Preview] No active SkinnedMeshRenderer found for preview", data);
             }
 
+            // --- Solve and apply attachment transform (this is what makes the object move in preview) ---
+            if (!data.previewBaseCaptured)
+            {
+                // Ensure base pose exists (for offsets / affine mode).
+                CapturePreviewBasePose();
+            }
+
+            // Bake current deformed source mesh and evaluate the cluster frame at current weights
+            var bakeMesh = GetPreviewBakeMesh();
+            data.targetMesh.BakeMesh(bakeMesh);
+            if (bakeMesh.triangles == null || bakeMesh.triangles.Length == 0)
+            {
+                bakeMesh.triangles = data.targetMesh.sharedMesh.triangles;
+            }
+
+            SurfaceClusterDetector.EvaluateCluster(
+                data.previewCluster,
+                bakeMesh.vertices,
+                bakeMesh.triangles,
+                out var clusterPos,
+                out var clusterNormal,
+                out var clusterTangent);
+
+            Vector3? prevTan = data.previewHasLastTangent ? data.previewLastTangent : (Vector3?)null;
+            var solver = SolveClusterPose(clusterPos, clusterNormal, clusterTangent, prevTan);
+            if (solver.success)
+            {
+                // Store tangent for smoothing across updates
+                data.previewLastTangent = clusterTangent;
+                data.previewHasLastTangent = true;
+
+                // Ensure base solver rotation is captured
+                if (!data.previewHasBaseSolver)
+                {
+                    data.previewBaseSolverRotation = solver.rotation;
+                    data.previewHasBaseSolver = true;
+                }
+                
+                // Calculate cluster movement in world space for accuracy, then convert to local
+                // This avoids coordinate space issues
+                Vector3 currentClusterWorldPos = data.targetMesh.transform.TransformPoint(clusterPos);
+                Vector3 baseClusterWorldPos = data.targetMesh.transform.TransformPoint(data.previewBasePosition);
+                
+                // Calculate world space delta
+                Vector3 clusterWorldDelta = currentClusterWorldPos - baseClusterWorldPos;
+                
+                // Convert world delta to object's local space
+                Vector3 clusterLocalDelta;
+                if (data.transform.parent != null)
+                {
+                    Vector3 newWorldPos = data.transform.parent.TransformPoint(data.previewOriginalLocalPosition) + clusterWorldDelta;
+                    clusterLocalDelta = data.transform.parent.InverseTransformPoint(newWorldPos) - data.previewOriginalLocalPosition;
+                }
+                else
+                {
+                    clusterLocalDelta = data.transform.InverseTransformDirection(clusterWorldDelta);
+                }
+                
+                // Apply the delta to maintain relative position
+                // The object moves by the same amount the cluster moved
+                data.transform.localPosition = data.previewOriginalLocalPosition + clusterLocalDelta;
+                
+                // Apply rotation change: how much the surface rotated
+                Quaternion surfaceRotationDelta = solver.rotation * Quaternion.Inverse(data.previewBaseSolverRotation);
+                data.transform.localRotation = surfaceRotationDelta * data.previewOriginalLocalRotation;
+            }
+
             SceneView.RepaintAll();
             EditorApplication.QueuePlayerLoopUpdate();
         }
@@ -1501,84 +1607,97 @@ namespace YUCP.Components.Resources
             RestorePreviewBlendshapes();
             
             // Restore original mesh (revert from copy to original, like VRCFury)
+            // Find the target mesh component (same logic as BlendshapeTransfer uses)
+            SkinnedMeshRenderer targetSkinnedMesh = null;
+            MeshFilter targetMeshFilter = null;
+            
+            var targetMeshObj = data.targetMeshToModify;
+            
+            if (targetMeshObj is SkinnedMeshRenderer smr)
+            {
+                targetSkinnedMesh = smr;
+            }
+            else if (targetMeshObj is MeshFilter mf)
+            {
+                targetMeshFilter = mf;
+            }
+            else if (targetMeshObj is GameObject go)
+            {
+                targetMeshFilter = go.GetComponent<MeshFilter>();
+                if (targetMeshFilter == null)
+                {
+                    targetSkinnedMesh = go.GetComponent<SkinnedMeshRenderer>();
+                }
+            }
+            else if (targetMeshObj == null)
+            {
+                targetSkinnedMesh = data.GetComponent<SkinnedMeshRenderer>();
+                if (targetSkinnedMesh == null)
+                {
+                    targetMeshFilter = data.GetComponent<MeshFilter>();
+                }
+            }
+            
+            // Restore original mesh - ALWAYS restore if we have a valid original mesh reference
             if (data.previewOriginalMesh != null)
             {
-                // Find the target mesh component (same logic as BlendshapeTransfer uses)
-                SkinnedMeshRenderer targetSkinnedMesh = null;
-                MeshFilter targetMeshFilter = null;
-                
-                var targetMeshObj = data.targetMeshToModify;
-                
-                if (targetMeshObj is SkinnedMeshRenderer smr)
-                {
-                    targetSkinnedMesh = smr;
-                }
-                else if (targetMeshObj is MeshFilter mf)
-                {
-                    targetMeshFilter = mf;
-                }
-                else if (targetMeshObj is GameObject go)
-                {
-                    targetMeshFilter = go.GetComponent<MeshFilter>();
-                    if (targetMeshFilter == null)
-                    {
-                        targetSkinnedMesh = go.GetComponent<SkinnedMeshRenderer>();
-                    }
-                }
-                else if (targetMeshObj == null)
-                {
-                    targetSkinnedMesh = data.GetComponent<SkinnedMeshRenderer>();
-                    if (targetSkinnedMesh == null)
-                    {
-                        targetMeshFilter = data.GetComponent<MeshFilter>();
-                    }
-                }
-                
-                // Restore original mesh
                 if (targetSkinnedMesh != null)
                 {
-                    // Check if we're using the working mesh (either directly or via temp SkinnedMeshRenderer)
-                    if (targetSkinnedMesh.sharedMesh == data.previewWorkingMesh || 
-                        (data.previewTempSkinnedMesh != null && data.previewTempSkinnedMesh.sharedMesh == data.previewWorkingMesh))
+                    // Only restore if this is NOT the temp SkinnedMeshRenderer
+                    if (data.previewTempSkinnedMesh == null || targetSkinnedMesh != data.previewTempSkinnedMesh)
                     {
-                        if (data.previewTempSkinnedMesh != null && data.previewTempSkinnedMesh == targetSkinnedMesh)
-                        {
-                            // This is the temp SkinnedMeshRenderer - we'll destroy it below
-                        }
-                        else
+                        // Restore if currently using working mesh or if mesh is null/missing
+                        if (targetSkinnedMesh.sharedMesh == data.previewWorkingMesh || 
+                            targetSkinnedMesh.sharedMesh == null ||
+                            targetSkinnedMesh.sharedMesh.name.Contains("_Blendshapes"))
                         {
                             targetSkinnedMesh.sharedMesh = data.previewOriginalMesh;
-                            Debug.Log($"[AttachToBlendshape Preview] Restored original mesh to SkinnedMeshRenderer '{targetSkinnedMesh.name}'", data);
+                            Debug.Log($"[AttachToBlendshape Preview] Restored original mesh '{data.previewOriginalMesh.name}' to SkinnedMeshRenderer '{targetSkinnedMesh.name}'", data);
                         }
                     }
                 }
                 else if (targetMeshFilter != null)
                 {
-                    // For MeshFilter, check if temp SkinnedMeshRenderer is using the working mesh
-                    if (data.previewTempSkinnedMesh != null && data.previewTempSkinnedMesh.sharedMesh == data.previewWorkingMesh)
-                    {
-                        // Temp SkinnedMeshRenderer will be destroyed below, and MeshFilter will be restored
-                        // MeshFilter should already have original mesh, but restore it just in case
-                        if (targetMeshFilter.sharedMesh == data.previewWorkingMesh || targetMeshFilter.sharedMesh == null)
-                        {
-                            targetMeshFilter.sharedMesh = data.previewOriginalMesh;
-                            Debug.Log($"[AttachToBlendshape Preview] Restored original mesh to MeshFilter '{targetMeshFilter.name}'", data);
-                        }
-                    }
-                    else if (targetMeshFilter.sharedMesh == data.previewWorkingMesh || targetMeshFilter.sharedMesh == null)
+                    // For MeshFilter, ALWAYS restore the original mesh (temp SkinnedMeshRenderer will be destroyed separately)
+                    // This ensures the mesh is visible after preview ends
+                    if (targetMeshFilter.sharedMesh == data.previewWorkingMesh || 
+                        targetMeshFilter.sharedMesh == null ||
+                        (targetMeshFilter.sharedMesh != null && targetMeshFilter.sharedMesh.name.Contains("_Blendshapes")))
                     {
                         targetMeshFilter.sharedMesh = data.previewOriginalMesh;
-                        Debug.Log($"[AttachToBlendshape Preview] Restored original mesh to MeshFilter '{targetMeshFilter.name}'", data);
+                        Debug.Log($"[AttachToBlendshape Preview] Restored original mesh '{data.previewOriginalMesh.name}' to MeshFilter '{targetMeshFilter.name}'", data);
                     }
                 }
                 else
                 {
                     Debug.LogWarning("[AttachToBlendshape Preview] Could not find target mesh component to restore. Mesh may be missing.", data);
                 }
-                
-                // Clean up working mesh copy
-                if (data.previewWorkingMesh != null)
+            }
+            else
+            {
+                Debug.LogWarning("[AttachToBlendshape Preview] previewOriginalMesh is null - cannot restore mesh. This may cause the mesh to disappear.", data);
+            }
+            
+            // Clean up working mesh copy
+            // IMPORTANT: Only destroy if it's not the same as the original mesh
+            if (data.previewWorkingMesh != null && data.previewWorkingMesh != data.previewOriginalMesh)
+            {
+                // Make sure no components are still using the working mesh before destroying
+                bool meshStillInUse = false;
+                if (targetSkinnedMesh != null && targetSkinnedMesh.sharedMesh == data.previewWorkingMesh)
                 {
+                    meshStillInUse = true;
+                    Debug.LogWarning($"[AttachToBlendshape Preview] Working mesh still in use by SkinnedMeshRenderer - skipping destruction", data);
+                }
+                if (targetMeshFilter != null && targetMeshFilter.sharedMesh == data.previewWorkingMesh)
+                {
+                    meshStillInUse = true;
+                    Debug.LogWarning($"[AttachToBlendshape Preview] Working mesh still in use by MeshFilter - skipping destruction", data);
+                }
+                
+                if (!meshStillInUse)
+                {
+                    string meshName = data.previewWorkingMesh.name;
                     if (Application.isPlaying)
                     {
                         UnityEngine.Object.Destroy(data.previewWorkingMesh);
@@ -1587,15 +1706,31 @@ namespace YUCP.Components.Resources
                     {
                         UnityEngine.Object.DestroyImmediate(data.previewWorkingMesh);
                     }
+                    Debug.Log($"[AttachToBlendshape Preview] Destroyed working mesh copy '{meshName}'", data);
                     data.previewWorkingMesh = null;
                 }
-                
-                // It will be overwritten when generating preview again
+                else
+                {
+                    data.previewWorkingMesh = null; // Clear reference even if we didn't destroy it
+                }
             }
             
             // Remove temporary SkinnedMeshRenderer if it was created for MeshFilter preview
+            // IMPORTANT: Do this AFTER restoring the MeshFilter's mesh to ensure it's visible
             if (data.previewTempSkinnedMesh != null)
             {
+                // Ensure MeshFilter has its original mesh before destroying temp SkinnedMeshRenderer
+                if (data.previewOriginalMeshFilter != null && data.previewOriginalMesh != null)
+                {
+                    if (data.previewOriginalMeshFilter.sharedMesh == null || 
+                        data.previewOriginalMeshFilter.sharedMesh == data.previewWorkingMesh ||
+                        (data.previewOriginalMeshFilter.sharedMesh != null && data.previewOriginalMeshFilter.sharedMesh.name.Contains("_Blendshapes")))
+                    {
+                        data.previewOriginalMeshFilter.sharedMesh = data.previewOriginalMesh;
+                        Debug.Log($"[AttachToBlendshape Preview] Ensured MeshFilter '{data.previewOriginalMeshFilter.name}' has original mesh before cleanup", data);
+                    }
+                }
+                
                 // Restore MeshRenderer if it was hidden
                 // Use stored reference first, then fallback to GetComponent
                 MeshRenderer meshRenderer = data.previewOriginalMeshRenderer;
@@ -1610,46 +1745,30 @@ namespace YUCP.Components.Resources
                     }
                 }
                 
-                // Check if stored reference was destroyed (Unity might destroy MeshRenderer when SkinnedMeshRenderer is added)
-                if (data.previewOriginalMeshRenderer != null)
-                {
-                    // Check if the object still exists (not destroyed)
-                    if (data.previewOriginalMeshRenderer == null)
-                    {
-                        Debug.LogWarning($"[AttachToBlendshape Preview] Stored MeshRenderer reference was destroyed by Unity (likely when SkinnedMeshRenderer was added)", data);
-                    }
-                }
-                
                 if (meshRenderer != null)
                 {
                     meshRenderer.enabled = true;
                     Debug.Log($"[AttachToBlendshape Preview] Re-enabled MeshRenderer '{meshRenderer.name}'", data);
                 }
-                else
+                else if (data.previewOriginalMeshFilter != null)
                 {
-                    Debug.LogWarning($"[AttachToBlendshape Preview] MeshRenderer not found - it may have been destroyed. Stored reference: {data.previewOriginalMeshRenderer != null}, MeshFilter: {data.previewOriginalMeshFilter != null}", data);
-                    
                     // Unity might have destroyed the MeshRenderer when we added SkinnedMeshRenderer
                     // Try to recreate it if it doesn't exist (Unity primitives should have one)
-                    if (data.previewOriginalMeshFilter != null)
+                    if (data.previewOriginalMeshFilter.gameObject != null)
                     {
-                        // Check if MeshRenderer was destroyed by checking if GameObject still exists
-                        if (data.previewOriginalMeshFilter.gameObject != null)
+                        var existingRenderer = data.previewOriginalMeshFilter.GetComponent<MeshRenderer>();
+                        if (existingRenderer == null)
                         {
-                            var existingRenderer = data.previewOriginalMeshFilter.GetComponent<MeshRenderer>();
-                            if (existingRenderer == null)
+                            // MeshRenderer was destroyed, recreate it
+                            var newMeshRenderer = data.previewOriginalMeshFilter.gameObject.AddComponent<MeshRenderer>();
+                            if (newMeshRenderer != null)
                             {
-                                // MeshRenderer was destroyed, recreate it
-                                var newMeshRenderer = data.previewOriginalMeshFilter.gameObject.AddComponent<MeshRenderer>();
-                                if (newMeshRenderer != null)
+                                // Try to restore material from SkinnedMeshRenderer if it exists
+                                if (data.previewTempSkinnedMesh.sharedMaterial != null)
                                 {
-                                    // Try to restore material from SkinnedMeshRenderer if it exists
-                                    if (data.previewTempSkinnedMesh != null && data.previewTempSkinnedMesh.sharedMaterial != null)
-                                    {
-                                        newMeshRenderer.sharedMaterial = data.previewTempSkinnedMesh.sharedMaterial;
-                                    }
-                                    Debug.Log($"[AttachToBlendshape Preview] Recreated MeshRenderer on '{data.previewOriginalMeshFilter.name}' (Unity destroyed the original)", data);
+                                    newMeshRenderer.sharedMaterial = data.previewTempSkinnedMesh.sharedMaterial;
                                 }
+                                Debug.Log($"[AttachToBlendshape Preview] Recreated MeshRenderer on '{data.previewOriginalMeshFilter.name}' (Unity destroyed the original)", data);
                             }
                         }
                     }

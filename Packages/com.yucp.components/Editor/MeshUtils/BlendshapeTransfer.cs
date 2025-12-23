@@ -6,11 +6,43 @@ using UnityEngine;
 namespace YUCP.Components.Editor.MeshUtils
 {
     /// <summary>
+    /// Transform sample data for creating animation curves from blendshape weights.
+    /// </summary>
+    public class TransformSample
+    {
+        public float blendshapeWeight; // 0-100
+        public Vector3 positionDelta;  // Local space position delta from base
+        public Quaternion rotationDelta; // Rotation delta from base
+    }
+
+    /// <summary>
     /// Transfers blendshapes from a source mesh to a target mesh by deforming the target's vertices
     /// to match the source's surface deformation at different blendshape weights.
     /// </summary>
     public static class BlendshapeTransfer
     {
+        // Store transform samples for each blendshape (for animation curve generation)
+        private static Dictionary<string, List<TransformSample>> transformSamples = new Dictionary<string, List<TransformSample>>();
+
+        /// <summary>
+        /// Get transform samples for a blendshape (used for creating animation curves).
+        /// </summary>
+        public static List<TransformSample> GetTransformSamples(string blendshapeName)
+        {
+            if (transformSamples.TryGetValue(blendshapeName, out var samples))
+            {
+                return new List<TransformSample>(samples);
+            }
+            return new List<TransformSample>();
+        }
+
+        /// <summary>
+        /// Clear all stored transform samples.
+        /// </summary>
+        public static void ClearTransformSamples()
+        {
+            transformSamples.Clear();
+        }
         /// <summary>
         /// Transfer blendshapes from source mesh to target mesh.
         /// </summary>
@@ -21,6 +53,9 @@ namespace YUCP.Components.Editor.MeshUtils
             SurfaceCluster cluster,
             Components.AttachToBlendshapeData data)
         {
+            // Clear previous transform samples
+            ClearTransformSamples();
+
             if (sourceMesh == null || sourceMesh.sharedMesh == null)
             {
                 Debug.LogError("[BlendshapeTransfer] Invalid source mesh");
@@ -213,6 +248,15 @@ namespace YUCP.Components.Editor.MeshUtils
                 Vector3 baseTargetCentroid = CalculateCentroid(workingMesh.vertices);
                 Quaternion baseTargetRotation = Quaternion.identity;
 
+                // Calculate the relative offset from object centroid to cluster attachment point in world space
+                // This offset must be preserved when blendshapes deform the surface
+                // In base state: clusterWorldPos - objectCentroidWorldPos = offset
+                // In deformed state: newClusterWorldPos - newObjectCentroidWorldPos = same offset
+                // Therefore: newObjectCentroidWorldPos = newClusterWorldPos - offset
+                Vector3 baseClusterWorldPos = sourceMesh.transform.TransformPoint(baseClusterPosition);
+                Vector3 baseTargetCentroidWorldPos = targetTransform.TransformPoint(baseTargetCentroid);
+                Vector3 clusterToObjectOffsetWorld = baseTargetCentroidWorldPos - baseClusterWorldPos;
+
                 // Store original vertex positions
                 Vector3[] baseVertices = new Vector3[workingMesh.vertices.Length];
                 Array.Copy(workingMesh.vertices, baseVertices, workingMesh.vertices.Length);
@@ -232,6 +276,7 @@ namespace YUCP.Components.Editor.MeshUtils
                         baseClusterNormal,
                         baseClusterTangent,
                         baseTargetCentroid,
+                        clusterToObjectOffsetWorld,
                         targetTransform,
                         sourceMesh.transform,
                         data))
@@ -299,6 +344,7 @@ namespace YUCP.Components.Editor.MeshUtils
             Vector3 baseClusterNormal,
             Vector3 baseClusterTangent,
             Vector3 baseTargetCentroid,
+            Vector3 clusterToObjectOffsetWorld,
             Transform targetTransform,
             Transform sourceTransform,
             Components.AttachToBlendshapeData data)
@@ -368,13 +414,64 @@ namespace YUCP.Components.Editor.MeshUtils
                         continue;
                     }
 
+                    // Preserve relative position: Maintain the offset between cluster and object centroid
+                    // When the cluster moves due to blendshape, the object must move with it to preserve relative position
+                    // Calculate new cluster position in world space
+                    Vector3 deformedClusterWorldPos = sourceTransform.TransformPoint(clusterPos);
+                    
+                    // Calculate where the object centroid should be in world space to maintain the offset
+                    // clusterToObjectOffsetWorld = baseObjectCentroidWorldPos - baseClusterWorldPos
+                    // Therefore: newObjectCentroidWorldPos = newClusterWorldPos + clusterToObjectOffsetWorld
+                    Vector3 targetCentroidWorldPos = deformedClusterWorldPos + clusterToObjectOffsetWorld;
+                    
+                    // Calculate where the object centroid currently is in world space (at base position)
+                    Vector3 baseCentroidWorldPos = targetTransform.TransformPoint(baseTargetCentroid);
+                    
+                    // Calculate the world space delta needed to move centroid from base to deformed position
+                    Vector3 centroidWorldDelta = targetCentroidWorldPos - baseCentroidWorldPos;
+                    
+                    // Convert world space centroid delta to local space (target transform's parent or root)
+                    // This is the position delta needed to preserve relative position
+                    Vector3 positionDeltaForRelativePosition;
+                    if (targetTransform.parent != null)
+                    {
+                        // Convert to parent's local space
+                        Vector3 newCentroidWorldPos = baseCentroidWorldPos + centroidWorldDelta;
+                        Vector3 newCentroidLocalPos = targetTransform.parent.InverseTransformPoint(newCentroidWorldPos);
+                        positionDeltaForRelativePosition = newCentroidLocalPos - targetTransform.localPosition;
+                    }
+                    else
+                    {
+                        // Root object - convert world direction to local direction accounting for rotation
+                        positionDeltaForRelativePosition = targetTransform.InverseTransformDirection(centroidWorldDelta);
+                    }
+                    
+                    // Use the position delta that preserves relative position
+                    // The rotation and scale from result are still valid and will be applied
+                    // But we replace the position delta with one that maintains the offset to the cluster
+                    Vector3 adjustedPositionDelta = positionDeltaForRelativePosition;
+
+                    // Store transform sample for animation curve generation
+                    if (!transformSamples.ContainsKey(blendshapeName))
+                    {
+                        transformSamples[blendshapeName] = new List<TransformSample>();
+                    }
+                    transformSamples[blendshapeName].Add(new TransformSample
+                    {
+                        blendshapeWeight = weight,
+                        positionDelta = adjustedPositionDelta,
+                        rotationDelta = result.rotation
+                    });
+
                     // Transform target mesh vertices
+                    // The adjusted position delta preserves relative position to the cluster attachment point
                     Vector3[] transformedVertices = TransformVertices(
                         baseVertices,
                         baseTargetCentroid,
-                        result.position,
+                        adjustedPositionDelta,
                         result.rotation,
-                        result.scale);
+                        result.scale,
+                        targetTransform);
 
                     samples.Add((weight, transformedVertices));
                 }
@@ -508,16 +605,33 @@ namespace YUCP.Components.Editor.MeshUtils
                     positionDelta += worldNormal * data.normalOffset;
                 }
 
-                // Convert to local space relative to target
+                // Convert to local space relative to target transform
+                // Position delta is in world space, needs to be converted to target's local space
+                // Mesh vertices are in the target transform's local space
                 if (targetTransform.parent != null)
                 {
-                    result.position = targetTransform.parent.InverseTransformDirection(positionDelta);
+                    // Convert world space delta to local space of target's parent
+                    // Calculate where the target would be in world space after applying delta
+                    Vector3 targetWorldPos = targetTransform.position;
+                    Vector3 newWorldPos = targetWorldPos + positionDelta;
+                    // Convert new position to parent's local space, then subtract current local position to get delta
+                    Vector3 newLocalPos = targetTransform.parent.InverseTransformPoint(newWorldPos);
+                    result.position = newLocalPos - targetTransform.localPosition;
+                    // Rotation delta is in world space, convert to parent's local space
                     result.rotation = Quaternion.Inverse(targetTransform.parent.rotation) * rotationDelta * targetTransform.parent.rotation;
                 }
                 else
                 {
-                    result.position = positionDelta;
-                    result.rotation = rotationDelta;
+                    // No parent - convert world space delta to local space accounting for rotation
+                    // For root objects, local space may have rotation but no parent offset
+                    // We need to convert the world space direction/position to local space
+                    // The positionDelta is in world space, vertices are in local space
+                    // Convert world direction to local direction (accounting for rotation)
+                    Vector3 localDirection = targetTransform.InverseTransformDirection(positionDelta);
+                    result.position = localDirection;
+                    // Rotation delta is in world space, convert to local space
+                    // For root transform, world rotation = local rotation, so we need to convert the delta
+                    result.rotation = Quaternion.Inverse(targetTransform.rotation) * rotationDelta * targetTransform.rotation;
                 }
 
                 result.scale = scaleDelta;
@@ -536,24 +650,29 @@ namespace YUCP.Components.Editor.MeshUtils
             Vector3 centroid,
             Vector3 positionDelta,
             Quaternion rotationDelta,
-            Vector3 scaleDelta)
+            Vector3 scaleDelta,
+            Transform targetTransform)
         {
             Vector3[] transformed = new Vector3[baseVertices.Length];
 
+            // Position delta and rotation are in target's local space (same as mesh vertices)
+            // Apply transforms around the centroid to maintain relative positioning
             for (int i = 0; i < baseVertices.Length; i++)
             {
                 Vector3 vertex = baseVertices[i];
 
-                // Apply scale
-                vertex = Vector3.Scale(vertex - centroid, scaleDelta) + centroid;
+                // First, translate vertex relative to centroid (centroid becomes origin)
+                Vector3 relativeVertex = vertex - centroid;
+
+                // Apply scale around centroid
+                relativeVertex = Vector3.Scale(relativeVertex, scaleDelta);
 
                 // Apply rotation around centroid
-                vertex = centroid + rotationDelta * (vertex - centroid);
+                relativeVertex = rotationDelta * relativeVertex;
 
-                // Apply translation
-                vertex += positionDelta;
-
-                transformed[i] = vertex;
+                // Translate back to original centroid position, then apply position delta
+                // Position delta represents movement of the entire object in local space
+                transformed[i] = centroid + relativeVertex + positionDelta;
             }
 
             return transformed;
