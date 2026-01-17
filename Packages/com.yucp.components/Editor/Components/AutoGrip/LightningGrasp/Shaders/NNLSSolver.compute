@@ -1,0 +1,251 @@
+// NNLS (Non-Negative Least Squares) Solver Compute Shader
+// Solves: min |Ax - b|^2 subject to x >= 0
+// Used for force closure quality scoring in grasp synthesis
+
+#pragma kernel BatchedNNLS
+#pragma kernel ComputeWrenchScore
+
+// Input matrices for batch NNLS
+// A is [batch, m, n], b is [batch, m], solve for x [batch, n]
+StructuredBuffer<float> _MatrixA;       // Flattened: [batch * m * n]
+StructuredBuffer<float> _VectorB;       // [batch * m]
+RWStructuredBuffer<float> _Solution;    // [batch * n]
+RWStructuredBuffer<float> _Residual;    // [batch]
+
+// Parameters
+int _BatchSize;
+int _M;  // rows of A
+int _N;  // cols of A
+int _NumIterations;
+float _LearningRate;
+
+// Helper functions
+float GetA(int batch, int row, int col)
+{
+    return _MatrixA[batch * _M * _N + row * _N + col];
+}
+
+float GetB(int batch, int row)
+{
+    return _VectorB[batch * _M + row];
+}
+
+float GetX(int batch, int col)
+{
+    return _Solution[batch * _N + col];
+}
+
+void SetX(int batch, int col, float val)
+{
+    _Solution[batch * _N + col] = val;
+}
+
+// NNLS using projected gradient descent
+// Each thread handles one batch instance
+[numthreads(64, 1, 1)]
+void BatchedNNLS(uint3 id : SV_DispatchThreadID)
+{
+    uint batchIdx = id.x;
+    if (batchIdx >= (uint)_BatchSize) return;
+    
+    // Initialize x to zero
+    for (int j = 0; j < _N; j++)
+    {
+        SetX(batchIdx, j, 0);
+    }
+    
+    // Precompute AtA and Atb
+    // AtA is [n, n], Atb is [n]
+    // Using local arrays (limited size for GPU)
+    float AtA[6 * 6];  // max n = 6 for 3-finger grasp
+    float Atb[6];
+    float x[6];
+    
+    // Compute At * A
+    for (int i = 0; i < _N && i < 6; i++)
+    {
+        for (int j = 0; j < _N && j < 6; j++)
+        {
+            float sum = 0;
+            for (int k = 0; k < _M; k++)
+            {
+                sum += GetA(batchIdx, k, i) * GetA(batchIdx, k, j);
+            }
+            AtA[i * 6 + j] = sum;
+        }
+    }
+    
+    // Compute At * b
+    for (int i = 0; i < _N && i < 6; i++)
+    {
+        float sum = 0;
+        for (int k = 0; k < _M; k++)
+        {
+            sum += GetA(batchIdx, k, i) * GetB(batchIdx, k);
+        }
+        Atb[i] = sum;
+        x[i] = 0;
+    }
+    
+    // Gradient descent iterations
+    for (int iter = 0; iter < _NumIterations; iter++)
+    {
+        // gradient = AtA * x - Atb
+        for (int i = 0; i < _N && i < 6; i++)
+        {
+            float grad = -Atb[i];
+            for (int j = 0; j < _N && j < 6; j++)
+            {
+                grad += AtA[i * 6 + j] * x[j];
+            }
+            
+            // Update with projection to non-negative
+            x[i] = max(0, x[i] - _LearningRate * grad);
+        }
+    }
+    
+    // Write solution
+    for (int i = 0; i < _N && i < 6; i++)
+    {
+        SetX(batchIdx, i, x[i]);
+    }
+    
+    // Compute residual |Ax - b|
+    float residualSum = 0;
+    for (int row = 0; row < _M; row++)
+    {
+        float Ax = 0;
+        for (int col = 0; col < _N; col++)
+        {
+            Ax += GetA(batchIdx, row, col) * GetX(batchIdx, col);
+        }
+        float diff = Ax - GetB(batchIdx, row);
+        residualSum += diff * diff;
+    }
+    _Residual[batchIdx] = sqrt(residualSum);
+}
+
+// Wrench score computation
+// Input: contact positions and normals
+// Output: force closure quality score
+
+StructuredBuffer<float3> _ContactPositions;   // [batch * K, 3]
+StructuredBuffer<float3> _ContactNormals;     // [batch * K, 3]
+RWStructuredBuffer<float> _WrenchScores;      // [batch]
+
+int _NumContacts;  // K
+
+[numthreads(64, 1, 1)]
+void ComputeWrenchScore(uint3 id : SV_DispatchThreadID)
+{
+    uint batchIdx = id.x;
+    if (batchIdx >= (uint)_BatchSize) return;
+    
+    // Load contacts for this batch
+    float3 positions[5];  // max 5 contacts
+    float3 normals[5];
+    
+    int K = min(_NumContacts, 5);
+    
+    for (int i = 0; i < K; i++)
+    {
+        int idx = batchIdx * _NumContacts + i;
+        positions[i] = _ContactPositions[idx];
+        normals[i] = _ContactNormals[idx];
+    }
+    
+    // Compute best wrench score by rotating pivot
+    float bestScore = 1e10;
+    
+    for (int pivot = 0; pivot < K; pivot++)
+    {
+        // Construct NNLS problem:
+        // A = [N; W] where N = normals, W = cross(r, N)
+        // b = [-n0; 0]
+        
+        float3 pivotPos = positions[pivot];
+        float3 pivotNormal = normals[pivot];
+        
+        // A is 6 x (K-1), b is 6
+        // We'll compute score inline
+        
+        float A[6 * 4];  // 6 rows, max 4 cols
+        float b[6];
+        
+        // Force component: b_force = -n0
+        b[0] = -pivotNormal.x;
+        b[1] = -pivotNormal.y;
+        b[2] = -pivotNormal.z;
+        
+        // Torque component: b_torque = 0
+        b[3] = 0;
+        b[4] = 0;
+        b[5] = 0;
+        
+        // Fill A with other contact normals and wrenches
+        int col = 0;
+        for (int i = 0; i < K; i++)
+        {
+            if (i == pivot) continue;
+            
+            float3 n = normals[i];
+            float3 r = positions[i] - pivotPos;
+            float3 w = cross(r, n);
+            
+            // Force row
+            A[0 * 4 + col] = n.x;
+            A[1 * 4 + col] = n.y;
+            A[2 * 4 + col] = n.z;
+            
+            // Torque row
+            A[3 * 4 + col] = w.x;
+            A[4 * 4 + col] = w.y;
+            A[5 * 4 + col] = w.z;
+            
+            col++;
+        }
+        
+        // Solve NNLS inline (simplified: a few iterations)
+        float x[4] = {0, 0, 0, 0};
+        int numCols = K - 1;
+        
+        for (int iter = 0; iter < 10; iter++)
+        {
+            for (int c = 0; c < numCols && c < 4; c++)
+            {
+                float grad = 0;
+                for (int row = 0; row < 6; row++)
+                {
+                    float Ax_r = 0;
+                    for (int cc = 0; cc < numCols && cc < 4; cc++)
+                    {
+                        Ax_r += A[row * 4 + cc] * x[cc];
+                    }
+                    grad += A[row * 4 + c] * (Ax_r - b[row]);
+                }
+                x[c] = max(0, x[c] - 0.1 * grad);
+            }
+        }
+        
+        // Compute residual
+        float residual = 0;
+        for (int row = 0; row < 6; row++)
+        {
+            float Ax_r = 0;
+            for (int c = 0; c < numCols && c < 4; c++)
+            {
+                Ax_r += A[row * 4 + c] * x[c];
+            }
+            float diff = Ax_r - b[row];
+            residual += diff * diff;
+        }
+        residual = sqrt(residual);
+        
+        if (residual < bestScore)
+        {
+            bestScore = residual;
+        }
+    }
+    
+    _WrenchScores[batchIdx] = bestScore;
+}

@@ -689,7 +689,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         /// <summary>
         /// Manual trigger for handling import conflicts
         /// </summary>
-        [MenuItem("Tools/Package Guardian/Handle Import Conflicts", priority = 203)]
+        [MenuItem("Tools/YUCP/Others/Package Guardian/Handle Import Conflicts", priority = 203)]
         public static void ManualHandleConflicts()
         {
             try

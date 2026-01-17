@@ -11,6 +11,7 @@ using YUCP.Components;
 using YUCP.Components.Editor.MeshUtils;
 using YUCP.Components.Editor.UI;
 using YUCP.Components.Editor.Utils;
+using YUCP.Components.Editor.Animations;
 
 namespace YUCP.Components.Editor
 {
@@ -22,6 +23,51 @@ namespace YUCP.Components.Editor
     public class AttachToBlendshapeProcessor : IVRCSDKPreprocessAvatarCallback
     {
         public int callbackOrder => int.MinValue + 10;
+
+        private const string KeepAliveLayerName = "[YUCP] Keep Blendshapes (Optimizer Guard)";
+        private const string KeepAliveStateName = "Keep (Not Used)";
+
+        private static void EnsureSingleBoneSkinning(
+            SkinnedMeshRenderer renderer,
+            Mesh mesh,
+            Transform bone,
+            AttachToBlendshapeData data)
+        {
+            if (renderer == null || mesh == null || bone == null) return;
+
+            // If the mesh already has valid skinning or blendshapes, leave it alone.
+            // This is primarily for MeshFilter->SkinnedMeshRenderer conversions.
+            bool hasValidSkinning =
+                mesh.bindposes != null && mesh.bindposes.Length > 0 &&
+                mesh.boneWeights != null && mesh.boneWeights.Length == mesh.vertexCount;
+            if (hasValidSkinning)
+            {
+                return;
+            }
+
+            var weights = new BoneWeight[mesh.vertexCount];
+            for (int i = 0; i < weights.Length; i++)
+            {
+                weights[i].boneIndex0 = 0;
+                weights[i].weight0 = 1f;
+            }
+
+            // Bindpose converts from mesh space -> bone space.
+            // Mesh space is renderer local space, so use renderer.localToWorldMatrix.
+            var bindpose = bone.worldToLocalMatrix * renderer.transform.localToWorldMatrix;
+
+            mesh.boneWeights = weights;
+            mesh.bindposes = new[] { bindpose };
+
+            renderer.rootBone = bone;
+            renderer.bones = new[] { bone };
+            renderer.updateWhenOffscreen = true;
+
+            if (data != null && data.debugMode)
+            {
+                Debug.Log($"[AttachToBlendshapeProcessor] Added single-bone skinning to mesh '{mesh.name}' ({mesh.vertexCount} verts)", data);
+            }
+        }
 
 
         public bool OnPreprocessAvatar(GameObject avatarRoot)
@@ -438,10 +484,7 @@ namespace YUCP.Components.Editor
                     meshRenderer.enabled = false; // prevent double-render
                 }
 
-                // Minimal skinning setup: one bone at self, so it renders like a normal mesh.
-                targetMeshRenderer.rootBone = data.transform;
-                targetMeshRenderer.bones = new[] { data.transform };
-                targetMeshRenderer.updateWhenOffscreen = true;
+                // Minimal skinning setup will be created on the copied mesh below.
             }
 
             targetMesh = targetMeshRenderer.sharedMesh;
@@ -456,6 +499,7 @@ namespace YUCP.Components.Editor
             targetMeshCopy.name = $"{targetMesh.name}_YUCP_AttachToBlendshape";
             targetMeshRenderer.sharedMesh = targetMeshCopy;
             targetMesh = targetMeshCopy;
+            EnsureSingleBoneSkinning(targetMeshRenderer, targetMeshCopy, data.transform, data);
 
             // Get base mesh path for VRCFury
             string baseMeshPath = AnimationUtility.CalculateTransformPath(data.targetMesh.transform, avatarRoot.transform);
@@ -465,7 +509,19 @@ namespace YUCP.Components.Editor
             Dictionary<string, string> blendshapeMappings = new Dictionary<string, string>();
 
             // Cache base vertices once; each frame uses deltas against this base.
-            Vector3[] baseVertices = targetMesh.vertices;
+            Vector3[] baseVertices;
+            try
+            {
+                baseVertices = targetMesh.vertices;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    $"[AttachToBlendshapeProcessor] Cannot read vertices from mesh '{targetMesh.name}'. " +
+                    $"Enable Read/Write on the mesh import settings (or provide a readable mesh). Error: {ex.Message}",
+                    data);
+                return;
+            }
             int vertexCount = baseVertices.Length;
             float maxTranslation = 0f;
 
@@ -526,39 +582,232 @@ namespace YUCP.Components.Editor
             // Add BlendShapeLink feature using reflection (since it's internal)
             AddBlendShapeLinkFeature(vrcFury, baseMeshName, targetMeshRenderer, blendshapeMappings, data, avatarRoot, vrcFuryType);
 
-            // Create runtime component to read blendshape weights and apply transforms
-            var runtimeComponent = data.GetComponent<AttachToBlendshapeRuntime>();
-            if (runtimeComponent == null)
-            {
-                runtimeComponent = data.gameObject.AddComponent<AttachToBlendshapeRuntime>();
-            }
+            // VRCFury's Blendshape Optimizer bakes any blendshape that is not animated by clips.
+            // Our BlendShapeLink drives weights at runtime (not via animation curves), so the optimizer would bake them away.
+            // Add a zero-weight Animator layer containing a never-used clip that "animates" these weights, so the optimizer keeps them.
+            EnsureBlendshapesSurviveVrcFuryOptimizer(avatarRoot, targetMeshRenderer, blendshapesToTrack, blendshapeMappings.Values, data);
 
-            // Set up runtime component to read from the target mesh's blendshapes
-            Dictionary<string, List<AttachToBlendshapeRuntime.TransformSample>> samplesDict = 
-                new Dictionary<string, List<AttachToBlendshapeRuntime.TransformSample>>();
+            // Create and inject Direct BlendTree controller via VRCFury FullController for runtime transform animation
+            // This is the ONLY runtime mechanism - transforms are handled entirely by VRCFury's FullController
+            string objectPath = AnimationUtility.CalculateTransformPath(data.transform, avatarRoot.transform);
+            
+            // Build transform samples dictionary directly from editor samples (no runtime component needed)
+            Dictionary<string, List<MeshUtils.TransformSample>> samplesDict = 
+                new Dictionary<string, List<MeshUtils.TransformSample>>();
 
             foreach (string blendshapeName in blendshapesToTrack)
             {
                 var editorSamples = BlendshapeTransfer.GetTransformSamples(blendshapeName);
                 if (editorSamples.Count > 0)
                 {
-                    var runtimeSamples = editorSamples.Select(s => new AttachToBlendshapeRuntime.TransformSample
-                    {
-                        blendshapeWeight = s.blendshapeWeight,
-                        positionDelta = s.positionDelta,
-                        rotationDelta = new Vector4(s.rotationDelta.x, s.rotationDelta.y, 
-                                                  s.rotationDelta.z, s.rotationDelta.w)
-                    }).ToList();
-
-                    samplesDict[blendshapeName] = runtimeSamples;
+                    samplesDict[blendshapeName] = editorSamples;
                 }
             }
 
-            runtimeComponent.SetBlendshapeData(targetMeshRenderer, samplesDict);
+            InjectDirectBlendTreeController(data, avatarRoot, objectPath, samplesDict);
 
             if (data.debugMode)
             {
                 Debug.Log($"[AttachToBlendshapeProcessor] Created {blendshapeMappings.Count} transform blendshapes (multi-frame deltas) and linked them via VRCFury BlendShapeLink", data);
+            }
+        }
+
+        private void EnsureBlendshapesSurviveVrcFuryOptimizer(
+            GameObject avatarRoot,
+            SkinnedMeshRenderer targetMeshRenderer,
+            IEnumerable<string> transferredBlendshapes,
+            IEnumerable<string> transformBlendshapes,
+            AttachToBlendshapeData data)
+        {
+            if (avatarRoot == null || targetMeshRenderer == null || targetMeshRenderer.sharedMesh == null) return;
+
+            var descriptor = avatarRoot.GetComponent<VRCAvatarDescriptor>();
+            if (descriptor == null) return;
+
+            var controller = FindControllerForKeepAlive(descriptor);
+            if (controller == null)
+            {
+                if (data != null && data.debugMode)
+                {
+                    Debug.LogWarning(
+                        "[AttachToBlendshapeProcessor] Could not find a non-default AnimatorController to attach keep-alive curves to. " +
+                        "If VRCFury Blendshape Optimizer is enabled, it may bake away the generated blendshapes.",
+                        data);
+                }
+                return;
+            }
+
+            var targetPath = AnimationUtility.CalculateTransformPath(targetMeshRenderer.transform, avatarRoot.transform);
+            if (string.IsNullOrEmpty(targetPath)) return;
+
+            var names = new HashSet<string>();
+            foreach (var name in transferredBlendshapes ?? Array.Empty<string>()) names.Add(name);
+            foreach (var name in transformBlendshapes ?? Array.Empty<string>()) names.Add(name);
+
+            if (names.Count == 0) return;
+
+            var clip = new AnimationClip
+            {
+                name = $"_YUCP_KeepBlendshapes_{targetMeshRenderer.name}",
+                legacy = false
+            };
+            clip.hideFlags = HideFlags.HideInHierarchy | HideFlags.HideInInspector;
+
+            foreach (var name in names)
+            {
+                var index = targetMeshRenderer.sharedMesh.GetBlendShapeIndex(name);
+                if (index < 0) continue;
+
+                var defaultValue = targetMeshRenderer.GetBlendShapeWeight(index);
+                var altValue = defaultValue < 99.999f ? defaultValue + 0.001f : defaultValue - 0.001f;
+                altValue = Mathf.Clamp(altValue, 0f, 100f);
+
+                if (Mathf.Approximately(defaultValue, altValue)) continue;
+
+                var curve = new AnimationCurve(
+                    new Keyframe(0f, defaultValue),
+                    new Keyframe(0.01f, altValue),
+                    new Keyframe(0.02f, defaultValue)
+                );
+
+                var binding = EditorCurveBinding.FloatCurve(targetPath, typeof(SkinnedMeshRenderer), $"blendShape.{name}");
+                AnimationUtility.SetEditorCurve(clip, binding, curve);
+            }
+
+            AddOrUpdateKeepAliveLayer(controller, clip);
+        }
+
+        private static AnimatorController FindControllerForKeepAlive(VRCAvatarDescriptor descriptor)
+        {
+            if (descriptor == null) return null;
+
+            AnimatorController TryGet(VRCAvatarDescriptor.CustomAnimLayer layer)
+            {
+                if (layer.isDefault) return null;
+                return layer.animatorController as AnimatorController;
+            }
+
+            // Prefer FX, then fall back to any non-default controller.
+            foreach (var layer in descriptor.baseAnimationLayers)
+            {
+                if (layer.type != VRCAvatarDescriptor.AnimLayerType.FX) continue;
+                var ac = TryGet(layer);
+                if (ac != null) return ac;
+            }
+
+            foreach (var layer in descriptor.specialAnimationLayers)
+            {
+                var ac = TryGet(layer);
+                if (ac != null) return ac;
+            }
+
+            foreach (var layer in descriptor.baseAnimationLayers)
+            {
+                var ac = TryGet(layer);
+                if (ac != null) return ac;
+            }
+
+            return null;
+        }
+
+        private static void AddOrUpdateKeepAliveLayer(AnimatorController controller, AnimationClip clip)
+        {
+            if (controller == null || clip == null) return;
+
+            var layers = controller.layers;
+            for (int i = 0; i < layers.Length; i++)
+            {
+                if (layers[i].name != KeepAliveLayerName) continue;
+
+                var stateMachine = layers[i].stateMachine;
+                if (stateMachine == null) return;
+
+                var state = stateMachine.states.Select(s => s.state).FirstOrDefault(s => s != null && s.name == KeepAliveStateName);
+                if (state == null)
+                {
+                    state = stateMachine.AddState(KeepAliveStateName);
+                }
+
+                state.motion = clip;
+                stateMachine.defaultState = state;
+
+                layers[i].defaultWeight = 0f;
+                controller.layers = layers;
+                return;
+            }
+
+            controller.AddLayer(KeepAliveLayerName);
+            layers = controller.layers;
+            var newIndex = layers.Length - 1;
+            layers[newIndex].defaultWeight = 0f;
+
+            var sm = layers[newIndex].stateMachine;
+            var keepState = sm.AddState(KeepAliveStateName);
+            keepState.motion = clip;
+            sm.defaultState = keepState;
+
+            controller.layers = layers;
+        }
+
+        /// <summary>
+        /// Creates and injects a Direct BlendTree AnimatorController via VRCFury's FullController API.
+        /// This is the ONLY runtime mechanism for transform animation - VRCFury FullController handles
+        /// all transform updates synced to blendshape weights through Unity's animator system.
+        /// </summary>
+        private void InjectDirectBlendTreeController(
+            AttachToBlendshapeData data,
+            GameObject avatarRoot,
+            string objectPath,
+            Dictionary<string, List<MeshUtils.TransformSample>> editorSamples)
+        {
+            if (editorSamples == null || editorSamples.Count == 0)
+            {
+                if (data.debugMode)
+                {
+                    Debug.LogWarning($"[AttachToBlendshapeProcessor] No transform samples for Direct BlendTree injection", data);
+                }
+                return;
+            }
+
+            // Get base transform values
+            Vector3 baseLocalPosition = data.transform.localPosition;
+            Quaternion baseLocalRotation = data.transform.localRotation;
+
+            // Generate the AnimatorController with Direct BlendTree
+            var controller = BlendshapeAnimationGenerator.CreateBlendshapeTransformController(
+                objectPath,
+                editorSamples,
+                baseLocalPosition,
+                baseLocalRotation,
+                out var blendshapeToParamMap);
+
+            if (controller == null)
+            {
+                Debug.LogWarning($"[AttachToBlendshapeProcessor] Failed to create Direct BlendTree controller for '{data.name}'", data);
+                return;
+            }
+
+            // Inject via VRCFury's FullController API
+            try
+            {
+                var furyController = FuryComponents.CreateFullController(avatarRoot);
+                furyController.AddController(controller, VRCAvatarDescriptor.AnimLayerType.FX);
+
+                // Mark all our parameters as global so they can be driven
+                foreach (var paramName in blendshapeToParamMap.Values)
+                {
+                    furyController.AddGlobalParam(paramName);
+                }
+
+                if (data.debugMode)
+                {
+                    Debug.Log($"[AttachToBlendshapeProcessor] Injected Direct BlendTree controller with {blendshapeToParamMap.Count} blendshape parameters via VRCFury FullController", data);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AttachToBlendshapeProcessor] Failed to inject Direct BlendTree controller: {ex.Message}", data);
+                Debug.LogException(ex, data);
             }
         }
 
@@ -654,49 +903,6 @@ namespace YUCP.Components.Editor
             {
                 Debug.LogError($"[AttachToBlendshapeProcessor] Failed to add BlendShapeLink feature: {ex.Message}", data);
                 Debug.LogException(ex, data);
-            }
-        }
-
-        /// <summary>
-        /// Creates a runtime component that monitors blendshape weights and applies transforms.
-        /// This works for ALL blendshape animations, including visemes and parameter-driven blendshapes.
-        /// </summary>
-        private void CreateRuntimeComponent(AttachToBlendshapeData data, List<string> blendshapesToTrack)
-        {
-            // Get or create the runtime component
-            var runtimeComponent = data.GetComponent<AttachToBlendshapeRuntime>();
-            if (runtimeComponent == null)
-            {
-                runtimeComponent = data.gameObject.AddComponent<AttachToBlendshapeRuntime>();
-            }
-
-            // Collect transform samples for all blendshapes
-            Dictionary<string, List<AttachToBlendshapeRuntime.TransformSample>> samples = 
-                new Dictionary<string, List<AttachToBlendshapeRuntime.TransformSample>>();
-
-            foreach (string blendshapeName in blendshapesToTrack)
-            {
-                var editorSamples = BlendshapeTransfer.GetTransformSamples(blendshapeName);
-                if (editorSamples.Count > 0)
-                {
-                    var runtimeSamples = editorSamples.Select(s => new AttachToBlendshapeRuntime.TransformSample
-                    {
-                        blendshapeWeight = s.blendshapeWeight,
-                        positionDelta = s.positionDelta,
-                        rotationDelta = new Vector4(s.rotationDelta.x, s.rotationDelta.y, 
-                                                  s.rotationDelta.z, s.rotationDelta.w)
-                    }).ToList();
-
-                    samples[blendshapeName] = runtimeSamples;
-                }
-            }
-
-            // Set the data on the runtime component
-            runtimeComponent.SetBlendshapeData(data.targetMesh, samples);
-
-            if (data.debugMode)
-            {
-                Debug.Log($"[AttachToBlendshapeProcessor] Created runtime component with {samples.Count} blendshapes", data);
             }
         }
 

@@ -59,7 +59,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
         public Language language = Language.English;
         
         [Tooltip("Show the first import welcome message")]
-        public bool showFirstImportWarning = true;
+        public bool showFirstImportWarning = false; // Disabled by default
         
         public enum Theme
         {
@@ -134,7 +134,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             newSettings.autoStashOnSceneSave = true; // Enabled to stash on scene save
             newSettings.authorName = "Unity User";
             newSettings.authorEmail = "user@unity.com";
-            newSettings.showFirstImportWarning = true; // Show welcome message by default
+            newSettings.showFirstImportWarning = false; // Disabled by default - popup disabled
             
             // Try to save defaults
             try

@@ -40,7 +40,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Tests
             }
         }
 
-        [MenuItem("YUCP/Tests/Package Verification Robustness Test")]
+        [MenuItem("Tools/YUCP/Others/Tests/Package Verification Robustness Test")]
         public static void ShowWindow()
         {
             GetWindow<PackageVerificationRobustnessTest>("Package Verification Test");

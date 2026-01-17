@@ -18,8 +18,14 @@ namespace YUCP.Components.PackageGuardian
         
         private static void ShowFirstTimeWarning()
         {
+            // DISABLED: Popup is disabled by default
             // Remove the callback
             EditorApplication.delayCall -= ShowFirstTimeWarning;
+            
+            // Early return - popup is disabled
+            // Mark as shown so it doesn't show even if settings are changed
+            EditorPrefs.SetBool(PREF_KEY, true);
+            return;
             
             // Check if the warning has already been shown
             if (EditorPrefs.GetBool(PREF_KEY, false))

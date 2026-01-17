@@ -244,18 +244,13 @@ namespace YUCP.Components.Editor.MeshUtils
                     out Vector3 baseClusterNormal,
                     out Vector3 baseClusterTangent);
 
-                // Calculate base transform for target mesh
-                Vector3 baseTargetCentroid = CalculateCentroid(workingMesh.vertices);
-                Quaternion baseTargetRotation = Quaternion.identity;
+                // Use the target object's pivot as the reference point.
+                // This matches the Preview behaviour (moving/rotating the object transform about its pivot).
+                Vector3 baseTargetPointLocal = Vector3.zero;
 
-                // Calculate the relative offset from object centroid to cluster attachment point in world space
-                // This offset must be preserved when blendshapes deform the surface
-                // In base state: clusterWorldPos - objectCentroidWorldPos = offset
-                // In deformed state: newClusterWorldPos - newObjectCentroidWorldPos = same offset
-                // Therefore: newObjectCentroidWorldPos = newClusterWorldPos - offset
                 Vector3 baseClusterWorldPos = sourceMesh.transform.TransformPoint(baseClusterPosition);
-                Vector3 baseTargetCentroidWorldPos = targetTransform.TransformPoint(baseTargetCentroid);
-                Vector3 clusterToObjectOffsetWorld = baseTargetCentroidWorldPos - baseClusterWorldPos;
+                Vector3 baseTargetPointWorldPos = targetTransform.TransformPoint(baseTargetPointLocal);
+                Vector3 clusterToTargetOffsetWorld = baseTargetPointWorldPos - baseClusterWorldPos;
 
                 // Store original vertex positions
                 Vector3[] baseVertices = new Vector3[workingMesh.vertices.Length];
@@ -275,8 +270,8 @@ namespace YUCP.Components.Editor.MeshUtils
                         baseClusterPosition,
                         baseClusterNormal,
                         baseClusterTangent,
-                        baseTargetCentroid,
-                        clusterToObjectOffsetWorld,
+                        baseTargetPointLocal,
+                        clusterToTargetOffsetWorld,
                         targetTransform,
                         sourceMesh.transform,
                         data))
@@ -334,21 +329,21 @@ namespace YUCP.Components.Editor.MeshUtils
             }
         }
 
-        private static bool TransferSingleBlendshape(
-            SkinnedMeshRenderer sourceMesh,
-            string blendshapeName,
-            SurfaceCluster cluster,
-            Mesh workingMesh,
-            Vector3[] baseVertices,
-            Vector3 baseClusterPosition,
-            Vector3 baseClusterNormal,
-            Vector3 baseClusterTangent,
-            Vector3 baseTargetCentroid,
-            Vector3 clusterToObjectOffsetWorld,
-            Transform targetTransform,
-            Transform sourceTransform,
-            Components.AttachToBlendshapeData data)
-        {
+	        private static bool TransferSingleBlendshape(
+	            SkinnedMeshRenderer sourceMesh,
+	            string blendshapeName,
+	            SurfaceCluster cluster,
+	            Mesh workingMesh,
+	            Vector3[] baseVertices,
+	            Vector3 baseClusterPosition,
+	            Vector3 baseClusterNormal,
+	            Vector3 baseClusterTangent,
+	            Vector3 baseTargetPointLocal,
+	            Vector3 clusterToTargetOffsetWorld,
+	            Transform targetTransform,
+	            Transform sourceTransform,
+	            Components.AttachToBlendshapeData data)
+	        {
             Mesh sourceSharedMesh = sourceMesh.sharedMesh;
             int blendshapeIndex = sourceSharedMesh.GetBlendShapeIndex(blendshapeName);
 
@@ -414,37 +409,33 @@ namespace YUCP.Components.Editor.MeshUtils
                         continue;
                     }
 
-                    // Preserve relative position: Maintain the offset between cluster and object centroid
-                    // When the cluster moves due to blendshape, the object must move with it to preserve relative position
-                    // Calculate new cluster position in world space
-                    Vector3 deformedClusterWorldPos = sourceTransform.TransformPoint(clusterPos);
-                    
-                    // Calculate where the object centroid should be in world space to maintain the offset
-                    // clusterToObjectOffsetWorld = baseObjectCentroidWorldPos - baseClusterWorldPos
-                    // Therefore: newObjectCentroidWorldPos = newClusterWorldPos + clusterToObjectOffsetWorld
-                    Vector3 targetCentroidWorldPos = deformedClusterWorldPos + clusterToObjectOffsetWorld;
-                    
-                    // Calculate where the object centroid currently is in world space (at base position)
-                    Vector3 baseCentroidWorldPos = targetTransform.TransformPoint(baseTargetCentroid);
-                    
-                    // Calculate the world space delta needed to move centroid from base to deformed position
-                    Vector3 centroidWorldDelta = targetCentroidWorldPos - baseCentroidWorldPos;
-                    
-                    // Convert world space centroid delta to local space (target transform's parent or root)
-                    // This is the position delta needed to preserve relative position
-                    Vector3 positionDeltaForRelativePosition;
-                    if (targetTransform.parent != null)
-                    {
-                        // Convert to parent's local space
-                        Vector3 newCentroidWorldPos = baseCentroidWorldPos + centroidWorldDelta;
-                        Vector3 newCentroidLocalPos = targetTransform.parent.InverseTransformPoint(newCentroidWorldPos);
-                        positionDeltaForRelativePosition = newCentroidLocalPos - targetTransform.localPosition;
-                    }
-                    else
-                    {
-                        // Root object - convert world direction to local direction accounting for rotation
-                        positionDeltaForRelativePosition = targetTransform.InverseTransformDirection(centroidWorldDelta);
-                    }
+	                    // Preserve relative position: Maintain the offset between the cluster and the target pivot.
+	                    Vector3 deformedClusterWorldPos = sourceTransform.TransformPoint(clusterPos);
+	                    
+	                    // Calculate where the pivot should be in world space to maintain the offset.
+	                    Vector3 targetPointWorldPos = deformedClusterWorldPos + clusterToTargetOffsetWorld;
+	                    
+	                    // Calculate where the pivot is in world space (at base position)
+	                    Vector3 basePointWorldPos = targetTransform.TransformPoint(baseTargetPointLocal);
+	                    
+	                    // Calculate the world space delta needed to move pivot from base to deformed position
+	                    Vector3 pointWorldDelta = targetPointWorldPos - basePointWorldPos;
+	                    
+	                    // Convert world space delta to local space (target transform's parent or root)
+	                    // This is the position delta needed to preserve relative position
+	                    Vector3 positionDeltaForRelativePosition;
+	                    if (targetTransform.parent != null)
+	                    {
+	                        // Convert to parent's local space
+	                        Vector3 newPointWorldPos = basePointWorldPos + pointWorldDelta;
+	                        Vector3 newPointLocalPos = targetTransform.parent.InverseTransformPoint(newPointWorldPos);
+	                        positionDeltaForRelativePosition = newPointLocalPos - targetTransform.localPosition;
+	                    }
+	                    else
+	                    {
+	                        // Root object - convert world direction to local direction accounting for rotation
+	                        positionDeltaForRelativePosition = targetTransform.InverseTransformDirection(pointWorldDelta);
+	                    }
                     
                     // Use the position delta that preserves relative position
                     // The rotation and scale from result are still valid and will be applied
@@ -465,13 +456,12 @@ namespace YUCP.Components.Editor.MeshUtils
 
                     // Transform target mesh vertices
                     // The adjusted position delta preserves relative position to the cluster attachment point
-                    Vector3[] transformedVertices = TransformVertices(
-                        baseVertices,
-                        baseTargetCentroid,
-                        adjustedPositionDelta,
-                        result.rotation,
-                        result.scale,
-                        targetTransform);
+	                    Vector3[] transformedVertices = TransformVertices(
+	                        baseVertices,
+	                        baseTargetPointLocal,
+	                        adjustedPositionDelta,
+	                        result.rotation,
+	                        result.scale);
 
                     samples.Add((weight, transformedVertices));
                 }
@@ -645,51 +635,35 @@ namespace YUCP.Components.Editor.MeshUtils
             return result;
         }
 
-        private static Vector3[] TransformVertices(
-            Vector3[] baseVertices,
-            Vector3 centroid,
-            Vector3 positionDelta,
-            Quaternion rotationDelta,
-            Vector3 scaleDelta,
-            Transform targetTransform)
-        {
-            Vector3[] transformed = new Vector3[baseVertices.Length];
+	        private static Vector3[] TransformVertices(
+	            Vector3[] baseVertices,
+	            Vector3 pivot,
+	            Vector3 positionDelta,
+	            Quaternion rotationDelta,
+	            Vector3 scaleDelta)
+	        {
+	            Vector3[] transformed = new Vector3[baseVertices.Length];
 
-            // Position delta and rotation are in target's local space (same as mesh vertices)
-            // Apply transforms around the centroid to maintain relative positioning
-            for (int i = 0; i < baseVertices.Length; i++)
-            {
-                Vector3 vertex = baseVertices[i];
+	            // Position delta and rotation are in target's local space (same as mesh vertices)
+	            // Apply transforms around the pivot to match transform behaviour.
+	            for (int i = 0; i < baseVertices.Length; i++)
+	            {
+	                Vector3 vertex = baseVertices[i];
 
-                // First, translate vertex relative to centroid (centroid becomes origin)
-                Vector3 relativeVertex = vertex - centroid;
+	                // First, translate vertex relative to pivot (pivot becomes origin)
+	                Vector3 relativeVertex = vertex - pivot;
 
-                // Apply scale around centroid
-                relativeVertex = Vector3.Scale(relativeVertex, scaleDelta);
+	                // Apply scale around pivot
+	                relativeVertex = Vector3.Scale(relativeVertex, scaleDelta);
 
-                // Apply rotation around centroid
-                relativeVertex = rotationDelta * relativeVertex;
+	                // Apply rotation around pivot
+	                relativeVertex = rotationDelta * relativeVertex;
 
-                // Translate back to original centroid position, then apply position delta
-                // Position delta represents movement of the entire object in local space
-                transformed[i] = centroid + relativeVertex + positionDelta;
-            }
+	                // Translate back to original pivot position, then apply position delta
+	                transformed[i] = pivot + relativeVertex + positionDelta;
+	            }
 
-            return transformed;
-        }
-
-        private static Vector3 CalculateCentroid(Vector3[] vertices)
-        {
-            if (vertices.Length == 0) return Vector3.zero;
-
-            Vector3 sum = Vector3.zero;
-            foreach (var v in vertices)
-            {
-                sum += v;
-            }
-
-            return sum / vertices.Length;
-        }
+	            return transformed;
+	        }
     }
 }
-

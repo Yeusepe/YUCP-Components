@@ -73,6 +73,9 @@ namespace YUCP.Components.Editor
             YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Avatar Optimizer Plugin"));
             
+            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(AvatarOptimizerPluginData));
+            if (betaWarning != null) root.Add(betaWarning);
+            
             // Placement validation
             var placementValidation = new VisualElement();
             placementValidation.name = "placement-validation";

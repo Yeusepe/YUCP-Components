@@ -10,6 +10,7 @@ namespace YUCP.Components
     /// Records poses as animations that play when the toggle activates.
     /// </summary>
     [SupportBanner]
+    [BetaWarning("This component is in BETA and may not work as intended. Use with caution.")]
     [AddComponentMenu("YUCP/Avatar Muscle Poser")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     [DisallowMultipleComponent]

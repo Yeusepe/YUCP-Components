@@ -72,7 +72,10 @@ namespace YUCP.Components
         public SkinnedMeshRenderer targetMesh;
 
         [Header("Target Mesh to Modify")]
-        [Tooltip("The mesh that will receive the transferred blendshapes. Can be a SkinnedMeshRenderer or MeshFilter.\n\n" +
+        [Tooltip("The mesh that will receive the generated blendshapes.\n\n" +
+                 "Supported targets:\n" +
+                 "• SkinnedMeshRenderer\n" +
+                 "• MeshFilter (will be converted to a SkinnedMeshRenderer at build-time so blendshapes can render)\n\n" +
                  "If not set, will attempt to use a SkinnedMeshRenderer or MeshFilter on this GameObject.")]
         public UnityEngine.Object targetMeshToModify;
 
@@ -107,10 +110,10 @@ namespace YUCP.Components
 
         [Header("Solver Configuration")]
         [Tooltip("How to calculate object transforms during deformation:\n\n" +
-                 "• Rigid: Simple rotation + translation (best for piercings, badges)\n" +
+                 "• Rigid: Simple rotation + translation about the object's pivot (best for piercings, badges)\n" +
                  "• Rigid Normal Offset: Rigid + slight outward push along surface normal\n" +
                  "• Affine: Allows minor shear/scale to match skin stretch (stickers, patches)\n" +
-                 "• Cage RBF: Advanced smooth deformation for larger objects")]
+                 "• Cage RBF: Advanced smooth deformation for larger objects (experimental)")]
         public SolverMode solverMode = SolverMode.Rigid;
 
         [Tooltip("Align object rotation to surface normal and tangent.\n\n" +

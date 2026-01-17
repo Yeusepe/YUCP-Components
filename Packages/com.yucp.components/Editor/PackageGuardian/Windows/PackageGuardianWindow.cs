@@ -75,7 +75,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
         private float _lastProcessedWidth = -1f;
         private const float RESIZE_DEBOUNCE_MS = 150f;
 
-		[MenuItem("Tools/Package Guardian/Dashboard")]
+		[MenuItem("Tools/YUCP/Others/Package Guardian/Dashboard")]
         public static void ShowWindow()
         {
             var window = GetWindow<PackageGuardianWindow>();

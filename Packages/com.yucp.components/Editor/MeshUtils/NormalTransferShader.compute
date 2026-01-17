@@ -1,0 +1,185 @@
+// GPU-accelerated normal transfer using proximity matching and projection
+#pragma kernel CSProximityTransfer
+#pragma kernel CSProjectionTransfer
+
+struct Triangle
+{
+    float3 v0;
+    float3 v1;
+    float3 v2;
+    float3 n0;
+    float3 n1;
+    float3 n2;
+};
+
+StructuredBuffer<float3> TargetVertices;
+StructuredBuffer<float3> TargetNormals;
+StructuredBuffer<float3> SourceVertices;
+StructuredBuffer<float3> SourceNormals;
+StructuredBuffer<Triangle> SourceTriangles;
+RWStructuredBuffer<float3> ResultNormals;
+
+float ProximityThreshold;
+float BlendStrength;
+int SourceVertexCount;
+float ProjectionDistance;
+int TriangleCount;
+int ProjectionDirection; // 0 = VertexNormal, 1 = BothDirections, 2 = SurfaceNormal
+
+// Proximity transfer kernel
+[numthreads(64, 1, 1)]
+void CSProximityTransfer(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    
+    float3 targetPos = TargetVertices[index];
+    float3 currentNormal = TargetNormals[index];
+    
+    // Find nearest source vertex
+    float minDistSq = ProximityThreshold * ProximityThreshold;
+    float3 bestNormal = currentNormal;
+    bool found = false;
+    
+    for (int i = 0; i < SourceVertexCount; i++)
+    {
+        float3 sourcePos = SourceVertices[i];
+        float3 sourceNormal = SourceNormals[i];
+        
+        float3 diff = targetPos - sourcePos;
+        float distSq = dot(diff, diff);
+        
+        if (distSq < minDistSq)
+        {
+            minDistSq = distSq;
+            bestNormal = sourceNormal;
+            found = true;
+        }
+    }
+    
+    // Blend normals
+    if (found)
+    {
+        ResultNormals[index] = normalize(lerp(bestNormal, currentNormal, BlendStrength));
+    }
+    else
+    {
+        ResultNormals[index] = currentNormal;
+    }
+}
+
+// Ray-triangle intersection using Möller-Trumbore algorithm
+bool RayIntersectsTriangle(float3 origin, float3 direction, Triangle tri, float maxDist, out float t, out float u, out float v)
+{
+    const float EPSILON = 0.0000001;
+    float3 edge1 = tri.v1 - tri.v0;
+    float3 edge2 = tri.v2 - tri.v0;
+    
+    float3 h = cross(direction, edge2);
+    float a = dot(edge1, h);
+    
+    if (abs(a) < EPSILON)
+    {
+        t = 0.0;
+        u = 0.0;
+        v = 0.0;
+        return false;
+    }
+    
+    float f = 1.0 / a;
+    float3 s = origin - tri.v0;
+    u = f * dot(s, h);
+    
+    if (u < 0.0 || u > 1.0)
+    {
+        t = 0.0;
+        v = 0.0;
+        return false;
+    }
+    
+    float3 q = cross(s, edge1);
+    v = f * dot(direction, q);
+    
+    if (v < 0.0 || u + v > 1.0)
+    {
+        t = 0.0;
+        return false;
+    }
+    
+    t = f * dot(edge2, q);
+    
+    return t > EPSILON && t < maxDist;
+}
+
+// Interpolate normal using barycentric coordinates
+float3 InterpolateNormal(Triangle tri, float u, float v)
+{
+    float w = 1.0 - u - v;
+    return normalize(tri.n0 * w + tri.n1 * u + tri.n2 * v);
+}
+
+// Projection transfer kernel
+[numthreads(64, 1, 1)]
+void CSProjectionTransfer(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    
+    float3 targetPos = TargetVertices[index];
+    float3 targetNormal = TargetNormals[index];
+    float3 currentNormal = TargetNormals[index];
+    
+    float3 bestNormal = currentNormal;
+    float minDist = ProjectionDistance;
+    bool found = false;
+    
+    // Try projection based on direction mode
+    if (ProjectionDirection == 0 || ProjectionDirection == 1) // VertexNormal or BothDirections
+    {
+        // Project along vertex normal
+        float3 direction = normalize(targetNormal);
+        float t, u, v;
+        
+        for (int i = 0; i < TriangleCount; i++)
+        {
+            if (RayIntersectsTriangle(targetPos, direction, SourceTriangles[i], ProjectionDistance, t, u, v))
+            {
+                if (t < minDist)
+                {
+                    minDist = t;
+                    bestNormal = InterpolateNormal(SourceTriangles[i], u, v);
+                    found = true;
+                }
+            }
+        }
+    }
+    
+    if (ProjectionDirection == 1) // BothDirections
+    {
+        // Try opposite direction
+        float3 direction = -normalize(targetNormal);
+        float t, u, v;
+        
+        for (int i = 0; i < TriangleCount; i++)
+        {
+            if (RayIntersectsTriangle(targetPos, direction, SourceTriangles[i], ProjectionDistance, t, u, v))
+            {
+                if (t < minDist)
+                {
+                    minDist = t;
+                    bestNormal = InterpolateNormal(SourceTriangles[i], u, v);
+                    found = true;
+                }
+            }
+        }
+    }
+    
+    // Blend normals
+    if (found)
+    {
+        ResultNormals[index] = normalize(lerp(bestNormal, currentNormal, BlendStrength));
+    }
+    else
+    {
+        ResultNormals[index] = currentNormal;
+    }
+}
+

@@ -136,6 +136,9 @@ namespace YUCP.Components.Editor
             YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Avatar Muscle Poser"));
             
+            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(AvatarMusclePoserData));
+            if (betaWarning != null) root.Add(betaWarning);
+            
             var toggleCard = YUCPUIToolkitHelper.CreateCard("Toggle Configuration", "Configure the toggle component");
             var toggleContent = YUCPUIToolkitHelper.GetCardContent(toggleCard);
             

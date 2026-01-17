@@ -7,6 +7,12 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
+    "com.poiyomi.toon": {
+      "version": "file:com.poiyomi.toon",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
     "com.triturbo.blendshare": {
       "version": "file:com.triturbo.blendshare",
       "depth": 0,
@@ -50,6 +56,16 @@
       "depth": 1,
       "source": "registry",
       "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.formats.fbx": {
+      "version": "4.2.1",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.autodesk.fbx": "4.2.1",
+        "com.unity.timeline": "1.7.1"
+      },
       "url": "https://packages.unity.com"
     },
     "com.unity.ide.rider": {
@@ -243,6 +259,12 @@
     },
     "com.yucp.devtools": {
       "version": "file:com.yucp.devtools",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.yucp.motion": {
+      "version": "file:com.yucp.motion",
       "depth": 0,
       "source": "embedded",
       "dependencies": {}

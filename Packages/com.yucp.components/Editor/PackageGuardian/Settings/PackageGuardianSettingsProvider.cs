@@ -572,7 +572,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
                     _settings.enableLargeFileSupport = false;
                     _settings.largeFileThreshold = 52428800;
                     _settings.enableFsync = false;
-                    _settings.showFirstImportWarning = true;
+                    _settings.showFirstImportWarning = false; // Disabled by default
                     _settings.Save();
 
                     // Refresh UI
@@ -626,7 +626,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
             return provider;
         }
 
-        [MenuItem("Tools/Package Guardian/Settings", priority = 300)]
+        [MenuItem("Tools/YUCP/Others/Package Guardian/Settings", priority = 300)]
         public static void OpenSettings()
         {
             SettingsService.OpenProjectSettings("Project/Package Guardian");

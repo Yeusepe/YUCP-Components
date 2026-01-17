@@ -17,7 +17,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Settings
         private Label _lastCheckLabel;
         private Label _issueCountLabel;
         
-        [MenuItem("Tools/Package Guardian/Health Monitor Settings", priority = 102)]
+        [MenuItem("Tools/YUCP/Others/Package Guardian/Health Monitor Settings", priority = 102)]
         public static void ShowWindow()
         {
             var window = GetWindow<HealthMonitorSettings>();
