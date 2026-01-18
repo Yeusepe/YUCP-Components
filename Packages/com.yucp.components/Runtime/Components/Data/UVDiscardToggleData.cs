@@ -7,11 +7,11 @@ namespace YUCP.Components
 {
     /// <summary>
     /// A VRCFury-compatible toggle that merges a clothing mesh into the body mesh
-    /// and uses UDIM discard to toggle its visibility.
+    /// and uses UV discard to toggle its visibility.
     /// Optionally integrates with AutoBodyHider for automatic body hiding.
     /// </summary>
     [SupportBanner]
-    [BetaWarning("This component is in BETA and may not work as intended. UV Discard Toggle is experimental and may require manual UDIM configuration.")]
+    [BetaWarning("This component is in BETA and may not work as intended. UV Discard Toggle is experimental and may require manual UV configuration.")]
     [AddComponentMenu("YUCP/UV Discard Toggle")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     public class UVDiscardToggleData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
@@ -23,26 +23,29 @@ namespace YUCP.Components
         [Tooltip("The clothing mesh renderer to be merged and toggled.")]
         public SkinnedMeshRenderer clothingMesh;
 
-        [Header("UDIM Discard Settings")]
-        [Tooltip("Which UV channel to use for UDIM discard (UV1 is recommended).")]
+        [Header("UV Discard Settings")]
+        [Tooltip("Which UV channel to use for UV discard (UV1 is recommended).")]
         [Range(0, 3)]
-        public int udimUVChannel = 1; // Default to UV1 for merged meshes
+        [UnityEngine.Serialization.FormerlySerializedAs("udimUVChannel")]
+        public int uvChannel = 1; // Default to UV1 for merged meshes
 
-        [Tooltip("Which UDIM tile row to use for discarding (0-3).\n\n" +
+        [Tooltip("Which UV tile row to use for discarding (0-3).\n\n" +
                  "⚠️ WARNING: Avoid row 0 (especially 0,0) as it overlaps with main texture!\n" +
                  "• Row 1-3: Safe for discard\n" +
                  "• Row 3 (default): Safest, rarely used\n\n" +
                  "For multiple clothing pieces, each needs a unique tile.")]
         [Range(0, 3)]
-        public int udimDiscardRow = 3;
+        [UnityEngine.Serialization.FormerlySerializedAs("udimDiscardRow")]
+        public int uvDiscardRow = 3;
 
-        [Tooltip("Which UDIM tile column to use for discarding (0-3).\n\n" +
+        [Tooltip("Which UV tile column to use for discarding (0-3).\n\n" +
                  "⚠️ WARNING: Avoid (row 0, col 0-1) as it overlaps with main texture!\n" +
                  "• Columns 0-3: All usable in rows 1-3\n" +
                  "• Column 3 (default): Safest\n\n" +
                  "For multiple clothing pieces, each needs a unique tile.")]
         [Range(0, 3)]
-        public int udimDiscardColumn = 3;
+        [UnityEngine.Serialization.FormerlySerializedAs("udimDiscardColumn")]
+        public int uvDiscardColumn = 3;
 
         [Header("VRCFury Toggle Settings")]
         [Tooltip("Menu path for the toggle (e.g., 'Clothing/Jacket').\n\n" +

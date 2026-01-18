@@ -13,10 +13,10 @@ using System.Reflection;
 
 namespace YUCP.Components.Editor.UI
 {
-    [CustomEditor(typeof(AutoUDIMDiscardData))]
-    public class AutoUDIMDiscardDataEditor : UnityEditor.Editor
+    [CustomEditor(typeof(AutoUVDiscardData))]
+    public class AutoUVDiscardDataEditor : UnityEditor.Editor
     {
-        private AutoUDIMDiscardData data;
+        private AutoUVDiscardData data;
         private bool isGeneratingPreview = false;
         
         // State tracking
@@ -26,15 +26,15 @@ namespace YUCP.Components.Editor.UI
         private int cachedDetectedUVChannel = 1;
         private Material[] previousBodyMeshMaterials = null;
         private bool previousAutoDetectUVChannel = true;
-        private bool previousAutoAssignUDIMTile = true;
+        private bool previousAutoAssignUVTile = true;
         private int previousStartRow = -1;
         private int previousStartColumn = -1;
 
         private void OnEnable()
         {
-            data = (AutoUDIMDiscardData)target;
+            data = (AutoUVDiscardData)target;
             previousAutoDetectUVChannel = data.autoDetectUVChannel;
-            previousAutoAssignUDIMTile = data.autoAssignUDIMTile;
+            previousAutoAssignUVTile = data.autoAssignUVTile;
             previousStartRow = data.startRow;
             previousStartColumn = data.startColumn;
         }
@@ -45,12 +45,12 @@ namespace YUCP.Components.Editor.UI
             
             var root = new VisualElement();
             YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Auto UDIM Discard"));
+            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Auto UV Discard"));
             
-            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(AutoUDIMDiscardData));
+            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(AutoUVDiscardData));
             if (betaWarning != null) root.Add(betaWarning);
             
-            var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(AutoUDIMDiscardData));
+            var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(AutoUVDiscardData));
             if (supportBanner != null) root.Add(supportBanner);
             
             // Target Mesh Card
@@ -143,16 +143,35 @@ namespace YUCP.Components.Editor.UI
             materialContent.Add(materialPickerContainer);
             root.Add(materialCard);
             
-            // Detection Settings Card
-            var detectionCard = YUCPUIToolkitHelper.CreateCard("Detection Settings", "Configure UV region detection");
-            var detectionContent = YUCPUIToolkitHelper.GetCardContent(detectionCard);
+            // Detection Mode Card
+            var detectionModeCard = YUCPUIToolkitHelper.CreateCard("Detection Mode", "Select how to detect UV regions");
+            var detectionModeContent = YUCPUIToolkitHelper.GetCardContent(detectionModeCard);
+            
+            var detectionModeField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("detectionMode"), "Detection Mode");
+            detectionModeContent.Add(detectionModeField);
+            
+            // Mode description label
+            var modeDescriptionLabel = new Label();
+            modeDescriptionLabel.name = "mode-description-label";
+            modeDescriptionLabel.style.fontSize = 11;
+            modeDescriptionLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f, 1f));
+            modeDescriptionLabel.style.marginTop = 5;
+            modeDescriptionLabel.style.whiteSpace = WhiteSpace.Normal;
+            detectionModeContent.Add(modeDescriptionLabel);
+            
+            root.Add(detectionModeCard);
+            
+            // UV Proximity Settings Card
+            var uvProximityCard = YUCPUIToolkitHelper.CreateCard("UV Proximity Settings", "Configure UV clustering");
+            uvProximityCard.name = "uv-proximity-card";
+            var uvProximityContent = YUCPUIToolkitHelper.GetCardContent(uvProximityCard);
             
             var autoDetectUVField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoDetectUVChannel"), "Auto-Detect UV Channel");
-            detectionContent.Add(autoDetectUVField);
+            uvProximityContent.Add(autoDetectUVField);
             
             var detectedUVContainer = new VisualElement();
             detectedUVContainer.name = "detected-uv-container";
-            detectionContent.Add(detectedUVContainer);
+            uvProximityContent.Add(detectedUVContainer);
             
             var advancedUVFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced UV Settings", false);
             advancedUVFoldout.name = "advanced-uv-foldout";
@@ -161,17 +180,81 @@ namespace YUCP.Components.Editor.UI
             var uvChannelField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvChannel"), "UV Channel");
             manualUVSection.Add(uvChannelField);
             advancedUVFoldout.Add(manualUVSection);
-            detectionContent.Add(advancedUVFoldout);
+            uvProximityContent.Add(advancedUVFoldout);
             
-            detectionContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeTolerance"), "Merge Tolerance"));
-            detectionContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("minRegionSize"), "Min Region Size %"));
-            root.Add(detectionCard);
+            uvProximityContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mergeTolerance"), "Merge Tolerance"));
+            uvProximityContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("minRegionSize"), "Min Region Size %"));
+            root.Add(uvProximityCard);
             
-            // UDIM Tile Assignment Card
-            var tileCard = YUCPUIToolkitHelper.CreateCard("UDIM Tile Assignment", "Configure UDIM tile coordinates");
+            // Mask Texture Settings Card
+            var maskCard = YUCPUIToolkitHelper.CreateCard("Mask Regions", "Each mask defines one region");
+            maskCard.name = "mask-texture-card";
+            var maskContent = YUCPUIToolkitHelper.GetCardContent(maskCard);
+            
+            maskContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Add masks to define regions. White areas in each mask = one region.", YUCPUIToolkitHelper.MessageType.Info));
+            maskContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("maskRegions"), "Mask Regions"));
+            maskContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("maskUVChannel"), "UV Channel"));
+            maskContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("maskThreshold"), "Threshold"));
+            root.Add(maskCard);
+            
+            // UV Seam Settings Card
+            var seamCard = YUCPUIToolkitHelper.CreateCard("UV Seam Settings", "Configure seam-based detection");
+            seamCard.name = "uv-seam-card";
+            var seamContent = YUCPUIToolkitHelper.GetCardContent(seamCard);
+            seamContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("seamUVChannel"), "UV Channel"));
+            seamContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("seamThreshold"), "Seam Threshold"));
+            seamContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("minRegionSize"), "Min Region Size %"));
+            root.Add(seamCard);
+            
+            // Sharp Edge Settings Card
+            var sharpCard = YUCPUIToolkitHelper.CreateCard("Sharp Edge Settings", "Configure sharp edge detection");
+            sharpCard.name = "sharp-edge-card";
+            var sharpContent = YUCPUIToolkitHelper.GetCardContent(sharpCard);
+            sharpContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("sharpAngleThreshold"), "Angle Threshold"));
+            sharpContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("useImportedSharpEdges"), "Use Imported Sharp Edges"));
+            sharpContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("minRegionSize"), "Min Region Size %"));
+            root.Add(sharpCard);
+            
+            // Blender Vertex Groups Card
+            var vertexGroupCard = YUCPUIToolkitHelper.CreateCard("Blender Vertex Groups", "Import and configure vertex groups");
+            vertexGroupCard.name = "vertex-group-card";
+            var vertexGroupContent = YUCPUIToolkitHelper.GetCardContent(vertexGroupCard);
+            
+            var importGroupsButton = new Button(() => ImportBlenderVertexGroups());
+            importGroupsButton.text = "Import Vertex Groups from Mesh";
+            importGroupsButton.AddToClassList("yucp-button-primary");
+            importGroupsButton.style.height = 30;
+            importGroupsButton.style.marginBottom = 10;
+            vertexGroupContent.Add(importGroupsButton);
+            
+            var vertexGroupsList = new VisualElement();
+            vertexGroupsList.name = "vertex-groups-list";
+            vertexGroupContent.Add(vertexGroupsList);
+            
+            vertexGroupContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("vertexGroupWeightThreshold"), "Weight Threshold"));
+            root.Add(vertexGroupCard);
+            
+            // Material Slots Card (minimal settings)
+            var materialSlotsCard = YUCPUIToolkitHelper.CreateCard("Material Slots Settings", "Detect by mesh material slots");
+            materialSlotsCard.name = "material-slots-card";
+            var materialSlotsContent = YUCPUIToolkitHelper.GetCardContent(materialSlotsCard);
+            materialSlotsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Each material slot on the clothing mesh will become a separate region.", YUCPUIToolkitHelper.MessageType.Info));
+            root.Add(materialSlotsCard);
+            
+            // Bone Influence Card
+            var boneCard = YUCPUIToolkitHelper.CreateCard("Bone Influence Settings", "Configure bone-based detection");
+            boneCard.name = "bone-influence-card";
+            var boneContent = YUCPUIToolkitHelper.GetCardContent(boneCard);
+            boneContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("targetBones"), "Target Bones"));
+            boneContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("boneWeightThreshold"), "Weight Threshold"));
+            boneContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("includeChildBones"), "Include Child Bones"));
+            root.Add(boneCard);
+            
+            // UV Tile Assignment Card
+            var tileCard = YUCPUIToolkitHelper.CreateCard("UV Tile Assignment", "Configure UV tile coordinates");
             var tileContent = YUCPUIToolkitHelper.GetCardContent(tileCard);
             
-            var autoAssignTileField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoAssignUDIMTile"), "Auto-Assign UDIM Tile");
+            var autoAssignTileField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoAssignUVTile"), "Auto-Assign UV Tile");
             tileContent.Add(autoAssignTileField);
             
             var tileInfoContainer = new VisualElement();
@@ -201,67 +284,168 @@ namespace YUCP.Components.Editor.UI
             root.Add(tileCard);
             
             // Global Parameter Settings Card
-            var globalParamCard = YUCPUIToolkitHelper.CreateCard("Global Parameter Settings", "Configure VRCFury global parameters");
-            globalParamCard.name = "global-param-card";
+            var globalParamCard = YUCPUIToolkitHelper.CreateCard("Global Parameters", "Control regions via VRChat parameters");
             var globalParamContent = YUCPUIToolkitHelper.GetCardContent(globalParamCard);
+
+            var useSingleParamProp = serializedObject.FindProperty("useSingleGlobalParameter");
             
-            var useSingleParamField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("useSingleGlobalParameter"), "Use Single Global Parameter");
-            globalParamContent.Add(useSingleParamField);
+            // Mode Toggle (Pill style)
+            var paramModeContainer = new VisualElement();
+            paramModeContainer.style.flexDirection = FlexDirection.Row;
+            paramModeContainer.style.marginBottom = 10;
+            paramModeContainer.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f, 1f));
+            // Fix borderRadius shorthand
+            paramModeContainer.style.borderTopLeftRadius = 4;
+            paramModeContainer.style.borderTopRightRadius = 4;
+            paramModeContainer.style.borderBottomLeftRadius = 4;
+            paramModeContainer.style.borderBottomRightRadius = 4;
             
-            var singleParamField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("singleGlobalParameterName"), "Single Global Parameter Name");
+            paramModeContainer.style.paddingTop = 2;
+            paramModeContainer.style.paddingBottom = 2;
+            paramModeContainer.style.paddingLeft = 2;
+            paramModeContainer.style.paddingRight = 2;
+            
+            var multiParamButton = new Button(() => {
+                useSingleParamProp.boolValue = false;
+                serializedObject.ApplyModifiedProperties();
+            });
+            multiParamButton.text = "Individual Parameters";
+            multiParamButton.style.flexGrow = 1;
+            multiParamButton.style.height = 24;
+            // Fix borderWidth shorthand
+            multiParamButton.style.borderLeftWidth = 0;
+            multiParamButton.style.borderRightWidth = 0;
+            multiParamButton.style.borderTopWidth = 0;
+            multiParamButton.style.borderBottomWidth = 0;
+            
+            var singleParamButton = new Button(() => {
+                useSingleParamProp.boolValue = true;
+                serializedObject.ApplyModifiedProperties();
+            });
+            singleParamButton.text = "Single Parameter";
+            singleParamButton.style.flexGrow = 1;
+            singleParamButton.style.height = 24;
+            // Fix borderWidth shorthand
+            singleParamButton.style.borderLeftWidth = 0;
+            singleParamButton.style.borderRightWidth = 0;
+            singleParamButton.style.borderTopWidth = 0;
+            singleParamButton.style.borderBottomWidth = 0;
+            
+            // Initial styling update in schedule
+            root.schedule.Execute(() => {
+                bool isSingle = useSingleParamProp.boolValue;
+                multiParamButton.style.backgroundColor = !isSingle ? new StyleColor(new Color(0.3f, 0.3f, 0.3f, 1f)) : new StyleColor(Color.clear);
+                singleParamButton.style.backgroundColor = isSingle ? new StyleColor(new Color(0.3f, 0.3f, 0.3f, 1f)) : new StyleColor(Color.clear);
+            }).Every(100);
+            
+            paramModeContainer.Add(multiParamButton);
+            paramModeContainer.Add(singleParamButton);
+            globalParamContent.Add(paramModeContainer);
+
+            // Parameter Name Input
+            var paramNameContainer = new VisualElement();
+            paramNameContainer.style.marginBottom = 10;
+            
+            var singleParamField = new TextField("Parameter Name");
+            singleParamField.BindProperty(serializedObject.FindProperty("singleGlobalParameterName"));
             singleParamField.name = "single-param-field";
-            singleParamField.style.paddingLeft = 15;
-            globalParamContent.Add(singleParamField);
             
-            var paramBaseNameField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("globalParameterBaseName"), "Global Parameter Base Name");
-            paramBaseNameField.name = "param-base-name-field";
-            paramBaseNameField.style.paddingLeft = 15;
-            globalParamContent.Add(paramBaseNameField);
+            var baseParamField = new TextField("Base Parameter Name");
+            baseParamField.BindProperty(serializedObject.FindProperty("globalParameterBaseName"));
+            baseParamField.name = "param-base-name-field";
             
+            paramNameContainer.Add(singleParamField);
+            paramNameContainer.Add(baseParamField);
+            globalParamContent.Add(paramNameContainer);
+
+            // Parameter Preview/Help
+            var paramHelpBox = new VisualElement();
+            paramHelpBox.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f, 0.5f));
+            // Fix borderRadius shorthand
+            paramHelpBox.style.borderTopLeftRadius = 4;
+            paramHelpBox.style.borderTopRightRadius = 4;
+            paramHelpBox.style.borderBottomLeftRadius = 4;
+            paramHelpBox.style.borderBottomRightRadius = 4;
+            
+            paramHelpBox.style.paddingTop = 8;
+            paramHelpBox.style.paddingBottom = 8;
+            paramHelpBox.style.paddingLeft = 8;
+            paramHelpBox.style.paddingRight = 8;
+            
+            var paramPreviewLabel = new Label();
+            paramPreviewLabel.name = "param-preview-label";
+            paramPreviewLabel.style.fontSize = 11;
+            paramPreviewLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f, 1f));
+            paramHelpBox.Add(paramPreviewLabel);
+            
+            globalParamContent.Add(paramHelpBox);
+            
+            // Add available parameters container
             var availableParamsContainer = new VisualElement();
             availableParamsContainer.name = "available-params-container";
             globalParamContent.Add(availableParamsContainer);
             
             root.Add(globalParamCard);
+
+            // Imported Vertex Groups Card (shown only for BlenderVertexGroups mode)
+            var vertexGroupsCard = YUCPUIToolkitHelper.CreateCard("Imported Vertex Groups", "Detected groups from mesh");
+            vertexGroupsCard.name = "vertex-groups-card";
+            var vertexGroupsContent = YUCPUIToolkitHelper.GetCardContent(vertexGroupsCard);
             
-            // Preview Card
-            var previewCard = YUCPUIToolkitHelper.CreateCard("Preview", "Preview detected UV regions");
-            var previewContent = YUCPUIToolkitHelper.GetCardContent(previewCard);
+            var importedGroupsList = new VisualElement();
+            importedGroupsList.name = "imported-groups-list";
+            importedGroupsList.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.12f, 1f));
+            importedGroupsList.style.borderTopLeftRadius = 6;
+            importedGroupsList.style.borderTopRightRadius = 6;
+            importedGroupsList.style.borderBottomLeftRadius = 6;
+            importedGroupsList.style.borderBottomRightRadius = 6;
+            importedGroupsList.style.paddingTop = 5;
+            importedGroupsList.style.paddingBottom = 5;
+            importedGroupsList.style.paddingLeft = 8;
+            importedGroupsList.style.paddingRight = 8;
+            importedGroupsList.style.minHeight = 40;
+            vertexGroupsContent.Add(importedGroupsList);
             
-            var previewActionButton = new Button(() => {
-                if (data.previewGenerated)
-                {
-                    ClearPreview();
-                }
-                else
-                {
-                    GeneratePreview();
-                }
-            });
-            previewActionButton.name = "preview-action-button";
-            previewActionButton.text = "Generate Preview";
-            previewActionButton.AddToClassList("yucp-button-primary");
-            previewActionButton.style.height = 35;
-            previewContent.Add(previewActionButton);
-            
-            var previewInfo = new VisualElement();
-            previewInfo.name = "preview-info";
-            previewContent.Add(previewInfo);
-            root.Add(previewCard);
-            
+            root.Add(vertexGroupsCard);
+
             // Build Statistics Card
-            var statsCard = YUCPUIToolkitHelper.CreateCard("Build Statistics", "Last build results");
+            var statsCard = YUCPUIToolkitHelper.CreateCard("Build Info", "Last processing results");
             var statsContent = YUCPUIToolkitHelper.GetCardContent(statsCard);
-            statsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("detectedRegions"), "Detected Regions"));
             
-            var usedTilesProp = serializedObject.FindProperty("usedTiles");
+            var statsGrid = new VisualElement();
+            statsGrid.style.flexDirection = FlexDirection.Row;
+            statsGrid.style.justifyContent = Justify.SpaceBetween;
+            statsGrid.style.marginBottom = 10;
+            
+            // Metric 1: Regions
+            var regionMetric = CreateMetricElement("Regions Detected", serializedObject.FindProperty("detectedRegions").intValue.ToString());
+            regionMetric.name = "regions-metric";
+            statsGrid.Add(regionMetric);
+            
+            // Metric 2: Tiles
+            var usedTilesProp = serializedObject.FindProperty("usedUVTiles");
+            var tilesMetric = CreateMetricElement("Tiles Used", usedTilesProp.arraySize.ToString());
+            tilesMetric.name = "tiles-metric";
+            statsGrid.Add(tilesMetric);
+            
+            statsContent.Add(statsGrid);
+            
             var usedTilesContainer = new VisualElement();
             usedTilesContainer.name = "used-tiles-container";
+            usedTilesContainer.style.flexDirection = FlexDirection.Row;
+            usedTilesContainer.style.flexWrap = Wrap.Wrap;
+            usedTilesContainer.style.marginTop = 5;
             statsContent.Add(usedTilesContainer);
-            root.Add(statsCard);
             
-            // Initialize available parameters display
-            UpdateAvailableParameters(availableParamsContainer, data);
+            root.Add(statsCard);
+
+            // Initialize available parameters display logic
+            if (availableParamsContainer != null)
+            {
+                UpdateAvailableParameters(availableParamsContainer, data);
+            }
+            
+            root.schedule.Execute(() => UpdateParameterPreview(paramPreviewLabel, data)).Every(200);
             
             // Dynamic updates
             root.schedule.Execute(() =>
@@ -285,7 +469,7 @@ namespace YUCP.Components.Editor.UI
                         
                         if (autoDetectEnabled && currentMesh != null)
                         {
-                            cachedDetectedUVChannel = UDIMManipulator.DetectBestUVChannel(currentMesh);
+                            cachedDetectedUVChannel = UVManipulator.DetectBestUVChannel(currentMesh);
                             previousDetectedMesh = currentMesh;
                             
                             var detectedLabel = new Label($"Detected UV Channel: UV{cachedDetectedUVChannel}");
@@ -331,6 +515,42 @@ namespace YUCP.Components.Editor.UI
                 
                 previousAutoDetectUVChannel = autoDetectEnabled;
                 
+                // Update detection mode card visibility
+                var currentMode = (DetectionMode)serializedObject.FindProperty("detectionMode").enumValueIndex;
+                
+                var uvProximityCard = root.Q<VisualElement>("uv-proximity-card");
+                var maskTextureCard = root.Q<VisualElement>("mask-texture-card");
+                var uvSeamCard = root.Q<VisualElement>("uv-seam-card");
+                var sharpEdgeCard = root.Q<VisualElement>("sharp-edge-card");
+                var vertexGroupCard = root.Q<VisualElement>("vertex-group-card");
+                var materialSlotsCard = root.Q<VisualElement>("material-slots-card");
+                var boneInfluenceCard = root.Q<VisualElement>("bone-influence-card");
+                
+                if (uvProximityCard != null) uvProximityCard.style.display = currentMode == DetectionMode.UVProximity ? DisplayStyle.Flex : DisplayStyle.None;
+                if (maskTextureCard != null) maskTextureCard.style.display = currentMode == DetectionMode.MaskTexture ? DisplayStyle.Flex : DisplayStyle.None;
+                if (uvSeamCard != null) uvSeamCard.style.display = currentMode == DetectionMode.UVSeams ? DisplayStyle.Flex : DisplayStyle.None;
+                if (sharpEdgeCard != null) sharpEdgeCard.style.display = currentMode == DetectionMode.SharpEdges ? DisplayStyle.Flex : DisplayStyle.None;
+                if (vertexGroupCard != null) vertexGroupCard.style.display = currentMode == DetectionMode.BlenderVertexGroups ? DisplayStyle.Flex : DisplayStyle.None;
+                if (materialSlotsCard != null) materialSlotsCard.style.display = currentMode == DetectionMode.MaterialSlots ? DisplayStyle.Flex : DisplayStyle.None;
+                if (boneInfluenceCard != null) boneInfluenceCard.style.display = currentMode == DetectionMode.BoneInfluence ? DisplayStyle.Flex : DisplayStyle.None;
+                
+                // Update mode description label
+                var modeDescLabel = root.Q<Label>("mode-description-label");
+                if (modeDescLabel != null)
+                {
+                    modeDescLabel.text = currentMode switch
+                    {
+                        DetectionMode.UVProximity => "Clusters vertices by UV distance. Best for meshes with well-separated UV islands.",
+                        DetectionMode.MaskTexture => "Uses a grayscale mask texture to define regions. Different gray levels = different regions.",
+                        DetectionMode.UVSeams => "Detects UV seams from mesh unwrapping. Regions are bounded by seam edges.",
+                        DetectionMode.SharpEdges => "Uses sharp edges/creases as region boundaries. Works with Blender/Maya marked edges.",
+                        DetectionMode.BlenderVertexGroups => "Imports vertex groups from Blender via FBX. Click 'Import' to scan the mesh.",
+                        DetectionMode.MaterialSlots => "Each material slot on the clothing mesh becomes a separate region.",
+                        DetectionMode.BoneInfluence => "Groups vertices by their dominant bone influence. Select target bones to create regions.",
+                        _ => ""
+                    };
+                }
+                
                 // Update material picker
                 var currentSelection = materialPickerContainer.Q<VisualElement>("current-material-selection");
                 var currentPreview = materialPickerContainer.Q<Image>("current-material-preview");
@@ -346,9 +566,9 @@ namespace YUCP.Components.Editor.UI
                 }
                 
                 // Update tile assignment UI
-                var autoAssignTileProp = serializedObject.FindProperty("autoAssignUDIMTile");
+                var autoAssignTileProp = serializedObject.FindProperty("autoAssignUVTile");
                 bool autoAssign = autoAssignTileProp.boolValue;
-                bool tileChanged = autoAssign != previousAutoAssignUDIMTile || 
+                bool tileChanged = autoAssign != previousAutoAssignUVTile || 
                                   data.startRow != previousStartRow || 
                                   data.startColumn != previousStartColumn;
                 
@@ -378,7 +598,7 @@ namespace YUCP.Components.Editor.UI
                     manualTileContainer.style.display = autoAssign ? DisplayStyle.None : DisplayStyle.Flex;
                 }
                 
-                previousAutoAssignUDIMTile = autoAssign;
+                previousAutoAssignUVTile = autoAssign;
                 previousStartRow = data.startRow;
                 previousStartColumn = data.startColumn;
                 
@@ -397,45 +617,19 @@ namespace YUCP.Components.Editor.UI
                 // Update available parameters display
                 UpdateAvailableParameters(availableParamsContainer, data);
                 
-                // Update preview button
-                if (previewActionButton != null)
+                // Update vertex groups card visibility and content
+                var vertexGroupsCardEl = root.Q<VisualElement>("vertex-groups-card");
+                var importedGroupsListEl = root.Q<VisualElement>("imported-groups-list");
+                
+                if (vertexGroupsCardEl != null)
                 {
-                    bool hasPreview = data.previewGenerated;
-                    bool canGenerate = !isGeneratingPreview && ValidateData();
+                    vertexGroupsCardEl.style.display = currentMode == DetectionMode.BlenderVertexGroups ? DisplayStyle.Flex : DisplayStyle.None;
                     
-                    previewActionButton.SetEnabled(isGeneratingPreview || hasPreview || canGenerate);
-                    
-                    if (!canGenerate && !hasPreview && !isGeneratingPreview)
+                    if (currentMode == DetectionMode.BlenderVertexGroups && importedGroupsListEl != null)
                     {
-                        previewActionButton.tooltip = GetValidationError();
-                    }
-                    else
-                    {
-                        previewActionButton.tooltip = "";
-                    }
-                    
-                    if (isGeneratingPreview)
-                    {
-                        previewActionButton.text = "Generating...";
-                        previewActionButton.RemoveFromClassList("yucp-button-danger");
-                        previewActionButton.AddToClassList("yucp-button-primary");
-                    }
-                    else if (hasPreview)
-                    {
-                        previewActionButton.text = "Clear Preview";
-                        previewActionButton.RemoveFromClassList("yucp-button-primary");
-                        previewActionButton.AddToClassList("yucp-button-danger");
-                    }
-                    else
-                    {
-                        previewActionButton.text = "Generate Preview";
-                        previewActionButton.RemoveFromClassList("yucp-button-danger");
-                        previewActionButton.AddToClassList("yucp-button-primary");
+                        UpdateVertexGroupsList(importedGroupsListEl, data);
                     }
                 }
-                
-                // Update preview info
-                UpdatePreviewInfo(previewInfo, data);
                 
                 // Update build statistics
                 UpdateBuildStatistics(usedTilesContainer, usedTilesProp);
@@ -447,7 +641,7 @@ namespace YUCP.Components.Editor.UI
         }
         
         private void UpdateMaterialPicker(
-            AutoUDIMDiscardData data,
+            AutoUVDiscardData data,
             SerializedObject so,
             VisualElement currentSelectionContainer,
             Image currentMaterialPreview,
@@ -511,9 +705,9 @@ namespace YUCP.Components.Editor.UI
             
             if (validSelectedMaterials.Length > 0)
             {
-                int compatibleCount = validSelectedMaterials.Count(m => UDIMManipulator.IsPoiyomiWithUDIMSupport(m));
+                int compatibleCount = validSelectedMaterials.Count(m => UVManipulator.IsPoiyomiWithUVSupport(m));
                 currentMaterialName.text = $"{validSelectedMaterials.Length} Material(s) Selected";
-                currentMaterialShader.text = $"{compatibleCount} compatible with UDIM Discard";
+                currentMaterialShader.text = $"{compatibleCount} compatible";
                 
                 Material firstMaterial = validSelectedMaterials[0];
                 if (firstMaterial != null)
@@ -542,7 +736,7 @@ namespace YUCP.Components.Editor.UI
                         
                         var matLabel = new Label($"• {mat.name}");
                         matLabel.style.fontSize = 11;
-                        bool isCompatible = UDIMManipulator.IsPoiyomiWithUDIMSupport(mat);
+                        bool isCompatible = UVManipulator.IsPoiyomiWithUVSupport(mat);
                         matLabel.style.color = isCompatible 
                             ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f))
                             : new StyleColor(new Color(0.8f, 0.5f, 0.3f, 1f));
@@ -669,7 +863,7 @@ namespace YUCP.Components.Editor.UI
             card.style.borderBottomColor = borderColor;
             card.style.borderLeftColor = borderColor;
             
-            bool isCompatible = UDIMManipulator.IsPoiyomiWithUDIMSupport(material);
+            bool isCompatible = UVManipulator.IsPoiyomiWithUVSupport(material);
             
             var preview = new Image();
             preview.style.width = 84;
@@ -743,7 +937,7 @@ namespace YUCP.Components.Editor.UI
             
             if (isCompatible)
             {
-                var badge = new Label("UDIM");
+                var badge = new Label("UV Discard");
                 badge.style.fontSize = 9;
                 badge.style.unityTextAlign = TextAnchor.MiddleCenter;
                 badge.style.marginTop = 2;
@@ -873,7 +1067,7 @@ namespace YUCP.Components.Editor.UI
             return string.Join("/", path);
         }
         
-        private void UpdateAvailableParameters(VisualElement container, AutoUDIMDiscardData data)
+        private void UpdateAvailableParameters(VisualElement container, AutoUVDiscardData data)
         {
             container.Clear();
             
@@ -959,59 +1153,140 @@ namespace YUCP.Components.Editor.UI
                 return null;
             }
         }
-        
-        private void UpdatePreviewInfo(VisualElement container, AutoUDIMDiscardData data)
+        private void UpdateVertexGroupsList(VisualElement container, AutoUVDiscardData data)
         {
             container.Clear();
             
-            if (data.previewGenerated && data.previewRegions != null && data.previewRegions.Count > 0)
+            if (data.blenderVertexGroups != null && data.blenderVertexGroups.Count > 0)
             {
-                var statsContainer = new VisualElement();
-                statsContainer.style.paddingTop = 6;
-                statsContainer.style.paddingBottom = 6;
-                statsContainer.style.paddingLeft = 10;
-                statsContainer.style.paddingRight = 10;
-                statsContainer.style.backgroundColor = new StyleColor(new Color(0.1f, 0.1f, 0.1f, 1f));
-                statsContainer.style.borderTopLeftRadius = 6;
-                statsContainer.style.borderTopRightRadius = 6;
-                statsContainer.style.borderBottomLeftRadius = 6;
-                statsContainer.style.borderBottomRightRadius = 6;
-                statsContainer.style.marginBottom = 8;
+                // Header row
+                var headerRow = new VisualElement();
+                headerRow.style.flexDirection = FlexDirection.Row;
+                headerRow.style.marginBottom = 5;
+                headerRow.style.paddingBottom = 5;
+                headerRow.style.borderBottomWidth = 1;
+                headerRow.style.borderBottomColor = new StyleColor(new Color(1f, 1f, 1f, 0.1f));
                 
-                var statusLabel = new Label("Preview Ready");
-                statusLabel.style.fontSize = 12;
-                statusLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-                statusLabel.style.color = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f));
-                statusLabel.style.marginBottom = 6;
-                statsContainer.Add(statusLabel);
+                var col1 = new Label("Group Name");
+                col1.style.width = 150;
+                col1.style.fontSize = 11;
+                col1.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+                headerRow.Add(col1);
                 
-                var statsText = new Label($"Detected {data.previewRegions.Count} UV regions");
-                statsText.style.fontSize = 11;
-                statsText.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f, 1f));
-                statsContainer.Add(statsText);
+                var col2 = new Label("Vertices");
+                col2.style.flexGrow = 1;
+                col2.style.fontSize = 11;
+                col2.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+                headerRow.Add(col2);
                 
-                container.Add(statsContainer);
+                container.Add(headerRow);
+                
+                // Groups list
+                var scroll = new ScrollView();
+                scroll.style.maxHeight = 200;
+                
+                Color[] groupColors = new Color[]
+                {
+                    Color.red, Color.green, new Color(0.212f, 0.749f, 0.694f), Color.yellow,
+                    Color.cyan, Color.magenta, new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 1f)
+                };
+                
+                for (int i = 0; i < data.blenderVertexGroups.Count; i++)
+                {
+                    var group = data.blenderVertexGroups[i];
+                    
+                    var row = new VisualElement();
+                    row.style.flexDirection = FlexDirection.Row;
+                    row.style.marginBottom = 2;
+                    row.style.alignItems = Align.Center;
+                    
+                    // Name + Color swatch
+                    var nameContainer = new VisualElement();
+                    nameContainer.style.flexDirection = FlexDirection.Row;
+                    nameContainer.style.alignItems = Align.Center;
+                    nameContainer.style.width = 150;
+                    
+                    var swatch = new VisualElement();
+                    swatch.style.width = 10;
+                    swatch.style.height = 10;
+                    swatch.style.borderTopLeftRadius = 5;
+                    swatch.style.borderTopRightRadius = 5;
+                    swatch.style.borderBottomLeftRadius = 5;
+                    swatch.style.borderBottomRightRadius = 5;
+                    swatch.style.backgroundColor = new StyleColor(groupColors[i % groupColors.Length]);
+                    swatch.style.marginRight = 6;
+                    nameContainer.Add(swatch);
+                    
+                    var nameLabel = new Label(group.name);
+                    nameLabel.style.fontSize = 11;
+                    nameLabel.style.overflow = Overflow.Hidden;
+                    nameLabel.style.unityTextOverflowPosition = TextOverflowPosition.End;
+                    nameContainer.Add(nameLabel);
+                    row.Add(nameContainer);
+                    
+                    // Vertex Count
+                    int vertexCount = group.weights != null ? group.weights.Count : 0;
+                    var countLabel = new Label(vertexCount.ToString());
+                    countLabel.style.flexGrow = 1;
+                    countLabel.style.fontSize = 11;
+                    row.Add(countLabel);
+                    
+                    scroll.Add(row);
+                }
+                
+                container.Add(scroll);
             }
             else
             {
                 var emptyState = new VisualElement();
-                emptyState.style.paddingTop = 8;
-                emptyState.style.paddingBottom = 8;
-                emptyState.style.paddingLeft = 10;
-                emptyState.style.paddingRight = 10;
-                emptyState.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.12f, 1f));
-                emptyState.style.borderTopLeftRadius = 6;
-                emptyState.style.borderTopRightRadius = 6;
-                emptyState.style.borderBottomLeftRadius = 6;
-                emptyState.style.borderBottomRightRadius = 6;
-                emptyState.style.marginBottom = 8;
+                emptyState.style.alignItems = Align.Center;
+                emptyState.style.justifyContent = Justify.Center;
+                emptyState.style.height = 40;
                 
-                var emptyLabel = new Label("No preview generated yet");
+                var emptyLabel = new Label("No vertex groups imported. Click Import in the settings above.");
                 emptyLabel.style.fontSize = 11;
-                emptyLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f, 1f));
+                emptyLabel.style.color = new StyleColor(new Color(0.5f, 0.5f, 0.5f));
                 emptyState.Add(emptyLabel);
                 
                 container.Add(emptyState);
+            }
+        }
+        
+        private VisualElement CreateMetricElement(string label, string value)
+        {
+            var container = new VisualElement();
+            container.style.flexDirection = FlexDirection.Column;
+            container.style.alignItems = Align.Center;
+            container.style.flexGrow = 1;
+            
+            var valueLabel = new Label(value);
+            valueLabel.style.fontSize = 18;
+            valueLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            valueLabel.style.color = new StyleColor(new Color(0.212f, 0.749f, 0.694f));
+            container.Add(valueLabel);
+            
+            var nameLabel = new Label(label);
+            nameLabel.style.fontSize = 10;
+            nameLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            container.Add(nameLabel);
+            
+            return container;
+        }
+        
+        private void UpdateParameterPreview(Label previewLabel, AutoUVDiscardData data)
+        {
+            if (previewLabel == null || data == null) return;
+            
+            string baseParam = string.IsNullOrEmpty(data.globalParameterBaseName) ? "AutoUVDiscard" : data.globalParameterBaseName;
+            
+            if (data.useSingleGlobalParameter)
+            {
+                string singleParam = string.IsNullOrEmpty(data.singleGlobalParameterName) ? $"{baseParam}_All" : data.singleGlobalParameterName;
+                previewLabel.text = $"Output: int {singleParam}";
+            }
+            else
+            {
+                previewLabel.text = $"Output: bool {baseParam}_RegionName1, bool {baseParam}_RegionName2, ...";
             }
         }
         
@@ -1058,102 +1333,223 @@ namespace YUCP.Components.Editor.UI
             isGeneratingPreview = true;
             
             try
-        {
-            var clothingRenderer = data.GetComponent<SkinnedMeshRenderer>();
-            if (clothingRenderer == null || clothingRenderer.sharedMesh == null)
             {
-                EditorUtility.DisplayDialog("Error", "No SkinnedMeshRenderer or mesh found on this object!", "OK");
-                return;
-            }
-
-                int uvChannel = data.autoDetectUVChannel 
-                    ? UDIMManipulator.DetectBestUVChannel(clothingRenderer.sharedMesh)
-                    : data.uvChannel;
-                
-                Vector2[] uvs = GetUVChannel(clothingRenderer.sharedMesh, uvChannel);
-            if (uvs == null || uvs.Length == 0)
-            {
-                    EditorUtility.DisplayDialog("Error", $"No UV{uvChannel} data found on mesh!", "OK");
-                return;
-            }
-
-            List<List<int>> clusters = ClusterVerticesByUV(uvs, data.mergeTolerance);
-
-            int minVertices = Mathf.CeilToInt(clothingRenderer.sharedMesh.vertexCount * (data.minRegionSize / 100f));
-            clusters = clusters.Where(c => c.Count >= minVertices).ToList();
-
-            data.previewRegions = new List<AutoUDIMDiscardData.UVRegion>();
-            Color[] debugColors = new Color[]
-            {
-                Color.red, Color.green, new Color(0.212f, 0.749f, 0.694f), Color.yellow,
-                new Color(0.212f, 0.749f, 0.694f), Color.magenta, new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 1f)
-            };
-
-            for (int i = 0; i < clusters.Count; i++)
-            {
-                var cluster = clusters[i];
-                var region = new AutoUDIMDiscardData.UVRegion
+                var clothingRenderer = data.GetComponent<SkinnedMeshRenderer>();
+                if (clothingRenderer == null || clothingRenderer.sharedMesh == null)
                 {
-                    vertexIndices = cluster,
-                    debugColor = debugColors[i % debugColors.Length]
-                };
-
-                Vector2 min = new Vector2(float.MaxValue, float.MaxValue);
-                Vector2 max = new Vector2(float.MinValue, float.MinValue);
-
-                foreach (int vertexIdx in cluster)
-                {
-                    Vector2 uv = uvs[vertexIdx];
-                    min = Vector2.Min(min, uv);
-                    max = Vector2.Max(max, uv);
+                    EditorUtility.DisplayDialog("Error", "No SkinnedMeshRenderer or mesh found on this object!", "OK");
+                    return;
                 }
 
-                region.uvBounds = new Bounds(
-                    new Vector3((min.x + max.x) / 2f, (min.y + max.y) / 2f, 0),
-                    new Vector3(max.x - min.x, max.y - min.y, 0)
-                );
-                region.uvCenter = new Vector2((min.x + max.x) / 2f, (min.y + max.y) / 2f);
+                Mesh mesh = clothingRenderer.sharedMesh;
+                int uvChannel = data.autoDetectUVChannel 
+                    ? UVManipulator.DetectBestUVChannel(mesh)
+                    : data.uvChannel;
 
-                data.previewRegions.Add(region);
-            }
-
-            data.previewRegions = data.previewRegions.OrderByDescending(r => r.uvCenter.y)
-                                                     .ThenBy(r => r.uvCenter.x)
-                                                     .ToList();
-
-                int currentRow = data.autoAssignUDIMTile ? -1 : (data.startRow >= 0 ? data.startRow : 3);
-                int currentColumn = data.autoAssignUDIMTile ? -1 : (data.startColumn >= 0 ? data.startColumn : 0);
-
-            foreach (var region in data.previewRegions)
+                // Mode-specific detection
+                List<List<int>> clusters = null;
+                Vector2[] uvs = null;
+                
+                Color[] debugColors = new Color[]
                 {
-                    if (data.autoAssignUDIMTile)
+                    Color.red, Color.green, new Color(0.212f, 0.749f, 0.694f), Color.yellow,
+                    Color.cyan, Color.magenta, new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 1f)
+                };
+                
+                data.previewRegions = new List<AutoUVDiscardData.UVRegion>();
+                
+                switch (data.detectionMode)
+                {
+                    case DetectionMode.UVProximity:
+                        uvs = GetUVChannel(mesh, uvChannel);
+                        if (uvs == null || uvs.Length == 0)
+                        {
+                            EditorUtility.DisplayDialog("Error", $"No UV{uvChannel} data found on mesh!", "OK");
+                            return;
+                        }
+                        clusters = ClusterVerticesByUV(uvs, data.mergeTolerance);
+                        int minVertices = Mathf.CeilToInt(mesh.vertexCount * (data.minRegionSize / 100f));
+                        clusters = clusters.Where(c => c.Count >= minVertices).ToList();
+                        
+                        for (int i = 0; i < clusters.Count; i++)
+                        {
+                            var region = CreateRegionFromCluster(clusters[i], uvs, debugColors[i % debugColors.Length]);
+                            data.previewRegions.Add(region);
+                        }
+                        break;
+                        
+                    case DetectionMode.MaskTexture:
+                        if (data.maskRegions == null || data.maskRegions.Count == 0)
+                        {
+                            EditorUtility.DisplayDialog("Error", "No mask regions defined! Add at least one mask.", "OK");
+                            return;
+                        }
+                        uvs = GetUVChannel(mesh, data.maskUVChannel);
+                        if (uvs == null || uvs.Length == 0)
+                        {
+                            EditorUtility.DisplayDialog("Error", $"No UV{data.maskUVChannel} data found for mask sampling!", "OK");
+                            return;
+                        }
+                        
+                        foreach (var maskDef in data.maskRegions)
+                        {
+                            if (!maskDef.enabled || maskDef.maskTexture == null)
+                                continue;
+                                
+                            var vertexIndices = new List<int>();
+                            for (int v = 0; v < uvs.Length; v++)
+                            {
+                                float maskValue = UVManipulator.SampleMaskAtUV(maskDef.maskTexture, uvs[v]);
+                                if (maskValue >= data.maskThreshold)
+                                    vertexIndices.Add(v);
+                            }
+                            
+                            if (vertexIndices.Count > 0)
+                            {
+                                var region = new AutoUVDiscardData.UVRegion
+                                {
+                                    vertexIndices = vertexIndices,
+                                    name = maskDef.name,
+                                    debugColor = maskDef.debugColor
+                                };
+                                CalculateRegionBounds(region, uvs);
+                                data.previewRegions.Add(region);
+                            }
+                        }
+                        break;
+                        
+                    case DetectionMode.MaterialSlots:
+                        int[] triangles = mesh.triangles;
+                        int subMeshCount = mesh.subMeshCount;
+                        uvs = GetUVChannel(mesh, uvChannel);
+                        
+                        for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+                        {
+                            var subMeshDesc = mesh.GetSubMesh(subMesh);
+                            var vertexIndices = new HashSet<int>();
+                            
+                            int startIndex = subMeshDesc.indexStart;
+                            int indexCount = subMeshDesc.indexCount;
+                            
+                            for (int i = startIndex; i < startIndex + indexCount; i++)
+                            {
+                                vertexIndices.Add(triangles[i]);
+                            }
+                            
+                            if (vertexIndices.Count > 0)
+                            {
+                                var region = new AutoUVDiscardData.UVRegion
+                                {
+                                    vertexIndices = vertexIndices.ToList(),
+                                    name = $"Material_{subMesh}",
+                                    debugColor = debugColors[subMesh % debugColors.Length]
+                                };
+                                if (uvs != null && uvs.Length > 0)
+                                    CalculateRegionBounds(region, uvs);
+                                data.previewRegions.Add(region);
+                            }
+                        }
+                        break;
+                        
+                    case DetectionMode.BoneInfluence:
+                        BoneWeight[] boneWeights = mesh.boneWeights;
+                        if (boneWeights == null || boneWeights.Length == 0)
+                        {
+                            EditorUtility.DisplayDialog("Error", "Mesh has no bone weights!", "OK");
+                            return;
+                        }
+                        uvs = GetUVChannel(mesh, uvChannel);
+                        
+                        var boneGroups = new Dictionary<int, List<int>>();
+                        for (int v = 0; v < boneWeights.Length; v++)
+                        {
+                            int dominantBone = GetDominantBone(boneWeights[v]);
+                            if (!boneGroups.ContainsKey(dominantBone))
+                                boneGroups[dominantBone] = new List<int>();
+                            boneGroups[dominantBone].Add(v);
+                        }
+                        
+                        int boneIdx = 0;
+                        foreach (var kvp in boneGroups)
+                        {
+                            if (kvp.Value.Count > 0)
+                            {
+                                var region = new AutoUVDiscardData.UVRegion
+                                {
+                                    vertexIndices = kvp.Value,
+                                    name = $"Bone_{kvp.Key}",
+                                    debugColor = debugColors[boneIdx % debugColors.Length]
+                                };
+                                if (uvs != null && uvs.Length > 0)
+                                    CalculateRegionBounds(region, uvs);
+                                data.previewRegions.Add(region);
+                                boneIdx++;
+                            }
+                        }
+                        break;
+                        
+                    default:
+                        // Fallback to UV Proximity for unsupported modes
+                        uvs = GetUVChannel(mesh, uvChannel);
+                        if (uvs != null && uvs.Length > 0)
+                        {
+                            clusters = ClusterVerticesByUV(uvs, data.mergeTolerance);
+                            for (int i = 0; i < clusters.Count; i++)
+                            {
+                                var region = CreateRegionFromCluster(clusters[i], uvs, debugColors[i % debugColors.Length]);
+                                data.previewRegions.Add(region);
+                            }
+                        }
+                        break;
+                }
+                
+                // Sort regions by UV position
+                if (data.previewRegions.Count > 0)
+                {
+                    data.previewRegions = data.previewRegions
+                        .OrderByDescending(r => r.uvCenter.y)
+                        .ThenBy(r => r.uvCenter.x)
+                        .ToList();
+                }
+                
+                // Assign UV tiles
+                int currentRow = data.autoAssignUVTile ? -1 : (data.startRow >= 0 ? data.startRow : 3);
+                int currentColumn = data.autoAssignUVTile ? -1 : (data.startColumn >= 0 ? data.startColumn : 0);
+                
+                for (int i = 0; i < data.previewRegions.Count; i++)
+                {
+                    var region = data.previewRegions[i];
+                    
+                    if (data.autoAssignUVTile)
                     {
                         region.assignedRow = -1;
                         region.assignedColumn = -1;
                     }
                     else
-            {
-                region.assignedRow = currentRow;
-                region.assignedColumn = currentColumn;
-
-                currentColumn++;
-                if (currentColumn > 3)
-                {
-                    currentColumn = 0;
-                    currentRow++;
-                }
+                    {
+                        region.assignedRow = currentRow;
+                        region.assignedColumn = currentColumn;
+                        
+                        currentColumn++;
+                        if (currentColumn > 3)
+                        {
+                            currentColumn = 0;
+                            currentRow++;
+                        }
                     }
-                    region.name = $"Region_{region.assignedRow}_{region.assignedColumn}";
-            }
+                    
+                    if (string.IsNullOrEmpty(region.name))
+                        region.name = $"Region_{i}";
+                }
 
             data.previewGenerated = true;
             EditorUtility.SetDirty(data);
             
-            Debug.Log($"[AutoUDIMDiscard] Preview generated: {data.previewRegions.Count} regions detected");
+            Debug.Log($"[AutoUVDiscard] Preview generated: {data.previewRegions.Count} regions detected");
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[AutoUDIMDiscard] Error generating preview: {ex.Message}", data);
+                Debug.LogError($"[AutoUVDiscard] Error generating preview: {ex.Message}", data);
                 EditorUtility.DisplayDialog("Error", $"Failed to generate preview:\n\n{ex.Message}", "OK");
             }
             finally
@@ -1224,6 +1620,161 @@ namespace YUCP.Components.Editor.UI
             }
 
             return clusters;
+        }
+        
+        private AutoUVDiscardData.UVRegion CreateRegionFromCluster(List<int> cluster, Vector2[] uvs, Color debugColor)
+        {
+            var region = new AutoUVDiscardData.UVRegion
+            {
+                vertexIndices = cluster,
+                debugColor = debugColor
+            };
+            
+            CalculateRegionBounds(region, uvs);
+            return region;
+        }
+        
+        private void CalculateRegionBounds(AutoUVDiscardData.UVRegion region, Vector2[] uvs)
+        {
+            Vector2 min = new Vector2(float.MaxValue, float.MaxValue);
+            Vector2 max = new Vector2(float.MinValue, float.MinValue);
+            
+            foreach (int vertexIdx in region.vertexIndices)
+            {
+                if (vertexIdx >= 0 && vertexIdx < uvs.Length)
+                {
+                    Vector2 uv = uvs[vertexIdx];
+                    min = Vector2.Min(min, uv);
+                    max = Vector2.Max(max, uv);
+                }
+            }
+            
+            region.uvBounds = new Bounds(
+                new Vector3((min.x + max.x) / 2f, (min.y + max.y) / 2f, 0),
+                new Vector3(max.x - min.x, max.y - min.y, 0)
+            );
+            region.uvCenter = new Vector2((min.x + max.x) / 2f, (min.y + max.y) / 2f);
+        }
+        
+        private int GetDominantBone(BoneWeight bw)
+        {
+            int dominantBone = bw.boneIndex0;
+            float maxWeight = bw.weight0;
+            
+            if (bw.weight1 > maxWeight) { dominantBone = bw.boneIndex1; maxWeight = bw.weight1; }
+            if (bw.weight2 > maxWeight) { dominantBone = bw.boneIndex2; maxWeight = bw.weight2; }
+            if (bw.weight3 > maxWeight) { dominantBone = bw.boneIndex3; }
+            
+            return dominantBone;
+        }
+
+        private void ImportBlenderVertexGroups()
+        {
+            if (data == null) return;
+            
+            var renderer = data.GetComponent<SkinnedMeshRenderer>();
+            if (renderer == null || renderer.sharedMesh == null)
+            {
+                EditorUtility.DisplayDialog("Import Error", "No SkinnedMeshRenderer with mesh found on this GameObject.", "OK");
+                return;
+            }
+
+            Mesh mesh = renderer.sharedMesh;
+            
+            // Unity doesn't preserve Blender vertex group names directly
+            // However, we can create groups based on bone influences or submeshes
+            
+            serializedObject.Update();
+            var groupsProp = serializedObject.FindProperty("blenderVertexGroups");
+            groupsProp.ClearArray();
+            
+            // Option 1: Create groups from bone names
+            if (renderer.bones != null && renderer.bones.Length > 0)
+            {
+                BoneWeight[] weights = mesh.boneWeights;
+                var boneVertexGroups = new Dictionary<int, List<VertexWeight>>();
+                
+                for (int v = 0; v < weights.Length; v++)
+                {
+                    BoneWeight bw = weights[v];
+                    
+                    // Add to dominant bone group
+                    int dominantBone = -1;
+                    float maxWeight = 0.1f; // Minimum threshold
+                    
+                    if (bw.weight0 > maxWeight) { dominantBone = bw.boneIndex0; maxWeight = bw.weight0; }
+                    if (bw.weight1 > maxWeight) { dominantBone = bw.boneIndex1; maxWeight = bw.weight1; }
+                    if (bw.weight2 > maxWeight) { dominantBone = bw.boneIndex2; maxWeight = bw.weight2; }
+                    if (bw.weight3 > maxWeight) { dominantBone = bw.boneIndex3; maxWeight = bw.weight3; }
+                    
+                    if (dominantBone >= 0 && dominantBone < renderer.bones.Length)
+                    {
+                        if (!boneVertexGroups.ContainsKey(dominantBone))
+                            boneVertexGroups[dominantBone] = new List<VertexWeight>();
+                        
+                        boneVertexGroups[dominantBone].Add(new VertexWeight 
+                        { 
+                            vertexIndex = v, 
+                            weight = maxWeight 
+                        });
+                    }
+                }
+                
+                // Only add groups with significant vertex counts
+                int minVertices = Mathf.Max(10, mesh.vertexCount / 50);
+                Color[] colors = { Color.red, Color.green, Color.blue, Color.yellow, Color.cyan, Color.magenta, new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 1f) };
+                int colorIdx = 0;
+                
+                foreach (var kvp in boneVertexGroups)
+                {
+                    if (kvp.Value.Count >= minVertices && kvp.Key < renderer.bones.Length && renderer.bones[kvp.Key] != null)
+                    {
+                        int idx = groupsProp.arraySize;
+                        groupsProp.InsertArrayElementAtIndex(idx);
+                        var groupProp = groupsProp.GetArrayElementAtIndex(idx);
+                        
+                        groupProp.FindPropertyRelative("name").stringValue = renderer.bones[kvp.Key].name;
+                        groupProp.FindPropertyRelative("enabled").boolValue = true;
+                        
+                        var colorProp = groupProp.FindPropertyRelative("debugColor");
+                        var color = colors[colorIdx % colors.Length];
+                        colorProp.colorValue = color;
+                        colorIdx++;
+                        
+                        var weightsProp = groupProp.FindPropertyRelative("weights");
+                        weightsProp.ClearArray();
+                        
+                        foreach (var vw in kvp.Value)
+                        {
+                            int wIdx = weightsProp.arraySize;
+                            weightsProp.InsertArrayElementAtIndex(wIdx);
+                            var weightProp = weightsProp.GetArrayElementAtIndex(wIdx);
+                            weightProp.FindPropertyRelative("vertexIndex").intValue = vw.vertexIndex;
+                            weightProp.FindPropertyRelative("weight").floatValue = vw.weight;
+                        }
+                    }
+                }
+            }
+            
+            serializedObject.ApplyModifiedProperties();
+            
+            int groupCount = data.blenderVertexGroups?.Count ?? 0;
+            if (groupCount > 0)
+            {
+                EditorUtility.DisplayDialog("Import Complete", 
+                    $"Imported {groupCount} vertex groups from bone influences.\n\n" +
+                    "Note: Unity doesn't preserve Blender vertex group names directly. " +
+                    "Groups were created from dominant bone influences as a starting point.", 
+                    "OK");
+            }
+            else
+            {
+                EditorUtility.DisplayDialog("Import Complete", 
+                    "No suitable vertex groups found.\n\n" +
+                    "The mesh may not have bone weights, or no bones have enough vertex influence.\n" +
+                    "You can manually add vertex groups if needed.", 
+                    "OK");
+            }
         }
     }
 }

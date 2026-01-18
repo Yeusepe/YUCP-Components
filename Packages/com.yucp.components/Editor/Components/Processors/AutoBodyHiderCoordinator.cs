@@ -9,8 +9,8 @@ using YUCP.Components.Editor.MeshUtils;
 namespace YUCP.Components.Editor
 {
     /// <summary>
-    /// Coordinates multiple AutoBodyHider and AutoUDIMDiscard components that target the same body mesh.
-    /// Assigns unique UDIM tiles to each clothing piece and detects overlaps for layered clothing support.
+    /// Coordinates multiple AutoBodyHider and AutoUVDiscard components that target the same body mesh.
+    /// Assigns unique UV tiles to each clothing piece and detects overlaps for layered clothing support.
     /// </summary>
     public class AutoBodyHiderCoordinator : IVRCSDKPreprocessAvatarCallback
     {
@@ -19,8 +19,8 @@ namespace YUCP.Components.Editor
         // Share overlap data with the processor
         public static Dictionary<SkinnedMeshRenderer, BodyMeshGroup> CoordinatedGroups = new Dictionary<SkinnedMeshRenderer, BodyMeshGroup>();
         
-        // Share tile assignment data for AutoUDIMDiscard
-        public static Dictionary<SkinnedMeshRenderer, UDIMDiscardGroup> UDIMDiscardGroups = new Dictionary<SkinnedMeshRenderer, UDIMDiscardGroup>();
+        // Share tile assignment data for AutoUVDiscard
+        public static Dictionary<SkinnedMeshRenderer, UVDiscardGroup> UVDiscardGroups = new Dictionary<SkinnedMeshRenderer, UVDiscardGroup>();
 
         public class BodyMeshGroup
         {
@@ -38,11 +38,11 @@ namespace YUCP.Components.Editor
             public HashSet<(int, int)> usedTiles = new HashSet<(int, int)>();
         }
         
-        public class UDIMDiscardGroup
+        public class UVDiscardGroup
         {
             public SkinnedMeshRenderer bodyMesh;
-            public List<AutoUDIMDiscardData> components = new List<AutoUDIMDiscardData>();
-            public Dictionary<AutoUDIMDiscardData, List<(int row, int col)>> assignedTiles = new Dictionary<AutoUDIMDiscardData, List<(int row, int col)>>();
+            public List<AutoUVDiscardData> components = new List<AutoUVDiscardData>();
+            public Dictionary<AutoUVDiscardData, List<(int row, int col)>> assignedTiles = new Dictionary<AutoUVDiscardData, List<(int row, int col)>>();
             public HashSet<(int, int)> usedTiles = new HashSet<(int, int)>();
         }
         
@@ -86,20 +86,20 @@ namespace YUCP.Components.Editor
         public bool OnPreprocessAvatar(GameObject avatarRoot)
         {
             var allComponents = avatarRoot.GetComponentsInChildren<AutoBodyHiderData>(true);
-            var allUDIMDiscardComponents = avatarRoot.GetComponentsInChildren<AutoUDIMDiscardData>(true);
+            var allUVDiscardComponents = avatarRoot.GetComponentsInChildren<AutoUVDiscardData>(true);
             
             // Group components by target body mesh
             Dictionary<SkinnedMeshRenderer, BodyMeshGroup> bodyMeshGroups = new Dictionary<SkinnedMeshRenderer, BodyMeshGroup>();
-            Dictionary<SkinnedMeshRenderer, UDIMDiscardGroup> udimDiscardGroups = new Dictionary<SkinnedMeshRenderer, UDIMDiscardGroup>();
+            Dictionary<SkinnedMeshRenderer, UVDiscardGroup> uvDiscardGroups = new Dictionary<SkinnedMeshRenderer, UVDiscardGroup>();
             
-            // Collect all AutoBodyHider components that will use UDIM discard
+            // Collect all AutoBodyHider components that will use UV discard
             foreach (var data in allComponents)
             {
                 if (data.targetBodyMesh == null) continue;
                 
                 ApplicationMode mode = DetermineApplicationMode(data);
                 
-                if (mode == ApplicationMode.UDIMDiscard)
+                if (mode == ApplicationMode.UVDiscard)
                 {
                     if (!bodyMeshGroups.ContainsKey(data.targetBodyMesh))
                     {
@@ -113,50 +113,50 @@ namespace YUCP.Components.Editor
                 }
             }
             
-            // Collect all AutoUDIMDiscard components
-            foreach (var data in allUDIMDiscardComponents)
+            // Collect all AutoUVDiscard components
+            foreach (var data in allUVDiscardComponents)
             {
                 if (data.targetBodyMesh == null || !data.enabled) continue;
                 
-                if (!udimDiscardGroups.ContainsKey(data.targetBodyMesh))
+                if (!uvDiscardGroups.ContainsKey(data.targetBodyMesh))
                 {
-                    udimDiscardGroups[data.targetBodyMesh] = new UDIMDiscardGroup { bodyMesh = data.targetBodyMesh };
+                    uvDiscardGroups[data.targetBodyMesh] = new UVDiscardGroup { bodyMesh = data.targetBodyMesh };
                 }
                 
-                if (!udimDiscardGroups[data.targetBodyMesh].components.Contains(data))
+                if (!uvDiscardGroups[data.targetBodyMesh].components.Contains(data))
                 {
-                    udimDiscardGroups[data.targetBodyMesh].components.Add(data);
+                    uvDiscardGroups[data.targetBodyMesh].components.Add(data);
                 }
             }
             
-            // Assign unique UDIM tiles to each clothing piece in each group
+            // Assign unique UV tiles to each clothing piece in each group
             foreach (var group in bodyMeshGroups.Values)
             {
                 if (group.clothingPieces.Count > 0)
                 {
-                    AssignUDIMTiles(group);
+                    AssignUVTiles(group);
                 }
             }
             
-            // Assign tiles for AutoUDIMDiscard components
-            foreach (var group in udimDiscardGroups.Values)
+            // Assign UV tiles for AutoUVDiscard components
+            foreach (var group in uvDiscardGroups.Values)
             {
                 if (group.components.Count > 0)
                 {
-                    AssignUDIMDiscardTiles(group);
+                    AssignUVDiscardTiles(group);
                 }
             }
             
             // Store groups for processors to access
             CoordinatedGroups = bodyMeshGroups;
-            UDIMDiscardGroups = udimDiscardGroups;
+            UVDiscardGroups = uvDiscardGroups;
             
             return true;
         }
         
-        private void AssignUDIMDiscardTiles(UDIMDiscardGroup group)
+        private void AssignUVDiscardTiles(UVDiscardGroup group)
         {
-            Debug.Log($"[AutoBodyHiderCoordinator] Coordinating {group.components.Count} AutoUDIMDiscard components for body mesh '{group.bodyMesh.name}'");
+            Debug.Log($"[AutoBodyHiderCoordinator] Coordinating {group.components.Count} AutoUVDiscard components for body mesh '{group.bodyMesh.name}'");
             
             HashSet<(int, int)> usedTiles = new HashSet<(int, int)>();
             
@@ -170,10 +170,10 @@ namespace YUCP.Components.Editor
                 }
             }
             
-            // Process each AutoUDIMDiscard component
+            // Process each AutoUVDiscard component
             foreach (var data in group.components)
             {
-                if (data.autoAssignUDIMTile)
+                if (data.autoAssignUVTile)
                 {
                     // Auto-assign tiles for regions
                     int nextRow = 1;
@@ -194,7 +194,7 @@ namespace YUCP.Components.Editor
                                 nextRow++;
                                 if (nextRow >= 4)
                                 {
-                                    Debug.LogWarning($"[AutoBodyHiderCoordinator] Ran out of tiles for AutoUDIMDiscard '{data.name}'", data);
+                                    Debug.LogWarning($"[AutoBodyHiderCoordinator] Ran out of tiles for AutoUVDiscard '{data.name}'", data);
                                     break;
                                 }
                             }
@@ -219,7 +219,7 @@ namespace YUCP.Components.Editor
                         group.assignedTiles[data] = assignedTiles;
                         data.startRow = assignedTiles[0].row;
                         data.startColumn = assignedTiles[0].col;
-                        Debug.Log($"[AutoBodyHiderCoordinator] Auto-assigned starting tile ({assignedTiles[0].row}, {assignedTiles[0].col}) to AutoUDIMDiscard '{data.name}'");
+                        Debug.Log($"[AutoBodyHiderCoordinator] Auto-assigned starting tile ({assignedTiles[0].row}, {assignedTiles[0].col}) to AutoUVDiscard '{data.name}'");
                     }
                 }
                 else
@@ -235,7 +235,7 @@ namespace YUCP.Components.Editor
                         }
                         else
                         {
-                            Debug.LogWarning($"[AutoBodyHiderCoordinator] AutoUDIMDiscard '{data.name}' wants tile ({tile.Item1}, {tile.Item2}) but it's already used.", data);
+                            Debug.LogWarning($"[AutoBodyHiderCoordinator] AutoUVDiscard '{data.name}' wants tile ({tile.Item1}, {tile.Item2}) but it's already used.", data);
                         }
                     }
                 }
@@ -254,16 +254,16 @@ namespace YUCP.Components.Editor
             Material[] materials = data.targetBodyMesh.sharedMaterials;
             foreach (var material in materials)
             {
-                if (UDIMManipulator.IsPoiyomiWithUDIMSupport(material))
+                if (UVManipulator.IsPoiyomiWithUVSupport(material))
                 {
-                    return ApplicationMode.UDIMDiscard;
+                    return ApplicationMode.UVDiscard;
                 }
             }
             
             return ApplicationMode.MeshDeletion;
         }
         
-        private void AssignUDIMTiles(BodyMeshGroup group)
+        private void AssignUVTiles(BodyMeshGroup group)
         {
             Debug.Log($"[AutoBodyHiderCoordinator] Coordinating {group.clothingPieces.Count} clothing pieces for body mesh '{group.bodyMesh.name}'");
             
@@ -278,7 +278,7 @@ namespace YUCP.Components.Editor
             
             foreach (var data in group.clothingPieces)
             {
-                if (data.autoAssignUDIMTile)
+                if (data.autoAssignUVTile)
                 {
                     autoAssignPieces.Add(data);
                 }
@@ -291,7 +291,7 @@ namespace YUCP.Components.Editor
             // Collect manually-specified tiles when not auto-assigning
             foreach (var data in manualAssignPieces)
             {
-                var tile = (data.udimDiscardRow, data.udimDiscardColumn);
+                var tile = (data.uvDiscardRow, data.uvDiscardColumn);
                 
                 if (usedTiles.Contains(tile))
                 {
@@ -324,7 +324,7 @@ namespace YUCP.Components.Editor
                         if (nextRow >= 4)
                         {
                             skippedPieces.Add(data);
-                            Debug.LogError($"[AutoBodyHiderCoordinator] Cannot assign tile to '{data.name}' - maximum 16 UDIM tiles exceeded!", data);
+                            Debug.LogError($"[AutoBodyHiderCoordinator] Cannot assign tile to '{data.name}' - maximum 16 UV tiles exceeded!", data);
                             break;
                         }
                     }
@@ -338,8 +338,8 @@ namespace YUCP.Components.Editor
                 group.assignedTiles[data] = tile;
                 
                 // Update the data component with the assigned tile
-                data.udimDiscardRow = nextRow;
-                data.udimDiscardColumn = nextCol;
+                data.uvDiscardRow = nextRow;
+                data.uvDiscardColumn = nextCol;
                 
                 Debug.Log($"[AutoBodyHiderCoordinator] Auto-assigned tile ({nextRow}, {nextCol}) to clothing '{data.name}'");
                 
@@ -380,10 +380,10 @@ namespace YUCP.Components.Editor
             string bodyMeshName = group.bodyMesh != null ? group.bodyMesh.name : "Unknown";
             int totalAttempted = group.assignedTiles.Count + skippedPieces.Count;
             
-            string message = $"UDIM Tile Limit Exceeded!\n\n" +
+            string message = $"UV Tile Limit Exceeded!\n\n" +
                            $"Body Mesh: {bodyMeshName}\n" +
                            $"Total clothing pieces: {totalAttempted}\n" +
-                           $"Maximum allowed: 16 UDIM tiles\n" +
+                           $"Maximum allowed: 16 UV tiles\n" +
                            $"Processed: {group.assignedTiles.Count}\n" +
                            $"Skipped: {skippedPieces.Count}\n\n" +
                            $"The following clothing pieces were SKIPPED and will NOT hide body parts:\n\n";
@@ -398,15 +398,15 @@ namespace YUCP.Components.Editor
                       $"2. Combine clothing pieces that are always worn together\n" +
                       $"3. Use Mesh Deletion mode for some pieces (permanent)\n" +
                       $"4. Split clothing across multiple body renderers\n\n" +
-                      $"Note: Poiyomi and FastFur shaders support a maximum of 16 UDIM discard tiles (4x4 grid).";
+                      $"Note: Poiyomi and FastFur shaders support a maximum of 16 UV discard tiles (4x4 grid).";
             
             EditorUtility.DisplayDialog(
-                "⚠️ UDIM Tile Limit Exceeded",
+                "⚠️ UV Tile Limit Exceeded",
                 message,
                 "OK"
             );
             
-            Debug.LogWarning($"[AutoBodyHiderCoordinator] {skippedPieces.Count} clothing pieces skipped due to UDIM tile limit!");
+            Debug.LogWarning($"[AutoBodyHiderCoordinator] {skippedPieces.Count} clothing pieces skipped due to UV tile limit!");
         }
     }
 }

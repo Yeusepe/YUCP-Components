@@ -25,7 +25,7 @@ namespace YUCP.Components.Editor
         {
             public SkinnedMeshRenderer bodyMesh;
             public Mesh originalMesh;
-            public List<AutoBodyHiderData> udimComponents = new List<AutoBodyHiderData>();
+            public List<AutoBodyHiderData> uvComponents = new List<AutoBodyHiderData>();
             public List<AutoBodyHiderData> deletionComponents = new List<AutoBodyHiderData>();
             public Dictionary<AutoBodyHiderData, bool[]> hiddenVerticesMap = new Dictionary<AutoBodyHiderData, bool[]>();
         }
@@ -65,9 +65,9 @@ namespace YUCP.Components.Editor
                     var group = bodyMeshes[data.targetBodyMesh];
                     ApplicationMode mode = DetermineApplicationMode(data);
                     
-                    if (mode == ApplicationMode.UDIMDiscard)
+                    if (mode == ApplicationMode.UVDiscard)
                     {
-                        group.udimComponents.Add(data);
+                        group.uvComponents.Add(data);
                     }
                     else
                     {
@@ -138,10 +138,10 @@ namespace YUCP.Components.Editor
         
         private void ProcessBodyMeshGroup(BodyMeshProcessing group)
         {
-            // Process UDIM components (can be combined)
-            if (group.udimComponents.Count > 0)
+            // Process UV components (can be combined)
+            if (group.uvComponents.Count > 0)
             {
-                ProcessUDIMGroup(group);
+                ProcessUVGroup(group);
             }
             
             // Process deletion components sequentially
@@ -151,30 +151,30 @@ namespace YUCP.Components.Editor
             }
         }
         
-        private void ProcessUDIMGroup(BodyMeshProcessing group)
+        private void ProcessUVGroup(BodyMeshProcessing group)
         {
-            Debug.Log($"[AutoBodyHiderProcessor] Processing {group.udimComponents.Count} UDIM discard components for '{group.bodyMesh.name}'");
+            Debug.Log($"[AutoBodyHiderProcessor] Processing {group.uvComponents.Count} UV discard components for '{group.bodyMesh.name}'");
             
             // Check if any pieces were skipped due to tile limit
             int skippedCount = 0;
-            foreach (var data in group.udimComponents)
+            foreach (var data in group.uvComponents)
             {
                 // Check if this data has a valid tile assigned (row and column are 0-3)
-                if (data.udimDiscardRow < 0 || data.udimDiscardRow > 3 || 
-                    data.udimDiscardColumn < 0 || data.udimDiscardColumn > 3)
+                if (data.uvDiscardRow < 0 || data.uvDiscardRow > 3 || 
+                    data.uvDiscardColumn < 0 || data.uvDiscardColumn > 3)
                 {
                     skippedCount++;
-                    Debug.LogWarning($"[AutoBodyHiderProcessor] Skipping '{data.name}' - no valid UDIM tile assigned (tile limit exceeded)", data);
+                    Debug.LogWarning($"[AutoBodyHiderProcessor] Skipping '{data.name}' - no valid UV tile assigned (tile limit exceeded)", data);
                     data.SetBuildStats(0, "Skipped (Tile Limit)");
                 }
             }
             
             // Filter out skipped components
             List<AutoBodyHiderData> validComponents = new List<AutoBodyHiderData>();
-            foreach (var data in group.udimComponents)
+            foreach (var data in group.uvComponents)
             {
-                if (data.udimDiscardRow >= 0 && data.udimDiscardRow <= 3 && 
-                    data.udimDiscardColumn >= 0 && data.udimDiscardColumn <= 3)
+                if (data.uvDiscardRow >= 0 && data.uvDiscardRow <= 3 && 
+                    data.uvDiscardColumn >= 0 && data.uvDiscardColumn <= 3)
                 {
                     validComponents.Add(data);
                 }
@@ -182,11 +182,11 @@ namespace YUCP.Components.Editor
             
             if (validComponents.Count == 0)
             {
-                Debug.LogWarning($"[AutoBodyHiderProcessor] No valid UDIM components to process for '{group.bodyMesh.name}'");
+                Debug.LogWarning($"[AutoBodyHiderProcessor] No valid UV components to process for '{group.bodyMesh.name}'");
                 return;
             }
             
-            Debug.Log($"[AutoBodyHiderProcessor] Processing {validComponents.Count} valid UDIM components (skipped {skippedCount})");
+            Debug.Log($"[AutoBodyHiderProcessor] Processing {validComponents.Count} valid UV components (skipped {skippedCount})");
             
             Mesh originalMesh = group.originalMesh;
             Vector3[] vertices = originalMesh.vertices;
@@ -230,7 +230,7 @@ namespace YUCP.Components.Editor
                         
                         group.hiddenVerticesMap[data] = hiddenVertices;
                         coverageMap[data] = hiddenCount;
-                        data.SetBuildStats(hiddenCount, "UDIM Discard (Multi)");
+                        data.SetBuildStats(hiddenCount, "UV Discard (Multi)");
                     }
                     
                     currentStep++;
@@ -264,25 +264,25 @@ namespace YUCP.Components.Editor
                     DetectAndAssignActualOverlaps(group);
                 }
                 
-                // Merge all UDIM modifications into one mesh
+                // Merge all UV modifications into one mesh
                 if (progressWindow != null)
                 {
                     float progress = (float)currentStep / totalSteps;
-                    progressWindow.Progress(progress, "Merging UDIM discards into body mesh...");
+                    progressWindow.Progress(progress, "Merging UV discards into body mesh...");
                 }
                 
-                Mesh modifiedMesh = MergeUDIMDiscards(group);
+                Mesh modifiedMesh = MergeUVDiscards(group);
                 group.bodyMesh.sharedMesh = modifiedMesh;
                 currentStep++;
                 
-                // Configure materials with all needed UDIM tiles
+                // Configure materials with all needed UV tiles
                 if (progressWindow != null)
                 {
                     float progress = (float)currentStep / totalSteps;
-                    progressWindow.Progress(progress, "Configuring material UDIM tiles...");
+                    progressWindow.Progress(progress, "Configuring material UV tiles...");
                 }
                 
-                ConfigureMaterialsForMultipleUDIM(group);
+                ConfigureMaterialsForMultipleUV(group);
                 currentStep++;
                 
                 // Create toggles or integrate with existing toggles for each valid clothing piece
@@ -296,13 +296,13 @@ namespace YUCP.Components.Editor
                     // Handle both creating new toggles and using existing toggles
                     if (data.createToggle || data.useExistingToggle)
                     {
-                        CreateUDIMToggleForComponent(data, group);
+                        CreateUVToggleForComponent(data, group);
                     }
                 }
                 
                 if (progressWindow != null)
                 {
-                    progressWindow.Progress(1.0f, "UDIM discard processing complete!");
+                    progressWindow.Progress(1.0f, "UV discard processing complete!");
                 }
             }
             finally
@@ -449,9 +449,9 @@ namespace YUCP.Components.Editor
 
             ApplicationMode mode = DetermineApplicationMode(data);
 
-            if (mode == ApplicationMode.UDIMDiscard)
+            if (mode == ApplicationMode.UVDiscard)
             {
-                ApplyUDIMDiscardMode(data, bodyMesh, hiddenVertices, hiddenCount);
+                ApplyUVDiscardMode(data, bodyMesh, hiddenVertices, hiddenCount);
             }
             else
             {
@@ -471,17 +471,17 @@ namespace YUCP.Components.Editor
                 {
                     Debug.Log($"[AutoBodyHiderProcessor] Using {validTargetMaterials.Length} user-specified target material(s)");
                     
-                    if (data.applicationMode == ApplicationMode.UDIMDiscard)
+                    if (data.applicationMode == ApplicationMode.UVDiscard)
                     {
                         // Check if any target material is compatible
-                        bool hasCompatible = validTargetMaterials.Any(m => UDIMManipulator.IsPoiyomiWithUDIMSupport(m));
+                        bool hasCompatible = validTargetMaterials.Any(m => UVManipulator.IsPoiyomiWithUVSupport(m));
                         if (hasCompatible)
                         {
-                            return ApplicationMode.UDIMDiscard;
+                            return ApplicationMode.UVDiscard;
                         }
                         else
                         {
-                            Debug.LogError($"[AutoBodyHiderProcessor] UDIM Discard mode selected but none of the target materials have compatible shaders (Poiyomi/FastFur). Falling back to Mesh Deletion.", data);
+                            Debug.LogError($"[AutoBodyHiderProcessor] UV Discard mode selected but none of the target materials have compatible shaders (Poiyomi/FastFur). Falling back to Mesh Deletion.", data);
                             return ApplicationMode.MeshDeletion;
                         }
                     }
@@ -492,13 +492,13 @@ namespace YUCP.Components.Editor
                     else
                     {
                         // Auto-detect on specified materials
-                        bool hasCompatible = validTargetMaterials.Any(m => UDIMManipulator.IsPoiyomiWithUDIMSupport(m));
+                        bool hasCompatible = validTargetMaterials.Any(m => UVManipulator.IsPoiyomiWithUVSupport(m));
                         if (hasCompatible)
                         {
-                            var compatibleMaterials = validTargetMaterials.Where(m => UDIMManipulator.IsPoiyomiWithUDIMSupport(m)).ToArray();
-                            string shaderName = compatibleMaterials.Length > 0 ? UDIMManipulator.GetShaderDisplayName(compatibleMaterials[0]) : "Poiyomi/FastFur";
-                            Debug.Log($"[AutoBodyHiderProcessor] Auto-detected {shaderName} shader with UDIM support on {compatibleMaterials.Length} target material(s), using UDIM discard mode");
-                            return ApplicationMode.UDIMDiscard;
+                            var compatibleMaterials = validTargetMaterials.Where(m => UVManipulator.IsPoiyomiWithUVSupport(m)).ToArray();
+                            string shaderName = compatibleMaterials.Length > 0 ? UVManipulator.GetShaderDisplayName(compatibleMaterials[0]) : "Poiyomi/FastFur";
+                            Debug.Log($"[AutoBodyHiderProcessor] Auto-detected {shaderName} shader with UV support on {compatibleMaterials.Length} target material(s), using UV discard mode");
+                            return ApplicationMode.UVDiscard;
                         }
                     }
                 }
@@ -519,13 +519,13 @@ namespace YUCP.Components.Editor
             }
             
             // Check if user forced a specific mode
-            if (data.applicationMode == ApplicationMode.UDIMDiscard)
+            if (data.applicationMode == ApplicationMode.UVDiscard)
             {
-                // User specifically requested UDIM mode - validate it's possible
+                // User specifically requested UV mode - validate it's possible
                 bool hasCompatibleShader = false;
                 foreach (var material in materials)
                 {
-                    if (UDIMManipulator.IsPoiyomiWithUDIMSupport(material))
+                    if (UVManipulator.IsPoiyomiWithUVSupport(material))
                     {
                         hasCompatibleShader = true;
                         break;
@@ -534,11 +534,11 @@ namespace YUCP.Components.Editor
                 
                 if (!hasCompatibleShader)
                 {
-                    Debug.LogError($"[AutoBodyHiderProcessor] UDIM Discard mode selected but body mesh '{data.targetBodyMesh.name}' has no compatible shader (Poiyomi/FastFur). Falling back to Mesh Deletion.", data);
+                    Debug.LogError($"[AutoBodyHiderProcessor] UV Discard mode selected but body mesh '{data.targetBodyMesh.name}' has no compatible shader (Poiyomi/FastFur). Falling back to Mesh Deletion.", data);
                     return ApplicationMode.MeshDeletion;
                 }
                 
-                return ApplicationMode.UDIMDiscard;
+                return ApplicationMode.UVDiscard;
             }
             else if (data.applicationMode == ApplicationMode.MeshDeletion)
             {
@@ -548,21 +548,21 @@ namespace YUCP.Components.Editor
             // Auto-detect mode
             foreach (var material in materials)
             {
-                if (UDIMManipulator.IsPoiyomiWithUDIMSupport(material))
+                if (UVManipulator.IsPoiyomiWithUVSupport(material))
                 {
-                    string shaderName = UDIMManipulator.GetShaderDisplayName(material);
-                    Debug.Log($"[AutoBodyHiderProcessor] Auto-detected {shaderName} shader with UDIM support on '{material.name}', using UDIM discard mode");
-                    return ApplicationMode.UDIMDiscard;
+                    string shaderName = UVManipulator.GetShaderDisplayName(material);
+                    Debug.Log($"[AutoBodyHiderProcessor] Auto-detected {shaderName} shader with UV support on '{material.name}', using UV discard mode");
+                    return ApplicationMode.UVDiscard;
                 }
             }
 
-            Debug.Log($"[AutoBodyHiderProcessor] No UDIM-compatible shader found on body mesh, using mesh deletion mode");
+            Debug.Log($"[AutoBodyHiderProcessor] No UV-compatible shader found on body mesh, using mesh deletion mode");
             return ApplicationMode.MeshDeletion;
         }
 
-        private void ApplyUDIMDiscardMode(AutoBodyHiderData data, Mesh originalMesh, bool[] hiddenVertices, int hiddenCount)
+        private void ApplyUVDiscardMode(AutoBodyHiderData data, Mesh originalMesh, bool[] hiddenVertices, int hiddenCount)
         {
-            Mesh modifiedMesh = UDIMManipulator.ApplyUDIMDiscard(originalMesh, hiddenVertices, data);
+            Mesh modifiedMesh = UVManipulator.ApplyUVDiscard(originalMesh, hiddenVertices, data);
             
             data.targetBodyMesh.sharedMesh = modifiedMesh;
             
@@ -591,7 +591,7 @@ namespace YUCP.Components.Editor
                             }
                         }
                         
-                        if (isMatchingMaterial && UDIMManipulator.IsPoiyomiWithUDIMSupport(materials[i]))
+                        if (isMatchingMaterial && UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                         {
                             Material materialCopy = UnityEngine.Object.Instantiate(materials[i]);
                             
@@ -600,7 +600,7 @@ namespace YUCP.Components.Editor
                             
                             if (!shouldConfigureForToggle)
                             {
-                                UDIMManipulator.ConfigurePoiyomiMaterial(materialCopy, data, originalMesh);
+                                UVManipulator.ConfigurePoiyomiMaterial(materialCopy, data, originalMesh);
                             }
                             else
                             {
@@ -619,7 +619,7 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    Debug.Log($"[AutoBodyHiderProcessor] Configured {configuredMaterials.Count} target material(s) for UDIM discard.", data);
+                    Debug.Log($"[AutoBodyHiderProcessor] Configured {configuredMaterials.Count} target material(s) for UV discard.", data);
                 }
             }
             
@@ -628,7 +628,7 @@ namespace YUCP.Components.Editor
             {
                 foreach (var material in materials)
                 {
-                    if (UDIMManipulator.IsPoiyomiWithUDIMSupport(material))
+                    if (UVManipulator.IsPoiyomiWithUVSupport(material))
                     {
                         Material materialCopy = UnityEngine.Object.Instantiate(material);
                         
@@ -637,7 +637,7 @@ namespace YUCP.Components.Editor
                         
                         if (!shouldConfigureForToggle)
                         {
-                            UDIMManipulator.ConfigurePoiyomiMaterial(materialCopy, data, originalMesh);
+                            UVManipulator.ConfigurePoiyomiMaterial(materialCopy, data, originalMesh);
                         }
                         else
                         {
@@ -658,7 +658,7 @@ namespace YUCP.Components.Editor
                 
                 if (configuredMaterials.Count > 0)
                 {
-                    Debug.Log($"[AutoBodyHiderProcessor] Auto-detected and configured {configuredMaterials.Count} compatible material(s) for UDIM discard.", data);
+                    Debug.Log($"[AutoBodyHiderProcessor] Auto-detected and configured {configuredMaterials.Count} compatible material(s) for UV discard.", data);
                 }
             }
             
@@ -704,7 +704,7 @@ namespace YUCP.Components.Editor
                 if (data.createToggle && toggleToUse == null)
                 {
                     // Create our own toggle
-                    CreateUDIMToggle(data, materialForToggle);
+                    CreateUVToggle(data, materialForToggle);
                 }
                 else if (toggleToUse != null)
                 {
@@ -713,11 +713,11 @@ namespace YUCP.Components.Editor
                 }
             }
             
-            data.SetBuildStats(hiddenCount, "UDIM Discard");
+            data.SetBuildStats(hiddenCount, "UV Discard");
             
             if (data.debugMode)
             {
-                Debug.Log($"[AutoBodyHiderProcessor] Applied UDIM discard mode. Hidden {hiddenCount} vertices.", data);
+                Debug.Log($"[AutoBodyHiderProcessor] Applied UV discard mode. Hidden {hiddenCount} vertices.", data);
             }
         }
 
@@ -904,10 +904,10 @@ namespace YUCP.Components.Editor
             {
                 mesh = data.targetBodyMesh.sharedMesh;
             }
-            int uvChannel = UDIMManipulator.GetEffectiveUVChannel(data, mesh);
+            int uvChannel = UVManipulator.GetEffectiveUVChannel(data, mesh);
             material.SetFloat("_UDIMDiscardUV", uvChannel);
             
-            string tilePropertyName = $"_UDIMDiscardRow{data.udimDiscardRow}_{data.udimDiscardColumn}";
+            string tilePropertyName = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
             if (material.HasProperty(tilePropertyName))
             {
                 // Animation plays when toggle parameter is TRUE (ON state)
@@ -917,7 +917,7 @@ namespace YUCP.Components.Editor
                 material.SetFloat(tilePropertyName, baseValue);
                 material.SetOverrideTag(tilePropertyName + "Animated", "1");
                 
-                string shaderName = UDIMManipulator.GetShaderDisplayName(material);
+                string shaderName = UVManipulator.GetShaderDisplayName(material);
                 Debug.Log($"[AutoBodyHider] Configured {shaderName} for toggle: {tilePropertyName} = {baseValue} (OFF state), Animated tag set", data);
             }
             else
@@ -943,8 +943,8 @@ namespace YUCP.Components.Editor
                 var content = contentField.GetValue(vrcFuryComponent);
                 if (content != null && content.GetType().Name == "Toggle")
                 {
-                    // Create the UDIM animation
-                    AnimationClip toggleAnimation = CreateUDIMToggleAnimation(data, poiyomiMaterial);
+                    // Create the UV animation
+                    AnimationClip toggleAnimation = CreateUVToggleAnimation(data, poiyomiMaterial);
                     
                     if (toggleAnimation != null)
                     {
@@ -990,7 +990,7 @@ namespace YUCP.Components.Editor
                         
                         actionsList.Add(animAction);
                         
-                        Debug.Log($"[AutoBodyHider] Added UDIM discard animation to existing VRCFury Toggle", data);
+                        Debug.Log($"[AutoBodyHider] Added UV discard animation to existing VRCFury Toggle", data);
                         EditorUtility.SetDirty(vrcFuryComponent);
                     }
                 }
@@ -1006,7 +1006,7 @@ namespace YUCP.Components.Editor
             }
         }
         
-        private void CreateUDIMToggle(AutoBodyHiderData data, Material poiyomiMaterial)
+        private void CreateUVToggle(AutoBodyHiderData data, Material poiyomiMaterial)
         {
             try
             {
@@ -1104,7 +1104,7 @@ namespace YUCP.Components.Editor
                 if (data.toggleType == ToggleType.ObjectToggle)
                     actions.AddTurnOn(data.gameObject);
 
-                AnimationClip toggleAnimation = CreateUDIMToggleAnimation(data, poiyomiMaterial);
+                AnimationClip toggleAnimation = CreateUVToggleAnimation(data, poiyomiMaterial);
 
                 if (toggleAnimation != null)
                 {
@@ -1138,20 +1138,20 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    Debug.LogError($"[AutoBodyHiderProcessor] Failed to create UDIM toggle animation", data);
+                    Debug.LogError($"[AutoBodyHiderProcessor] Failed to create UV toggle animation", data);
                 }
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[AutoBodyHiderProcessor] Error creating UDIM toggle: {ex.Message}", data);
+                Debug.LogError($"[AutoBodyHiderProcessor] Error creating UV toggle: {ex.Message}", data);
                 Debug.LogException(ex);
             }
         }
 
-        private AnimationClip CreateUDIMToggleAnimation(AutoBodyHiderData data, Material poiyomiMaterial)
+        private AnimationClip CreateUVToggleAnimation(AutoBodyHiderData data, Material poiyomiMaterial)
         {
             AnimationClip clip = new AnimationClip();
-            clip.name = $"UDIM_Discard_Toggle_{data.gameObject.name}";
+            clip.name = $"UV_Discard_Toggle_{data.gameObject.name}";
 
             string rendererPath = GetRelativePath(data.targetBodyMesh.transform, data.transform.root);
 
@@ -1184,7 +1184,7 @@ namespace YUCP.Components.Editor
             List<string> tilesToAnimate = new List<string>();
             
             // 1. Add this clothing's individual tile
-            string individualTile = $"_UDIMDiscardRow{data.udimDiscardRow}_{data.udimDiscardColumn}";
+            string individualTile = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
             tilesToAnimate.Add(individualTile);
             
             // 2. Add any overlap tiles this clothing is involved in
@@ -1230,7 +1230,7 @@ namespace YUCP.Components.Editor
             // Optionally save clip to file for debugging
             if (data.debugSaveAnimation)
             {
-                string debugPath = $"Assets/Generated/YUCP_UDIM_Toggle_{data.gameObject.name}.anim";
+                string debugPath = $"Assets/Generated/YUCP_UV_Toggle_{data.gameObject.name}.anim";
                 AssetDatabase.CreateAsset(clip, debugPath);
                 AssetDatabase.SaveAssets();
                 Debug.Log($"[AutoBodyHider] Animation saved to: {debugPath}", data);
@@ -1273,7 +1273,7 @@ namespace YUCP.Components.Editor
             return string.Join("/", path);
         }
         
-        // ==== NEW METHODS FOR MULTI-CLOTHING UDIM SUPPORT ====
+        // ==== NEW METHODS FOR MULTI-CLOTHING UV SUPPORT ====
         
         private bool[] DetectHiddenVerticesForData(AutoBodyHiderData data, Mesh bodyMesh)
         {
@@ -1360,17 +1360,17 @@ namespace YUCP.Components.Editor
             return hiddenVertices;
         }
         
-        private Mesh MergeUDIMDiscards(BodyMeshProcessing group)
+        private Mesh MergeUVDiscards(BodyMeshProcessing group)
         {
             // Start with the original mesh
             Mesh baseMesh = UnityEngine.Object.Instantiate(group.originalMesh);
-            baseMesh.name = group.originalMesh.name + "_MultiUDIM";
+            baseMesh.name = group.originalMesh.name + "_MultiUV";
             
             // Determine UV channel to use for merged components
             int targetUVChannel = 1; // Default
-            if (group.udimComponents.Count > 0)
+            if (group.uvComponents.Count > 0)
             {
-                targetUVChannel = UDIMManipulator.GetEffectiveUVChannel(group.udimComponents[0], group.originalMesh);
+                targetUVChannel = UVManipulator.GetEffectiveUVChannel(group.uvComponents[0], group.originalMesh);
             }
             
             // Get UV0 texture coordinates
@@ -1433,8 +1433,8 @@ namespace YUCP.Components.Editor
                 {
                     // Covered by one clothing piece: use its individual tile
                     var data = vertexOwners[i][0];
-                    float uOffset = data.udimDiscardColumn;
-                    float vOffset = data.udimDiscardRow;
+                    float uOffset = data.uvDiscardColumn;
+                    float vOffset = data.uvDiscardRow;
                     targetUV[i] = new Vector2(targetUV[i].x + uOffset, targetUV[i].y + vOffset);
                 }
                 else
@@ -1454,8 +1454,8 @@ namespace YUCP.Components.Editor
                         {
                             // Fallback: use first clothing piece's tile
                             var data = vertexOwners[i][0];
-                            float uOffset = data.udimDiscardColumn;
-                            float vOffset = data.udimDiscardRow;
+                            float uOffset = data.uvDiscardColumn;
+                            float vOffset = data.uvDiscardRow;
                             targetUV[i] = new Vector2(targetUV[i].x + uOffset, targetUV[i].y + vOffset);
                             
                             Debug.LogWarning($"[AutoBodyHiderProcessor] No overlap tile found for vertex {i} covered by {vertexOwners[i].Count} pieces. Using first piece's tile.");
@@ -1474,7 +1474,7 @@ namespace YUCP.Components.Editor
             {
                 var data = kvp.Key;
                 int count = kvp.Value.Count(h => h);
-                Debug.Log($"[AutoBodyHiderProcessor] '{data.name}' covers {count} vertices (tile {data.udimDiscardRow},{data.udimDiscardColumn})");
+                Debug.Log($"[AutoBodyHiderProcessor] '{data.name}' covers {count} vertices (tile {data.uvDiscardRow},{data.uvDiscardColumn})");
             }
             
             return baseMesh;
@@ -1659,17 +1659,17 @@ namespace YUCP.Components.Editor
             return null;
         }
         
-        private void ConfigureMaterialsForMultipleUDIM(BodyMeshProcessing group)
+        private void ConfigureMaterialsForMultipleUV(BodyMeshProcessing group)
         {
             Material[] materials = group.bodyMesh.sharedMaterials;
             Material poiyomiMaterial = null;
             
-            Debug.Log($"[AutoBodyHiderProcessor] ConfigureMaterialsForMultipleUDIM - Searching for compatible material on '{group.bodyMesh.name}'");
+            Debug.Log($"[AutoBodyHiderProcessor] ConfigureMaterialsForMultipleUV - Searching for compatible material on '{group.bodyMesh.name}'");
             Debug.Log($"[AutoBodyHiderProcessor] Body mesh has {materials.Length} materials:");
             
             // Collect all target materials from components
             List<Material> targetMaterials = new List<Material>();
-            foreach (var data in group.udimComponents)
+            foreach (var data in group.uvComponents)
             {
                 if (data.targetMaterials != null && data.targetMaterials.Length > 0)
                 {
@@ -1720,7 +1720,7 @@ namespace YUCP.Components.Editor
                         }
                     }
                     
-                    if (isTargetMaterial && UDIMManipulator.IsPoiyomiWithUDIMSupport(materials[i]))
+                    if (isTargetMaterial && UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                     {
                         shouldInclude = true;
                     }
@@ -1728,7 +1728,7 @@ namespace YUCP.Components.Editor
                 else
                 {
                     // Auto-detect all compatible materials
-                    if (UDIMManipulator.IsPoiyomiWithUDIMSupport(materials[i]))
+                    if (UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                     {
                         shouldInclude = true;
                     }
@@ -1748,7 +1748,7 @@ namespace YUCP.Components.Editor
                     // Log why material wasn't included for debugging
                     if (targetMaterials.Count > 0)
                     {
-                        bool isCompatible = UDIMManipulator.IsPoiyomiWithUDIMSupport(materials[i]);
+                        bool isCompatible = UVManipulator.IsPoiyomiWithUVSupport(materials[i]);
                         Debug.Log($"[AutoBodyHiderProcessor] Material at index {i}: '{materials[i].name}' (Shader: '{materials[i].shader.name}') - Compatible: {isCompatible}");
                     }
                 }
@@ -1757,19 +1757,19 @@ namespace YUCP.Components.Editor
             if (poiyomiMaterialIndices.Count == 0)
             {
                 Debug.LogError($"[AutoBodyHiderProcessor] No Poiyomi or FastFur material found on body mesh '{group.bodyMesh.name}'. " +
-                             $"UDIM Discard mode requires a Poiyomi or FastFur shader with UDIM support. " +
+                             $"UV Discard mode requires a Poiyomi or FastFur shader with UV support. " +
                              $"Please use Mesh Deletion mode instead, or add a compatible shader to the body mesh.");
                 return;
             }
             
-            string shaderName = poiyomiMaterial != null ? UDIMManipulator.GetShaderDisplayName(poiyomiMaterial) : "Poiyomi/FastFur";
-            Debug.Log($"[AutoBodyHiderProcessor] Configuring multi-UDIM on {poiyomiMaterialIndices.Count} material(s)");
+            string shaderName = poiyomiMaterial != null ? UVManipulator.GetShaderDisplayName(poiyomiMaterial) : "Poiyomi/FastFur";
+            Debug.Log($"[AutoBodyHiderProcessor] Configuring multi-UV on {poiyomiMaterialIndices.Count} material(s)");
             
             // Use effective UV channel (auto-detect if enabled)
             int uvChannel = 1; // Default to UV1
-            if (group.udimComponents.Count > 0)
+            if (group.uvComponents.Count > 0)
             {
-                uvChannel = UDIMManipulator.GetEffectiveUVChannel(group.udimComponents[0], group.originalMesh);
+                uvChannel = UVManipulator.GetEffectiveUVChannel(group.uvComponents[0], group.originalMesh);
             }
             
             // Configure all compatible materials
@@ -1777,7 +1777,7 @@ namespace YUCP.Components.Editor
             {
                 Material materialToConfigure = materials[materialIndex];
                 Material materialCopy = UnityEngine.Object.Instantiate(materialToConfigure);
-                materialCopy.name = materialToConfigure.name + "_MultiUDIM";
+                materialCopy.name = materialToConfigure.name + "_MultiUV";
                 
                 string shaderNameLower = materialCopy.shader.name.ToLower();
                 Debug.Log($"[AutoBodyHiderProcessor] Configuring material '{materialCopy.name}' with shader '{materialCopy.shader.name}' (lowercase: '{shaderNameLower}')");
@@ -1874,9 +1874,9 @@ namespace YUCP.Components.Editor
                                : null;
                 
                 // Configure tiles for each clothing piece on this material
-                foreach (var data in group.udimComponents)
+                foreach (var data in group.uvComponents)
                 {
-                    string tilePropertyName = $"_UDIMDiscardRow{data.udimDiscardRow}_{data.udimDiscardColumn}";
+                    string tilePropertyName = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
                     
                     if (materialCopy.HasProperty(tilePropertyName))
                     {
@@ -1895,7 +1895,7 @@ namespace YUCP.Components.Editor
                             materialCopy.SetFloat(tilePropertyName, 1f);
                         }
                         
-                        Debug.Log($"[AutoBodyHiderProcessor] Configured individual tile ({data.udimDiscardRow}, {data.udimDiscardColumn}) for '{data.name}' on material '{materialCopy.name}' (Toggle: {hasToggle})");
+                        Debug.Log($"[AutoBodyHiderProcessor] Configured individual tile ({data.uvDiscardRow}, {data.uvDiscardColumn}) for '{data.name}' on material '{materialCopy.name}' (Toggle: {hasToggle})");
                     }
                     else
                     {
@@ -1950,14 +1950,14 @@ namespace YUCP.Components.Editor
             EditorUtility.SetDirty(group.bodyMesh);
         }
         
-        private void CreateUDIMToggleForComponent(AutoBodyHiderData data, BodyMeshProcessing group)
+        private void CreateUVToggleForComponent(AutoBodyHiderData data, BodyMeshProcessing group)
         {
             Material[] materials = group.bodyMesh.sharedMaterials;
             Material poiyomiMaterial = null;
             
             foreach (var mat in materials)
             {
-                if (mat.name.Contains("MultiUDIM") && UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                if (mat.name.Contains("MultiUV") && UVManipulator.IsPoiyomiWithUVSupport(mat))
                 {
                     poiyomiMaterial = mat;
                     break;
@@ -1966,7 +1966,7 @@ namespace YUCP.Components.Editor
             
             if (poiyomiMaterial == null)
             {
-                Debug.LogError($"[AutoBodyHiderProcessor] Could not find multi-UDIM material for toggle on '{data.name}'");
+                Debug.LogError($"[AutoBodyHiderProcessor] Could not find multi-UV material for toggle on '{data.name}'");
                 return;
             }
             
@@ -1987,7 +1987,7 @@ namespace YUCP.Components.Editor
             }
             else if (data.createToggle)
             {
-                CreateUDIMToggle(data, poiyomiMaterial);
+                CreateUVToggle(data, poiyomiMaterial);
             }
         }
         

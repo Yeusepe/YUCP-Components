@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 using VRC.SDKBase;
 
 namespace YUCP.Components
@@ -16,7 +17,8 @@ namespace YUCP.Components
     public enum ApplicationMode
     {
         AutoDetect,
-        UDIMDiscard,
+        [FormerlySerializedAs("UDIMDiscard")]
+        UVDiscard,
         MeshDeletion
     }
 
@@ -156,32 +158,33 @@ namespace YUCP.Components
 
         [Header("Application Mode")]
         [Tooltip("How to hide the body parts. Auto-detect will choose based on shader.\n\n" +
-                 "• Auto-Detect: Automatically uses UDIM for Poiyomi/FastFur, mesh deletion for others\n" +
-                 "• UDIM Discard: Non-destructive, requires Poiyomi or FastFur shader\n" +
+                 "• Auto-Detect: Automatically uses UV for Poiyomi/FastFur, mesh deletion for others\n" +
+                 "• UV Discard: Non-destructive, requires Poiyomi or FastFur shader\n" +
                  "• Mesh Deletion: Works with any shader, reduces poly count")]
         public ApplicationMode applicationMode = ApplicationMode.AutoDetect;
         
         [Tooltip("Optional: Select specific material(s) from the body mesh to configure.\n\n" +
                  "If empty, the component will automatically find all compatible materials (Poiyomi/FastFur).\n" +
                  "You can select multiple materials if your body mesh uses multiple Poiyomi/FastFur materials.\n" +
-                 "All selected materials will have UDIM discard configured.")]
+                 "All selected materials will have UV discard configured.")]
         public Material[] targetMaterials = new Material[0];
 
-        [Header("UDIM Discard Settings (Poiyomi/FastFur)")]
+        [Header("UV Discard Settings (Poiyomi/FastFur)")]
         [Tooltip("Automatically detect the best UV channel for discard.\n\n" +
                  "The system will prefer UV1 (where discard coordinates are written) and fall back to UV0 if needed.\n" +
                  "Disable this to manually specify a UV channel in Advanced Options.")]
         public bool autoDetectUVChannel = true;
         
-        [Tooltip("Which UV channel to use for UDIM discard (only used when Auto Detect is disabled).\n\n" +
+        [Tooltip("Which UV channel to use for UV discard (only used when Auto Detect is disabled).\n\n" +
                  "• UV1 (Channel 1): Recommended - where discard coordinates are written\n" +
                  "• UV0 (Channel 0): Main texture UV, use only if UV1 is unavailable\n" +
                  "• UV2-3: Alternative channels if needed\n\n" +
                  "Note: The system always writes discard coordinates to UV1, so UV1 is the recommended channel.")]
         [Range(0, 3)]
-        public int udimUVChannel = 1;
+        [FormerlySerializedAs("udimUVChannel")]
+        public int uvChannel = 1;
 
-        [Tooltip("Automatically assign UDIM tile row/column via the orchestrator.\n\n" +
+        [Tooltip("Automatically assign UV tile row/column via the orchestrator.\n\n" +
                  "When enabled:\n" +
                  "• The orchestrator automatically assigns unique tiles to each clothing piece\n" +
                  "• Prevents tile conflicts when multiple clothing pieces share the same body mesh\n" +
@@ -189,26 +192,29 @@ namespace YUCP.Components
                  "When disabled:\n" +
                  "• You can manually specify the tile row/column in Advanced Options\n" +
                  "• Use when you need specific tile assignments for compatibility reasons")]
-        public bool autoAssignUDIMTile = true;
+        [FormerlySerializedAs("autoAssignUDIMTile")]
+        public bool autoAssignUVTile = true;
 
-        [Tooltip("Which UDIM tile row to use for discarding (0-3).\n\n" +
-                 "Only used when 'Auto Assign UDIM Tile' is disabled.\n" +
+        [Tooltip("Which UV tile row to use for discarding (0-3).\n\n" +
+                 "Only used when 'Auto Assign UV Tile' is disabled.\n" +
                  "The shader will hide vertices with UVs in this tile.\n" +
                  "When auto-assigned, this value is set by the orchestrator.")]
         [Range(0, 3)]
-        public int udimDiscardRow = 3;
+        [FormerlySerializedAs("udimDiscardRow")]
+        public int uvDiscardRow = 3;
 
-        [Tooltip("Which UDIM tile column to use for discarding (0-3).\n\n" +
-                 "Only used when 'Auto Assign UDIM Tile' is disabled.\n" +
+        [Tooltip("Which UV tile column to use for discarding (0-3).\n\n" +
+                 "Only used when 'Auto Assign UV Tile' is disabled.\n" +
                  "The shader will hide vertices with UVs in this tile.\n" +
                  "When auto-assigned, this value is set by the orchestrator.")]
         [Range(0, 3)]
-        public int udimDiscardColumn = 3;
+        [FormerlySerializedAs("udimDiscardColumn")]
+        public int uvDiscardColumn = 3;
 
-        [Header("UDIM Toggle Settings (Optional)")]
+        [Header("UV Toggle Settings (Optional)")]
         [Tooltip("Use an existing VRCFury toggle component instead of creating a new one.\n\n" +
                  "When enabled, you can select a VRCFury toggle from this GameObject or its children.\n" +
-                 "The UDIM discard animation will be added to the selected toggle automatically.")]
+                 "The UV discard animation will be added to the selected toggle automatically.")]
         public bool useExistingToggle = false;
         
         [Tooltip("The VRCFury toggle component to use (from this GameObject or its children).\n\n" +
@@ -217,8 +223,8 @@ namespace YUCP.Components
         public Component selectedToggle;
         
         [Tooltip("Create a toggle to enable/disable the body hiding effect.\n\n" +
-                 "When enabled, adds a menu toggle that can turn the UDIM discard on/off.\n\n" +
-                 "Note: Only works with UDIM Discard mode, not Mesh Deletion.\n" +
+                 "When enabled, adds a menu toggle that can turn the UV discard on/off.\n\n" +
+                 "Note: Only works with UV Discard mode, not Mesh Deletion.\n" +
                  "Disabled when 'Use Existing Toggle' is enabled.")]
         public bool createToggle = false;
 
@@ -227,9 +233,9 @@ namespace YUCP.Components
         public bool debugSaveAnimation = false;
 
         [Tooltip("Toggle type:\n\n" +
-                 "• Object Toggle: Toggles clothing object ON/OFF + UDIM discard\n" +
+                 "• Object Toggle: Toggles clothing object ON/OFF + UV discard\n" +
                  "  (Clothing visible = body hidden, clothing hidden = body visible)\n\n" +
-                 "• Hidden Toggle: Only toggles UDIM discard, clothing always visible\n" +
+                 "• Hidden Toggle: Only toggles UV discard, clothing always visible\n" +
                  "  (Useful for toggling body hiding while keeping clothing on)")]
         public ToggleType toggleType = ToggleType.ObjectToggle;
 
@@ -309,7 +315,7 @@ namespace YUCP.Components
         public bool mirrorSymmetry = false;
 
         [Header("Multi-Clothing Optimization")]
-        [Tooltip("Optimize UDIM tile usage for multiple clothing pieces (UDIM Discard mode only).\n\n" +
+        [Tooltip("Optimize UV tile usage for multiple clothing pieces (UV Discard mode only).\n\n" +
                  "When enabled:\n" +
                  "• Clothing is processed from most coverage to least coverage\n" +
                  "• Outer layers 'claim' body areas first\n" +

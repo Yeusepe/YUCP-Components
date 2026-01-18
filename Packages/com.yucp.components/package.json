@@ -3,7 +3,7 @@
   "displayName": "YUCP Components",
   "version": "0.3.22",
   "unity": "2022.3",
-  "description": "Advanced VRChat avatar utilities with Pakacage Guardian VCS: auto-link armatures, hide body parts, generate grips, manage UDIM textures with GPU-accelerated detection, and version control for Unity projects",
+  "description": "Advanced VRChat avatar utilities with Pakacage Guardian VCS: auto-link armatures, hide body parts, generate grips, manage UV textures with GPU-accelerated detection, and version control for Unity projects",
   "author": {
     "name": "YUCP Club",
     "url": "http://vpm.yucp.club/"
@@ -16,4 +16,3 @@
     "one.razgriz.harmony-vpm"
   ]
 }
-

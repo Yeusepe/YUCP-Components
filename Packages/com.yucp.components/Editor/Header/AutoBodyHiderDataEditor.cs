@@ -145,11 +145,11 @@ namespace YUCP.Components.Editor
             var appModeCard = YUCPUIToolkitHelper.CreateCard("Application Mode", "Configure how body hiding is applied");
             var appModeContent = YUCPUIToolkitHelper.GetCardContent(appModeCard);
             appModeContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("applicationMode"), "Mode"));
-            var autoDetectHelp = YUCPUIToolkitHelper.CreateHelpBox("Auto-detect will use UDIM Discard for Poiyomi/FastFur shaders, Mesh Deletion for others.", YUCPUIToolkitHelper.MessageType.Info);
+            var autoDetectHelp = YUCPUIToolkitHelper.CreateHelpBox("Auto-detect will use UV Discard for Poiyomi/FastFur shaders, Mesh Deletion for others.", YUCPUIToolkitHelper.MessageType.Info);
             autoDetectHelp.name = "auto-detect-help";
             appModeContent.Add(autoDetectHelp);
             
-            // Material selection for UDIM Discard mode
+            // Material selection for UV Discard mode
             var materialPickerContainer = new VisualElement();
             materialPickerContainer.name = "material-picker-container";
             
@@ -235,26 +235,26 @@ namespace YUCP.Components.Editor
             
             root.Add(appModeCard);
             
-            // UDIM Discard Settings Card (conditional)
-            var udimCard = YUCPUIToolkitHelper.CreateCard("UDIM Discard Settings", "Configure UDIM tile coordinates");
-            var udimContent = YUCPUIToolkitHelper.GetCardContent(udimCard);
+            // UV Discard Settings Card (conditional)
+            var uvCard = YUCPUIToolkitHelper.CreateCard("UV Discard Settings", "Configure UV tile coordinates");
+            var uvContent = YUCPUIToolkitHelper.GetCardContent(uvCard);
             
             // Auto-detect UV channel toggle
             var autoDetectUVField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoDetectUVChannel"), "Auto-Detect UV Channel");
-            udimContent.Add(autoDetectUVField);
+            uvContent.Add(autoDetectUVField);
             
             // Detected UV channel display (when auto-detect is enabled)
             var detectedUVContainer = new VisualElement();
             detectedUVContainer.name = "detected-uv-container";
-            udimContent.Add(detectedUVContainer);
+            uvContent.Add(detectedUVContainer);
             
             // Manual UV channel field (will be moved to advanced, but keep reference for now)
-            var manualUVChannelField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimUVChannel"), "UV Channel");
+            var manualUVChannelField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvChannel"), "UV Channel");
             manualUVChannelField.name = "manual-uv-channel-field";
             
             // Auto-assign tile toggle
-            var autoAssignTileProp = serializedObject.FindProperty("autoAssignUDIMTile");
-            udimContent.Add(YUCPUIToolkitHelper.CreateField(autoAssignTileProp, "Auto Assign Tile"));
+            var autoAssignTileProp = serializedObject.FindProperty("autoAssignUVTile");
+            uvContent.Add(YUCPUIToolkitHelper.CreateField(autoAssignTileProp, "Auto Assign Tile"));
             
             // Tile assignment info display when auto-assigned
             var tileInfoContainer = new VisualElement();
@@ -276,7 +276,7 @@ namespace YUCP.Components.Editor
             tileInfoLabel.style.fontSize = 11;
             tileInfoLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f, 1f));
             tileInfoContainer.Add(tileInfoLabel);
-            udimContent.Add(tileInfoContainer);
+            uvContent.Add(tileInfoContainer);
             
             // Manual tile assignment shown when auto-assign is disabled
             var manualTileContainer = new VisualElement();
@@ -286,23 +286,23 @@ namespace YUCP.Components.Editor
             var rowColumnContainer = new VisualElement();
             rowColumnContainer.style.flexDirection = FlexDirection.Row;
             rowColumnContainer.style.marginBottom = 5;
-            var rowField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimDiscardRow"), "Row");
+            var rowField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvDiscardRow"), "Row");
             rowField.style.flexGrow = 1;
             rowField.style.marginRight = 5;
             rowColumnContainer.Add(rowField);
-            var columnField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimDiscardColumn"), "Column");
+            var columnField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvDiscardColumn"), "Column");
             columnField.style.flexGrow = 1;
             rowColumnContainer.Add(columnField);
             manualTileContainer.Add(rowColumnContainer);
             
             var manualTileHelp = YUCPUIToolkitHelper.CreateHelpBox(
-                "Manually specify the UDIM tile coordinates. Make sure this tile is not used by other clothing pieces on the same body mesh.",
+                "Manually specify the UV tile coordinates. Make sure this tile is not used by other clothing pieces on the same body mesh.",
                 YUCPUIToolkitHelper.MessageType.Info);
             manualTileContainer.Add(manualTileHelp);
             
-            udimContent.Add(manualTileContainer);
-            udimCard.name = "udim-card";
-            root.Add(udimCard);
+            uvContent.Add(manualTileContainer);
+            uvCard.name = "uv-card";
+            root.Add(uvCard);
             
             // VRCFury Toggle Section
             var toggleCard = YUCPUIToolkitHelper.CreateCard("VRCFury Toggle", "Configure toggle integration with VRCFury");
@@ -333,7 +333,7 @@ namespace YUCP.Components.Editor
             YUCPUIToolkitHelper.AddSpacing(advancedFoldout, 3);
             var optimizeTileField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("optimizeTileUsage"), "Optimize Tile Usage");
             advancedFoldout.Add(optimizeTileField);
-            var optimizeHelp = YUCPUIToolkitHelper.CreateHelpBox("Reduces UDIM tiles for layered outfits by skipping overlap tiles for fully-covered inner layers.", YUCPUIToolkitHelper.MessageType.Info);
+            var optimizeHelp = YUCPUIToolkitHelper.CreateHelpBox("Reduces UV tiles for layered outfits by skipping overlap tiles for fully-covered inner layers.", YUCPUIToolkitHelper.MessageType.Info);
             optimizeHelp.name = "optimize-help";
             advancedFoldout.Add(optimizeHelp);
             
@@ -430,13 +430,13 @@ namespace YUCP.Components.Editor
                 var appMode = serializedObject.FindProperty("applicationMode");
                 var appModeValue = (ApplicationMode)appMode.enumValueIndex;
                 autoDetectHelp.style.display = (appModeValue == ApplicationMode.AutoDetect) ? DisplayStyle.Flex : DisplayStyle.None;
-                udimCard.style.display = (appModeValue == ApplicationMode.UDIMDiscard || appModeValue == ApplicationMode.AutoDetect) ? DisplayStyle.Flex : DisplayStyle.None;
+                uvCard.style.display = (appModeValue == ApplicationMode.UVDiscard || appModeValue == ApplicationMode.AutoDetect) ? DisplayStyle.Flex : DisplayStyle.None;
                 
-                // Toggle card visible for UDIM Discard or Auto Detect
+                // Toggle card visible for UV Discard or Auto Detect
                 var toggleCard = root.Q<VisualElement>("toggle-card");
                 if (toggleCard != null)
                 {
-                    toggleCard.style.display = (appModeValue == ApplicationMode.UDIMDiscard || appModeValue == ApplicationMode.AutoDetect) ? DisplayStyle.Flex : DisplayStyle.None;
+                    toggleCard.style.display = (appModeValue == ApplicationMode.UVDiscard || appModeValue == ApplicationMode.AutoDetect) ? DisplayStyle.Flex : DisplayStyle.None;
                 }
                 
                 // Update UV channel detection display
@@ -458,7 +458,7 @@ namespace YUCP.Components.Editor
                         if (autoDetectEnabled && currentMesh != null)
                         {
                             // Cache the detection result
-                            cachedDetectedUVChannel = UDIMManipulator.DetectBestUVChannel(currentMesh);
+                            cachedDetectedUVChannel = UVManipulator.DetectBestUVChannel(currentMesh);
                             previousDetectedMesh = currentMesh;
                             
                             var detectedLabel = new Label($"Detected UV Channel: UV{cachedDetectedUVChannel}");
@@ -495,8 +495,8 @@ namespace YUCP.Components.Editor
                     manualUVSection.style.display = autoDetectEnabled ? DisplayStyle.None : DisplayStyle.Flex;
                 }
                 
-                // Show/hide material picker for UDIM Discard or Auto-Detect
-                bool showMaterialField = (appModeValue == ApplicationMode.UDIMDiscard || appModeValue == ApplicationMode.AutoDetect);
+                // Show/hide material picker for UV Discard or Auto-Detect
+                bool showMaterialField = (appModeValue == ApplicationMode.UVDiscard || appModeValue == ApplicationMode.AutoDetect);
                 materialPickerContainer.style.display = showMaterialField ? DisplayStyle.Flex : DisplayStyle.None;
                 
                 // Update material picker when field is visible
@@ -535,7 +535,7 @@ namespace YUCP.Components.Editor
                 
                 if (vrcFuryToggle != previousVrcFuryToggle)
                 {
-                    UpdateVrcFuryBanner(vrcFuryBanner, vrcFuryToggle);
+                    UpdateVrcFuryBanner(vrcFuryBanner, vrcFuryToggle, appModeValue);
                     previousVrcFuryToggle = vrcFuryToggle;
                 }
                 
@@ -570,7 +570,7 @@ namespace YUCP.Components.Editor
                 UpdatePreviewInfo(previewInfo, data);
                 
                 // Update tile assignment UI
-                var autoAssignTileProp = serializedObject.FindProperty("autoAssignUDIMTile");
+                var autoAssignTileProp = serializedObject.FindProperty("autoAssignUVTile");
                 bool autoAssign = autoAssignTileProp.boolValue;
                 
                 var tileInfoContainer = root.Q<VisualElement>("tile-info-container");
@@ -586,7 +586,7 @@ namespace YUCP.Components.Editor
                         if (tileInfoLabel != null)
                         {
                             // Display current assigned tile
-                            tileInfoLabel.text = $"Tile: ({data.udimDiscardRow}, {data.udimDiscardColumn}) - Auto-assigned by orchestrator";
+                            tileInfoLabel.text = $"Tile: ({data.uvDiscardRow}, {data.uvDiscardColumn}) - Auto-assigned by orchestrator";
                         }
                     }
                 }
@@ -670,7 +670,7 @@ namespace YUCP.Components.Editor
             return root;
         }
         
-        private void UpdateVrcFuryBanner(VisualElement container, Component vrcFuryToggle)
+        private void UpdateVrcFuryBanner(VisualElement container, Component vrcFuryToggle, ApplicationMode mode)
         {
             container.Clear();
             if (vrcFuryToggle != null)
@@ -678,7 +678,7 @@ namespace YUCP.Components.Editor
                 container.Add(YUCPUIToolkitHelper.CreateHelpBox(
                     "VRCFury Toggle Integration Detected\n\n" +
                     "This Auto Body Hider will work together with the VRCFury Toggle component. " +
-                    "The UDIM discard animation will be added to the toggle's actions automatically during build.",
+                    "The UV discard animation will be added to the toggle's actions automatically during build.",
                     YUCPUIToolkitHelper.MessageType.Info));
             }
         }
@@ -700,11 +700,11 @@ namespace YUCP.Components.Editor
             var appModeValue = (ApplicationMode)appMode.enumValueIndex;
             
             // Show toggle section with content
-            if (appModeValue != ApplicationMode.UDIMDiscard && appModeValue != ApplicationMode.AutoDetect)
+            if (appModeValue != ApplicationMode.UVDiscard && appModeValue != ApplicationMode.AutoDetect)
             {
-                // Show message that toggle is available for UDIM Discard mode
+                // Show message that toggle is available for UV Discard mode
                 var helpBox = YUCPUIToolkitHelper.CreateHelpBox(
-                    "Toggle options are only available when using UDIM Discard mode (or Auto Detect with compatible shaders).",
+                    "Toggle options are only available when using UV Discard mode (or Auto Detect with compatible shaders).",
                     YUCPUIToolkitHelper.MessageType.Info);
                 container.Add(helpBox);
                 return;
@@ -976,7 +976,7 @@ namespace YUCP.Components.Editor
                 
                 if (appModeValue == ApplicationMode.MeshDeletion)
                 {
-                    toggleContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Toggle only works with UDIM Discard mode, not Mesh Deletion!", YUCPUIToolkitHelper.MessageType.Warning));
+                    toggleContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Toggle only works with UV Discard mode, not Mesh Deletion!", YUCPUIToolkitHelper.MessageType.Warning));
                 }
                 
                 if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
@@ -984,7 +984,7 @@ namespace YUCP.Components.Editor
                     bool hasCompatibleShader = false;
                     foreach (var mat in data.targetBodyMesh.sharedMaterials)
                     {
-                        if (UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                        if (UVManipulator.IsPoiyomiWithUVSupport(mat))
                         {
                             hasCompatibleShader = true;
                             break;
@@ -992,7 +992,7 @@ namespace YUCP.Components.Editor
                     }
                     if (!hasCompatibleShader)
                     {
-                        toggleContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Body mesh needs a Poiyomi or FastFur shader with UDIM support for toggles to work!", YUCPUIToolkitHelper.MessageType.Warning));
+                        toggleContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Body mesh needs a Poiyomi or FastFur shader with UV support for toggles to work!", YUCPUIToolkitHelper.MessageType.Warning));
                     }
                 }
                 
@@ -1097,7 +1097,7 @@ namespace YUCP.Components.Editor
                 toggle.SetSaved();
                 
                 // The user can add blend shapes, animations, etc. via the VRCFury inspector
-                // The Auto Body Hider processor will automatically add the UDIM discard animation during build
+                // The Auto Body Hider processor will automatically add the UV discard animation during build
                 
                 EditorUtility.SetDirty(data.gameObject);
                 serializedObject.Update();
@@ -1117,7 +1117,7 @@ namespace YUCP.Components.Editor
                     "You can now:\n" +
                     "1. Configure the toggle settings in the VRCFury component below\n" +
                     "2. Add actions like blend shapes, object toggles, animations, etc.\n" +
-                    "3. The UDIM discard animation will be added automatically during build\n\n" +
+                    "3. The UV discard animation will be added automatically during build\n\n" +
                     "The 'Create Toggle' option in Auto Body Hider is now disabled.",
                     "OK"
                 );
@@ -1469,9 +1469,9 @@ namespace YUCP.Components.Editor
             
             if (validSelectedMaterials.Length > 0)
             {
-                int compatibleCount = validSelectedMaterials.Count(m => UDIMManipulator.IsPoiyomiWithUDIMSupport(m));
+                int compatibleCount = validSelectedMaterials.Count(m => UVManipulator.IsPoiyomiWithUVSupport(m));
                 currentMaterialName.text = $"{validSelectedMaterials.Length} Material(s) Selected";
-                currentMaterialShader.text = $"{compatibleCount} compatible with UDIM Discard";
+                currentMaterialShader.text = $"{compatibleCount} compatible";
                 
                 // Show first material preview
                 Material firstMaterial = validSelectedMaterials[0];
@@ -1502,7 +1502,7 @@ namespace YUCP.Components.Editor
                         
                         var matLabel = new Label($"• {mat.name}");
                         matLabel.style.fontSize = 11;
-                        bool isCompatible = UDIMManipulator.IsPoiyomiWithUDIMSupport(mat);
+                        bool isCompatible = UVManipulator.IsPoiyomiWithUVSupport(mat);
                         matLabel.style.color = isCompatible 
                             ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f))
                             : new StyleColor(new Color(0.8f, 0.5f, 0.3f, 1f));
@@ -1634,7 +1634,7 @@ namespace YUCP.Components.Editor
             card.style.borderBottomColor = borderColor;
             card.style.borderLeftColor = borderColor;
             
-            bool isCompatible = UDIMManipulator.IsPoiyomiWithUDIMSupport(material);
+            bool isCompatible = UVManipulator.IsPoiyomiWithUVSupport(material);
             string shaderName = material.shader != null ? material.shader.name : "No Shader";
             
             // Preview image
@@ -1720,7 +1720,7 @@ namespace YUCP.Components.Editor
             // Compatibility badge
             if (isCompatible)
             {
-                var badge = new Label("UDIM");
+                var badge = new Label("UV Discard");
                 badge.style.fontSize = 9;
                 badge.style.unityTextAlign = TextAnchor.MiddleCenter;
                 badge.style.marginTop = 2;

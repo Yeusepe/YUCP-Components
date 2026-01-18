@@ -41,7 +41,7 @@ namespace YUCP.Components.Editor
                 root.Add(YUCPUIToolkitHelper.CreateHelpBox(
                     "Auto Body Hider Integration Detected\n\n" +
                     "This UV Discard Toggle will work together with the AutoBodyHider component on the clothing mesh. " +
-                    "Both will use the same UDIM tile for coordinated body hiding and clothing toggling.",
+                    "Both will use the same UV tile for coordinated body hiding and clothing toggling.",
                     YUCPUIToolkitHelper.MessageType.Info));
             }
 
@@ -51,26 +51,26 @@ namespace YUCP.Components.Editor
             targetMeshesContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("clothingMesh"), "Clothing Mesh"));
             root.Add(targetMeshesCard);
 
-            var udimCard = YUCPUIToolkitHelper.CreateCard("UDIM Discard Settings", "Configure UDIM tile coordinates");
-            var udimContent = YUCPUIToolkitHelper.GetCardContent(udimCard);
-            udimContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimUVChannel"), "UV Channel"));
+            var uvCard = YUCPUIToolkitHelper.CreateCard("UV Discard Settings", "Configure UV tile coordinates");
+            var uvContent = YUCPUIToolkitHelper.GetCardContent(uvCard);
+            uvContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvChannel"), "UV Channel"));
 
             var rowColumnContainer = new VisualElement();
             rowColumnContainer.style.flexDirection = FlexDirection.Row;
             rowColumnContainer.style.marginBottom = 5;
             
-            var rowField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimDiscardRow"), "Row");
+            var rowField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvDiscardRow"), "Row");
             rowField.style.flexGrow = 1;
             rowField.style.marginRight = 5;
             rowColumnContainer.Add(rowField);
             
-            var columnField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("udimDiscardColumn"), "Column");
+            var columnField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvDiscardColumn"), "Column");
             columnField.style.flexGrow = 1;
             rowColumnContainer.Add(columnField);
             
-            udimContent.Add(rowColumnContainer);
-            udimContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Avoid row 0 (especially 0,0) as it overlaps with the main texture. Row 3, Column 3 is safest.", YUCPUIToolkitHelper.MessageType.None));
-            root.Add(udimCard);
+            uvContent.Add(rowColumnContainer);
+            uvContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Avoid row 0 (especially 0,0) as it overlaps with the main texture. Row 3, Column 3 is safest.", YUCPUIToolkitHelper.MessageType.None));
+            root.Add(uvCard);
 
             var toggleCard = YUCPUIToolkitHelper.CreateCard("Toggle Settings", "Configure menu and parameter settings");
             var toggleContent = YUCPUIToolkitHelper.GetCardContent(toggleCard);
@@ -259,7 +259,7 @@ namespace YUCP.Components.Editor
                 bool hasPoiyomi = false;
                 foreach (var mat in data.targetBodyMesh.sharedMaterials)
                 {
-                    if (UDIMManipulator.IsPoiyomiWithUDIMSupport(mat))
+                    if (UVManipulator.IsPoiyomiWithUVSupport(mat))
                     {
                         hasPoiyomi = true;
                         break;
@@ -267,7 +267,7 @@ namespace YUCP.Components.Editor
                 }
                 if (!hasPoiyomi)
                 {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Body mesh needs a Poiyomi or FastFur material with UDIM support", YUCPUIToolkitHelper.MessageType.Warning));
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Body mesh needs a Poiyomi or FastFur material with UV support", YUCPUIToolkitHelper.MessageType.Warning));
                 }
             }
         }

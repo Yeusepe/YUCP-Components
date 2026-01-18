@@ -13,7 +13,7 @@ namespace YUCP.Components.Editor
 {
     /// <summary>
     /// Processes UVDiscardToggle components during avatar build.
-    /// Merges clothing mesh into the body, applies UDIM discard, and creates a VRCFury toggle.
+    /// Merges clothing mesh into the body, applies UV discard, and creates a VRCFury toggle.
     /// </summary>
     public class UVDiscardToggleProcessor : IVRCSDKPreprocessAvatarCallback
     {
@@ -41,8 +41,8 @@ namespace YUCP.Components.Editor
             Mesh mergedMesh = MergeClothingIntoBody(data);
             data.targetBodyMesh.sharedMesh = mergedMesh;
 
-            // 2. Configure body material for UDIM discard
-            Material poiyomiMaterial = ConfigureBodyMaterialForUDIM(data);
+            // 2. Configure body material for UV discard
+            Material poiyomiMaterial = ConfigureBodyMaterialForUV(data);
             if (poiyomiMaterial == null) return;
 
             // 3. Create VRCFury Toggle
@@ -116,13 +116,13 @@ namespace YUCP.Components.Editor
             Vector3[] newNormals = bodyNormals.Concat(transformedClothingNormals).ToArray();
             Vector2[] newUV0 = bodyUV0.Concat(clothingUV0).ToArray();
 
-            // Create UV1 for UDIM discard
+            // Create UV1 for UV discard
             Vector2[] newUV1 = new Vector2[newVertices.Length];
             Array.Copy(newUV0, newUV1, newUV0.Length); // Start with UV0 data
 
             // Move clothing UVs in UV1 to the discard tile
-            float uOffset = data.udimDiscardColumn;
-            float vOffset = data.udimDiscardRow;
+            float uOffset = data.uvDiscardColumn;
+            float vOffset = data.uvDiscardRow;
 
             for (int i = bodyVertices.Length; i < newVertices.Length; i++)
             {
@@ -176,7 +176,7 @@ namespace YUCP.Components.Editor
             return combinedMesh;
         }
 
-        private Material ConfigureBodyMaterialForUDIM(UVDiscardToggleData data)
+        private Material ConfigureBodyMaterialForUV(UVDiscardToggleData data)
         {
             Material[] materials = data.targetBodyMesh.sharedMaterials;
             Material poiyomiMaterial = null;
@@ -184,7 +184,7 @@ namespace YUCP.Components.Editor
 
             for (int i = 0; i < materials.Length; i++)
             {
-                if (UDIMManipulator.IsPoiyomiWithUDIMSupport(materials[i]))
+                if (UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                 {
                     poiyomiMaterial = materials[i];
                     poiyomiMaterialIndex = i;
@@ -194,12 +194,12 @@ namespace YUCP.Components.Editor
 
             if (poiyomiMaterial == null)
             {
-                Debug.LogError($"[UVDiscardToggle] No Poiyomi or FastFur material found on body mesh '{data.targetBodyMesh.name}'. UDIM discard cannot be configured.", data);
+                Debug.LogError($"[UVDiscardToggle] No Poiyomi or FastFur material found on body mesh '{data.targetBodyMesh.name}'. UV discard cannot be configured.", data);
                 return null;
             }
             
-            string shaderName = UDIMManipulator.GetShaderDisplayName(poiyomiMaterial);
-            Debug.Log($"[UVDiscardToggle] Using {shaderName} shader for UDIM discard", data);
+            string shaderName = UVManipulator.GetShaderDisplayName(poiyomiMaterial);
+            Debug.Log($"[UVDiscardToggle] Using {shaderName} shader for UV discard", data);
 
             Material materialCopy = UnityEngine.Object.Instantiate(poiyomiMaterial);
             materialCopy.name = poiyomiMaterial.name + "_UVDiscardToggle";
@@ -223,14 +223,14 @@ namespace YUCP.Components.Editor
             }
             
             materialCopy.SetFloat("_UDIMDiscardMode", 0f); // Vertex mode
-            materialCopy.SetFloat("_UDIMDiscardUV", data.udimUVChannel);
+            materialCopy.SetFloat("_UDIMDiscardUV", data.uvChannel);
 
-            string tilePropertyName = $"_UDIMDiscardRow{data.udimDiscardRow}_{data.udimDiscardColumn}";
+            string tilePropertyName = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
             if (materialCopy.HasProperty(tilePropertyName))
             {
                 materialCopy.SetFloat(tilePropertyName, 0f); // Base state (OFF)
                 materialCopy.SetOverrideTag(tilePropertyName + "Animated", "1");
-                Debug.Log($"[UVDiscardToggle] Configured material for tile ({data.udimDiscardRow}, {data.udimDiscardColumn})", data);
+                Debug.Log($"[UVDiscardToggle] Configured material for tile ({data.uvDiscardRow}, {data.uvDiscardColumn})", data);
             }
             else
             {
@@ -347,7 +347,7 @@ namespace YUCP.Components.Editor
             clip.name = $"UVDiscardToggle_{data.gameObject.name}";
 
             string rendererPath = GetRelativePath(data.targetBodyMesh.transform, data.transform.root);
-            string tilePropertyName = $"_UDIMDiscardRow{data.udimDiscardRow}_{data.udimDiscardColumn}";
+            string tilePropertyName = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
 
             if (!poiyomiMaterial.HasProperty(tilePropertyName))
             {
