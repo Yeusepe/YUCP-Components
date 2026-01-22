@@ -31,6 +31,7 @@ namespace YUCP.Components.Editor
         private SerializedProperty addDebugProp;
         private SerializedProperty writeDefaultsProp;
         private SerializedProperty menuLocationProp;
+        private SerializedProperty syncTargetProp;
         private SerializedProperty syncGroupIdProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty showSceneGizmoProp;
@@ -71,6 +72,7 @@ namespace YUCP.Components.Editor
             addDebugProp = serializedObject.FindProperty("addLocalDebugView");
             writeDefaultsProp = serializedObject.FindProperty("writeDefaults");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
+            syncTargetProp = serializedObject.FindProperty("syncTarget");
             syncGroupIdProp = serializedObject.FindProperty("syncGroupId");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             showSceneGizmoProp = serializedObject.FindProperty("showSceneGizmo");
@@ -122,6 +124,8 @@ namespace YUCP.Components.Editor
             
             syncStrategyContent.Add(YUCPUIToolkitHelper.CreateField(rotationEnabledProp, "Sync Rotation"));
             syncStrategyContent.Add(YUCPUIToolkitHelper.CreateField(addDebugProp, "Add Local Debug View"));
+            syncStrategyContent.Add(YUCPUIToolkitHelper.CreateField(syncTargetProp, "Sync Target"));
+            syncStrategyContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Optional parent transform for the generated \"Object-Name Target\" GameObject. If not specified, the target will be parented to the sync object's parent.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(syncStrategyCard);
             
             // Precision & Range Card

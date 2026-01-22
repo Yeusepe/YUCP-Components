@@ -15,6 +15,7 @@ using VRC.SDK3.Dynamics.Constraint.Components;
 using VRC.SDK3.Dynamics.Contact.Components;
 using static VRC.SDKBase.VRC_AvatarParameterDriver;
 using static VRLabs.CustomObjectSyncCreator.ControllerGenerationMethods;
+using YUCP.Components;
 using AnimationCurve = UnityEngine.AnimationCurve;
 using GameObject = UnityEngine.GameObject;
 using Object = UnityEngine.Object;
@@ -923,10 +924,45 @@ namespace VRLabs.CustomObjectSyncCreator
 			{
 				GameObject targetSyncObject = syncObjects[i];
 				Transform targetObject = new GameObject($"{targetSyncObject.name} Target").transform;
-				targetObject.parent = targetSyncObject.transform.parent;
-				targetObject.localPosition = targetSyncObject.transform.localPosition;
-				targetObject.localRotation = targetSyncObject.transform.localRotation;
-				targetObject.localScale = targetSyncObject.transform.localScale;
+				
+				// Get syncTarget from CustomObjectSyncData component if available
+				Transform targetParent = targetSyncObject.transform.parent;
+				var syncData = targetSyncObject.GetComponent<CustomObjectSyncData>();
+				if (syncData != null)
+				{
+					var settings = syncData.ToSettings();
+					if (settings.syncTarget != null)
+					{
+						targetParent = settings.syncTarget;
+					}
+				}
+				
+				// Store world transform before parenting
+				Vector3 worldPosition = targetSyncObject.transform.position;
+				Quaternion worldRotation = targetSyncObject.transform.rotation;
+				Vector3 worldScale = targetSyncObject.transform.lossyScale;
+				
+				// Set parent first
+				targetObject.parent = targetParent;
+				
+				// Set world transform (Unity will convert to local space automatically)
+				targetObject.position = worldPosition;
+				targetObject.rotation = worldRotation;
+				
+				// Handle scale: maintain world scale by adjusting local scale based on parent's scale
+				if (targetParent != null)
+				{
+					Vector3 parentLossyScale = targetParent.lossyScale;
+					targetObject.localScale = new Vector3(
+						worldScale.x / parentLossyScale.x,
+						worldScale.y / parentLossyScale.y,
+						worldScale.z / parentLossyScale.z
+					);
+				}
+				else
+				{
+					targetObject.localScale = worldScale;
+				}
 				mainTargetVRCParentConstraint.Sources.Add(new VRCConstraintSource(targetObject, 0f, Vector3.zero, Vector3.zero));
 				string oldPath = GetDescriptorPath(targetSyncObject);
 				targetSyncObject.transform.parent = syncSystem.transform;

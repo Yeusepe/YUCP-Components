@@ -92,6 +92,12 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
+            if (settings.syncTarget != null && !settings.syncTarget.IsChildOf(descriptor.transform))
+            {
+                Debug.LogError("[YUCP Custom Object Sync] Sync Target must be inside the avatar descriptor hierarchy.", component);
+                return false;
+            }
+
             return true;
         }
 
@@ -127,7 +133,9 @@ namespace YUCP.Components.Editor
 
         private static bool BuildGroup(VRCAvatarDescriptor descriptor, GameObject prefab, GroupKey key, List<GroupMember> members)
         {
-            var targets = members.Select(m => m.Settings.targetObject).ToArray();
+            var targets = members.Select(m => m.Settings.targetObject)
+                .Where(x => x != null)  // Filter nulls before processing
+                .ToArray();
             if (targets.Length == 0)
             {
                 return true;
@@ -193,8 +201,11 @@ namespace YUCP.Components.Editor
             var creator = CustomObjectSyncCreator.instance;
             creator.resourcePrefab = prefab;
             creator.silentMode = true;
-            creator.syncObjects = targets;
-            creator.useMultipleObjects = targets.Length > 1;
+            
+            // Filter nulls to match original script behavior (original filters in Generate() line 77)
+            // This ensures useMultipleObjects is set correctly before Generate() runs
+            creator.syncObjects = targets.Where(x => x != null).ToArray();
+            creator.useMultipleObjects = creator.syncObjects.Length > 1;
 
             creator.bitCount = key.BitCount;
             creator.maxRadius = key.MaxRadius;
