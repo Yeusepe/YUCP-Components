@@ -234,6 +234,28 @@ namespace YUCP.Components.Resources
             samplesHelp.name = "samples-help";
             transferContent.Add(samplesHelp);
             root.Add(transferCard);
+
+            // Output (Advanced) Card
+            var outputCard = YUCPUIToolkitHelper.CreateCard("Output (Advanced)", "How this attachment is baked at build time");
+            var outputContent = YUCPUIToolkitHelper.GetCardContent(outputCard);
+
+            outputContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                "Default is Auto.\n\n" +
+                "Auto will choose the safest mode and avoid merge if it detects complex transform/material animations on this object.\n" +
+                "Use Merge Into Base Mesh only when you need built-in VRChat blendshape systems (like default visemes) to affect the attachment.",
+                YUCPUIToolkitHelper.MessageType.Info));
+
+            YUCPUIToolkitHelper.AddSpacing(outputContent, 4);
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("outputMode"), "Output Mode"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("bakeMethod"), "Bake Method"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("unmatchedHandling"), "Unmatched Handling"));
+            YUCPUIToolkitHelper.AddSpacing(outputContent, 4);
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoAvoidMergeIfComplexTransformAnimation"), "Auto: Avoid Merge if Transform Animations"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoAvoidMergeIfMaterialAnimation"), "Auto: Avoid Merge if Material Animations"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("preserveToggleStyleTransformAnimationsOnMerge"), "Merge: Preserve Toggle-Style Transform Animations"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("disableOriginalRendererOnMerge"), "Merge: Disable Original Renderer"));
+
+            root.Add(outputCard);
             
             // Advanced Options Card
             var advancedCard = YUCPUIToolkitHelper.CreateCard("Advanced Options", "Debug and preview settings");

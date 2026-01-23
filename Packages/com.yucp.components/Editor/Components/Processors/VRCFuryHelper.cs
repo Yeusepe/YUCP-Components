@@ -45,17 +45,58 @@ namespace YUCP.Components.Editor
             for (int i = 0; i < menus.Length; i++)
             {
                 string nextMenu = menus[i];
-                if (menu.controls == null) return null;
+                if (string.IsNullOrEmpty(nextMenu))
+                {
+                    continue;
+                }
+
+                if (menu.controls == null)
+                {
+                    menu.controls = new System.Collections.Generic.List<VRCExpressionsMenu.Control>();
+                }
 
                 VRCExpressionsMenu.Control nextMenuControl = menu.controls
                     .Where(x => x.type == VRCExpressionsMenu.Control.ControlType.SubMenu)
                     .FirstOrDefault(x => x.name == nextMenu);
-                if (nextMenuControl == null || nextMenuControl.subMenu == null) return null;
-
-                menu = nextMenuControl.subMenu;
+                
+                if (nextMenuControl == null || nextMenuControl.subMenu == null)
+                {
+                    // Create the missing submenu
+                    VRCExpressionsMenu newSubMenu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
+                    newSubMenu.name = nextMenu;
+                    newSubMenu.controls = new System.Collections.Generic.List<VRCExpressionsMenu.Control>();
+                    
+                    // If the parent menu is an asset, save the submenu as a sub-asset
+                    if (AssetDatabase.Contains(menu))
+                    {
+                        AssetDatabase.AddObjectToAsset(newSubMenu, menu);
+                        AssetDatabase.SaveAssets();
+                    }
+                    
+                    // Create the submenu control
+                    VRCExpressionsMenu.Control subMenuControl = new VRCExpressionsMenu.Control()
+                    {
+                        name = nextMenu,
+                        type = VRCExpressionsMenu.Control.ControlType.SubMenu,
+                        subMenu = newSubMenu
+                    };
+                    
+                    menu.controls.Add(subMenuControl);
+                    EditorUtility.SetDirty(menu);
+                    EditorUtility.SetDirty(newSubMenu);
+                    
+                    menu = newSubMenu;
+                }
+                else
+                {
+                    menu = nextMenuControl.subMenu;
+                }
             }
 
-            if (menu.controls == null) return null;
+            if (menu.controls == null)
+            {
+                menu.controls = new System.Collections.Generic.List<VRCExpressionsMenu.Control>();
+            }
             return menu;
         }
 
