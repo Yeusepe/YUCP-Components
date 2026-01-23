@@ -257,8 +257,37 @@ namespace YUCP.Components.Editor
 
             if (settings.targetObject != null)
             {
+                var container = collisionSystem.transform.Find("Container");
+                if (container == null)
+                {
+                    // If Container doesn't exist, use the collisionSystem itself as container
+                    container = collisionSystem.transform;
+                }
+
+                // Store the world position and rotation before reparenting
+                var worldPosition = settings.targetObject.transform.position;
+                var worldRotation = settings.targetObject.transform.rotation;
+                var worldScale = settings.targetObject.transform.lossyScale;
+
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = collisionSystem.transform;
+                
+                // Reparent to container
+                settings.targetObject.transform.parent = container;
+                
+                // Reset object's local transform to identity (0,0,0 position, identity rotation, 1,1,1 scale)
+                settings.targetObject.transform.localPosition = Vector3.zero;
+                settings.targetObject.transform.localRotation = Quaternion.identity;
+                settings.targetObject.transform.localScale = Vector3.one;
+                
+                // Adjust container's transform to maintain the object's original world position
+                // Calculate what the container's world transform should be so that the object (at local 0,0,0) 
+                // appears at its original world position
+                container.position = worldPosition;
+                container.rotation = worldRotation;
+                
+                // Note: Scale is trickier with lossyScale, so we'll preserve the container's existing scale
+                // The object's local scale is now 1,1,1, so it will use the container's scale
+                
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)

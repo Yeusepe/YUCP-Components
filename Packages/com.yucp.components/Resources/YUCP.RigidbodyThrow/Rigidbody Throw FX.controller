@@ -2309,8 +2309,7 @@ AnimatorState:
   m_Name: Throw Remote
   m_Speed: 1
   m_CycleOffset: 0
-  m_Transitions:
-  - {fileID: 1169384992782905777}
+  m_Transitions: []
   m_StateMachineBehaviours:
   - {fileID: -4856072086154241320}
   m_Position: {x: 50, y: 50, z: 0}
@@ -2502,8 +2501,7 @@ AnimatorState:
   m_Name: Throw
   m_Speed: 1
   m_CycleOffset: 0
-  m_Transitions:
-  - {fileID: 3613076352499597472}
+  m_Transitions: []
   m_StateMachineBehaviours:
   - {fileID: 2463764449049240543}
   m_Position: {x: 50, y: 50, z: 0}
@@ -2530,9 +2528,7 @@ AnimatorState:
   m_Name: Reset
   m_Speed: 1
   m_CycleOffset: 0
-  m_Transitions:
-  - {fileID: -3603725514976660404}
-  - {fileID: -701995327967711195}
+  m_Transitions: []
   m_StateMachineBehaviours:
   - {fileID: 5599834252941869476}
   m_Position: {x: 50, y: 50, z: 0}

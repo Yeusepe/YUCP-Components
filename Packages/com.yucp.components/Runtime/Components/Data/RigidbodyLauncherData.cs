@@ -37,8 +37,32 @@ namespace YUCP.Components
         [Range(0f, 10000f)]
         public float maximumForce = 1000f;
 
+        [Tooltip("Which hand to use for gesture triggers (Left or Right).")]
+        public GestureHand gestureHand = GestureHand.Right;
+
+        [Tooltip("Gesture value for launching (default: 2 = HandOpen).")]
+        [Range(0, 7)]
+        public int launchGesture = 2;
+
+        [Tooltip("Gesture value for resetting (default: 1 = Fist).")]
+        [Range(0, 7)]
+        public int resetGesture = 1;
+
         [Tooltip("Layers that the particle system will detect collisions with.")]
         public LayerMask collisionLayers = -1;
+
+        [Header("Global Parameter Settings")]
+        [Tooltip("Enable global parameter triggers instead of gestures.")]
+        public bool useGlobalParameters = false;
+
+        [Tooltip("Parameter mode: Single uses one parameter (true=launch, false=reset), Dual uses separate parameters for launch and reset.")]
+        public ParameterMode parameterMode = ParameterMode.Single;
+
+        [Tooltip("Global parameter name for launch. In Single mode, this parameter is used for both launch (true) and reset (false).")]
+        public string launchParameterName = "LaunchObject";
+
+        [Tooltip("Global parameter name for reset. Only used in Dual mode.")]
+        public string resetParameterName = "ResetObject";
 
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared launcher setup.")]
@@ -73,7 +97,14 @@ namespace YUCP.Components
             public string globalParameterControl;
             public float launchSpeed;
             public float maximumForce;
+            public GestureHand gestureHand;
+            public int launchGesture;
+            public int resetGesture;
             public LayerMask collisionLayers;
+            public bool useGlobalParameters;
+            public ParameterMode parameterMode;
+            public string launchParameterName;
+            public string resetParameterName;
             public string launcherGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -115,7 +146,14 @@ namespace YUCP.Components
                 globalParameterControl = globalParameterControl?.Trim() ?? string.Empty,
                 launchSpeed = launchSpeed,
                 maximumForce = Mathf.Clamp(maximumForce, 0f, 10000f),
+                gestureHand = gestureHand,
+                launchGesture = launchGesture,
+                resetGesture = resetGesture,
                 collisionLayers = collisionLayers,
+                useGlobalParameters = useGlobalParameters,
+                parameterMode = parameterMode,
+                launchParameterName = launchParameterName?.Trim() ?? string.Empty,
+                resetParameterName = resetParameterName?.Trim() ?? string.Empty,
                 launcherGroupId = enableGrouping ? NormalizeGroupId(launcherGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,
@@ -175,7 +213,14 @@ namespace YUCP.Components
                 globalParameterControl = source.globalParameterControl;
                 launchSpeed = source.launchSpeed;
                 maximumForce = source.maximumForce;
+                gestureHand = source.gestureHand;
+                launchGesture = source.launchGesture;
+                resetGesture = source.resetGesture;
                 collisionLayers = source.collisionLayers;
+                useGlobalParameters = source.useGlobalParameters;
+                parameterMode = source.parameterMode;
+                launchParameterName = source.launchParameterName;
+                resetParameterName = source.resetParameterName;
                 enableGrouping = source.enableGrouping;
                 verboseLogging = source.verboseLogging;
                 includeCredits = source.includeCredits;

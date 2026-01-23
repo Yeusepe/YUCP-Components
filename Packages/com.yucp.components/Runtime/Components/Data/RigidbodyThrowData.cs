@@ -8,6 +8,18 @@ using UnityEditor;
 
 namespace YUCP.Components
 {
+    public enum ParameterMode
+    {
+        Single,
+        Dual
+    }
+
+    public enum GestureHand
+    {
+        Left,
+        Right
+    }
+
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Rigidbody Throw")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules/wiki/Rigidbody-Throw")]
@@ -33,6 +45,9 @@ namespace YUCP.Components
         [Tooltip("Physics material for collision. Applied to the Collision Collider.")]
         public PhysicMaterial physicsMaterial;
 
+        [Tooltip("Which hand to use for gesture triggers (Left or Right).")]
+        public GestureHand gestureHand = GestureHand.Right;
+
         [Tooltip("Gesture value for throwing (default: 2 = HandOpen).")]
         [Range(0, 7)]
         public int throwGesture = 2;
@@ -43,6 +58,19 @@ namespace YUCP.Components
 
         [Tooltip("Layers that collision detection will use.")]
         public LayerMask collisionLayers = -1;
+
+        [Header("Global Parameter Settings")]
+        [Tooltip("Enable global parameter triggers instead of gestures.")]
+        public bool useGlobalParameters = false;
+
+        [Tooltip("Parameter mode: Single uses one parameter (true=throw, false=reset), Dual uses separate parameters for throw and reset.")]
+        public ParameterMode parameterMode = ParameterMode.Single;
+
+        [Tooltip("Global parameter name for throw. In Single mode, this parameter is used for both throw (true) and reset (false).")]
+        public string throwParameterName = "ThrowObject";
+
+        [Tooltip("Global parameter name for reset. Only used in Dual mode.")]
+        public string resetParameterName = "ResetObject";
 
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared throw setup.")]
@@ -78,7 +106,12 @@ namespace YUCP.Components
             public PhysicMaterial physicsMaterial;
             public int throwGesture;
             public int resetGesture;
+            public GestureHand gestureHand;
             public LayerMask collisionLayers;
+            public bool useGlobalParameters;
+            public ParameterMode parameterMode;
+            public string throwParameterName;
+            public string resetParameterName;
             public string throwGroupId;
             public bool enableGrouping;
             public bool verboseLogging;
@@ -121,7 +154,12 @@ namespace YUCP.Components
                 physicsMaterial = physicsMaterial,
                 throwGesture = Mathf.Clamp(throwGesture, 0, 7),
                 resetGesture = Mathf.Clamp(resetGesture, 0, 7),
+                gestureHand = gestureHand,
                 collisionLayers = collisionLayers,
+                useGlobalParameters = useGlobalParameters,
+                parameterMode = parameterMode,
+                throwParameterName = throwParameterName?.Trim() ?? string.Empty,
+                resetParameterName = resetParameterName?.Trim() ?? string.Empty,
                 throwGroupId = enableGrouping ? NormalizeGroupId(throwGroupId) : string.Empty,
                 enableGrouping = enableGrouping,
                 verboseLogging = verboseLogging,
@@ -182,7 +220,12 @@ namespace YUCP.Components
                 physicsMaterial = source.physicsMaterial;
                 throwGesture = source.throwGesture;
                 resetGesture = source.resetGesture;
+                gestureHand = source.gestureHand;
                 collisionLayers = source.collisionLayers;
+                useGlobalParameters = source.useGlobalParameters;
+                parameterMode = source.parameterMode;
+                throwParameterName = source.throwParameterName;
+                resetParameterName = source.resetParameterName;
                 enableGrouping = source.enableGrouping;
                 verboseLogging = source.verboseLogging;
                 includeCredits = source.includeCredits;

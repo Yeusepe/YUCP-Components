@@ -158,6 +158,615 @@ namespace YUCP.Components.Editor
             return true;
         }
 
+        private AttachToBlendshapeOutputMode ResolveOutputMode(AttachToBlendshapeData data, GameObject avatarRoot)
+        {
+            if (data == null) return AttachToBlendshapeOutputMode.LinkedRendererBake;
+
+            // Explicit override
+            if (data.outputMode != AttachToBlendshapeOutputMode.Auto)
+            {
+                return data.outputMode;
+            }
+
+            // Auto mode: inspect animation clips to decide whether Merge is safe.
+            var descriptor = avatarRoot != null ? avatarRoot.GetComponent<VRCAvatarDescriptor>() : null;
+            if (descriptor == null || data.targetMesh == null)
+            {
+                return AttachToBlendshapeOutputMode.LinkedRendererBake;
+            }
+
+            string baseMeshPath = AnimationUtility.CalculateTransformPath(data.targetMesh.transform, avatarRoot.transform);
+            string objectPath = AnimationUtility.CalculateTransformPath(data.transform, avatarRoot.transform);
+
+            bool hasBaseBlendshapeCurves = false;
+            bool hasMaterialAnimOnObject = false;
+            bool hasComplexTransformAnimOnObject = false;
+
+            foreach (var clip in CollectAllAnimationClips(descriptor))
+            {
+                if (clip == null) continue;
+                var bindings = AnimationUtility.GetCurveBindings(clip);
+                if (bindings == null || bindings.Length == 0) continue;
+
+                foreach (var binding in bindings)
+                {
+                    if (binding.type == typeof(SkinnedMeshRenderer) &&
+                        binding.propertyName != null &&
+                        binding.propertyName.StartsWith("blendShape.") &&
+                        binding.path == baseMeshPath)
+                    {
+                        hasBaseBlendshapeCurves = true;
+                    }
+
+                    if (binding.path == objectPath)
+                    {
+                        // Material animations are hard to retarget reliably after a mesh-merge.
+                        if (data.autoAvoidMergeIfMaterialAnimation &&
+                            binding.propertyName != null &&
+                            binding.propertyName.StartsWith("material."))
+                        {
+                            hasMaterialAnimOnObject = true;
+                        }
+
+                        // Accessory blendshape animations are also hard to preserve through a merge
+                        // (they would need to be re-authored onto the merged base renderer).
+                        if (binding.type == typeof(SkinnedMeshRenderer) &&
+                            binding.propertyName != null &&
+                            binding.propertyName.StartsWith("blendShape."))
+                        {
+                            return AttachToBlendshapeOutputMode.LinkedRendererBake;
+                        }
+
+                        if (data.autoAvoidMergeIfComplexTransformAnimation &&
+                            binding.type == typeof(Transform) &&
+                            IsTransformBinding(binding.propertyName))
+                        {
+                            var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                            if (curve != null && !IsCurveConstant(curve))
+                            {
+                                hasComplexTransformAnimOnObject = true;
+                            }
+                        }
+                    }
+                }
+
+                if (hasMaterialAnimOnObject && data.autoAvoidMergeIfMaterialAnimation)
+                {
+                    return AttachToBlendshapeOutputMode.LinkedRendererBake;
+                }
+                if (hasComplexTransformAnimOnObject && data.autoAvoidMergeIfComplexTransformAnimation)
+                {
+                    return AttachToBlendshapeOutputMode.LinkedRendererBake;
+                }
+            }
+
+            // If the base blendshapes are not driven by clips (common for VRChat built-ins),
+            // MergeIntoBaseMesh is the only reliable way to have the attachment follow them.
+            if (!hasBaseBlendshapeCurves)
+            {
+                return AttachToBlendshapeOutputMode.MergeIntoBaseMesh;
+            }
+
+            return AttachToBlendshapeOutputMode.LinkedRendererBake;
+        }
+
+        private static bool IsTransformBinding(string propertyName)
+        {
+            if (string.IsNullOrEmpty(propertyName)) return false;
+            return propertyName.StartsWith("m_LocalPosition.") ||
+                   propertyName.StartsWith("m_LocalRotation.") ||
+                   propertyName.StartsWith("m_LocalScale.");
+        }
+
+        private static bool IsCurveConstant(AnimationCurve curve, float epsilon = 1e-4f)
+        {
+            if (curve == null || curve.length == 0) return true;
+            float v0 = curve.keys[0].value;
+            for (int i = 1; i < curve.length; i++)
+            {
+                if (Mathf.Abs(curve.keys[i].value - v0) > epsilon) return false;
+            }
+            return true;
+        }
+
+        private IEnumerable<AnimationClip> CollectAllAnimationClips(VRCAvatarDescriptor descriptor)
+        {
+            var clips = new HashSet<AnimationClip>();
+            if (descriptor == null) return clips;
+
+            void AddController(AnimatorController ac)
+            {
+                if (ac == null) return;
+                foreach (var layer in ac.layers)
+                {
+                    if (layer.stateMachine == null) continue;
+                    foreach (var state in GetAllStates(layer.stateMachine))
+                    {
+                        CollectClipsFromMotion(state.motion, clips);
+                    }
+                }
+            }
+
+            foreach (var layer in descriptor.baseAnimationLayers)
+            {
+                if (layer.isDefault) continue;
+                if (layer.animatorController is AnimatorController ac) AddController(ac);
+            }
+            foreach (var layer in descriptor.specialAnimationLayers)
+            {
+                if (layer.isDefault) continue;
+                if (layer.animatorController is AnimatorController ac) AddController(ac);
+            }
+
+            return clips;
+        }
+
+        private static void CollectClipsFromMotion(Motion motion, HashSet<AnimationClip> clips)
+        {
+            if (motion == null || clips == null) return;
+            if (motion is AnimationClip clip)
+            {
+                clips.Add(clip);
+                return;
+            }
+            if (motion is BlendTree tree)
+            {
+                foreach (var child in tree.children)
+                {
+                    CollectClipsFromMotion(child.motion, clips);
+                }
+            }
+        }
+
+        private bool MergeIntoBaseMesh(AttachToBlendshapeData data, GameObject avatarRoot)
+        {
+            if (data == null || avatarRoot == null || data.targetMesh == null || data.targetMesh.sharedMesh == null)
+            {
+                return false;
+            }
+
+            // Resolve which mesh we are merging (defaults to this GameObject if not specified)
+            if (!TryGetTargetMeshToModify(data, out var attachmentMesh, out var attachmentTransform, out var attachmentMaterials, out var attachmentSmr, out var attachmentMr))
+            {
+                Debug.LogError("[AttachToBlendshapeProcessor] Merge failed: could not resolve attachment mesh to merge.", data);
+                return false;
+            }
+
+            var baseSmr = data.targetMesh;
+            var baseMesh = baseSmr.sharedMesh;
+
+            // Build combined triangle arrays (needed because MeshCollider triangleIndex is global)
+            var baseTrianglesCombined = SkinnedMeshMerge.GetCombinedTriangles(baseMesh);
+            var attachmentTrianglesCombined = SkinnedMeshMerge.GetCombinedTriangles(attachmentMesh);
+
+            // Attachment vertex positions in base local (for mapping + delta computation)
+            var attVertsLocal = attachmentMesh.vertices;
+            var attVertsInBaseLocal = new Vector3[attVertsLocal.Length];
+            for (int i = 0; i < attVertsLocal.Length; i++)
+            {
+                var wPos = attachmentTransform.TransformPoint(attVertsLocal[i]);
+                attVertsInBaseLocal[i] = baseSmr.transform.InverseTransformPoint(wPos);
+            }
+
+            // Map attachment vertices to base surface
+            var maps = ClosestSurfaceMapper.MapAttachmentVerticesToBaseSurface(
+                baseSmr,
+                baseMesh,
+                attVertsInBaseLocal,
+                data,
+                out var matchedCount);
+
+            if (matchedCount == 0)
+            {
+                Debug.LogError("[AttachToBlendshapeProcessor] Merge failed: no attachment vertices could be mapped to the base surface.", data);
+                return false;
+            }
+
+            // Merge geometry + materials + skinning
+            var merge = SkinnedMeshMerge.Merge(
+                baseSmr,
+                attachmentMesh,
+                attachmentTransform,
+                attachmentMaterials,
+                maps,
+                baseTrianglesCombined,
+                data);
+
+            if (merge.mergedMesh == null)
+            {
+                Debug.LogError("[AttachToBlendshapeProcessor] Merge failed: merged mesh was null.", data);
+                return false;
+            }
+
+            // Rebuild base blendshapes onto the merged mesh, extending frames with attachment deltas
+            var bakedOk = BakeBaseBlendshapesIntoMergedMesh(
+                data,
+                avatarRoot,
+                baseSmr,
+                baseMesh,
+                merge.mergedMesh,
+                maps,
+                baseTrianglesCombined,
+                attachmentTrianglesCombined,
+                attVertsInBaseLocal,
+                merge.baseVertexCount,
+                merge.attachmentVertexStart,
+                merge.attachmentVertexCount);
+
+            if (!bakedOk)
+            {
+                Debug.LogError("[AttachToBlendshapeProcessor] Merge failed: could not bake base blendshapes into merged mesh.", data);
+                return false;
+            }
+
+            // Assign merged output
+            baseSmr.sharedMesh = merge.mergedMesh;
+            baseSmr.sharedMaterials = merge.mergedMaterials;
+            EditorUtility.SetDirty(baseSmr);
+
+            // Disable original renderer (keep the transform hierarchy for toggles/constraints)
+            if (data.disableOriginalRendererOnMerge)
+            {
+                if (attachmentSmr != null) attachmentSmr.enabled = false;
+                if (attachmentMr != null) attachmentMr.enabled = false;
+            }
+
+            // Preserve toggle-style transform animations by converting them into blendshapes on the merged mesh
+            if (data.preserveToggleStyleTransformAnimationsOnMerge)
+            {
+                RetargetToggleStyleTransformAnimationsToBlendshapes(
+                    data,
+                    avatarRoot,
+                    baseSmr,
+                    merge.mergedMesh,
+                    merge.attachmentVertexStart,
+                    merge.attachmentVertexCount);
+            }
+
+            return true;
+        }
+
+        private static bool TryGetTargetMeshToModify(
+            AttachToBlendshapeData data,
+            out Mesh mesh,
+            out Transform meshTransform,
+            out Material[] materials,
+            out SkinnedMeshRenderer smr,
+            out MeshRenderer mr)
+        {
+            mesh = null;
+            meshTransform = null;
+            materials = Array.Empty<Material>();
+            smr = null;
+            mr = null;
+
+            UnityEngine.Object target = data.targetMeshToModify;
+
+            if (target is SkinnedMeshRenderer tSmr)
+            {
+                smr = tSmr;
+                mesh = tSmr.sharedMesh;
+                meshTransform = tSmr.transform;
+                materials = tSmr.sharedMaterials ?? Array.Empty<Material>();
+                return mesh != null;
+            }
+
+            if (target is MeshFilter mf)
+            {
+                mesh = mf.sharedMesh;
+                meshTransform = mf.transform;
+                mr = mf.GetComponent<MeshRenderer>();
+                materials = mr != null ? (mr.sharedMaterials ?? Array.Empty<Material>()) : Array.Empty<Material>();
+                return mesh != null;
+            }
+
+            if (target is GameObject go)
+            {
+                var goSmr = go.GetComponent<SkinnedMeshRenderer>();
+                if (goSmr != null)
+                {
+                    smr = goSmr;
+                    mesh = goSmr.sharedMesh;
+                    meshTransform = goSmr.transform;
+                    materials = goSmr.sharedMaterials ?? Array.Empty<Material>();
+                    return mesh != null;
+                }
+                var goMf = go.GetComponent<MeshFilter>();
+                if (goMf != null)
+                {
+                    mesh = goMf.sharedMesh;
+                    meshTransform = goMf.transform;
+                    mr = goMf.GetComponent<MeshRenderer>();
+                    materials = mr != null ? (mr.sharedMaterials ?? Array.Empty<Material>()) : Array.Empty<Material>();
+                    return mesh != null;
+                }
+            }
+
+            // Fallback to same GameObject
+            var selfSmr = data.GetComponent<SkinnedMeshRenderer>();
+            if (selfSmr != null)
+            {
+                smr = selfSmr;
+                mesh = selfSmr.sharedMesh;
+                meshTransform = selfSmr.transform;
+                materials = selfSmr.sharedMaterials ?? Array.Empty<Material>();
+                return mesh != null;
+            }
+            var selfMf2 = data.GetComponent<MeshFilter>();
+            if (selfMf2 != null)
+            {
+                mesh = selfMf2.sharedMesh;
+                meshTransform = selfMf2.transform;
+                mr = selfMf2.GetComponent<MeshRenderer>();
+                materials = mr != null ? (mr.sharedMaterials ?? Array.Empty<Material>()) : Array.Empty<Material>();
+                return mesh != null;
+            }
+
+            return false;
+        }
+
+        private bool BakeBaseBlendshapesIntoMergedMesh(
+            AttachToBlendshapeData data,
+            GameObject avatarRoot,
+            SkinnedMeshRenderer baseSmr,
+            Mesh baseMesh,
+            Mesh mergedMesh,
+            ClosestSurfaceMapper.SurfaceMap[] maps,
+            int[] baseTrianglesCombined,
+            int[] attachmentTrianglesCombined,
+            Vector3[] attachmentVertsInBaseLocal,
+            int baseVertexCount,
+            int attachmentVertexStart,
+            int attachmentVertexCount)
+        {
+            if (baseSmr == null || baseMesh == null || mergedMesh == null) return false;
+            if (baseMesh.blendShapeCount == 0) return true;
+
+            // Save weights, then sample base mesh at neutral and per-frame weights
+            int bsCount = baseMesh.blendShapeCount;
+            var originalWeights = new float[bsCount];
+            for (int i = 0; i < bsCount; i++) originalWeights[i] = baseSmr.GetBlendShapeWeight(i);
+
+            var bake0 = new Mesh();
+            var bakeW = new Mesh();
+            try
+            {
+                // Neutral pose
+                for (int i = 0; i < bsCount; i++) baseSmr.SetBlendShapeWeight(i, 0f);
+                baseSmr.BakeMesh(bake0);
+                var baseVerts0 = bake0.vertices;
+                if (baseVerts0 == null || baseVerts0.Length != baseVertexCount)
+                {
+                    baseVerts0 = baseMesh.vertices;
+                }
+
+                // For each blendshape/frame on base mesh, extend with attachment deltas
+                for (int bi = 0; bi < bsCount; bi++)
+                {
+                    string bsName = baseMesh.GetBlendShapeName(bi);
+                    int frameCount = baseMesh.GetBlendShapeFrameCount(bi);
+
+                    for (int fi = 0; fi < frameCount; fi++)
+                    {
+                        float frameWeight = baseMesh.GetBlendShapeFrameWeight(bi, fi);
+
+                        // Bake base mesh at this weight (only this blendshape active)
+                        for (int i = 0; i < bsCount; i++) baseSmr.SetBlendShapeWeight(i, i == bi ? frameWeight : 0f);
+                        baseSmr.BakeMesh(bakeW);
+                        var baseVertsW = bakeW.vertices;
+                        if (baseVertsW == null || baseVertsW.Length != baseVertexCount)
+                        {
+                            // Fallback: approximate by applying stored frame deltas to baseVerts0
+                            baseVertsW = baseVerts0;
+                        }
+
+                        // Attachment deltas for this frame weight
+                        var attDeltas = ClosestSurfaceMapper.ComputeAttachmentDeltasFromBaseSurface(
+                            maps,
+                            baseVerts0,
+                            baseVertsW,
+                            baseTrianglesCombined,
+                            attachmentVertsInBaseLocal,
+                            attachmentTrianglesCombined,
+                            data.unmatchedHandling);
+
+                        // Base deltas from original mesh frame
+                        var baseDeltaVerts = new Vector3[baseVertexCount];
+                        baseMesh.GetBlendShapeFrameVertices(bi, fi, baseDeltaVerts, null, null);
+
+                        var fullDeltaVerts = new Vector3[baseVertexCount + attachmentVertexCount];
+                        Array.Copy(baseDeltaVerts, 0, fullDeltaVerts, 0, baseVertexCount);
+
+                        for (int v = 0; v < attachmentVertexCount && v < attDeltas.Length; v++)
+                        {
+                            fullDeltaVerts[attachmentVertexStart + v] = attDeltas[v];
+                        }
+
+                        mergedMesh.AddBlendShapeFrame(bsName, frameWeight, fullDeltaVerts, null, null);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AttachToBlendshapeProcessor] Error baking base blendshapes into merged mesh: {ex.Message}", data);
+                Debug.LogException(ex, data);
+                return false;
+            }
+            finally
+            {
+                // Restore original weights
+                for (int i = 0; i < bsCount; i++) baseSmr.SetBlendShapeWeight(i, originalWeights[i]);
+                UnityEngine.Object.DestroyImmediate(bake0);
+                UnityEngine.Object.DestroyImmediate(bakeW);
+            }
+        }
+
+        private void RetargetToggleStyleTransformAnimationsToBlendshapes(
+            AttachToBlendshapeData data,
+            GameObject avatarRoot,
+            SkinnedMeshRenderer baseSmr,
+            Mesh mergedMesh,
+            int attachmentVertexStart,
+            int attachmentVertexCount)
+        {
+            var descriptor = avatarRoot.GetComponent<VRCAvatarDescriptor>();
+            if (descriptor == null) return;
+
+            string baseMeshPath = AnimationUtility.CalculateTransformPath(baseSmr.transform, avatarRoot.transform);
+            string objectPath = AnimationUtility.CalculateTransformPath(data.transform, avatarRoot.transform);
+            if (string.IsNullOrEmpty(baseMeshPath) || string.IsNullOrEmpty(objectPath)) return;
+
+            // Snapshot current transform as "rest"
+            Vector3 restLocalPos = data.transform.localPosition;
+            Quaternion restLocalRot = data.transform.localRotation;
+            Vector3 restLocalScale = data.transform.localScale;
+
+            // Pivot in base local space
+            Vector3 pivotBaseLocal = baseSmr.transform.InverseTransformPoint(data.transform.position);
+
+            foreach (var clip in CollectAllAnimationClips(descriptor))
+            {
+                if (clip == null) continue;
+                var bindings = AnimationUtility.GetCurveBindings(clip);
+                if (bindings == null || bindings.Length == 0) continue;
+
+                // Collect transform bindings for this object path
+                var tBindings = new List<EditorCurveBinding>();
+                foreach (var b in bindings)
+                {
+                    if (b.path == objectPath && b.type == typeof(Transform) && IsTransformBinding(b.propertyName))
+                    {
+                        var c = AnimationUtility.GetEditorCurve(clip, b);
+                        if (c == null) continue;
+                        tBindings.Add(b);
+                        if (!IsCurveConstant(c))
+                        {
+                            // Not toggle-style -> skip (Auto mode should have avoided merge)
+                            tBindings.Clear();
+                            break;
+                        }
+                    }
+                }
+                if (tBindings.Count == 0) continue;
+
+                // Evaluate target transform at time 0
+                Vector3 targetLocalPos = restLocalPos;
+                Quaternion targetLocalRot = restLocalRot;
+                Vector3 targetLocalScale = restLocalScale;
+
+                float px = Eval(clip, objectPath, "m_LocalPosition.x", restLocalPos.x);
+                float py = Eval(clip, objectPath, "m_LocalPosition.y", restLocalPos.y);
+                float pz = Eval(clip, objectPath, "m_LocalPosition.z", restLocalPos.z);
+                targetLocalPos = new Vector3(px, py, pz);
+
+                float rx = Eval(clip, objectPath, "m_LocalRotation.x", restLocalRot.x);
+                float ry = Eval(clip, objectPath, "m_LocalRotation.y", restLocalRot.y);
+                float rz = Eval(clip, objectPath, "m_LocalRotation.z", restLocalRot.z);
+                float rw = Eval(clip, objectPath, "m_LocalRotation.w", restLocalRot.w);
+                targetLocalRot = new Quaternion(rx, ry, rz, rw);
+                // Unity's Quaternion doesn't expose sqrMagnitude; compute it manually before normalizing.
+                float qLenSqr =
+                    targetLocalRot.x * targetLocalRot.x +
+                    targetLocalRot.y * targetLocalRot.y +
+                    targetLocalRot.z * targetLocalRot.z +
+                    targetLocalRot.w * targetLocalRot.w;
+                if (qLenSqr > 1e-6f) targetLocalRot = Quaternion.Normalize(targetLocalRot);
+
+                float sx = Eval(clip, objectPath, "m_LocalScale.x", restLocalScale.x);
+                float sy = Eval(clip, objectPath, "m_LocalScale.y", restLocalScale.y);
+                float sz = Eval(clip, objectPath, "m_LocalScale.z", restLocalScale.z);
+                targetLocalScale = new Vector3(sx, sy, sz);
+
+                // Convert position/rotation deltas into base local space via world
+                Transform parent = data.transform.parent;
+                Vector3 restWorldPos = parent != null ? parent.TransformPoint(restLocalPos) : data.transform.root.TransformPoint(restLocalPos);
+                Vector3 targetWorldPos = parent != null ? parent.TransformPoint(targetLocalPos) : data.transform.root.TransformPoint(targetLocalPos);
+                Vector3 worldDeltaPos = targetWorldPos - restWorldPos;
+                Vector3 baseLocalDeltaPos = baseSmr.transform.InverseTransformVector(worldDeltaPos);
+
+                Quaternion restWorldRot = parent != null ? parent.rotation * restLocalRot : restLocalRot;
+                Quaternion targetWorldRot = parent != null ? parent.rotation * targetLocalRot : targetLocalRot;
+                Quaternion worldDeltaRot = targetWorldRot * Quaternion.Inverse(restWorldRot);
+                Quaternion baseLocalDeltaRot = Quaternion.Inverse(baseSmr.transform.rotation) * worldDeltaRot * baseSmr.transform.rotation;
+
+                Vector3 scaleRatio = new Vector3(
+                    SafeRatio(targetLocalScale.x, restLocalScale.x),
+                    SafeRatio(targetLocalScale.y, restLocalScale.y),
+                    SafeRatio(targetLocalScale.z, restLocalScale.z));
+
+                // Create a unique blendshape for this clip toggle pose
+                string toggleBsName = MakeSafeBlendshapeName($"__YUCP_Toggle_{clip.name}_{data.GetInstanceID()}");
+                if (mergedMesh.GetBlendShapeIndex(toggleBsName) >= 0)
+                {
+                    // Avoid collisions
+                    toggleBsName = MakeSafeBlendshapeName($"__YUCP_Toggle_{clip.name}_{data.GetInstanceID()}_{Guid.NewGuid().ToString("N").Substring(0, 6)}");
+                }
+
+                var verts = mergedMesh.vertices;
+                var fullDelta = new Vector3[verts.Length];
+                for (int i = 0; i < attachmentVertexCount; i++)
+                {
+                    int idx = attachmentVertexStart + i;
+                    if ((uint)idx >= (uint)verts.Length) break;
+                    var v = verts[idx];
+                    var rel = v - pivotBaseLocal;
+                    rel = Vector3.Scale(rel, scaleRatio);
+                    rel = baseLocalDeltaRot * rel;
+                    var v2 = pivotBaseLocal + rel + baseLocalDeltaPos;
+                    fullDelta[idx] = v2 - v;
+                }
+
+                mergedMesh.AddBlendShapeFrame(toggleBsName, 100f, fullDelta, null, null);
+
+                // Rewrite clip: remove transform curves for this objectPath and add blendshape curve on base mesh
+                foreach (var b in tBindings)
+                {
+                    AnimationUtility.SetEditorCurve(clip, b, null);
+                }
+
+                var bsBinding = EditorCurveBinding.FloatCurve(baseMeshPath, typeof(SkinnedMeshRenderer), $"blendShape.{toggleBsName}");
+                var bsCurve = new AnimationCurve(
+                    new Keyframe(0f, 100f),
+                    new Keyframe(1f / 60f, 100f));
+                AnimationUtility.SetEditorCurve(clip, bsBinding, bsCurve);
+                EditorUtility.SetDirty(clip);
+
+                if (data.debugMode)
+                {
+                    Debug.Log($"[AttachToBlendshapeProcessor] Retargeted toggle-style transform clip '{clip.name}' to blendshape '{toggleBsName}' on base mesh", data);
+                }
+            }
+
+            float Eval(AnimationClip clip, string path, string prop, float fallback)
+            {
+                var binding = EditorCurveBinding.FloatCurve(path, typeof(Transform), prop);
+                var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                if (curve == null) return fallback;
+                return curve.Evaluate(0f);
+            }
+        }
+
+        private static float SafeRatio(float a, float b)
+        {
+            if (Mathf.Abs(b) < 1e-6f) return 1f;
+            return a / b;
+        }
+
+        private static string MakeSafeBlendshapeName(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return "__YUCP_Toggle";
+            var chars = input.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                char c = chars[i];
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '.') continue;
+                chars[i] = '_';
+            }
+            return new string(chars);
+        }
+
         private void ProcessAttachment(AttachToBlendshapeData data, GameObject avatarRoot, Animator animator)
         {
             if (data.debugMode)
@@ -220,11 +829,31 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            // Step 5: Create transform blendshapes and link them using VRCFury's BlendShapeLink
-            CreateTransformBlendshapesAndLink(data, blendshapesToTrack, avatarRoot);
+            // Step 5: Choose output mode (Auto by default)
+            var outputModeUsed = ResolveOutputMode(data, avatarRoot);
 
-            // Step 6: Set build statistics
-            data.SetBuildStats(cluster, blendshapesToTrack, blendshapesToTrack.Count, bonePath);
+            // Step 6: Bake output
+            bool bakedOk = true;
+            if (outputModeUsed == AttachToBlendshapeOutputMode.MergeIntoBaseMesh)
+            {
+                bakedOk = MergeIntoBaseMesh(data, avatarRoot);
+                if (!bakedOk)
+                {
+                    Debug.LogWarning(
+                        $"[AttachToBlendshapeProcessor] MergeIntoBaseMesh failed for '{data.name}', falling back to LinkedRendererBake.",
+                        data);
+                    outputModeUsed = AttachToBlendshapeOutputMode.LinkedRendererBake;
+                }
+            }
+
+            if (outputModeUsed == AttachToBlendshapeOutputMode.LinkedRendererBake)
+            {
+                // Bake motion into blendshapes on the attachment mesh and link them via VRCFury BlendShapeLink
+                CreateTransformBlendshapesAndLink(data, blendshapesToTrack, avatarRoot);
+            }
+
+            // Step 7: Set build statistics
+            data.SetBuildStats(cluster, blendshapesToTrack, blendshapesToTrack.Count, bonePath, outputModeUsed);
 
             Debug.Log($"[AttachToBlendshapeProcessor] Successfully processed '{data.name}': " +
                      $"Transferred {blendshapesToTrack.Count} blendshapes, {cluster.anchors.Count} triangle cluster", data);
@@ -502,7 +1131,6 @@ namespace YUCP.Components.Editor
             EnsureSingleBoneSkinning(targetMeshRenderer, targetMeshCopy, data.transform, data);
 
             // Get base mesh path for VRCFury
-            string baseMeshPath = AnimationUtility.CalculateTransformPath(data.targetMesh.transform, avatarRoot.transform);
             string baseMeshName = data.targetMesh.transform.name;
 
             // Create blendshapes on target mesh that represent the solved rigid motion
@@ -586,25 +1214,6 @@ namespace YUCP.Components.Editor
             // Our BlendShapeLink drives weights at runtime (not via animation curves), so the optimizer would bake them away.
             // Add a zero-weight Animator layer containing a never-used clip that "animates" these weights, so the optimizer keeps them.
             EnsureBlendshapesSurviveVrcFuryOptimizer(avatarRoot, targetMeshRenderer, blendshapesToTrack, blendshapeMappings.Values, data);
-
-            // Create and inject Direct BlendTree controller via VRCFury FullController for runtime transform animation
-            // This is the ONLY runtime mechanism - transforms are handled entirely by VRCFury's FullController
-            string objectPath = AnimationUtility.CalculateTransformPath(data.transform, avatarRoot.transform);
-            
-            // Build transform samples dictionary directly from editor samples (no runtime component needed)
-            Dictionary<string, List<MeshUtils.TransformSample>> samplesDict = 
-                new Dictionary<string, List<MeshUtils.TransformSample>>();
-
-            foreach (string blendshapeName in blendshapesToTrack)
-            {
-                var editorSamples = BlendshapeTransfer.GetTransformSamples(blendshapeName);
-                if (editorSamples.Count > 0)
-                {
-                    samplesDict[blendshapeName] = editorSamples;
-                }
-            }
-
-            InjectDirectBlendTreeController(data, avatarRoot, objectPath, samplesDict);
 
             if (data.debugMode)
             {

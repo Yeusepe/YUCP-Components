@@ -19,9 +19,14 @@ namespace YUCP.Components.Editor
         private SerializedProperty enableRotationSyncProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty physicsMaterialProp;
+        private SerializedProperty gestureHandProp;
         private SerializedProperty throwGestureProp;
         private SerializedProperty resetGestureProp;
         private SerializedProperty collisionLayersProp;
+        private SerializedProperty useGlobalParametersProp;
+        private SerializedProperty parameterModeProp;
+        private SerializedProperty throwParameterNameProp;
+        private SerializedProperty resetParameterNameProp;
         private SerializedProperty enableGroupingProp;
         private SerializedProperty throwGroupIdProp;
         private SerializedProperty verboseLoggingProp;
@@ -37,9 +42,14 @@ namespace YUCP.Components.Editor
             enableRotationSyncProp = serializedObject.FindProperty("enableRotationSync");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             physicsMaterialProp = serializedObject.FindProperty("physicsMaterial");
+            gestureHandProp = serializedObject.FindProperty("gestureHand");
             throwGestureProp = serializedObject.FindProperty("throwGesture");
             resetGestureProp = serializedObject.FindProperty("resetGesture");
             collisionLayersProp = serializedObject.FindProperty("collisionLayers");
+            useGlobalParametersProp = serializedObject.FindProperty("useGlobalParameters");
+            parameterModeProp = serializedObject.FindProperty("parameterMode");
+            throwParameterNameProp = serializedObject.FindProperty("throwParameterName");
+            resetParameterNameProp = serializedObject.FindProperty("resetParameterName");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
             throwGroupIdProp = serializedObject.FindProperty("throwGroupId");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
@@ -90,17 +100,75 @@ namespace YUCP.Components.Editor
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
             
-            var throwCard = YUCPUIToolkitHelper.CreateCard("Throw Settings", "Configure physics material, gesture conditions, and collision.");
+            var throwCard = YUCPUIToolkitHelper.CreateCard("Throw Settings", "Configure physics material, trigger conditions, and collision.");
             var throwContent = YUCPUIToolkitHelper.GetCardContent(throwCard);
             throwContent.Add(YUCPUIToolkitHelper.CreateField(physicsMaterialProp, "Physics Material"));
             throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Physics material for collision. Applied to the Collision Collider.", YUCPUIToolkitHelper.MessageType.Info));
-            throwContent.Add(YUCPUIToolkitHelper.CreateField(throwGestureProp, "Throw Gesture"));
-            throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture value for throwing (default: 2 = HandOpen).", YUCPUIToolkitHelper.MessageType.Info));
-            throwContent.Add(YUCPUIToolkitHelper.CreateField(resetGestureProp, "Reset Gesture"));
-            throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture value for resetting (default: 1 = Fist).", YUCPUIToolkitHelper.MessageType.Info));
+            
+            // Global Parameters section
+            var useGlobalParamsField = YUCPUIToolkitHelper.CreateField(useGlobalParametersProp, "Use Global Parameters");
+            useGlobalParamsField.name = "use-global-params";
+            throwContent.Add(useGlobalParamsField);
+            throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Enable global parameter triggers instead of gestures.", YUCPUIToolkitHelper.MessageType.Info));
+            
+            // Global parameter fields (conditionally shown)
+            var globalParamsContainer = new VisualElement();
+            globalParamsContainer.name = "global-params-container";
+            throwContent.Add(globalParamsContainer);
+            
+            var parameterModeField = YUCPUIToolkitHelper.CreateField(parameterModeProp, "Parameter Mode");
+            parameterModeField.name = "parameter-mode";
+            globalParamsContainer.Add(parameterModeField);
+            globalParamsContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Single: One parameter (true=throw, false=reset). Dual: Separate parameters for throw and reset.", YUCPUIToolkitHelper.MessageType.Info));
+            
+            var throwParamField = YUCPUIToolkitHelper.CreateField(throwParameterNameProp, "Throw Parameter Name");
+            throwParamField.name = "throw-param-name";
+            globalParamsContainer.Add(throwParamField);
+            var throwParamHelp = new VisualElement();
+            throwParamHelp.name = "throw-param-help";
+            globalParamsContainer.Add(throwParamHelp);
+            
+            var resetParamField = YUCPUIToolkitHelper.CreateField(resetParameterNameProp, "Reset Parameter Name");
+            resetParamField.name = "reset-param-name";
+            globalParamsContainer.Add(resetParamField);
+            var resetParamHelp = new VisualElement();
+            resetParamHelp.name = "reset-param-help";
+            globalParamsContainer.Add(resetParamHelp);
+            
+            // Gesture fields (conditionally shown)
+            var gestureContainer = new VisualElement();
+            gestureContainer.name = "gesture-container";
+            throwContent.Add(gestureContainer);
+            
+            var gestureHandField = YUCPUIToolkitHelper.CreateField(gestureHandProp, "Gesture Hand");
+            gestureHandField.name = "gesture-hand";
+            gestureContainer.Add(gestureHandField);
+            gestureContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Which hand to use for gesture triggers (Left or Right).", YUCPUIToolkitHelper.MessageType.Info));
+            
+            var throwGestureField = YUCPUIToolkitHelper.CreateField(throwGestureProp, "Throw Gesture");
+            throwGestureField.name = "throw-gesture";
+            gestureContainer.Add(throwGestureField);
+            gestureContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture value for throwing (default: 2 = HandOpen).", YUCPUIToolkitHelper.MessageType.Info));
+            
+            var resetGestureField = YUCPUIToolkitHelper.CreateField(resetGestureProp, "Reset Gesture");
+            resetGestureField.name = "reset-gesture";
+            gestureContainer.Add(resetGestureField);
+            gestureContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture value for resetting (default: 1 = Fist).", YUCPUIToolkitHelper.MessageType.Info));
+            
             throwContent.Add(YUCPUIToolkitHelper.CreateField(collisionLayersProp, "Collision Layers"));
             throwContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Layers that collision detection will use.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(throwCard);
+            
+            // Set initial visibility state
+            bool initialUseGlobalParams = useGlobalParametersProp.boolValue;
+            globalParamsContainer.style.display = initialUseGlobalParams ? DisplayStyle.Flex : DisplayStyle.None;
+            gestureContainer.style.display = initialUseGlobalParams ? DisplayStyle.None : DisplayStyle.Flex;
+            if (initialUseGlobalParams)
+            {
+                bool initialIsDualMode = parameterModeProp.enumValueIndex == 1;
+                resetParamField.style.display = initialIsDualMode ? DisplayStyle.Flex : DisplayStyle.None;
+                resetParamHelp.style.display = initialIsDualMode ? DisplayStyle.Flex : DisplayStyle.None;
+            }
             
             var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
             var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
@@ -166,6 +234,33 @@ namespace YUCP.Components.Editor
                 UpdateOverviewCard(overviewCard, data, descriptor);
                 
                 groupIdField.SetEnabled(enableGroupingProp.boolValue);
+                
+                // Update global parameter visibility
+                bool useGlobalParams = useGlobalParametersProp.boolValue;
+                globalParamsContainer.style.display = useGlobalParams ? DisplayStyle.Flex : DisplayStyle.None;
+                gestureContainer.style.display = useGlobalParams ? DisplayStyle.None : DisplayStyle.Flex;
+                
+                // Update reset parameter visibility based on mode
+                if (useGlobalParams)
+                {
+                    bool isDualMode = parameterModeProp.enumValueIndex == 1; // 0 = Single, 1 = Dual
+                    resetParamField.style.display = isDualMode ? DisplayStyle.Flex : DisplayStyle.None;
+                    resetParamHelp.style.display = isDualMode ? DisplayStyle.Flex : DisplayStyle.None;
+                    
+                    // Update help text based on mode
+                    if (isDualMode)
+                    {
+                        throwParamHelp.Clear();
+                        throwParamHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Global parameter name for throw. This parameter triggers throw when set to true (1.0).", YUCPUIToolkitHelper.MessageType.Info));
+                        resetParamHelp.Clear();
+                        resetParamHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Global parameter name for reset. This parameter triggers reset when set to true (1.0).", YUCPUIToolkitHelper.MessageType.Info));
+                    }
+                    else
+                    {
+                        throwParamHelp.Clear();
+                        throwParamHelp.Add(YUCPUIToolkitHelper.CreateHelpBox("Global parameter name. When true (1.0), triggers throw. When false (0.0), triggers reset.", YUCPUIToolkitHelper.MessageType.Info));
+                    }
+                }
                 
                 UpdateGroupingHelp(groupingHelp);
                 

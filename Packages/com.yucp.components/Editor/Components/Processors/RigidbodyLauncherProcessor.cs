@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -107,6 +108,21 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
+            if (settings.useGlobalParameters)
+            {
+                if (string.IsNullOrWhiteSpace(settings.launchParameterName))
+                {
+                    Debug.LogError("[YUCP Rigidbody Launcher] Launch parameter name is required when using global parameters.", component);
+                    return false;
+                }
+
+                if (settings.parameterMode == ParameterMode.Dual && string.IsNullOrWhiteSpace(settings.resetParameterName))
+                {
+                    Debug.LogError("[YUCP Rigidbody Launcher] Reset parameter name is required when using dual parameter mode.", component);
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -144,27 +160,15 @@ namespace YUCP.Components.Editor
 
             try
             {
-                VRCFuryHelper.AddControllerToVRCFury(descriptor, sourceController);
+                // Clone and rename parameters in the controller based on settings
+                var modifiedController = RenameControllerParameters(sourceController, key);
+                
+                VRCFuryHelper.AddControllerToVRCFury(descriptor, modifiedController);
 
                 foreach (var member in members)
                 {
                     var settings = member.Settings;
                     InstallSystem(descriptor, prefab, settings);
-                }
-
-                var menuLocation = members.Count > 0 ? members[0].Settings.menuLocation : string.Empty;
-                var globalParamControl = members.Count > 0 ? members[0].Settings.globalParameterControl : string.Empty;
-                if (!string.IsNullOrEmpty(menuLocation))
-                {
-                    var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, menuLocation);
-                    if (menu != null)
-                    {
-                        if (!string.IsNullOrEmpty(globalParamControl))
-                        {
-                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamControl);
-                        }
-                        VRCFuryHelper.AddMenuToggle(menu, "Rigidbody Launcher Control", "RigidbodyLauncher/Control");
-                    }
                 }
 
                 var summaryLabel = key.IsIsolated
@@ -293,8 +297,30 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
+                // Store the world position and rotation before reparenting
+                var worldPosition = settings.targetObject.transform.position;
+                var worldRotation = settings.targetObject.transform.rotation;
+                var worldScale = settings.targetObject.transform.lossyScale;
+
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+                
+                // Reparent to container
                 settings.targetObject.transform.parent = container;
+                
+                // Reset object's local transform to identity (0,0,0 position, identity rotation, 1,1,1 scale)
+                settings.targetObject.transform.localPosition = Vector3.zero;
+                settings.targetObject.transform.localRotation = Quaternion.identity;
+                settings.targetObject.transform.localScale = Vector3.one;
+                
+                // Adjust container's transform to maintain the object's original world position
+                // Calculate what the container's world transform should be so that the object (at local 0,0,0) 
+                // appears at its original world position
+                container.position = worldPosition;
+                container.rotation = worldRotation;
+                
+                // Note: Scale is trickier with lossyScale, so we'll preserve the container's existing scale
+                // The object's local scale is now 1,1,1, so it will use the container's scale
+                
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -303,6 +329,16 @@ namespace YUCP.Components.Editor
                     .ToArray();
 
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+            }
+
+            // Add global parameters to VRCFury if enabled
+            if (settings.useGlobalParameters)
+            {
+                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, settings.launchParameterName);
+                if (settings.parameterMode == ParameterMode.Dual)
+                {
+                    VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, settings.resetParameterName);
+                }
             }
         }
 
@@ -329,7 +365,14 @@ namespace YUCP.Components.Editor
                 MenuLocation = settings.menuLocation;
                 LaunchSpeed = settings.launchSpeed;
                 MaximumForce = settings.maximumForce;
+                GestureHand = settings.gestureHand;
+                LaunchGesture = settings.launchGesture;
+                ResetGesture = settings.resetGesture;
                 CollisionLayers = settings.collisionLayers;
+                UseGlobalParameters = settings.useGlobalParameters;
+                ParameterMode = settings.parameterMode;
+                LaunchParameterName = settings.launchParameterName;
+                ResetParameterName = settings.resetParameterName;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
@@ -337,7 +380,14 @@ namespace YUCP.Components.Editor
             private string MenuLocation { get; }
             private float LaunchSpeed { get; }
             private float MaximumForce { get; }
+            private GestureHand GestureHand { get; }
+            private int LaunchGesture { get; }
+            private int ResetGesture { get; }
             private LayerMask CollisionLayers { get; }
+            private bool UseGlobalParameters { get; }
+            private ParameterMode ParameterMode { get; }
+            private string LaunchParameterName { get; }
+            private string ResetParameterName { get; }
             private bool VerboseLogging { get; }
             private bool IncludeCredits { get; }
 
@@ -346,7 +396,14 @@ namespace YUCP.Components.Editor
                 return MenuLocation == other.MenuLocation &&
                        Mathf.Approximately(LaunchSpeed, other.LaunchSpeed) &&
                        Mathf.Approximately(MaximumForce, other.MaximumForce) &&
+                       GestureHand == other.GestureHand &&
+                       LaunchGesture == other.LaunchGesture &&
+                       ResetGesture == other.ResetGesture &&
                        CollisionLayers == other.CollisionLayers &&
+                       UseGlobalParameters == other.UseGlobalParameters &&
+                       ParameterMode == other.ParameterMode &&
+                       LaunchParameterName == other.LaunchParameterName &&
+                       ResetParameterName == other.ResetParameterName &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -363,7 +420,14 @@ namespace YUCP.Components.Editor
                     var hashCode = MenuLocation != null ? MenuLocation.GetHashCode() : 0;
                     hashCode = (hashCode * 397) ^ LaunchSpeed.GetHashCode();
                     hashCode = (hashCode * 397) ^ MaximumForce.GetHashCode();
+                    hashCode = (hashCode * 397) ^ GestureHand.GetHashCode();
+                    hashCode = (hashCode * 397) ^ LaunchGesture.GetHashCode();
+                    hashCode = (hashCode * 397) ^ ResetGesture.GetHashCode();
                     hashCode = (hashCode * 397) ^ CollisionLayers.GetHashCode();
+                    hashCode = (hashCode * 397) ^ UseGlobalParameters.GetHashCode();
+                    hashCode = (hashCode * 397) ^ ParameterMode.GetHashCode();
+                    hashCode = (hashCode * 397) ^ (LaunchParameterName != null ? LaunchParameterName.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ (ResetParameterName != null ? ResetParameterName.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;
@@ -380,7 +444,14 @@ namespace YUCP.Components.Editor
                 MenuLocation = settings.menuLocation;
                 LaunchSpeed = settings.launchSpeed;
                 MaximumForce = settings.maximumForce;
+                GestureHand = settings.gestureHand;
+                LaunchGesture = settings.launchGesture;
+                ResetGesture = settings.resetGesture;
                 CollisionLayers = settings.collisionLayers;
+                UseGlobalParameters = settings.useGlobalParameters;
+                ParameterMode = settings.parameterMode;
+                LaunchParameterName = settings.launchParameterName;
+                ResetParameterName = settings.resetParameterName;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
             }
@@ -390,7 +461,14 @@ namespace YUCP.Components.Editor
             public string MenuLocation { get; }
             public float LaunchSpeed { get; }
             public float MaximumForce { get; }
+            public GestureHand GestureHand { get; }
+            public int LaunchGesture { get; }
+            public int ResetGesture { get; }
             public LayerMask CollisionLayers { get; }
+            public bool UseGlobalParameters { get; }
+            public ParameterMode ParameterMode { get; }
+            public string LaunchParameterName { get; }
+            public string ResetParameterName { get; }
             public bool VerboseLogging { get; }
             public bool IncludeCredits { get; }
 
@@ -401,7 +479,14 @@ namespace YUCP.Components.Editor
                        MenuLocation == other.MenuLocation &&
                        Mathf.Approximately(LaunchSpeed, other.LaunchSpeed) &&
                        Mathf.Approximately(MaximumForce, other.MaximumForce) &&
+                       GestureHand == other.GestureHand &&
+                       LaunchGesture == other.LaunchGesture &&
+                       ResetGesture == other.ResetGesture &&
                        CollisionLayers == other.CollisionLayers &&
+                       UseGlobalParameters == other.UseGlobalParameters &&
+                       ParameterMode == other.ParameterMode &&
+                       LaunchParameterName == other.LaunchParameterName &&
+                       ResetParameterName == other.ResetParameterName &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
             }
@@ -420,7 +505,14 @@ namespace YUCP.Components.Editor
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ LaunchSpeed.GetHashCode();
                     hashCode = (hashCode * 397) ^ MaximumForce.GetHashCode();
+                    hashCode = (hashCode * 397) ^ GestureHand.GetHashCode();
+                    hashCode = (hashCode * 397) ^ LaunchGesture.GetHashCode();
+                    hashCode = (hashCode * 397) ^ ResetGesture.GetHashCode();
                     hashCode = (hashCode * 397) ^ CollisionLayers.GetHashCode();
+                    hashCode = (hashCode * 397) ^ UseGlobalParameters.GetHashCode();
+                    hashCode = (hashCode * 397) ^ ParameterMode.GetHashCode();
+                    hashCode = (hashCode * 397) ^ (LaunchParameterName != null ? LaunchParameterName.GetHashCode() : 0);
+                    hashCode = (hashCode * 397) ^ (ResetParameterName != null ? ResetParameterName.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
                     return hashCode;
@@ -438,6 +530,167 @@ namespace YUCP.Components.Editor
             string path = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
             return $"__Isolated__/{path}";
         }
+
+        private static AnimatorController RenameControllerParameters(AnimatorController sourceController, GroupKey key)
+        {
+            // Clone the controller to avoid modifying the original
+            var controller = UnityEngine.Object.Instantiate(sourceController);
+            controller.name = sourceController.name;
+
+            // The Launcher FX controller uses "RigidbodyLauncher/Control" as a bool parameter
+            if (key.UseGlobalParameters)
+            {
+                // Global parameter mode: rename RigidbodyLauncher/Control to the user's launch parameter name
+                RenameParameterUsingVRCFury(controller, "RigidbodyLauncher/Control", key.LaunchParameterName);
+            }
+            else
+            {
+                // Gesture mode: Add gesture parameter and modify transitions to use gestures
+                var gestureParamName = key.GestureHand == GestureHand.Left ? "GestureLeft" : "GestureRight";
+                
+                // Add the gesture parameter to the controller if it doesn't exist
+                var parameters = new List<AnimatorControllerParameter>(controller.parameters);
+                if (!parameters.Exists(p => p.name == gestureParamName))
+                {
+                    parameters.Add(new AnimatorControllerParameter
+                    {
+                        name = gestureParamName,
+                        type = AnimatorControllerParameterType.Int,
+                        defaultInt = 0
+                    });
+                    controller.parameters = parameters.ToArray();
+                }
+
+                // Modify transitions: replace RigidbodyLauncher/Control with gesture-based conditions
+                foreach (var layer in controller.layers)
+                {
+                    ModifyTransitionsForGestures(layer.stateMachine, gestureParamName, key.LaunchGesture, key.ResetGesture);
+                }
+            }
+
+            return controller;
+        }
+
+        private static void RenameParameterUsingVRCFury(AnimatorController controller, string oldName, string newName)
+        {
+            Assembly vrcfuryAssembly = Assembly.Load("VRCFury-Editor");
+            if (vrcfuryAssembly == null)
+            {
+                Debug.LogError("[YUCP Rigidbody Launcher] Failed to load VRCFury-Editor assembly.");
+                return;
+            }
+
+            Type vfControllerType = vrcfuryAssembly.GetType("VF.Utils.Controller.VFController");
+            if (vfControllerType == null)
+            {
+                Debug.LogError("[YUCP Rigidbody Launcher] Failed to find VF.Utils.Controller.VFController type in VRCFury-Editor assembly.");
+                return;
+            }
+
+            object vfController = Activator.CreateInstance(vfControllerType, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, null, new object[] { controller }, null);
+            if (vfController == null)
+            {
+                Debug.LogError("[YUCP Rigidbody Launcher] Failed to create VFController instance.");
+                return;
+            }
+
+            Type vfLayerType = vrcfuryAssembly.GetType("VF.Utils.Controller.VFLayer");
+            Type iCollectionType = typeof(ICollection<>);
+            Type iCollectionVFLayerType = vfLayerType != null ? iCollectionType.MakeGenericType(vfLayerType) : null;
+
+            MethodInfo rewriteParametersMethod = vfControllerType.GetMethod("RewriteParameters",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new Type[] { typeof(Func<string, string>), typeof(bool), typeof(bool), iCollectionVFLayerType ?? typeof(ICollection<object>) },
+                null);
+
+            if (rewriteParametersMethod == null)
+            {
+                Debug.LogError("[YUCP Rigidbody Launcher] Failed to find RewriteParameters method on VFController.");
+                return;
+            }
+
+            Func<string, string> renameParam = (string paramName) =>
+            {
+                if (paramName == oldName)
+                {
+                    return newName;
+                }
+                return paramName;
+            };
+
+            rewriteParametersMethod.Invoke(vfController, new object[] { renameParam, true, true, null });
+        }
+
+        private static void ModifyTransitionsForGestures(AnimatorStateMachine stateMachine, string gestureParamName, int launchGesture, int resetGesture)
+        {
+            if (stateMachine == null) return;
+
+            foreach (var state in stateMachine.states)
+            {
+                if (state.state == null) continue;
+                foreach (AnimatorStateTransition transition in state.state.transitions)
+                {
+                    ModifyTransitionForGestures(transition, gestureParamName, launchGesture, resetGesture);
+                }
+            }
+
+            foreach (var childStateMachine in stateMachine.stateMachines)
+            {
+                if (childStateMachine.stateMachine != null)
+                {
+                    ModifyTransitionsForGestures(childStateMachine.stateMachine, gestureParamName, launchGesture, resetGesture);
+                }
+            }
+
+            foreach (var transition in stateMachine.anyStateTransitions)
+            {
+                ModifyTransitionForGestures(transition, gestureParamName, launchGesture, resetGesture);
+            }
+
+            foreach (var transition in stateMachine.entryTransitions)
+            {
+                ModifyTransitionForGestures(transition, gestureParamName, launchGesture, resetGesture);
+            }
+        }
+
+        private static void ModifyTransitionForGestures(AnimatorTransitionBase transition, string gestureParamName, int launchGesture, int resetGesture)
+        {
+            if (transition == null || transition.conditions == null) return;
+
+            var newConditions = new List<AnimatorCondition>();
+            foreach (var condition in transition.conditions)
+            {
+                var newCondition = new AnimatorCondition
+                {
+                    mode = condition.mode,
+                    threshold = condition.threshold,
+                    parameter = condition.parameter
+                };
+
+                // Replace RigidbodyLauncher/Control with gesture-based conditions
+                if (condition.parameter == "RigidbodyLauncher/Control")
+                {
+                    newCondition.parameter = gestureParamName;
+                    
+                    // The Launcher uses bool conditions: If true (mode 1) -> Fire, If false (mode 2) -> Reset
+                    // We need to convert to gesture thresholds: Equals launchGesture -> Fire, Equals resetGesture -> Reset
+                    if (condition.mode == AnimatorConditionMode.If) // true -> launch gesture
+                    {
+                        newCondition.mode = AnimatorConditionMode.Equals;
+                        newCondition.threshold = launchGesture;
+                    }
+                    else if (condition.mode == AnimatorConditionMode.IfNot) // false -> reset gesture
+                    {
+                        newCondition.mode = AnimatorConditionMode.Equals;
+                        newCondition.threshold = resetGesture;
+                    }
+                }
+
+                newConditions.Add(newCondition);
+            }
+
+            transition.conditions = newConditions.ToArray();
+        }
     }
 }
-

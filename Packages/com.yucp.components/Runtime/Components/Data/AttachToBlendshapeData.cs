@@ -5,6 +5,35 @@ using VRC.SDKBase;
 
 namespace YUCP.Components
 {
+    public enum AttachToBlendshapeOutputMode
+    {
+        Auto,
+        LinkedRendererBake,
+        MergeIntoBaseMesh
+    }
+
+    public enum AttachToBlendshapeBakeMethod
+    {
+        /// <summary>
+        /// Use rigid pivot motion solved from the surface cluster (existing approach).
+        /// Best for small rigid objects.
+        /// </summary>
+        RigidPivotTransform,
+
+        /// <summary>
+        /// Bake per-vertex deltas based on closest-surface correspondence on the base mesh.
+        /// Best for merge mode and robust deformation.
+        /// </summary>
+        ClosestSurfaceDisplacement
+    }
+
+    public enum AttachToBlendshapeUnmatchedHandling
+    {
+        Skip,
+        NeighborPropagate,
+        SmoothDiffusion
+    }
+
     public enum BlendshapeTrackingMode
     {
         All,
@@ -178,6 +207,46 @@ namespace YUCP.Components
         [Min(0.0001f)]
         public float smartDetectionThreshold = 0.001f;
 
+        [Header("Output (Advanced)")]
+        [Tooltip(
+            "How the attachment is baked at build time.\n\n" +
+            "• Auto: Choose the safest mode automatically.\n" +
+            "• Linked Renderer Bake: Bake motion into blendshapes on the attachment mesh and use VRCFury BlendShapeLink.\n" +
+            "• Merge Into Base Mesh: Merge the attachment geometry into the base skinned mesh so it follows built-in VRChat blendshapes too.\n\n" +
+            "Auto will avoid Merge if it detects complex transform/material animations on the attachment.")]
+        public AttachToBlendshapeOutputMode outputMode = AttachToBlendshapeOutputMode.Auto;
+
+        [Tooltip(
+            "How to bake motion into the mesh.\n\n" +
+            "• Rigid Pivot Transform: uses solved rigid motion (fast).\n" +
+            "• Closest Surface Displacement: uses closest-surface correspondence on the base mesh (robust, recommended for Merge).")]
+        public AttachToBlendshapeBakeMethod bakeMethod = AttachToBlendshapeBakeMethod.RigidPivotTransform;
+
+        [Tooltip(
+            "How to handle attachment vertices that fail to find a closest-surface match (Merge/ClosestSurface only).\n\n" +
+            "• Skip: leave unmatched vertices unmoved.\n" +
+            "• Neighbor Propagate: copy deltas from nearest matched neighbors.\n" +
+            "• Smooth Diffusion: smooth deltas over the attachment mesh (slowest).")]
+        public AttachToBlendshapeUnmatchedHandling unmatchedHandling = AttachToBlendshapeUnmatchedHandling.NeighborPropagate;
+
+        [Tooltip(
+            "When enabled (default), Auto mode will avoid MergeIntoBaseMesh if it detects non-toggle-style transform animations on this object.\n" +
+            "This prevents losing complex transform animation behavior when geometry is merged into the base mesh.")]
+        public bool autoAvoidMergeIfComplexTransformAnimation = true;
+
+        [Tooltip(
+            "When enabled (default), Auto mode will avoid MergeIntoBaseMesh if it detects material property animations on this object.\n" +
+            "Material bindings are difficult to retarget reliably after merging, so this falls back to Linked Renderer Bake.")]
+        public bool autoAvoidMergeIfMaterialAnimation = true;
+
+        [Tooltip(
+            "When enabled, toggle-style transform animations (constant/on-off) will be preserved in Merge mode by converting them into blendshapes on the merged mesh and rewriting clip bindings.\n" +
+            "Complex continuous transform animations are not converted (Auto will fall back to Linked Renderer Bake).")]
+        public bool preserveToggleStyleTransformAnimationsOnMerge = true;
+
+        [Tooltip("Disable the original attachment renderer when merging into the base mesh to prevent double-rendering.")]
+        public bool disableOriginalRendererOnMerge = true;
+
         [Header("Advanced Options")]
         [Tooltip("Enable debug logging during build.")]
         public bool debugMode = false;
@@ -197,6 +266,9 @@ namespace YUCP.Components
 
         [Tooltip("Selected bone path")]
         [SerializeField] private string selectedBonePath = "";
+
+        [Tooltip("Output mode that was used at build time (read-only)")]
+        [SerializeField] private AttachToBlendshapeOutputMode appliedOutputMode = AttachToBlendshapeOutputMode.Auto;
 
         // Preview data (not serialized)
         [System.NonSerialized] public SurfaceCluster previewCluster;
@@ -229,16 +301,23 @@ namespace YUCP.Components
         public List<string> TrackedBlendshapes => trackedBlendshapes;
         public int TransferredBlendshapeCount => transferredBlendshapeCount;
         public string SelectedBonePath => selectedBonePath;
+        public AttachToBlendshapeOutputMode AppliedOutputMode => appliedOutputMode;
 
         public int PreprocessOrder => 0;
         public bool OnPreprocess() => true;
 
-        public void SetBuildStats(SurfaceCluster cluster, List<string> blendshapes, int transferredCount, string bonePath)
+        public void SetBuildStats(
+            SurfaceCluster cluster,
+            List<string> blendshapes,
+            int transferredCount,
+            string bonePath,
+            AttachToBlendshapeOutputMode outputModeUsed = AttachToBlendshapeOutputMode.Auto)
         {
             detectedCluster = cluster;
             trackedBlendshapes = new List<string>(blendshapes);
             transferredBlendshapeCount = transferredCount;
             selectedBonePath = bonePath;
+            appliedOutputMode = outputModeUsed;
         }
 
         private void Reset()
@@ -256,6 +335,14 @@ namespace YUCP.Components
             rbfDriverPointCount = 6;
             rbfRadiusMultiplier = 1.5f;
             useGPUAcceleration = true;
+
+            outputMode = AttachToBlendshapeOutputMode.Auto;
+            bakeMethod = AttachToBlendshapeBakeMethod.RigidPivotTransform;
+            unmatchedHandling = AttachToBlendshapeUnmatchedHandling.NeighborPropagate;
+            autoAvoidMergeIfComplexTransformAnimation = true;
+            autoAvoidMergeIfMaterialAnimation = true;
+            preserveToggleStyleTransformAnimationsOnMerge = true;
+            disableOriginalRendererOnMerge = true;
         }
 
         private void Awake()
