@@ -202,6 +202,16 @@ namespace YUCP.Components.Editor
 
         private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, FollowerData.Settings settings)
         {
+            // Save target's world position and rotation before any changes
+            Vector3 targetWorldPosition = Vector3.zero;
+            Quaternion targetWorldRotation = Quaternion.identity;
+            
+            if (settings.targetObject != null)
+            {
+                targetWorldPosition = settings.targetObject.transform.position;
+                targetWorldRotation = settings.targetObject.transform.rotation;
+            }
+
             var rootObject = descriptor.gameObject;
             var followerSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
             followerSystem.name = followerSystem.name.Replace("(Clone)", "");
@@ -286,8 +296,19 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
+                // Position the container at the target's original world position/rotation
+                container.position = targetWorldPosition;
+                container.rotation = targetWorldRotation;
+
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+                
+                // Reparent to container
                 settings.targetObject.transform.parent = container;
+                
+                // Reset target's local transform to 0,0,0 so it appears at the container's position
+                settings.targetObject.transform.localPosition = Vector3.zero;
+                settings.targetObject.transform.localRotation = Quaternion.identity;
+                
                 var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)

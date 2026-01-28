@@ -65,7 +65,7 @@ All notable changes to YUCP Components will be documented in this file.
 - Symmetric Armature Auto-Link
 - Closest Bone Auto-Link
 - View Position & Head Auto-Link
-- Auto UDIM Discard
+- Auto UV Discard
 - UV Discard Toggle
 - Gesture Manager Input Emulator
 - Avatar Optimizer Plugin integration
