@@ -925,15 +925,15 @@ namespace VRLabs.CustomObjectSyncCreator
 				GameObject targetSyncObject = syncObjects[i];
 				Transform targetObject = new GameObject($"{targetSyncObject.name} Target").transform;
 				
-				// Get syncTarget from CustomObjectSyncData component if available
+				// Get syncParent from CustomObjectSyncData component if available
 				Transform targetParent = targetSyncObject.transform.parent;
 				var syncData = targetSyncObject.GetComponent<CustomObjectSyncData>();
 				if (syncData != null)
 				{
 					var settings = syncData.ToSettings();
-					if (settings.syncTarget != null)
+					if (settings.syncParent != null)
 					{
-						targetParent = settings.syncTarget;
+						targetParent = settings.syncParent;
 					}
 				}
 				

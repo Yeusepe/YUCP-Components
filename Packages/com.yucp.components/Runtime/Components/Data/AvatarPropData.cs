@@ -55,7 +55,7 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
+            public GameObject appliedObject;
             public GameObject customProp;
             public string menuLocation;
             public string toggleName;
@@ -97,7 +97,7 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                targetObject = gameObject,
+                appliedObject = gameObject,
                 customProp = customProp,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 toggleName = string.IsNullOrWhiteSpace(toggleName) ? "Avatar Prop" : toggleName.Trim(),

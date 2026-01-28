@@ -15,7 +15,7 @@ namespace YUCP.Components.Editor
         private string previousBuildSummary = null;
         private bool previousIncludeCredits = false;
 
-        private SerializedProperty followerTargetProp;
+        private SerializedProperty appliedTransformProp;
         private SerializedProperty lookTargetProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty globalParameterStopProp;
@@ -31,7 +31,7 @@ namespace YUCP.Components.Editor
         {
             data = (FollowerData)target;
 
-            followerTargetProp = serializedObject.FindProperty("followerTarget");
+            appliedTransformProp = serializedObject.FindProperty("appliedTransform");
             lookTargetProp = serializedObject.FindProperty("lookTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             globalParameterStopProp = serializedObject.FindProperty("globalParameterStop");
@@ -72,11 +72,11 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what follows the player and what it looks at.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what follows the player and what it looks at.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to follow the player. That object will be moved into the Follower's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(followerTargetProp, "Follower Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("FOLLOWER TARGET: The object that will follow the player. This object will be moved outside the prefab hierarchy and will smoothly follow the player's position using damping constraints inside a world constraint.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the applied object you want to follow the player. That object will be moved into the Follower's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedTransformProp, "Applied Object (Object that follows)"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object: The object that will follow the player. This object will be moved outside the prefab hierarchy and will smoothly follow the player's position using damping constraints inside a world constraint.", YUCPUIToolkitHelper.MessageType.Info));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(lookTargetProp, "Look Target"));
             targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("LOOK TARGET: The object the follower looks at (for look constraint). This determines what direction the follower faces. If not set, will use Follower Target/Look Target from prefab.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);

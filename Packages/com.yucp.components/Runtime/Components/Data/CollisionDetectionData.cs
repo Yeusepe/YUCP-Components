@@ -14,10 +14,10 @@ namespace YUCP.Components
     [SupportBanner]
     public class CollisionDetectionData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target Object")]
-        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to detect collisions on. This object will be moved into the collision detection system's Container during build. The component automatically uses the GameObject it's attached to as the target.")]
+        [Header("Applied Object")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to detect collisions on. This applied object will be moved into the collision detection system's Container during build. The component automatically uses the GameObject it's attached to.")]
         [SerializeField, HideInInspector]
-        private GameObject _targetObjectInfo;
+        private GameObject _appliedObjectInfo;
         
         [Header("Options")]
         [Tooltip("Whether IsColliding should reset immediately after stopping collision, or stay on until Reset is enabled.")]
@@ -70,7 +70,7 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
+            public GameObject appliedObject;
             public bool alwaysReset;
             public string menuLocation;
             public string globalParameterReset;
@@ -113,7 +113,7 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                targetObject = gameObject,
+                appliedObject = gameObject,
                 alwaysReset = alwaysReset,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 globalParameterReset = globalParameterReset?.Trim() ?? string.Empty,

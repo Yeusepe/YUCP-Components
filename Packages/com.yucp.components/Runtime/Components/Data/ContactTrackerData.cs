@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 #if UNITY_EDITOR
@@ -14,13 +15,14 @@ namespace YUCP.Components
     [SupportBanner]
     public class ContactTrackerData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target Objects")]
-        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to track contacts for. This object will be moved into the Contact Tracker's Container during build. The component automatically uses the GameObject it's attached to as the tracked object.")]
+        [Header("Applied Object")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to track contacts for. This applied object will be moved into the Contact Tracker's Container during build. The component automatically uses the GameObject it's attached to as the tracked object.")]
         [SerializeField, HideInInspector]
         private GameObject _trackedObjectInfo;
         
-        [Tooltip("TRACKER TARGET: The object that will be moved outside the prefab and positioned based on contact detection. This is the visual/functional object that follows the tracked contacts (e.g., a hand tracker that follows hand contacts).")]
-        public Transform trackerTarget;
+        [Tooltip("Applied object (transform): The object that will be moved outside the prefab and positioned based on contact detection. This is the visual/functional object that follows the tracked contacts (e.g., a hand tracker that follows hand contacts).")]
+        [FormerlySerializedAs("trackerTarget")]
+        public Transform appliedTransform;
 
         [Header("Options")]
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Tracker\"). Leave blank to place it at the root menu.")]
@@ -64,8 +66,8 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
-            public Transform trackerTarget;
+            public GameObject appliedObject;
+            public Transform appliedTransform;
             public string menuLocation;
             public string globalParameterControl;
             public string[] collisionTags;
@@ -118,8 +120,8 @@ namespace YUCP.Components
 
             return new Settings
             {
-                targetObject = gameObject,
-                trackerTarget = trackerTarget,
+                appliedObject = gameObject,
+                appliedTransform = appliedTransform,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 globalParameterControl = globalParameterControl?.Trim() ?? string.Empty,
                 collisionTags = tags,

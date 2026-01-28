@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 #if UNITY_EDITOR
@@ -14,13 +15,14 @@ namespace YUCP.Components
     [SupportBanner]
     public class RigidbodyLauncherData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target Objects")]
-        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to launch. This object will be moved into the Rigidbody Launcher's Container during build. The component automatically uses the GameObject it's attached to as the launched object.")]
+        [Header("Applied Object")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to launch. This applied object will be moved into the Rigidbody Launcher's Container during build. The component automatically uses the GameObject it's attached to as the launched object.")]
         [SerializeField, HideInInspector]
         private GameObject _launchedObjectInfo;
         
-        [Tooltip("LAUNCHER TARGET: The object that will be launched. This object will be moved outside the prefab hierarchy and connected to a configurable joint that launches it when triggered.")]
-        public Transform launcherTarget;
+        [Tooltip("Applied object (transform): The object that will be launched. This object will be moved outside the prefab hierarchy and connected to a configurable joint that launches it when triggered.")]
+        [FormerlySerializedAs("launcherTarget")]
+        public Transform appliedTransform;
 
         [Header("Options")]
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Launcher\"). Leave blank to place it at the root menu.")]
@@ -91,8 +93,8 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
-            public Transform launcherTarget;
+            public GameObject appliedObject;
+            public Transform appliedTransform;
             public string menuLocation;
             public string globalParameterControl;
             public float launchSpeed;
@@ -140,8 +142,8 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                targetObject = gameObject,
-                launcherTarget = launcherTarget,
+                appliedObject = gameObject,
+                appliedTransform = appliedTransform,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 globalParameterControl = globalParameterControl?.Trim() ?? string.Empty,
                 launchSpeed = launchSpeed,

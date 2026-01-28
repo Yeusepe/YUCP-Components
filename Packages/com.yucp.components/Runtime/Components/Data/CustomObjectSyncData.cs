@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 #if UNITY_EDITOR
@@ -73,8 +74,9 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the enable toggle should be created (e.g. \"Utility/Custom Sync\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Custom Sync";
 
-        [Tooltip("Optional parent transform for the generated \"Object-Name Target\" GameObject. If not specified, the target will be parented to the sync object's parent.")]
-        public Transform syncTarget;
+        [Tooltip("Optional parent transform for the generated \"Object-Name Target\" GameObject. If not specified, the generated object will be parented to the sync object's parent.")]
+        [FormerlySerializedAs("syncTarget")]
+        public Transform syncParent;
 
         [Header("Grouping")]
         [Tooltip("Enable to combine multiple components into a shared Custom Object Sync rig (reduces parameters, but objects take turns syncing). Leave off for per-object rigs.")]
@@ -110,8 +112,8 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
-            public Transform syncTarget;
+            public GameObject appliedObject;
+            public Transform syncParent;
             public bool quickSync;
             public ReferenceFrame referenceFrame;
             public int maxRadius;
@@ -163,8 +165,8 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                targetObject = gameObject,
-                syncTarget = syncTarget,
+                appliedObject = gameObject,
+                syncParent = syncParent,
                 quickSync = quickSync,
                 referenceFrame = referenceFrame,
                 maxRadius = Mathf.Clamp(maxRadius, 1, 12),
@@ -251,7 +253,7 @@ namespace YUCP.Components
                 verboseLogging = source.verboseLogging;
                 includeCredits = source.includeCredits;
                 syncGroupId = source.syncGroupId;
-                syncTarget = source.syncTarget;
+                syncParent = source.syncParent;
             }
             finally
             {

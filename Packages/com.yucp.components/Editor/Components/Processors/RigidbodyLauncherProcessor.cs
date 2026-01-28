@@ -96,13 +96,13 @@ namespace YUCP.Components.Editor
 
         private static bool ValidateTarget(VRCAvatarDescriptor descriptor, RigidbodyLauncherData component, RigidbodyLauncherData.Settings settings)
         {
-            if (settings.targetObject == null)
+            if (settings.appliedObject == null)
             {
                 Debug.LogError("[YUCP Rigidbody Launcher] Target object reference is missing.", component);
                 return false;
             }
 
-            if (!settings.targetObject.transform.IsChildOf(descriptor.transform))
+            if (!settings.appliedObject.transform.IsChildOf(descriptor.transform))
             {
                 Debug.LogError("[YUCP Rigidbody Launcher] Target object must be inside the avatar descriptor hierarchy.", component);
                 return false;
@@ -141,7 +141,7 @@ namespace YUCP.Components.Editor
 
         private static bool BuildGroup(VRCAvatarDescriptor descriptor, GameObject prefab, AnimatorController sourceController, GroupKey key, List<GroupMember> members)
         {
-            var targets = members.Select(m => m.Settings.targetObject).ToArray();
+            var targets = members.Select(m => m.Settings.appliedObject).ToArray();
             if (targets.Length == 0)
             {
                 return true;
@@ -211,13 +211,13 @@ namespace YUCP.Components.Editor
             launcherSystem.name = launcherSystem.name.Replace("(Clone)", "");
 
             var launcherTarget = launcherSystem.transform.Find("Rigidbody Launcher Target");
-            if (launcherTarget != null && settings.launcherTarget != null)
+            if (launcherTarget != null && settings.appliedTransform != null)
             {
-                var oldPath = AnimationUtility.CalculateTransformPath(settings.launcherTarget.transform, descriptor.transform);
-                launcherTarget.parent = settings.launcherTarget.parent;
-                launcherTarget.localPosition = settings.launcherTarget.localPosition;
-                launcherTarget.localRotation = settings.launcherTarget.localRotation;
-                launcherTarget.localScale = settings.launcherTarget.localScale;
+                var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedTransform.transform, descriptor.transform);
+                launcherTarget.parent = settings.appliedTransform.parent;
+                launcherTarget.localPosition = settings.appliedTransform.localPosition;
+                launcherTarget.localRotation = settings.appliedTransform.localRotation;
+                launcherTarget.localScale = settings.appliedTransform.localScale;
                 var newPath = AnimationUtility.CalculateTransformPath(launcherTarget.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -288,7 +288,7 @@ namespace YUCP.Components.Editor
                 collisionModule.collidesWith = settings.collisionLayers;
             }
 
-            if (settings.targetObject != null)
+            if (settings.appliedObject != null)
             {
                 var container = launcherSystem.transform.Find("Container");
                 if (container == null)
@@ -298,19 +298,19 @@ namespace YUCP.Components.Editor
                 }
 
                 // Store the world position and rotation before reparenting
-                var worldPosition = settings.targetObject.transform.position;
-                var worldRotation = settings.targetObject.transform.rotation;
-                var worldScale = settings.targetObject.transform.lossyScale;
+                var worldPosition = settings.appliedObject.transform.position;
+                var worldRotation = settings.appliedObject.transform.rotation;
+                var worldScale = settings.appliedObject.transform.lossyScale;
 
-                var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+                var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
                 
                 // Reparent to container
-                settings.targetObject.transform.parent = container;
+                settings.appliedObject.transform.parent = container;
                 
                 // Reset object's local transform to identity (0,0,0 position, identity rotation, 1,1,1 scale)
-                settings.targetObject.transform.localPosition = Vector3.zero;
-                settings.targetObject.transform.localRotation = Quaternion.identity;
-                settings.targetObject.transform.localScale = Vector3.one;
+                settings.appliedObject.transform.localPosition = Vector3.zero;
+                settings.appliedObject.transform.localRotation = Quaternion.identity;
+                settings.appliedObject.transform.localScale = Vector3.one;
                 
                 // Adjust container's transform to maintain the object's original world position
                 // Calculate what the container's world transform should be so that the object (at local 0,0,0) 
@@ -321,7 +321,7 @@ namespace YUCP.Components.Editor
                 // Note: Scale is trickier with lossyScale, so we'll preserve the container's existing scale
                 // The object's local scale is now 1,1,1, so it will use the container's scale
                 
-                var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+                var newPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
                     .Where(x => x.animatorController != null)
@@ -522,12 +522,12 @@ namespace YUCP.Components.Editor
 
         private static string GetIsolatedGroupId(RigidbodyLauncherData.Settings settings, VRCAvatarDescriptor descriptor)
         {
-            if (settings.targetObject == null || descriptor == null)
+            if (settings.appliedObject == null || descriptor == null)
             {
                 return $"__Isolated__/{Guid.NewGuid()}";
             }
 
-            string path = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+            string path = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
             return $"__Isolated__/{path}";
         }
 

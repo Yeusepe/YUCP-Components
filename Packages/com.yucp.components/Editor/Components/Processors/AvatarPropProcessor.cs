@@ -220,13 +220,13 @@ namespace YUCP.Components.Editor
 
         private static bool ValidateTarget(VRCAvatarDescriptor descriptor, AvatarPropData component, AvatarPropData.Settings settings)
         {
-            if (settings.targetObject == null)
+            if (settings.appliedObject == null)
             {
                 Debug.LogError("[YUCP Avatar Prop] Component target object reference is missing.", component);
                 return false;
             }
 
-            if (!settings.targetObject.transform.IsChildOf(descriptor.transform))
+            if (!settings.appliedObject.transform.IsChildOf(descriptor.transform))
             {
                 Debug.LogError("[YUCP Avatar Prop] Component must be inside the avatar descriptor hierarchy.", component);
                 return false;
@@ -309,10 +309,10 @@ namespace YUCP.Components.Editor
                 {
                     propToMove = settings.customProp.transform;
                 }
-                else if (settings.targetObject != null)
+                else if (settings.appliedObject != null)
                 {
                     // If no custom prop, use the target object itself
-                    propToMove = settings.targetObject.transform;
+                    propToMove = settings.appliedObject.transform;
                 }
 
                 if (propToMove != null)

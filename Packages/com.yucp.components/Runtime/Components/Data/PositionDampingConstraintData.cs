@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 #if UNITY_EDITOR
@@ -14,13 +15,14 @@ namespace YUCP.Components
     [SupportBanner]
     public class PositionDampingConstraintData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target Objects")]
-        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to dampen. This object will be moved into the Damping Constraint's Container during build. The component automatically uses the GameObject it's attached to as the dampened object.")]
+        [Header("Applied Object")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to dampen. This applied object will be moved into the Damping Constraint's Container during build. The component automatically uses the GameObject it's attached to as the dampened object.")]
         [SerializeField, HideInInspector]
         private GameObject _dampenedObjectInfo;
         
-        [Tooltip("DAMPENED OBJECT: The object that will have its position dampened. This is automatically set to the GameObject this component is attached to.")]
-        public Transform targetObject;
+        [Tooltip("Applied object (transform): The object that will have its position dampened. This is automatically set to the GameObject this component is attached to.")]
+        [FormerlySerializedAs("targetObject")]
+        public Transform appliedTransform;
 
         [Tooltip("POSITION TARGET: The target position the constraint dampens towards. This object will be moved outside the prefab hierarchy. The dampened object will smoothly follow this target's position based on the damping weight.")]
         public Transform positionTarget;
@@ -67,8 +69,8 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
-            public Transform targetTransform;
+            public GameObject appliedObject;
+            public Transform appliedTransform;
             public Transform positionTarget;
             public float dampingWeight;
             public Vector3 positionOffset;
@@ -109,8 +111,8 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                targetObject = gameObject,
-                targetTransform = targetObject,
+                appliedObject = gameObject,
+                appliedTransform = appliedTransform,
                 positionTarget = positionTarget,
                 dampingWeight = Mathf.Clamp(dampingWeight, 0.01f, 1f),
                 positionOffset = positionOffset,

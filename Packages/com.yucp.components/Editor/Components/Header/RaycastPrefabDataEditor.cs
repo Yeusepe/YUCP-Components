@@ -15,7 +15,7 @@ namespace YUCP.Components.Editor
         private string previousBuildSummary = null;
         private bool previousIncludeCredits = false;
 
-        private SerializedProperty castingTargetProp;
+        private SerializedProperty raycastOriginProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty grounderLayersProp;
         private SerializedProperty raycastDistanceProp;
@@ -30,7 +30,7 @@ namespace YUCP.Components.Editor
         {
             data = (RaycastPrefabData)target;
 
-            castingTargetProp = serializedObject.FindProperty("castingTarget");
+            raycastOriginProp = serializedObject.FindProperty("raycastOrigin");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             grounderLayersProp = serializedObject.FindProperty("grounderLayers");
             raycastDistanceProp = serializedObject.FindProperty("raycastDistance");
@@ -70,11 +70,11 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets raycast and the raycast direction.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what gets raycast and the raycast origin.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to position via raycast. That object will be moved into the Raycast Prefab's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(castingTargetProp, "Casting Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("CASTING TARGET: The object that determines the raycast direction. The raycast will be cast from this object's position in its forward direction. The raycast object will be positioned at the hit point using Final IK's Grounder.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the applied object you want to position via raycast. That object will be moved into the Raycast Prefab's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(raycastOriginProp, "Raycast Origin"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Raycast origin: The object that determines the raycast direction. The raycast will be cast from this object's position in its forward direction. The raycast object will be positioned at the hit point using Final IK's Grounder.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure raycast prefab behavior.");

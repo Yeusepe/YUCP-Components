@@ -95,13 +95,13 @@ namespace YUCP.Components.Editor
 
         private static bool ValidateTarget(VRCAvatarDescriptor descriptor, ContactTrackerData component, ContactTrackerData.Settings settings)
         {
-            if (settings.targetObject == null)
+            if (settings.appliedObject == null)
             {
                 Debug.LogError("[YUCP Contact Tracker] Target object reference is missing.", component);
                 return false;
             }
 
-            if (!settings.targetObject.transform.IsChildOf(descriptor.transform))
+            if (!settings.appliedObject.transform.IsChildOf(descriptor.transform))
             {
                 Debug.LogError("[YUCP Contact Tracker] Target object must be inside the avatar descriptor hierarchy.", component);
                 return false;
@@ -125,7 +125,7 @@ namespace YUCP.Components.Editor
 
         private static bool BuildGroup(VRCAvatarDescriptor descriptor, GameObject prefab, AnimatorController sourceController, GroupKey key, List<GroupMember> members)
         {
-            var targets = members.Select(m => m.Settings.targetObject).ToArray();
+            var targets = members.Select(m => m.Settings.appliedObject).ToArray();
             if (targets.Length == 0)
             {
                 return true;
@@ -226,13 +226,13 @@ namespace YUCP.Components.Editor
             }
 
             var trackerTarget = trackerSystem.transform.Find("Tracker Target");
-            if (trackerTarget != null && settings.trackerTarget != null)
+            if (trackerTarget != null && settings.appliedTransform != null)
             {
-                var oldPath = AnimationUtility.CalculateTransformPath(settings.trackerTarget.transform, descriptor.transform);
-                trackerTarget.parent = settings.trackerTarget.parent;
-                trackerTarget.localPosition = settings.trackerTarget.localPosition;
-                trackerTarget.localRotation = settings.trackerTarget.localRotation;
-                trackerTarget.localScale = settings.trackerTarget.localScale;
+                var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedTransform.transform, descriptor.transform);
+                trackerTarget.parent = settings.appliedTransform.parent;
+                trackerTarget.localPosition = settings.appliedTransform.localPosition;
+                trackerTarget.localRotation = settings.appliedTransform.localRotation;
+                trackerTarget.localScale = settings.appliedTransform.localScale;
                 var newPath = AnimationUtility.CalculateTransformPath(trackerTarget.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -243,7 +243,7 @@ namespace YUCP.Components.Editor
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
             }
 
-            if (settings.targetObject != null)
+            if (settings.appliedObject != null)
             {
                 var container = trackerSystem.transform.Find("Container");
                 if (container == null)
@@ -252,9 +252,9 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = container;
-                var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+                var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
+                settings.appliedObject.transform.parent = container;
+                var newPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
                     .Where(x => x.animatorController != null)
@@ -468,12 +468,12 @@ namespace YUCP.Components.Editor
 
         private static string GetIsolatedGroupId(ContactTrackerData.Settings settings, VRCAvatarDescriptor descriptor)
         {
-            if (settings.targetObject == null || descriptor == null)
+            if (settings.appliedObject == null || descriptor == null)
             {
                 return $"__Isolated__/{Guid.NewGuid()}";
             }
 
-            string path = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+            string path = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
             return $"__Isolated__/{path}";
         }
     }

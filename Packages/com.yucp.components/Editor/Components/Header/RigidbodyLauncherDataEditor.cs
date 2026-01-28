@@ -15,7 +15,7 @@ namespace YUCP.Components.Editor
         private string previousBuildSummary = null;
         private bool previousIncludeCredits = false;
 
-        private SerializedProperty launcherTargetProp;
+        private SerializedProperty appliedTransformProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty globalParameterControlProp;
         private SerializedProperty launchSpeedProp;
@@ -39,7 +39,7 @@ namespace YUCP.Components.Editor
         {
             data = (RigidbodyLauncherData)target;
 
-            launcherTargetProp = serializedObject.FindProperty("launcherTarget");
+            appliedTransformProp = serializedObject.FindProperty("appliedTransform");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             globalParameterControlProp = serializedObject.FindProperty("globalParameterControl");
             launchSpeedProp = serializedObject.FindProperty("launchSpeed");
@@ -88,11 +88,11 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets launched.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what gets launched.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to launch. That object will be moved into the Rigidbody Launcher's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(launcherTargetProp, "Launcher Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("LAUNCHER TARGET: The object that will be launched. This object will be moved outside the prefab hierarchy and connected to a configurable joint that launches it when triggered. Uses a configurable joint connected to a world-constrained kinematic rigidbody.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the applied object you want to launch. That object will be moved into the Rigidbody Launcher's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedTransformProp, "Applied Object (Launched object)"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object: The object that will be launched. This object will be moved outside the prefab hierarchy and connected to a configurable joint that launches it when triggered. Uses a configurable joint connected to a world-constrained kinematic rigidbody.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure rigidbody launcher behavior.");

@@ -15,7 +15,7 @@ namespace YUCP.Components.Editor
         private string previousBuildSummary = null;
         private bool previousIncludeCredits = false;
 
-        private SerializedProperty trackerTargetProp;
+        private SerializedProperty appliedTransformProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty globalParameterControlProp;
         private SerializedProperty collisionTagsProp;
@@ -31,7 +31,7 @@ namespace YUCP.Components.Editor
         {
             data = (ContactTrackerData)target;
 
-            trackerTargetProp = serializedObject.FindProperty("trackerTarget");
+            appliedTransformProp = serializedObject.FindProperty("appliedTransform");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             globalParameterControlProp = serializedObject.FindProperty("globalParameterControl");
             collisionTagsProp = serializedObject.FindProperty("collisionTags");
@@ -72,11 +72,11 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets tracked and what follows the tracking.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what gets tracked and what follows the tracking.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to track contacts for. That object will be moved into the Contact Tracker's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(trackerTargetProp, "Tracker Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("TRACKER TARGET: The object that will be moved outside the prefab and positioned based on contact detection. This is the visual/functional object that follows the tracked contacts (e.g., a hand tracker that follows hand contacts). It will be centered on tracked objects using six proximity contacts (X+, X-, Y+, Y-, Z+, Z-).", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the applied object you want to track contacts for. That object will be moved into the Contact Tracker's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedTransformProp, "Applied Object"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object: The object that will be moved outside the prefab and positioned based on contact detection. This is the visual/functional object that follows the tracked contacts (e.g., a hand tracker that follows hand contacts). It will be centered on tracked objects using six proximity contacts (X+, X-, Y+, Y-, Z+, Z-).", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure contact tracker behavior.");

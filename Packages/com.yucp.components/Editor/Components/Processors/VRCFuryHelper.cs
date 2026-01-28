@@ -126,15 +126,13 @@ namespace YUCP.Components.Editor
         }
         public static void AddControllerToVRCFury(VRCAvatarDescriptor descriptor, AnimatorController controller, VRCAvatarDescriptor.AnimLayerType layerType = VRCAvatarDescriptor.AnimLayerType.FX)
         {
-            // Always use the public API to create a new FullController.
-            // VRCFury merges multiple FullController components during build,
-            // and this avoids issues with internal type changes (e.g., GuidController wrapper).
+            
             CreateNewFullController(descriptor, controller, layerType);
         }
 
         public static void AddParamsToVRCFury(VRCAvatarDescriptor descriptor, VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters parameters)
         {
-            // Always use the public API for consistency and robustness
+            
             var fullController = FuryComponents.CreateFullController(descriptor.gameObject);
             fullController.AddParams(parameters);
             EditorUtility.SetDirty(descriptor.gameObject);

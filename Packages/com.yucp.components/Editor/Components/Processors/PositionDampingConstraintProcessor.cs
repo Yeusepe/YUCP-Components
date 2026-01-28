@@ -81,13 +81,13 @@ namespace YUCP.Components.Editor
 
         private static bool ValidateTarget(VRCAvatarDescriptor descriptor, PositionDampingConstraintData component, PositionDampingConstraintData.Settings settings)
         {
-            if (settings.targetObject == null)
+            if (settings.appliedObject == null)
             {
                 Debug.LogError("[YUCP Position Damping Constraint] Target object reference is missing.", component);
                 return false;
             }
 
-            if (!settings.targetObject.transform.IsChildOf(descriptor.transform))
+            if (!settings.appliedObject.transform.IsChildOf(descriptor.transform))
             {
                 Debug.LogError("[YUCP Position Damping Constraint] Target object must be inside the avatar descriptor hierarchy.", component);
                 return false;
@@ -111,7 +111,7 @@ namespace YUCP.Components.Editor
 
         private static bool BuildGroup(VRCAvatarDescriptor descriptor, GameObject prefab, GroupKey key, List<GroupMember> members)
         {
-            var targets = members.Select(m => m.Settings.targetObject).ToArray();
+            var targets = members.Select(m => m.Settings.appliedObject).ToArray();
             if (targets.Length == 0)
             {
                 return true;
@@ -174,10 +174,10 @@ namespace YUCP.Components.Editor
             Vector3 targetWorldPosition = Vector3.zero;
             Quaternion targetWorldRotation = Quaternion.identity;
             
-            if (settings.targetObject != null)
+            if (settings.appliedObject != null)
             {
-                targetWorldPosition = settings.targetObject.transform.position;
-                targetWorldRotation = settings.targetObject.transform.rotation;
+                targetWorldPosition = settings.appliedObject.transform.position;
+                targetWorldRotation = settings.appliedObject.transform.rotation;
             }
 
             var rootObject = descriptor.gameObject;
@@ -191,7 +191,7 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            if (settings.targetObject != null)
+            if (settings.appliedObject != null)
             {
                 container.position = targetWorldPosition;
                 container.rotation = targetWorldRotation;
@@ -209,9 +209,9 @@ namespace YUCP.Components.Editor
             {
                 targetToFollow = settings.positionTarget;
             }
-            else if (settings.targetTransform != null)
+            else if (settings.appliedTransform != null)
             {
-                targetToFollow = settings.targetTransform;
+                targetToFollow = settings.appliedTransform;
             }
 
             if (targetToFollow != null)
@@ -264,13 +264,13 @@ namespace YUCP.Components.Editor
                 constraint.Sources[1] = source;
             }
 
-            if (settings.targetObject != null)
+            if (settings.appliedObject != null)
             {
-                var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = container;
-                settings.targetObject.transform.localPosition = Vector3.zero;
-                settings.targetObject.transform.localRotation = Quaternion.identity;
-                var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+                var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
+                settings.appliedObject.transform.parent = container;
+                settings.appliedObject.transform.localPosition = Vector3.zero;
+                settings.appliedObject.transform.localRotation = Quaternion.identity;
+                var newPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
                     .Where(x => x.animatorController != null)
@@ -381,12 +381,12 @@ namespace YUCP.Components.Editor
 
         private static string GetIsolatedGroupId(PositionDampingConstraintData.Settings settings, VRCAvatarDescriptor descriptor)
         {
-            if (settings.targetObject == null || descriptor == null)
+            if (settings.appliedObject == null || descriptor == null)
             {
                 return $"__Isolated__/{Guid.NewGuid()}";
             }
 
-            string path = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+            string path = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
             return $"__Isolated__/{path}";
         }
     }

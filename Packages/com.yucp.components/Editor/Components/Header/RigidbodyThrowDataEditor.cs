@@ -15,7 +15,7 @@ namespace YUCP.Components.Editor
         private string previousBuildSummary = null;
         private bool previousIncludeCredits = false;
 
-        private SerializedProperty throwTargetProp;
+        private SerializedProperty appliedTransformProp;
         private SerializedProperty enableRotationSyncProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty physicsMaterialProp;
@@ -38,7 +38,7 @@ namespace YUCP.Components.Editor
         {
             data = (RigidbodyThrowData)target;
 
-            throwTargetProp = serializedObject.FindProperty("throwTarget");
+            appliedTransformProp = serializedObject.FindProperty("appliedTransform");
             enableRotationSyncProp = serializedObject.FindProperty("enableRotationSync");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             physicsMaterialProp = serializedObject.FindProperty("physicsMaterial");
@@ -86,11 +86,11 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets thrown.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what gets thrown.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to throw. That object will be moved into the Rigidbody Throw's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(throwTargetProp, "Throw Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("THROW TARGET: The object that will be thrown. This object will be moved outside the prefab hierarchy and will be thrown when the gesture condition is met. Uses a particle system to apply force and contacts/constraints to sync position (and optionally rotation) remotely across clients.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the applied object you want to throw. That object will be moved into the Rigidbody Throw's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedTransformProp, "Applied Object (Thrown object)"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object: The object that will be thrown. This object will be moved outside the prefab hierarchy and will be thrown when the gesture condition is met. Uses a particle system to apply force and contacts/constraints to sync position (and optionally rotation) remotely across clients.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure rigidbody throw behavior.");

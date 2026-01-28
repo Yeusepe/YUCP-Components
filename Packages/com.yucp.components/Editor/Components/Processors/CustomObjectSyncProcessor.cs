@@ -80,19 +80,19 @@ namespace YUCP.Components.Editor
 
         private static bool ValidateTarget(VRCAvatarDescriptor descriptor, CustomObjectSyncData component, CustomObjectSyncData.Settings settings)
         {
-            if (settings.targetObject == null)
+            if (settings.appliedObject == null)
             {
                 Debug.LogError("[YUCP Custom Object Sync] Target object reference is missing.", component);
                 return false;
             }
 
-            if (!settings.targetObject.transform.IsChildOf(descriptor.transform))
+            if (!settings.appliedObject.transform.IsChildOf(descriptor.transform))
             {
                 Debug.LogError("[YUCP Custom Object Sync] Target object must be inside the avatar descriptor hierarchy.", component);
                 return false;
             }
 
-            if (settings.syncTarget != null && !settings.syncTarget.IsChildOf(descriptor.transform))
+            if (settings.syncParent != null && !settings.syncParent.IsChildOf(descriptor.transform))
             {
                 Debug.LogError("[YUCP Custom Object Sync] Sync Target must be inside the avatar descriptor hierarchy.", component);
                 return false;
@@ -133,7 +133,7 @@ namespace YUCP.Components.Editor
 
         private static bool BuildGroup(VRCAvatarDescriptor descriptor, GameObject prefab, GroupKey key, List<GroupMember> members)
         {
-            var targets = members.Select(m => m.Settings.targetObject)
+            var targets = members.Select(m => m.Settings.appliedObject)
                 .Where(x => x != null)  // Filter nulls before processing
                 .ToArray();
             if (targets.Length == 0)
@@ -410,12 +410,12 @@ namespace YUCP.Components.Editor
 
         private static string GetIsolatedGroupId(CustomObjectSyncData.Settings settings, VRCAvatarDescriptor descriptor)
         {
-            if (settings.targetObject == null || descriptor == null)
+            if (settings.appliedObject == null || descriptor == null)
             {
                 return $"__Isolated__/{Guid.NewGuid()}";
             }
 
-            string path = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+            string path = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
             return $"__Isolated__/{path}";
         }
     }

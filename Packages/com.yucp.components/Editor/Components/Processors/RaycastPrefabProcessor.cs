@@ -81,13 +81,13 @@ namespace YUCP.Components.Editor
 
         private static bool ValidateTarget(VRCAvatarDescriptor descriptor, RaycastPrefabData component, RaycastPrefabData.Settings settings)
         {
-            if (settings.targetObject == null)
+            if (settings.appliedObject == null)
             {
                 Debug.LogError("[YUCP Raycast Prefab] Target object reference is missing.", component);
                 return false;
             }
 
-            if (!settings.targetObject.transform.IsChildOf(descriptor.transform))
+            if (!settings.appliedObject.transform.IsChildOf(descriptor.transform))
             {
                 Debug.LogError("[YUCP Raycast Prefab] Target object must be inside the avatar descriptor hierarchy.", component);
                 return false;
@@ -111,7 +111,7 @@ namespace YUCP.Components.Editor
 
         private static bool BuildGroup(VRCAvatarDescriptor descriptor, GameObject prefab, GroupKey key, List<GroupMember> members)
         {
-            var targets = members.Select(m => m.Settings.targetObject).ToArray();
+            var targets = members.Select(m => m.Settings.appliedObject).ToArray();
             if (targets.Length == 0)
             {
                 return true;
@@ -176,12 +176,12 @@ namespace YUCP.Components.Editor
             raycastSystem.name = raycastSystem.name.Replace("(Clone)", "");
 
             var castingTarget = raycastSystem.transform.Find("Casting Target");
-            if (castingTarget != null && settings.castingTarget != null)
+            if (castingTarget != null && settings.raycastOrigin != null)
             {
-                castingTarget.parent = settings.castingTarget.parent;
-                castingTarget.localPosition = settings.castingTarget.localPosition;
-                castingTarget.localRotation = settings.castingTarget.localRotation;
-                castingTarget.localScale = settings.castingTarget.localScale;
+                castingTarget.parent = settings.raycastOrigin.parent;
+                castingTarget.localPosition = settings.raycastOrigin.localPosition;
+                castingTarget.localRotation = settings.raycastOrigin.localRotation;
+                castingTarget.localScale = settings.raycastOrigin.localScale;
             }
 
             var grounder = raycastSystem.transform.Find("IK/Grounder");
@@ -219,7 +219,7 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            if (settings.targetObject != null)
+            if (settings.appliedObject != null)
             {
                 var container = raycastSystem.transform.Find("Container");
                 if (container == null)
@@ -228,9 +228,9 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                var oldPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
-                settings.targetObject.transform.parent = container;
-                var newPath = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+                var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
+                settings.appliedObject.transform.parent = container;
+                var newPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
                     .Where(x => x.animatorController != null)
@@ -357,12 +357,12 @@ namespace YUCP.Components.Editor
 
         private static string GetIsolatedGroupId(RaycastPrefabData.Settings settings, VRCAvatarDescriptor descriptor)
         {
-            if (settings.targetObject == null || descriptor == null)
+            if (settings.appliedObject == null || descriptor == null)
             {
                 return $"__Isolated__/{Guid.NewGuid()}";
             }
 
-            string path = AnimationUtility.CalculateTransformPath(settings.targetObject.transform, descriptor.transform);
+            string path = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
             return $"__Isolated__/{path}";
         }
     }

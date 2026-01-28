@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 #if UNITY_EDITOR
@@ -14,13 +15,14 @@ namespace YUCP.Components
     [SupportBanner]
     public class RaycastPrefabData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target Objects")]
-        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to position via raycast. This object will be moved into the Raycast Prefab's Container during build. The component automatically uses the GameObject it's attached to as the raycast object.")]
+        [Header("Applied Object")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to position via raycast. This applied object will be moved into the Raycast Prefab's Container during build. The component automatically uses the GameObject it's attached to as the raycast object.")]
         [SerializeField, HideInInspector]
         private GameObject _raycastObjectInfo;
         
-        [Tooltip("CASTING TARGET: The object that determines the raycast direction. The raycast will be cast from this object's position in its forward direction. The raycast object will be positioned at the hit point using Final IK's Grounder.")]
-        public Transform castingTarget;
+        [Tooltip("Raycast origin: The object that determines the raycast direction. The raycast will be cast from this object's position in its forward direction. The raycast object will be positioned at the hit point using Final IK's Grounder.")]
+        [FormerlySerializedAs("castingTarget")]
+        public Transform raycastOrigin;
 
         [Header("Options")]
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Raycast\"). Leave blank to place it at the root menu.")]
@@ -61,8 +63,8 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
-            public Transform castingTarget;
+            public GameObject appliedObject;
+            public Transform raycastOrigin;
             public string menuLocation;
             public LayerMask grounderLayers;
             public float raycastDistance;
@@ -101,8 +103,8 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                targetObject = gameObject,
-                castingTarget = castingTarget,
+                appliedObject = gameObject,
+                raycastOrigin = raycastOrigin,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 grounderLayers = grounderLayers,
                 raycastDistance = Mathf.Clamp(raycastDistance, 0.1f, 100f),

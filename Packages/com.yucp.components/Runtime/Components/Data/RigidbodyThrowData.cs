@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 #if UNITY_EDITOR
@@ -26,13 +27,14 @@ namespace YUCP.Components
     [SupportBanner]
     public class RigidbodyThrowData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target Objects")]
-        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to throw. This object will be moved into the Rigidbody Throw's Container during build. The component automatically uses the GameObject it's attached to as the thrown object.")]
+        [Header("Applied Object")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to throw. This applied object will be moved into the Rigidbody Throw's Container during build. The component automatically uses the GameObject it's attached to as the thrown object.")]
         [SerializeField, HideInInspector]
         private GameObject _thrownObjectInfo;
         
-        [Tooltip("THROW TARGET: The object that will be thrown. This object will be moved outside the prefab hierarchy and will be thrown when the gesture condition is met. Uses particle system and contacts to sync position (and optionally rotation) across clients.")]
-        public Transform throwTarget;
+        [Tooltip("Applied object (transform): The object that will be thrown. This object will be moved outside the prefab hierarchy and will be thrown when the gesture condition is met. Uses particle system and contacts to sync position (and optionally rotation) across clients.")]
+        [FormerlySerializedAs("throwTarget")]
+        public Transform appliedTransform;
 
         [Header("Options")]
         [Tooltip("Enable rotation sync for the thrown object (requires additional parameters).")]
@@ -99,8 +101,8 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
-            public Transform throwTarget;
+            public GameObject appliedObject;
+            public Transform appliedTransform;
             public bool enableRotationSync;
             public string menuLocation;
             public PhysicMaterial physicsMaterial;
@@ -147,8 +149,8 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                targetObject = gameObject,
-                throwTarget = throwTarget,
+                appliedObject = gameObject,
+                appliedTransform = appliedTransform,
                 enableRotationSync = enableRotationSync,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 physicsMaterial = physicsMaterial,

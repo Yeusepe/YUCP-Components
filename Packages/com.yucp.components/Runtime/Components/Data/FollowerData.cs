@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 #if UNITY_EDITOR
@@ -14,13 +15,14 @@ namespace YUCP.Components
     [SupportBanner]
     public class FollowerData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("Target Objects")]
-        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to follow the player. This object will be moved into the Follower's Container during build. The component automatically uses the GameObject it's attached to as the followed object.")]
+        [Header("Applied Object")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to follow the player. This applied object will be moved into the Follower's Container during build. The component automatically uses the GameObject it's attached to as the followed object.")]
         [SerializeField, HideInInspector]
         private GameObject _followedObjectInfo;
         
-        [Tooltip("FOLLOWER TARGET: The object that will follow the player. This object will be moved outside the prefab hierarchy and will smoothly follow the player's position using damping constraints.")]
-        public Transform followerTarget;
+        [Tooltip("Applied object (transform): The object that will follow the player. This object will be moved outside the prefab hierarchy and will smoothly follow the player's position using damping constraints.")]
+        [FormerlySerializedAs("followerTarget")]
+        public Transform appliedTransform;
 
         [Tooltip("LOOK TARGET: The object the follower looks at (for look constraint). If not set, will use Follower Target/Look Target from prefab. This determines what direction the follower faces.")]
         public Transform lookTarget;
@@ -64,8 +66,8 @@ namespace YUCP.Components
         [Serializable]
         public class Settings
         {
-            public GameObject targetObject;
-            public Transform followerTarget;
+            public GameObject appliedObject;
+            public Transform appliedTransform;
             public Transform lookTarget;
             public float followSpeed;
             public string menuLocation;
@@ -105,8 +107,8 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                targetObject = gameObject,
-                followerTarget = followerTarget,
+                appliedObject = gameObject,
+                appliedTransform = appliedTransform,
                 lookTarget = lookTarget,
                 followSpeed = Mathf.Clamp(followSpeed, 0.1f, 5f),
                 menuLocation = menuLocation?.Trim() ?? string.Empty,

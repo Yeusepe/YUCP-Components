@@ -15,7 +15,7 @@ namespace YUCP.Components.Editor
         private string previousBuildSummary = null;
         private bool previousIncludeCredits = false;
 
-        private SerializedProperty targetObjectProp;
+        private SerializedProperty appliedTransformProp;
         private SerializedProperty positionTargetProp;
         private SerializedProperty dampingWeightProp;
         private SerializedProperty enableGroupingProp;
@@ -29,7 +29,7 @@ namespace YUCP.Components.Editor
         {
             data = (PositionDampingConstraintData)target;
 
-            targetObjectProp = serializedObject.FindProperty("targetObject");
+            appliedTransformProp = serializedObject.FindProperty("appliedTransform");
             positionTargetProp = serializedObject.FindProperty("positionTarget");
             dampingWeightProp = serializedObject.FindProperty("dampingWeight");
             enableGroupingProp = serializedObject.FindProperty("enableGrouping");
@@ -68,10 +68,10 @@ namespace YUCP.Components.Editor
             overviewCard.name = "overview-card";
             root.Add(overviewCard);
             
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Objects", "Configure what gets dampened and what it dampens towards.");
+            var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what gets dampened and what it dampens towards.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the object you want to dampen. That object will be moved into the Damping Constraint's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(targetObjectProp, "Dampened Object"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the applied object you want to dampen. That object will be moved into the Damping Constraint's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedTransformProp, "Dampened Object"));
             targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("DAMPENED OBJECT: The object that will have its position dampened. This is automatically set to the GameObject this component is attached to.", YUCPUIToolkitHelper.MessageType.Info));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(positionTargetProp, "Position Target"));
             targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("POSITION TARGET: The target position the constraint dampens towards. This object will be moved outside the prefab hierarchy. The dampened object will smoothly follow this target's position based on the damping weight. If not set, will use Dampened Object's transform.", YUCPUIToolkitHelper.MessageType.Info));
