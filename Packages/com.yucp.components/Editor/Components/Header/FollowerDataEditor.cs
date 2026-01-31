@@ -15,7 +15,8 @@ namespace YUCP.Components.Editor
         private string previousBuildSummary = null;
         private bool previousIncludeCredits = false;
 
-        private SerializedProperty appliedTransformProp;
+        private SerializedProperty appliedObjectOverrideProp;
+        private SerializedProperty positionTargetProp;
         private SerializedProperty lookTargetProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty globalParameterStopProp;
@@ -31,7 +32,8 @@ namespace YUCP.Components.Editor
         {
             data = (FollowerData)target;
 
-            appliedTransformProp = serializedObject.FindProperty("appliedTransform");
+            appliedObjectOverrideProp = serializedObject.FindProperty("appliedObjectOverride");
+            positionTargetProp = serializedObject.FindProperty("positionTarget");
             lookTargetProp = serializedObject.FindProperty("lookTarget");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             globalParameterStopProp = serializedObject.FindProperty("globalParameterStop");
@@ -74,9 +76,11 @@ namespace YUCP.Components.Editor
             
             var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what follows the player and what it looks at.");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the applied object you want to follow the player. That object will be moved into the Follower's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedTransformProp, "Applied Object (Object that follows)"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object: The object that will follow the player. This object will be moved outside the prefab hierarchy and will smoothly follow the player's position using damping constraints inside a world constraint.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component applies the follower to an object. If no Applied Object override is set, it uses the GameObject this component is attached to.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedObjectOverrideProp, "Applied Object (Override)"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object: The object that will be moved into the Follower's Container. If empty, the component's GameObject is used.", YUCPUIToolkitHelper.MessageType.Info));
+            targetContent.Add(YUCPUIToolkitHelper.CreateField(positionTargetProp, "Position Target"));
+            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("POSITION TARGET: The object the follower should move toward. If not set, will use the applied object.", YUCPUIToolkitHelper.MessageType.Info));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(lookTargetProp, "Look Target"));
             targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("LOOK TARGET: The object the follower looks at (for look constraint). This determines what direction the follower faces. If not set, will use Follower Target/Look Target from prefab.", YUCPUIToolkitHelper.MessageType.Info));
             root.Add(targetCard);
@@ -170,8 +174,9 @@ namespace YUCP.Components.Editor
         private void UpdateOverviewCard(VisualElement container, FollowerData data, VRCAvatarDescriptor descriptor)
         {
             container.Clear();
-            
-            string targetPath = descriptor != null ? UnityEditor.AnimationUtility.CalculateTransformPath(data.transform, descriptor.transform) : data.gameObject.name;
+
+            var appliedTransform = data.appliedObjectOverride != null ? data.appliedObjectOverride : data.transform;
+            string targetPath = descriptor != null ? UnityEditor.AnimationUtility.CalculateTransformPath(appliedTransform, descriptor.transform) : appliedTransform.gameObject.name;
             var groupingLabel = enableGroupingProp.boolValue
                 ? FollowerData.NormalizeGroupId(followerGroupIdProp.stringValue)
                 : "Isolated (per-object)";
@@ -242,9 +247,13 @@ namespace YUCP.Components.Editor
             {
                 container.Add(YUCPUIToolkitHelper.CreateHelpBox("Attach Follower to the object you want to follow the player, not the descriptor root.", YUCPUIToolkitHelper.MessageType.Warning));
             }
-            else if (!data.transform.IsChildOf(descriptor.transform))
+            else
             {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Follower target must be within the avatar hierarchy. Please move it inside the descriptor object.", YUCPUIToolkitHelper.MessageType.Error));
+                var appliedTransform = data.appliedObjectOverride != null ? data.appliedObjectOverride : data.transform;
+                if (!appliedTransform.IsChildOf(descriptor.transform))
+                {
+                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object must be within the avatar hierarchy. Please move it inside the descriptor object.", YUCPUIToolkitHelper.MessageType.Error));
+                }
             }
         }
         
@@ -258,4 +267,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-

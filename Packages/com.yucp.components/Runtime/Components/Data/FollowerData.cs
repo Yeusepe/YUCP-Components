@@ -16,13 +16,17 @@ namespace YUCP.Components
     public class FollowerData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Applied Object")]
-        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to follow the player. This applied object will be moved into the Follower's Container during build. The component automatically uses the GameObject it's attached to as the followed object.")]
+        [Tooltip("ATTACH THIS COMPONENT to the GameObject you want to follow the player. This applied object will be moved into the Follower's Container during build. If no Applied Object override is set, the component uses the GameObject it's attached to.")]
         [SerializeField, HideInInspector]
         private GameObject _followedObjectInfo;
         
-        [Tooltip("Applied object (transform): The object that will follow the player. This object will be moved outside the prefab hierarchy and will smoothly follow the player's position using damping constraints.")]
+        [Tooltip("Applied object override (transform): The object that will be moved into the Follower's Container. If empty, the component's GameObject is used.")]
+        public Transform appliedObjectOverride;
+
+        [Tooltip("POSITION TARGET: The object the follower should move toward. If not set, will use the applied object.")]
         [FormerlySerializedAs("followerTarget")]
-        public Transform appliedTransform;
+        [FormerlySerializedAs("appliedTransform")]
+        public Transform positionTarget;
 
         [Tooltip("LOOK TARGET: The object the follower looks at (for look constraint). If not set, will use Follower Target/Look Target from prefab. This determines what direction the follower faces.")]
         public Transform lookTarget;
@@ -67,7 +71,7 @@ namespace YUCP.Components
         public class Settings
         {
             public GameObject appliedObject;
-            public Transform appliedTransform;
+            public Transform positionTarget;
             public Transform lookTarget;
             public float followSpeed;
             public string menuLocation;
@@ -107,8 +111,8 @@ namespace YUCP.Components
         {
             return new Settings
             {
-                appliedObject = gameObject,
-                appliedTransform = appliedTransform,
+                appliedObject = appliedObjectOverride != null ? appliedObjectOverride.gameObject : gameObject,
+                positionTarget = positionTarget,
                 lookTarget = lookTarget,
                 followSpeed = Mathf.Clamp(followSpeed, 0.1f, 5f),
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
@@ -187,4 +191,3 @@ namespace YUCP.Components
 #endif
     }
 }
-

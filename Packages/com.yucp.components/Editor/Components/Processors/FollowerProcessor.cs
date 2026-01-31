@@ -107,6 +107,12 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
+            if (settings.positionTarget != null && !settings.positionTarget.IsChildOf(descriptor.transform))
+            {
+                Debug.LogError("[YUCP Follower] Position target must be inside the avatar descriptor hierarchy.", component);
+                return false;
+            }
+
             return true;
         }
 
@@ -217,21 +223,38 @@ namespace YUCP.Components.Editor
             followerSystem.name = followerSystem.name.Replace("(Clone)", "");
 
             var followerTarget = followerSystem.transform.Find("Follower Target");
-            if (followerTarget != null && settings.appliedTransform != null)
+            var positionTarget = settings.positionTarget ?? settings.appliedObject?.transform;
+            if (followerTarget != null && positionTarget != null)
             {
-                var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedTransform.transform, descriptor.transform);
-                followerTarget.parent = settings.appliedTransform.parent;
-                followerTarget.localPosition = settings.appliedTransform.localPosition;
-                followerTarget.localRotation = settings.appliedTransform.localRotation;
-                followerTarget.localScale = settings.appliedTransform.localScale;
-                var newPath = AnimationUtility.CalculateTransformPath(followerTarget.transform, descriptor.transform);
+                bool targetInsideApplied = settings.appliedObject != null &&
+                    (positionTarget == settings.appliedObject.transform || positionTarget.IsChildOf(settings.appliedObject.transform));
 
-                var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
-                    .Where(x => x.animatorController != null)
-                    .SelectMany(x => x.animatorController.animationClips)
-                    .ToArray();
+                if (!targetInsideApplied)
+                {
+                    // Parent to the position target so it follows live movement.
+                    followerTarget.parent = positionTarget;
+                    followerTarget.localPosition = Vector3.zero;
+                    followerTarget.localRotation = Quaternion.identity;
+                    followerTarget.localScale = Vector3.one;
+                }
+                else
+                {
+                    // Keep hierarchy stable and remap animation paths to the follower target.
+                    followerTarget.parent = positionTarget.parent;
+                    followerTarget.localPosition = positionTarget.localPosition;
+                    followerTarget.localRotation = positionTarget.localRotation;
+                    followerTarget.localScale = positionTarget.localScale;
 
-                CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+                    var oldPath = AnimationUtility.CalculateTransformPath(positionTarget, descriptor.transform);
+                    var newPath = AnimationUtility.CalculateTransformPath(followerTarget.transform, descriptor.transform);
+
+                    var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
+                        .Where(x => x.animatorController != null)
+                        .SelectMany(x => x.animatorController.animationClips)
+                        .ToArray();
+
+                    CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+                }
             }
 
             if (settings.lookTarget != null)
@@ -438,4 +461,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-
