@@ -160,15 +160,48 @@ namespace YUCP.Components.Editor
 
             try
             {
-                // Clone and rename parameters in the controller based on settings
-                var modifiedController = RenameControllerParameters(sourceController, key);
-                
-                VRCFuryHelper.AddControllerToVRCFury(descriptor, modifiedController);
-
                 foreach (var member in members)
                 {
                     var settings = member.Settings;
-                    InstallSystem(descriptor, prefab, settings);
+                    var targetKey = AnimationCloneUtility.GetStableTargetKey(settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var rootName = AnimationCloneUtility.BuildComponentRootName("Rigidbody_Launcher", settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var controller = AnimationCloneUtility.CreateControllerAssetCloneWithRemappedRoot(sourceController, "RigidbodyLauncher", prefab.name, rootName, rootName);
+                    if (controller == null)
+                    {
+                        Debug.LogError("[YUCP Rigidbody Launcher] Failed to clone controller asset.");
+                        foreach (var failedMember in members)
+                        {
+                            failedMember.Component.SetBuildSummary("Build failed");
+                        }
+                        return false;
+                    }
+                    RenameControllerParameters(controller, key);
+                    var paramMap = AnimationCloneUtility.RewriteParameters(
+                        controller,
+                        name =>
+                        {
+                            if (AnimationCloneUtility.IsIgnoredGlobalParameter(name))
+                            {
+                                return name;
+                            }
+                            if (!string.IsNullOrEmpty(key.LaunchParameterName) && name == key.LaunchParameterName)
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(key.LaunchParameterName, targetKey);
+                            }
+                            if (!string.IsNullOrEmpty(key.ResetParameterName) && name == key.ResetParameterName)
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(key.ResetParameterName, targetKey);
+                            }
+                            if (name.StartsWith("RigidbodyLauncher", StringComparison.Ordinal))
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(name, targetKey);
+                            }
+                            return name;
+                        });
+
+                    VRCFuryHelper.AddControllerToVRCFury(descriptor, controller);
+                    RegisterGlobalParameters(descriptor, paramMap);
+                    InstallSystem(descriptor, prefab, settings, rootName, controller);
                 }
 
                 var summaryLabel = key.IsIsolated
@@ -204,11 +237,11 @@ namespace YUCP.Components.Editor
             }
         }
 
-        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, RigidbodyLauncherData.Settings settings)
+        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, RigidbodyLauncherData.Settings settings, string rootName, AnimatorController controller)
         {
             var rootObject = descriptor.gameObject;
             var launcherSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
-            launcherSystem.name = launcherSystem.name.Replace("(Clone)", "");
+            launcherSystem.name = rootName;
 
             var launcherTarget = launcherSystem.transform.Find("Rigidbody Launcher Target");
             if (launcherTarget != null && settings.appliedTransform != null)
@@ -245,34 +278,28 @@ namespace YUCP.Components.Editor
                     joint.zDrive = zDrive;
                 }
 
-                if (settings.launchSpeed != -10f)
+                if (settings.launchSpeed != -10f && controller != null)
                 {
-                    var fxLayer = descriptor.baseAnimationLayers
-                        .FirstOrDefault(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
-                    var fxController = fxLayer.animatorController as AnimatorController;
-                    if (fxController != null)
+                    var clips = controller.animationClips;
+                    foreach (var clip in clips)
                     {
-                        var clips = fxController.animationClips;
-                        foreach (var clip in clips)
+                        if (clip != null && clip.name.Contains("Launcher Fire"))
                         {
-                            if (clip != null && clip.name.Contains("Launcher Fire"))
+                            var bindings = AnimationUtility.GetCurveBindings(clip);
+                            foreach (var binding in bindings)
                             {
-                                var bindings = AnimationUtility.GetCurveBindings(clip);
-                                foreach (var binding in bindings)
+                                if (binding.propertyName.Contains("Target Velocity"))
                                 {
-                                    if (binding.propertyName.Contains("Target Velocity"))
+                                    var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                                    if (curve != null && curve.keys.Length > 0)
                                     {
-                                        var curve = AnimationUtility.GetEditorCurve(clip, binding);
-                                        if (curve != null && curve.keys.Length > 0)
+                                        for (int i = 0; i < curve.keys.Length; i++)
                                         {
-                                            for (int i = 0; i < curve.keys.Length; i++)
-                                            {
-                                                var key = curve.keys[i];
-                                                key.value = settings.launchSpeed;
-                                                curve.MoveKey(i, key);
-                                            }
-                                            AnimationUtility.SetEditorCurve(clip, binding, curve);
+                                            var key = curve.keys[i];
+                                            key.value = settings.launchSpeed;
+                                            curve.MoveKey(i, key);
                                         }
+                                        AnimationUtility.SetEditorCurve(clip, binding, curve);
                                     }
                                 }
                             }
@@ -531,12 +558,8 @@ namespace YUCP.Components.Editor
             return $"__Isolated__/{path}";
         }
 
-        private static AnimatorController RenameControllerParameters(AnimatorController sourceController, GroupKey key)
+        private static void RenameControllerParameters(AnimatorController controller, GroupKey key)
         {
-            // Clone the controller to avoid modifying the original
-            var controller = UnityEngine.Object.Instantiate(sourceController);
-            controller.name = sourceController.name;
-
             // The Launcher FX controller uses "RigidbodyLauncher/Control" as a bool parameter
             if (key.UseGlobalParameters)
             {
@@ -567,8 +590,24 @@ namespace YUCP.Components.Editor
                     ModifyTransitionsForGestures(layer.stateMachine, gestureParamName, key.LaunchGesture, key.ResetGesture);
                 }
             }
+        }
 
-            return controller;
+        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
+        {
+            if (descriptor == null || paramMap == null)
+            {
+                return;
+            }
+
+            foreach (var param in paramMap.Values.Distinct())
+            {
+                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
+                {
+                    continue;
+                }
+
+                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
+            }
         }
 
         private static void RenameParameterUsingVRCFury(AnimatorController controller, string oldName, string newName)

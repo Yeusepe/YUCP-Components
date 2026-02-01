@@ -182,7 +182,8 @@ namespace YUCP.Components.Editor
 
             var rootObject = descriptor.gameObject;
             var constraintSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
-            constraintSystem.name = constraintSystem.name.Replace("(Clone)", "");
+            var rootName = AnimationCloneUtility.BuildComponentRootName("Position_Constraint", settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+            constraintSystem.name = rootName;
 
             var container = constraintSystem.transform.Find("Container");
             if (container == null)
@@ -391,4 +392,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-

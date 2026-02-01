@@ -10,6 +10,74 @@ namespace YUCP.Components.Editor
 {
     public static class VRCFuryHelper
     {
+        public static object TryCreateVFController(AnimatorController controller)
+        {
+            if (controller == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                var vrcfuryAssembly = System.Reflection.Assembly.Load("VRCFury-Editor");
+                if (vrcfuryAssembly == null)
+                {
+                    return null;
+                }
+
+                var vfControllerType = vrcfuryAssembly.GetType("VF.Utils.Controller.VFController");
+                if (vfControllerType == null)
+                {
+                    return null;
+                }
+
+                return System.Activator.CreateInstance(
+                    vfControllerType,
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance,
+                    null,
+                    new object[] { controller },
+                    null);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static bool TryRewriteParameters(object vfController, System.Func<string, string> rename)
+        {
+            if (vfController == null || rename == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var vfControllerType = vfController.GetType();
+                var vrcfuryAssembly = vfControllerType.Assembly;
+                var vfLayerType = vrcfuryAssembly.GetType("VF.Utils.Controller.VFLayer");
+                var iCollectionType = typeof(System.Collections.Generic.ICollection<>);
+                var iCollectionVFLayerType = vfLayerType != null ? iCollectionType.MakeGenericType(vfLayerType) : typeof(System.Collections.Generic.ICollection<object>);
+
+                var rewriteParametersMethod = vfControllerType.GetMethod("RewriteParameters",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance,
+                    null,
+                    new System.Type[] { typeof(System.Func<string, string>), typeof(bool), typeof(bool), iCollectionVFLayerType },
+                    null);
+
+                if (rewriteParametersMethod == null)
+                {
+                    return false;
+                }
+
+                rewriteParametersMethod.Invoke(vfController, new object[] { rename, true, true, null });
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
         public static VRCExpressionsMenu GetMenuFromLocation(VRCAvatarDescriptor descriptor, string location)
         {
             if (descriptor == null || descriptor.expressionsMenu == null)
@@ -155,4 +223,3 @@ namespace YUCP.Components.Editor
 
     }
 }
-

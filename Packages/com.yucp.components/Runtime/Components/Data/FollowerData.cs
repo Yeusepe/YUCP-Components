@@ -35,7 +35,7 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Follower\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Follower";
 
-        [Tooltip("OPTIONAL: Global parameter name for Follower/Stop. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        [Tooltip("OPTIONAL: Base parameter name for Follower/Stop. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
         public string globalParameterStop = "";
 
         [Header("Follow Settings")]

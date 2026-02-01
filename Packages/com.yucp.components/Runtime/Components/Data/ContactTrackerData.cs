@@ -28,7 +28,7 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Tracker\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Tracker";
 
-        [Tooltip("OPTIONAL: Global parameter name for ContactTracker/Control. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        [Tooltip("OPTIONAL: Base parameter name for ContactTracker/Control. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
         public string globalParameterControl = "";
 
         [Header("Contact Settings")]
@@ -203,4 +203,3 @@ namespace YUCP.Components
 #endif
     }
 }
-

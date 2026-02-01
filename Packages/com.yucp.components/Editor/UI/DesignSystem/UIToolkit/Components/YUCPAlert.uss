@@ -15,7 +15,7 @@
     margin-bottom: var(--yucp-spacing-xs);
     flex-direction: column;
     align-items: flex-start;
-    border-left-width: var(--yucp-accent-border-width);
+    border-left-width: 0;
     border-top-width: 0;
     border-right-width: 0;
     border-bottom-width: 0;

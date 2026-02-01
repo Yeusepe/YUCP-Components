@@ -161,33 +161,49 @@ namespace YUCP.Components.Editor
 
             try
             {
-                VRCFuryHelper.AddControllerToVRCFury(descriptor, sourceController);
-
                 foreach (var member in members)
                 {
                     var settings = member.Settings;
-                    InstallSystem(descriptor, prefab, settings);
-                }
-
-                var menuLocation = members.Count > 0 ? members[0].Settings.menuLocation : string.Empty;
-                var globalParamReset = members.Count > 0 ? members[0].Settings.globalParameterReset : string.Empty;
-                var globalParamAlwaysReset = members.Count > 0 ? members[0].Settings.globalParameterAlwaysReset : string.Empty;
-                if (!string.IsNullOrEmpty(menuLocation))
-                {
-                    var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, menuLocation);
-                    if (menu != null)
+                    var targetKey = AnimationCloneUtility.GetStableTargetKey(settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var rootName = AnimationCloneUtility.BuildComponentRootName("Collision_Detection", settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var clonedController = AnimationCloneUtility.CreateControllerAssetCloneWithRemappedRoot(sourceController, "CollisionDetection", prefab.name, rootName, rootName);
+                    if (clonedController == null)
                     {
-                        if (!string.IsNullOrEmpty(globalParamReset))
+                        Debug.LogError("[YUCP Collision Detection] Failed to clone controller asset.");
+                        foreach (var failedMember in members)
                         {
-                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamReset);
+                            failedMember.Component.SetBuildSummary("Build failed");
                         }
-                        if (!string.IsNullOrEmpty(globalParamAlwaysReset))
-                        {
-                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamAlwaysReset);
-                        }
-                        VRCFuryHelper.AddMenuToggle(menu, "Collision Detection Reset", "CollisionDetection/Reset");
-                        VRCFuryHelper.AddMenuToggle(menu, "Collision Detection Always Reset", "CollisionDetection/AlwaysReset");
+                        return false;
                     }
+                    var resetBase = string.IsNullOrEmpty(settings.globalParameterReset) ? "CollisionDetection/Reset" : settings.globalParameterReset;
+                    var alwaysResetBase = string.IsNullOrEmpty(settings.globalParameterAlwaysReset) ? "CollisionDetection/AlwaysReset" : settings.globalParameterAlwaysReset;
+                    var paramMap = AnimationCloneUtility.RewriteParameters(
+                        clonedController,
+                        name =>
+                        {
+                            if (AnimationCloneUtility.IsIgnoredGlobalParameter(name))
+                            {
+                                return name;
+                            }
+                            if (name == "CollisionDetection/Reset")
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(resetBase, targetKey);
+                            }
+                            if (name == "CollisionDetection/AlwaysReset")
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(alwaysResetBase, targetKey);
+                            }
+                            if (name.StartsWith("CollisionDetection/", StringComparison.Ordinal))
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(name, targetKey);
+                            }
+                            return name;
+                        });
+
+                    VRCFuryHelper.AddControllerToVRCFury(descriptor, clonedController);
+                    RegisterGlobalParameters(descriptor, paramMap);
+                    InstallSystem(descriptor, prefab, settings, rootName, paramMap);
                 }
 
                 var summaryLabel = key.IsIsolated
@@ -223,11 +239,11 @@ namespace YUCP.Components.Editor
             }
         }
 
-        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, CollisionDetectionData.Settings settings)
+        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, CollisionDetectionData.Settings settings, string rootName, Dictionary<string, string> paramMap)
         {
             var rootObject = descriptor.gameObject;
             var collisionSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
-            collisionSystem.name = collisionSystem.name.Replace("(Clone)", "");
+            collisionSystem.name = rootName;
 
             var particleSystem = collisionSystem.GetComponent<ParticleSystem>();
             if (particleSystem != null)
@@ -296,6 +312,41 @@ namespace YUCP.Components.Editor
                     .ToArray();
 
                 RenameClipPaths(allClips, false, oldPath, newPath);
+            }
+
+            if (!string.IsNullOrEmpty(settings.menuLocation))
+            {
+                var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, settings.menuLocation);
+                if (menu != null)
+                {
+                    var resetParam = paramMap != null && paramMap.TryGetValue("CollisionDetection/Reset", out var mappedReset)
+                        ? mappedReset
+                        : "CollisionDetection/Reset";
+                    var alwaysResetParam = paramMap != null && paramMap.TryGetValue("CollisionDetection/AlwaysReset", out var mappedAlways)
+                        ? mappedAlways
+                        : "CollisionDetection/AlwaysReset";
+                    var targetName = settings.appliedObject != null ? settings.appliedObject.name : "Target";
+                    VRCFuryHelper.AddMenuToggle(menu, $"Collision Reset ({targetName})", resetParam);
+                    VRCFuryHelper.AddMenuToggle(menu, $"Collision Always Reset ({targetName})", alwaysResetParam);
+                }
+            }
+        }
+
+        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
+        {
+            if (descriptor == null || paramMap == null)
+            {
+                return;
+            }
+
+            foreach (var param in paramMap.Values.Distinct())
+            {
+                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
+                {
+                    continue;
+                }
+
+                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
             }
         }
 
@@ -446,4 +497,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-

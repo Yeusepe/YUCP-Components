@@ -68,10 +68,10 @@ namespace YUCP.Components
         [Tooltip("Parameter mode: Single uses one parameter (true=throw, false=reset), Dual uses separate parameters for throw and reset.")]
         public ParameterMode parameterMode = ParameterMode.Single;
 
-        [Tooltip("Global parameter name for throw. In Single mode, this parameter is used for both throw (true) and reset (false).")]
+        [Tooltip("Base parameter name for throw. The system will append /<Target> to make it unique per component. In Single mode, this parameter is used for both throw (true) and reset (false).")]
         public string throwParameterName = "ThrowObject";
 
-        [Tooltip("Global parameter name for reset. Only used in Dual mode.")]
+        [Tooltip("Base parameter name for reset. The system will append /<Target> to make it unique per component. Only used in Dual mode.")]
         public string resetParameterName = "ResetObject";
 
         [Header("Grouping")]
@@ -243,4 +243,3 @@ namespace YUCP.Components
 #endif
     }
 }
-

@@ -173,16 +173,50 @@ namespace YUCP.Components.Editor
 
             try
             {
-                // Clone and rename parameters in the controller based on settings
-                var modifiedController = RenameControllerParameters(sourceController, key);
-                
-                VRCFuryHelper.AddControllerToVRCFury(descriptor, modifiedController);
                 VRCFuryHelper.AddParamsToVRCFury(descriptor, sourceParameters);
 
                 foreach (var member in members)
                 {
                     var settings = member.Settings;
-                    InstallSystem(descriptor, prefab, settings);
+                    var targetKey = AnimationCloneUtility.GetStableTargetKey(settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var rootName = AnimationCloneUtility.BuildComponentRootName("Rigidbody_Throw", settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var controller = AnimationCloneUtility.CreateControllerAssetCloneWithRemappedRoot(sourceController, "RigidbodyThrow", prefab.name, rootName, rootName);
+                    if (controller == null)
+                    {
+                        Debug.LogError("[YUCP Rigidbody Throw] Failed to clone controller asset.");
+                        foreach (var failedMember in members)
+                        {
+                            failedMember.Component.SetBuildSummary("Build failed");
+                        }
+                        return false;
+                    }
+                    RenameControllerParameters(controller, key);
+                    var paramMap = AnimationCloneUtility.RewriteParameters(
+                        controller,
+                        name =>
+                        {
+                            if (AnimationCloneUtility.IsIgnoredGlobalParameter(name))
+                            {
+                                return name;
+                            }
+                            if (!string.IsNullOrEmpty(key.ThrowParameterName) && name == key.ThrowParameterName)
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(key.ThrowParameterName, targetKey);
+                            }
+                            if (!string.IsNullOrEmpty(key.ResetParameterName) && name == key.ResetParameterName)
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(key.ResetParameterName, targetKey);
+                            }
+                            if (name.StartsWith("RigidbodyThrow", StringComparison.Ordinal))
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(name, targetKey);
+                            }
+                            return name;
+                        });
+
+                    VRCFuryHelper.AddControllerToVRCFury(descriptor, controller);
+                    RegisterGlobalParameters(descriptor, paramMap);
+                    InstallSystem(descriptor, prefab, settings, rootName);
                 }
 
                 var summaryLabel = key.IsIsolated
@@ -218,11 +252,11 @@ namespace YUCP.Components.Editor
             }
         }
 
-        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, RigidbodyThrowData.Settings settings)
+        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, RigidbodyThrowData.Settings settings, string rootName)
         {
             var rootObject = descriptor.gameObject;
             var throwSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
-            throwSystem.name = throwSystem.name.Replace("(Clone)", "");
+            throwSystem.name = rootName;
 
             var throwTarget = throwSystem.transform.Find("Throw/Throw Target");
             if (throwTarget == null)
@@ -334,19 +368,15 @@ namespace YUCP.Components.Editor
             }
         }
 
-        private static AnimatorController RenameControllerParameters(AnimatorController sourceController, GroupKey key)
+        private static void RenameControllerParameters(AnimatorController controller, GroupKey key)
         {
-            // Clone the controller to avoid modifying the original
-            var controller = UnityEngine.Object.Instantiate(sourceController);
-            controller.name = sourceController.name;
-
             // Use VRCFury's RewriteParameters method via reflection
             // Assembly name is "VRCFury-Editor" from the asmdef file
             Assembly vrcfuryAssembly = Assembly.Load("VRCFury-Editor");
             if (vrcfuryAssembly == null)
             {
                 Debug.LogError("[YUCP Rigidbody Throw] Failed to load VRCFury-Editor assembly.");
-                return controller;
+                return;
             }
 
             // Get the VFController type from the assembly
@@ -354,7 +384,7 @@ namespace YUCP.Components.Editor
             if (vfControllerType == null)
             {
                 Debug.LogError("[YUCP Rigidbody Throw] Failed to find VF.Utils.Controller.VFController type in VRCFury-Editor assembly.");
-                return controller;
+                return;
             }
 
             // Create instance using constructor: VFController(AnimatorController ctrl)
@@ -362,7 +392,7 @@ namespace YUCP.Components.Editor
             if (vfController == null)
             {
                 Debug.LogError("[YUCP Rigidbody Throw] Failed to create VFController instance.");
-                return controller;
+                return;
             }
 
             // Get RewriteParameters method with signature: RewriteParameters(Func<string, string>, bool, bool, ICollection<VFLayer>)
@@ -380,7 +410,7 @@ namespace YUCP.Components.Editor
             if (rewriteParametersMethod == null)
             {
                 Debug.LogError("[YUCP Rigidbody Throw] Failed to find RewriteParameters method on VFController.");
-                return controller;
+                return;
             }
 
             // Create parameter rename function
@@ -417,8 +447,24 @@ namespace YUCP.Components.Editor
                 // For gesture mode, update thresholds if needed
                 RenameGestureThresholds(controller, key);
             }
+        }
 
-            return controller;
+        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
+        {
+            if (descriptor == null || paramMap == null)
+            {
+                return;
+            }
+
+            foreach (var param in paramMap.Values.Distinct())
+            {
+                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
+                {
+                    continue;
+                }
+
+                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
+            }
         }
 
         private static void RenameGlobalParameterTransitions(AnimatorController controller, GroupKey key)
@@ -768,4 +814,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-

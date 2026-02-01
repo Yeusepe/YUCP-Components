@@ -150,27 +150,44 @@ namespace YUCP.Components.Editor
 
             try
             {
-                VRCFuryHelper.AddControllerToVRCFury(descriptor, sourceController);
-
                 foreach (var member in members)
                 {
                     var settings = member.Settings;
-                    InstallSystem(descriptor, prefab, settings);
-                }
-
-                var menuLocation = members.Count > 0 ? members[0].Settings.menuLocation : string.Empty;
-                var globalParamStop = members.Count > 0 ? members[0].Settings.globalParameterStop : string.Empty;
-                if (!string.IsNullOrEmpty(menuLocation))
-                {
-                    var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, menuLocation);
-                    if (menu != null)
+                    var targetKey = AnimationCloneUtility.GetStableTargetKey(settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var rootName = AnimationCloneUtility.BuildComponentRootName("Follower", settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var clonedController = AnimationCloneUtility.CreateControllerAssetCloneWithRemappedRoot(sourceController, "Follower", prefab.name, rootName, rootName);
+                    if (clonedController == null)
                     {
-                        if (!string.IsNullOrEmpty(globalParamStop))
+                        Debug.LogError("[YUCP Follower] Failed to clone controller asset.");
+                        foreach (var failedMember in members)
                         {
-                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamStop);
+                            failedMember.Component.SetBuildSummary("Build failed");
                         }
-                        VRCFuryHelper.AddMenuToggle(menu, "Follower Stop", "Follower/Stop");
+                        return false;
                     }
+                    var stopBase = string.IsNullOrEmpty(settings.globalParameterStop) ? "Follower/Stop" : settings.globalParameterStop;
+                    var paramMap = AnimationCloneUtility.RewriteParameters(
+                        clonedController,
+                        name =>
+                        {
+                            if (AnimationCloneUtility.IsIgnoredGlobalParameter(name))
+                            {
+                                return name;
+                            }
+                            if (name == "Follower/Stop")
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(stopBase, targetKey);
+                            }
+                            if (name.StartsWith("Follower/", StringComparison.Ordinal))
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(name, targetKey);
+                            }
+                            return name;
+                        });
+
+                    VRCFuryHelper.AddControllerToVRCFury(descriptor, clonedController);
+                    RegisterGlobalParameters(descriptor, paramMap);
+                    InstallSystem(descriptor, prefab, settings, rootName, clonedController, paramMap);
                 }
 
                 var summaryLabel = key.IsIsolated
@@ -206,7 +223,7 @@ namespace YUCP.Components.Editor
             }
         }
 
-        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, FollowerData.Settings settings)
+        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, FollowerData.Settings settings, string rootName, AnimatorController controller, Dictionary<string, string> paramMap)
         {
             // Save target's world position and rotation before any changes
             Vector3 targetWorldPosition = Vector3.zero;
@@ -220,7 +237,7 @@ namespace YUCP.Components.Editor
 
             var rootObject = descriptor.gameObject;
             var followerSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
-            followerSystem.name = followerSystem.name.Replace("(Clone)", "");
+            followerSystem.name = rootName;
 
             var followerTarget = followerSystem.transform.Find("Follower Target");
             var positionTarget = settings.positionTarget ?? settings.appliedObject?.transform;
@@ -278,32 +295,26 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            if (settings.followSpeed != 1f)
+            if (settings.followSpeed != 1f && controller != null)
             {
-                var fxLayer = descriptor.baseAnimationLayers
-                    .FirstOrDefault(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
-                var fxController = fxLayer.animatorController as AnimatorController;
-                if (fxController != null)
+                var clips = controller.animationClips;
+                foreach (var clip in clips)
                 {
-                    var clips = fxController.animationClips;
-                    foreach (var clip in clips)
+                    if (clip != null && clip.name.Contains("Follow"))
                     {
-                        if (clip != null && clip.name.Contains("Follow"))
+                        var bindings = AnimationUtility.GetCurveBindings(clip);
+                        foreach (var binding in bindings)
                         {
-                            var bindings = AnimationUtility.GetCurveBindings(clip);
-                            foreach (var binding in bindings)
+                            var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                            if (curve != null && curve.keys.Length > 0)
                             {
-                                var curve = AnimationUtility.GetEditorCurve(clip, binding);
-                                if (curve != null && curve.keys.Length > 0)
+                                for (int i = 0; i < curve.keys.Length; i++)
                                 {
-                                    for (int i = 0; i < curve.keys.Length; i++)
-                                    {
-                                        var key = curve.keys[i];
-                                        key.value *= settings.followSpeed;
-                                        curve.MoveKey(i, key);
-                                    }
-                                    AnimationUtility.SetEditorCurve(clip, binding, curve);
+                                    var key = curve.keys[i];
+                                    key.value *= settings.followSpeed;
+                                    curve.MoveKey(i, key);
                                 }
+                                AnimationUtility.SetEditorCurve(clip, binding, curve);
                             }
                         }
                     }
@@ -340,6 +351,37 @@ namespace YUCP.Components.Editor
                     .ToArray();
 
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
+            }
+
+            if (!string.IsNullOrEmpty(settings.menuLocation))
+            {
+                var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, settings.menuLocation);
+                if (menu != null)
+                {
+                    var stopParam = paramMap != null && paramMap.TryGetValue("Follower/Stop", out var mappedStop)
+                        ? mappedStop
+                        : "Follower/Stop";
+                    var label = settings.appliedObject != null ? $"Follower Stop ({settings.appliedObject.name})" : "Follower Stop";
+                    VRCFuryHelper.AddMenuToggle(menu, label, stopParam);
+                }
+            }
+        }
+
+        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
+        {
+            if (descriptor == null || paramMap == null)
+            {
+                return;
+            }
+
+            foreach (var param in paramMap.Values.Distinct())
+            {
+                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
+                {
+                    continue;
+                }
+
+                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
             }
         }
 

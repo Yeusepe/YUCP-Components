@@ -144,27 +144,44 @@ namespace YUCP.Components.Editor
 
             try
             {
-                VRCFuryHelper.AddControllerToVRCFury(descriptor, sourceController);
-
                 foreach (var member in members)
                 {
                     var settings = member.Settings;
-                    InstallSystem(descriptor, prefab, settings);
-                }
-
-                var menuLocation = members.Count > 0 ? members[0].Settings.menuLocation : string.Empty;
-                var globalParamControl = members.Count > 0 ? members[0].Settings.globalParameterControl : string.Empty;
-                if (!string.IsNullOrEmpty(menuLocation))
-                {
-                    var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, menuLocation);
-                    if (menu != null)
+                    var targetKey = AnimationCloneUtility.GetStableTargetKey(settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var rootName = AnimationCloneUtility.BuildComponentRootName("Contact_Tracker", settings.appliedObject != null ? settings.appliedObject.transform : null, descriptor.transform);
+                    var clonedController = AnimationCloneUtility.CreateControllerAssetCloneWithRemappedRoot(sourceController, "ContactTracker", prefab.name, rootName, rootName);
+                    if (clonedController == null)
                     {
-                        if (!string.IsNullOrEmpty(globalParamControl))
+                        Debug.LogError("[YUCP Contact Tracker] Failed to clone controller asset.");
+                        foreach (var failedMember in members)
                         {
-                            VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, globalParamControl);
+                            failedMember.Component.SetBuildSummary("Build failed");
                         }
-                        VRCFuryHelper.AddMenuToggle(menu, "Contact Tracker Control", "ContactTracker/Control");
+                        return false;
                     }
+                    var controlBase = string.IsNullOrEmpty(settings.globalParameterControl) ? "ContactTracker/Control" : settings.globalParameterControl;
+                    var paramMap = AnimationCloneUtility.RewriteParameters(
+                        clonedController,
+                        name =>
+                        {
+                            if (AnimationCloneUtility.IsIgnoredGlobalParameter(name))
+                            {
+                                return name;
+                            }
+                            if (name == "ContactTracker/Control")
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(controlBase, targetKey);
+                            }
+                            if (name.StartsWith("ContactTracker", StringComparison.Ordinal))
+                            {
+                                return AnimationCloneUtility.AppendSuffixIfMissing(name, targetKey);
+                            }
+                            return name;
+                        });
+
+                    VRCFuryHelper.AddControllerToVRCFury(descriptor, clonedController);
+                    RegisterGlobalParameters(descriptor, paramMap);
+                    InstallSystem(descriptor, prefab, settings, rootName, clonedController, paramMap);
                 }
 
                 var summaryLabel = key.IsIsolated
@@ -200,11 +217,11 @@ namespace YUCP.Components.Editor
             }
         }
 
-        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, ContactTrackerData.Settings settings)
+        private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, ContactTrackerData.Settings settings, string rootName, AnimatorController controller, Dictionary<string, string> paramMap)
         {
             var rootObject = descriptor.gameObject;
             var trackerSystem = UnityEngine.Object.Instantiate(prefab, rootObject.transform);
-            trackerSystem.name = trackerSystem.name.Replace("(Clone)", "");
+            trackerSystem.name = rootName;
 
             var trackingPoints = trackerSystem.transform.Find("Tracking Points");
             if (trackingPoints != null && settings.collisionTags != null && settings.collisionTags.Length >= 6)
@@ -264,43 +281,72 @@ namespace YUCP.Components.Editor
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
             }
 
-            if (settings.sizeParameter != 0f)
+            if (settings.sizeParameter != 0f && controller != null)
             {
-                var fxLayer = descriptor.baseAnimationLayers
-                    .FirstOrDefault(x => x.type == VRCAvatarDescriptor.AnimLayerType.FX);
-                var fxController = fxLayer.animatorController as AnimatorController;
-                if (fxController != null)
+                var sizeParamName = paramMap != null && paramMap.TryGetValue("ContactTracker/Size", out var mappedSize)
+                    ? mappedSize
+                    : "ContactTracker/Size";
+                var param = controller.parameters.FirstOrDefault(p => p.name == sizeParamName);
+                if (param != null)
                 {
-                    var param = fxController.parameters.FirstOrDefault(p => p.name == "ContactTracker/Size");
-                    if (param != null)
+                    var clips = controller.animationClips;
+                    foreach (var clip in clips)
                     {
-                        var clips = fxController.animationClips;
-                        foreach (var clip in clips)
+                        if (clip != null)
                         {
-                            if (clip != null)
+                            var bindings = AnimationUtility.GetCurveBindings(clip);
+                            foreach (var binding in bindings)
                             {
-                                var bindings = AnimationUtility.GetCurveBindings(clip);
-                                foreach (var binding in bindings)
+                                if ((binding.path == rootName || binding.path.StartsWith(rootName + "/", StringComparison.Ordinal)) &&
+                                    binding.propertyName.Contains("Size"))
                                 {
-                                    if (binding.path.Contains("Contact Tracker") && binding.propertyName.Contains("Size"))
+                                    var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                                    if (curve != null && curve.keys.Length > 0)
                                     {
-                                        var curve = AnimationUtility.GetEditorCurve(clip, binding);
-                                        if (curve != null && curve.keys.Length > 0)
+                                        for (int i = 0; i < curve.keys.Length; i++)
                                         {
-                                            for (int i = 0; i < curve.keys.Length; i++)
-                                            {
-                                                var key = curve.keys[i];
-                                                key.value = settings.sizeParameter;
-                                                curve.MoveKey(i, key);
-                                            }
-                                            AnimationUtility.SetEditorCurve(clip, binding, curve);
+                                            var key = curve.keys[i];
+                                            key.value = settings.sizeParameter;
+                                            curve.MoveKey(i, key);
                                         }
+                                        AnimationUtility.SetEditorCurve(clip, binding, curve);
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+
+            if (!string.IsNullOrEmpty(settings.menuLocation))
+            {
+                var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, settings.menuLocation);
+                if (menu != null)
+                {
+                    var controlParam = paramMap != null && paramMap.TryGetValue("ContactTracker/Control", out var mappedControl)
+                        ? mappedControl
+                        : "ContactTracker/Control";
+                    var label = settings.appliedObject != null ? $"Contact Tracker Control ({settings.appliedObject.name})" : "Contact Tracker Control";
+                    VRCFuryHelper.AddMenuToggle(menu, label, controlParam);
+                }
+            }
+        }
+
+        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
+        {
+            if (descriptor == null || paramMap == null)
+            {
+                return;
+            }
+
+            foreach (var param in paramMap.Values.Distinct())
+            {
+                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
+                {
+                    continue;
+                }
+
+                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
             }
         }
 
@@ -478,4 +524,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-

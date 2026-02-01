@@ -450,11 +450,15 @@ namespace VRLabs.CustomObjectSyncCreator
 			stateMachine.stateMachines.ToList().ForEach(x => SerializeStateMachine(controller, x.stateMachine));
 		}
 		
-		public static void Add(AnimatorController controller, Object o){
-			o.hideFlags = HideFlags.HideInHierarchy;
-			AssetDatabase.RemoveObjectFromAsset(o);
-			AssetDatabase.AddObjectToAsset(o, controller);
-		}
+        public static void Add(AnimatorController controller, Object o){
+            if (o == null || controller == null)
+            {
+                return;
+            }
+            o.hideFlags = HideFlags.HideInHierarchy;
+            AssetDatabase.RemoveObjectFromAsset(o);
+            AssetDatabase.AddObjectToAsset(o, controller);
+        }
 
 		public static VRCExpressionParameters.Parameter GenerateVRCParameter(string name, VRCExpressionParameters.ValueType valueType, float defaultValue = 0.0f, bool saved = false, bool networkSynced = true)
 		{

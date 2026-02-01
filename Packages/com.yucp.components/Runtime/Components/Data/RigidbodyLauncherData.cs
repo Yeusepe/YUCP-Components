@@ -28,7 +28,7 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Launcher\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Launcher";
 
-        [Tooltip("OPTIONAL: Global parameter name for RigidbodyLauncher/Control. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        [Tooltip("OPTIONAL: Base parameter name for RigidbodyLauncher/Control. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
         public string globalParameterControl = "";
 
         [Header("Launch Settings")]
@@ -60,10 +60,10 @@ namespace YUCP.Components
         [Tooltip("Parameter mode: Single uses one parameter (true=launch, false=reset), Dual uses separate parameters for launch and reset.")]
         public ParameterMode parameterMode = ParameterMode.Single;
 
-        [Tooltip("Global parameter name for launch. In Single mode, this parameter is used for both launch (true) and reset (false).")]
+        [Tooltip("Base parameter name for launch. The system will append /<Target> to make it unique per component. In Single mode, this parameter is used for both launch (true) and reset (false).")]
         public string launchParameterName = "LaunchObject";
 
-        [Tooltip("Global parameter name for reset. Only used in Dual mode.")]
+        [Tooltip("Base parameter name for reset. The system will append /<Target> to make it unique per component. Only used in Dual mode.")]
         public string resetParameterName = "ResetObject";
 
         [Header("Grouping")]
@@ -238,4 +238,3 @@ namespace YUCP.Components
 #endif
     }
 }
-

@@ -26,10 +26,10 @@ namespace YUCP.Components
         [Tooltip("Expressions menu path where the reset toggle should be created (e.g. \"Utility/Collision\"). Leave blank to place it at the root menu.")]
         public string menuLocation = "Utility/Collision";
 
-        [Tooltip("OPTIONAL: Global parameter name for CollisionDetection/Reset. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        [Tooltip("OPTIONAL: Base parameter name for CollisionDetection/Reset. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
         public string globalParameterReset = "";
 
-        [Tooltip("OPTIONAL: Global parameter name for CollisionDetection/AlwaysReset. When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.")]
+        [Tooltip("OPTIONAL: Base parameter name for CollisionDetection/AlwaysReset. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
         public string globalParameterAlwaysReset = "";
 
         [Header("Collision Settings")]
@@ -198,4 +198,3 @@ namespace YUCP.Components
 #endif
     }
 }
-
