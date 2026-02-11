@@ -227,8 +227,10 @@ namespace YUCP.Components.Editor
 		}
 
 		/// <summary>
-		/// Builds the target menu path for a toggle: chain (top to bottom) as segments, then the toggle path.
+		/// Builds the target menu path: prefix from chain (top to bottom), then the original menu path.
 		/// Each chain item uses targetMenuPath if set, otherwise sanitized GameObject name.
+		/// The original menu path (e.g. "This is a test/toggle") is preserved verbatim—no sanitization,
+		/// so result is e.g. "movable/This is a test/toggle".
 		/// </summary>
 		public static string BuildToPathFromChain(List<MoveAllUnderData> chain, string fromPath)
 		{
@@ -244,6 +246,7 @@ namespace YUCP.Components.Editor
 			}
 			if (parts.Count == 0) return fromPath;
 			string prefix = string.Join("/", parts);
+			// Preserve full original menu path (slashes, spaces, casing) — only prefix is prepended
 			return string.IsNullOrEmpty(fromPath) ? prefix : prefix + "/" + fromPath;
 		}
 

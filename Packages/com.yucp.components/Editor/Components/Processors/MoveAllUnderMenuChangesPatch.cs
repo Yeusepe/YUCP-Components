@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using UnityEditor;
 using UnityEngine;
+using VRC.SDK3.Avatars.Components;
+using VRC.SDK3.Avatars.ScriptableObjects;
 using YUCP.Components;
 
 namespace YUCP.Components.Editor
@@ -32,7 +35,9 @@ namespace YUCP.Components.Editor
 				if (applyMethod == null) return;
 
 				var harmony = new Harmony("com.yucp.moveallunder");
-				harmony.Patch(applyMethod, prefix: new HarmonyMethod(typeof(MoveAllUnderMenuChangesPatch), nameof(Prefix)));
+				harmony.Patch(applyMethod,
+					prefix: new HarmonyMethod(typeof(MoveAllUnderMenuChangesPatch), nameof(Prefix)),
+					postfix: new HarmonyMethod(typeof(MoveAllUnderMenuChangesPatch), nameof(Postfix)));
 				_applied = true;
 				Debug.Log("[YUCP Move All Under] Patched VRCFury MenuChangesService.Apply.");
 			}
@@ -119,6 +124,102 @@ namespace YUCP.Components.Editor
 		{
 			FieldInfo field = menuChangesService.GetType().GetField("extraPreActions", BindingFlags.NonPublic | BindingFlags.Instance);
 			return field?.GetValue(menuChangesService) as System.Collections.IList;
+		}
+
+		/// <summary>
+		/// After moves are applied, remove a submenu only if it has zero controls.
+		/// Uses the same menu instance that Apply() modified (menuService.GetMenu().GetRaw()) so we never clean a stale copy.
+		/// </summary>
+		private static void Postfix(object __instance)
+		{
+			if (__instance == null) return;
+			try
+			{
+				object raw = GetRootMenuFromService(__instance);
+				if (raw is not VRCExpressionsMenu rootMenu) return;
+
+				bool anyRemoved;
+				do
+				{
+					anyRemoved = RemoveEmptySubmenusTyped(rootMenu);
+				}
+				while (anyRemoved);
+			}
+			catch (Exception ex)
+			{
+				Debug.LogException(ex);
+			}
+		}
+
+		/// <summary>
+		/// Gets the exact root menu that MenuChangesService.Apply() modifies (menuService.GetMenu().GetRaw()).
+		/// </summary>
+		private static object GetRootMenuFromService(object menuChangesService)
+		{
+			FieldInfo menuServiceField = menuChangesService.GetType().GetField("menuService", BindingFlags.NonPublic | BindingFlags.Instance);
+			if (menuServiceField == null) return null;
+			object menuService = menuServiceField.GetValue(menuChangesService);
+			if (menuService == null) return null;
+			MethodInfo getMenu = menuService.GetType().GetMethod("GetMenu", BindingFlags.Public | BindingFlags.Instance);
+			if (getMenu == null) return null;
+			object menuManager = getMenu.Invoke(menuService, null);
+			if (menuManager == null) return null;
+			MethodInfo getRaw = menuManager.GetType().GetMethod("GetRaw", BindingFlags.Public | BindingFlags.Instance);
+			return getRaw?.Invoke(menuManager, null);
+		}
+
+		/// <summary>
+		/// Total number of controls in this menu and all nested submenus. Used to ensure we only remove when truly empty.
+		/// </summary>
+		private static int CountAllControlsInMenu(VRCExpressionsMenu menu, HashSet<VRCExpressionsMenu> seen = null)
+		{
+			if (menu == null || menu.controls == null) return 0;
+			seen ??= new HashSet<VRCExpressionsMenu>();
+			if (seen.Contains(menu)) return 0;
+			seen.Add(menu);
+			int n = menu.controls.Count;
+			foreach (var c in menu.controls)
+			{
+				if (c == null) continue;
+				if (c.type == VRCExpressionsMenu.Control.ControlType.SubMenu && c.subMenu != null)
+					n += CountAllControlsInMenu(c.subMenu, seen);
+			}
+			return n;
+		}
+
+		/// <summary>
+		/// Removes a submenu control only when it is truly empty: zero controls in it and in any nested submenu.
+		/// </summary>
+		private static bool RemoveEmptySubmenusTyped(VRCExpressionsMenu menu)
+		{
+			if (menu == null || menu.controls == null) return false;
+			if (menu.controls.Count == 0) return false;
+
+			// Recurse into submenus first (post-order)
+			bool anyRemoved = false;
+			for (int i = 0; i < menu.controls.Count; i++)
+			{
+				var c = menu.controls[i];
+				if (c == null) continue;
+				if (c.type != VRCExpressionsMenu.Control.ControlType.SubMenu) continue;
+				if (c.subMenu != null && RemoveEmptySubmenusTyped(c.subMenu))
+					anyRemoved = true;
+			}
+
+			// Remove only when the entire subtree has zero controls (never remove if any item exists anywhere inside)
+			for (int i = menu.controls.Count - 1; i >= 0; i--)
+			{
+				var c = menu.controls[i];
+				if (c == null) continue;
+				if (c.type != VRCExpressionsMenu.Control.ControlType.SubMenu) continue;
+				if (c.subMenu == null) continue;
+				if (CountAllControlsInMenu(c.subMenu) != 0) continue;
+				menu.controls.RemoveAt(i);
+				anyRemoved = true;
+			}
+			if (anyRemoved)
+				EditorUtility.SetDirty(menu);
+			return anyRemoved;
 		}
 	}
 }
