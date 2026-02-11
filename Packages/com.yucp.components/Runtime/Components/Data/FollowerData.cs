@@ -150,6 +150,11 @@ namespace YUCP.Components
 
         private void PropagateGroupSettings()
         {
+            if (!enableGrouping)
+            {
+                return;
+            }
+
             var descriptor = GetComponentInParent<VRCAvatarDescriptor>();
             if (descriptor == null) return;
 
