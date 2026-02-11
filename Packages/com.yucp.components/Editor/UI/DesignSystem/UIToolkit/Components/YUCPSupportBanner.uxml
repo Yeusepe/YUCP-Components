@@ -10,7 +10,7 @@
                 <ui:Label name="support-title" class="yucp-support-title" text="Your Support Keeps This Free" />
                 <ui:Label name="support-subtitle" class="yucp-support-message" />
             </ui:VisualElement>
-            <ui:VisualElement style="flex-grow: 1;" />
+            <ui:VisualElement class="yucp-support-spacer" />
             <ui:VisualElement class="yucp-support-actions">
                 <ui:Button name="support-button" class="yucp-support-button" text="Support" />
                 <ui:VisualElement class="yucp-support-links">
