@@ -29,16 +29,13 @@ namespace YUCP.Components.Editor
         {
             Type treeViewGUIType = Type.GetType("UnityEditor.IMGUI.Controls.TreeViewGUI, UnityEditor.CoreModule");
             Type treeViewType = Type.GetType("UnityEditor.IMGUI.Controls.TreeView, UnityEditor.CoreModule");
-            // Scene Hierarchy uses this nested GUI; it overrides GetTotalSize and when useCustomRowRects is true
-            // it never calls base.GetTotalSize(), so our TreeViewGUI prefix never runs. We must patch this too.
-            Type treeViewControlGUIType = treeViewType != null
-                ? treeViewType.GetNestedType("TreeViewControlGUI", BindingFlags.NonPublic)
-                : null;
+            Type treeViewControlGUIType = treeViewType != null ? treeViewType.GetNestedType("TreeViewControlGUI", BindingFlags.NonPublic) : null;
             if (treeViewGUIType == null)
                 return;
 
             var harmony = new Harmony("com.yucp.prettyhierarchy");
 
+            // Patch TreeViewGUI (base) - GameObjectTreeViewGUI inherits these, so patches run for the hierarchy
             MethodInfo getRowRect = treeViewGUIType.GetMethod("GetRowRect", BindingFlags.Public | BindingFlags.Instance);
             MethodInfo getTotalSize = treeViewGUIType.GetMethod("GetTotalSize", BindingFlags.Public | BindingFlags.Instance);
             MethodInfo getFirstLast = treeViewGUIType.GetMethod("GetFirstAndLastRowVisible", BindingFlags.Public | BindingFlags.Instance);
@@ -50,16 +47,17 @@ namespace YUCP.Components.Editor
             if (getFirstLast != null)
                 harmony.Patch(getFirstLast, postfix: new HarmonyMethod(typeof(PrettyHierarchySceneHierarchyPatch), nameof(GetFirstAndLastRowVisiblePostfix)));
 
-            // When hierarchy has custom row heights it uses TreeViewControlGUI.GetTotalSize() which does not call base;
-            // add buffer so the scroll content height is enough and the bottom is not cut off.
+            // TreeViewControlGUI (Project Browser etc - not hierarchy)
             if (treeViewControlGUIType != null)
             {
                 MethodInfo controlGetTotalSize = treeViewControlGUIType.GetMethod("GetTotalSize", BindingFlags.Public | BindingFlags.Instance);
                 if (controlGetTotalSize != null)
                     harmony.Patch(controlGetTotalSize, postfix: new HarmonyMethod(typeof(PrettyHierarchySceneHierarchyPatch), nameof(TreeViewControlGUI_GetTotalSizePostfix)));
+                MethodInfo controlGetFirstLast = treeViewControlGUIType.GetMethod("GetFirstAndLastRowVisible", BindingFlags.Public | BindingFlags.Instance);
+                if (controlGetFirstLast != null)
+                    harmony.Patch(controlGetFirstLast, postfix: new HarmonyMethod(typeof(PrettyHierarchySceneHierarchyPatch), nameof(GetFirstAndLastRowVisiblePostfix)));
             }
 
-            // So Unity's own layout (scroll content height, row rects) uses our custom row heights
             if (treeViewType != null)
             {
                 MethodInfo getCustomRowHeight = treeViewType.GetMethod("GetCustomRowHeight", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -67,46 +65,24 @@ namespace YUCP.Components.Editor
                     harmony.Patch(getCustomRowHeight, postfix: new HarmonyMethod(typeof(PrettyHierarchySceneHierarchyPatch), nameof(GetCustomRowHeightPostfix)));
             }
 
-            // When using custom row heights, the tree view rect can extend past the window's drawable area,
-            // so the bottom of the content and the scrollbar get clipped. Shrink the rect slightly so both fit.
             Type controllerType = Type.GetType("UnityEditor.IMGUI.Controls.TreeViewController, UnityEditor.CoreModule");
             if (controllerType != null)
             {
                 MethodInfo onGUI = controllerType.GetMethod("OnGUI", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(Rect), typeof(int) }, null);
-                if (onGUI != null)
+                FieldInfo totalRectField = controllerType.GetField("m_TotalRect", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (onGUI != null && totalRectField != null)
                     harmony.Patch(onGUI, prefix: new HarmonyMethod(typeof(PrettyHierarchySceneHierarchyPatch), nameof(TreeViewController_OnGUIPrefix)));
             }
         }
 
-        /// <summary>Bottom margin so the tree view (content + scrollbar) stays inside the window and isn't clipped.</summary>
-        private const float TreeViewBottomMargin = 4f;
-
-        /// <summary>Shrink the tree view rect when we have custom row heights so the scrollbar and content aren't cut off.</summary>
-        private static void TreeViewController_OnGUIPrefix(object __instance, ref Rect rect)
+        /// <summary>Unity only updates m_TotalRect on Repaint, so viewport is stale on Layout etc. Set it every frame so the list area matches the window size.</summary>
+        private static void TreeViewController_OnGUIPrefix(object __instance, Rect rect)
         {
-            if (__instance == null || rect.height <= TreeViewBottomMargin) return;
+            if (__instance == null) return;
             try
             {
-                PropertyInfo guiProp = __instance.GetType().GetProperty("gui", BindingFlags.Public | BindingFlags.Instance);
-                PropertyInfo dataProp = __instance.GetType().GetProperty("data", BindingFlags.Public | BindingFlags.Instance);
-                if (guiProp == null || dataProp == null) return;
-
-                object gui = guiProp.GetValue(__instance);
-                object data = dataProp.GetValue(__instance);
-                if (gui == null || data == null) return;
-
-                MethodInfo getTotalSize = gui.GetType().GetMethod("GetTotalSize", BindingFlags.Public | BindingFlags.Instance);
-                MethodInfo getRows = data.GetType().GetMethod("GetRows", BindingFlags.Public | BindingFlags.Instance);
-                if (getTotalSize == null || getRows == null) return;
-
-                Vector2 totalSize = (Vector2)getTotalSize.Invoke(gui, null);
-                System.Collections.IList rows = getRows.Invoke(data, null) as System.Collections.IList;
-                if (rows == null) return;
-
-                float defaultTotal = rows.Count * DefaultRowHeight;
-                bool hasCustomHeights = Math.Abs(totalSize.y - defaultTotal) > 0.01f;
-                if (hasCustomHeights)
-                    rect.height = Mathf.Max(1f, rect.height - TreeViewBottomMargin);
+                FieldInfo totalRectField = __instance.GetType().GetField("m_TotalRect", BindingFlags.NonPublic | BindingFlags.Instance);
+                totalRectField?.SetValue(__instance, rect);
             }
             catch { }
         }
@@ -208,17 +184,26 @@ namespace YUCP.Components.Editor
             }
         }
 
-        /// <summary>TreeViewControlGUI.GetTotalSize postfix: add minimal padding so the last row isn't clipped by scroll (no large buffer = no grey bar).</summary>
+        /// <summary>Extra height added to reported content so the scroll view never clips the last row.</summary>
+        private const float ContentHeightPadding = 2f;
+
+        /// <summary>TreeViewControlGUI.GetTotalSize postfix: always ensure content height is at least our computed total (+ padding) so the scroll container never cuts the bottom.</summary>
         private static void TreeViewControlGUI_GetTotalSizePostfix(object __instance, ref Vector2 __result)
         {
             if (__instance == null) return;
             try
             {
-                FieldInfo rowRectsField = __instance.GetType().GetField("m_RowRects", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (rowRectsField == null) return;
-                if (!(rowRectsField.GetValue(__instance) is System.Collections.IList list) || list.Count == 0) return;
-                // 1px padding only – avoids single-pixel clip without showing a visible grey bar
-                __result.y += 1f;
+                // Always compute our own total from row heights so we never report too small a height (e.g. when m_RowRects is null with many objects, or stale when scrolled).
+                List<float> heights = EnsureRowHeights(__instance);
+                float ourTotal = 0f;
+                if (heights != null && heights.Count > 0)
+                {
+                    for (int i = 0; i < heights.Count; i++)
+                        ourTotal += heights[i];
+                }
+                // Use the larger of Unity's value and ours, plus padding so the scroll area doesn't clip the last row
+                float contentHeight = Mathf.Max(__result.y, ourTotal) + ContentHeightPadding;
+                __result.y = contentHeight;
             }
             catch { }
         }
@@ -240,8 +225,8 @@ namespace YUCP.Components.Editor
                 if (!hasCustomHeights)
                     return true;
 
-                // We have custom row heights: set result and skip original. Minimal padding to avoid visible grey bar.
-                __result = new Vector2(1f, y + 1f);
+                // We have custom row heights: set result and skip original. Padding so scroll doesn't clip last row.
+                __result = new Vector2(1f, y + ContentHeightPadding);
 
                 lock (CacheLock)
                 {
@@ -304,9 +289,9 @@ namespace YUCP.Components.Editor
                 float scrollY = 0f;
                 if (state != null)
                 {
-                    object scrollPos = state.GetType().GetProperty("scrollPos")?.GetValue(state);
-                    if (scrollPos != null)
-                        scrollY = (float)scrollPos.GetType().GetField("y").GetValue(scrollPos);
+                    FieldInfo scrollPosField = state.GetType().GetField("scrollPos", BindingFlags.Public | BindingFlags.Instance);
+                    if (scrollPosField != null && scrollPosField.GetValue(state) is Vector2 scrollPos)
+                        scrollY = scrollPos.y;
                 }
 
                 MethodInfo getTotalRect = treeView.GetType().GetMethod("GetTotalRect", BindingFlags.Public | BindingFlags.Instance);
@@ -326,9 +311,9 @@ namespace YUCP.Components.Editor
                     y += h;
                 }
 
-                // Pad by one row above/below so bottom (and top) rows aren't clipped by scroll view
-                firstRowVisible = first >= 0 ? Math.Max(0, first - 1) : 0;
-                lastRowVisible = last >= 0 ? Math.Min(heights.Count - 1, last + 1) : heights.Count - 1;
+                // Pad by two rows above/below so bottom (and top) stay drawn when window is small or heavily scrolled
+                firstRowVisible = first >= 0 ? Math.Max(0, first - 2) : 0;
+                lastRowVisible = last >= 0 ? Math.Min(heights.Count - 1, last + 2) : heights.Count - 1;
             }
             catch
             {
