@@ -80,7 +80,7 @@ MonoBehaviour:
   solver:
     layers:
       serializedVersion: 2
-      m_Bits: 21
+      m_Bits: 4286580957
     maxStep: 100
     heightOffset: 0
     footSpeed: 100000000
@@ -420,7 +420,8 @@ MonoBehaviour:
   Locked: 1
   Sources:
     source0:
-      SourceTransform: {fileID: 0}
+      SourceTransform: {fileID: 1720321125886419532, guid: 44aabc3d307449a79df1b54e26120c59,
+        type: 3}
       Weight: 1
       ParentPositionOffset: {x: 0, y: 0, z: 0}
       ParentRotationOffset: {x: 0, y: 0, z: 0}

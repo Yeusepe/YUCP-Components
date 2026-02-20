@@ -71,7 +71,10 @@ namespace YUCP.Components
         [Tooltip("When enabled, generated animator states will use Write Defaults.")]
         public bool writeDefaults = true;
 
-        [Tooltip("Expressions menu path where the enable toggle should be created (e.g. \"Utility/Custom Sync\"). Leave blank to place it at the root menu.")]
+        [Tooltip("When enabled, an expression menu toggle is generated so users can enable/disable the sync in-game. When disabled, no menu entry is added (e.g. when you drive the parameter yourself).")]
+        public bool generateMenu = false;
+
+        [Tooltip("Expressions menu path where the enable toggle should be created (e.g. \"Utility/Custom Sync\"). Leave blank to place it at the root menu. Only used when Generate Menu is enabled.")]
         public string menuLocation = "Utility/Custom Sync";
 
         [Tooltip("Optional parent transform for the generated \"Object-Name Target\" GameObject. If not specified, the generated object will be parented to the sync object's parent.")]
@@ -125,6 +128,7 @@ namespace YUCP.Components
             public float dampingConstraintValue;
             public bool addLocalDebugView;
             public bool writeDefaults;
+            public bool generateMenu;
             public string menuLocation;
             public string syncGroupId;
             public bool enableGrouping;
@@ -178,6 +182,7 @@ namespace YUCP.Components
                 dampingConstraintValue = Mathf.Clamp01(dampingConstraintValue),
                 addLocalDebugView = addLocalDebugView,
                 writeDefaults = writeDefaults,
+                generateMenu = generateMenu,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 enableGrouping = enableGrouping,
                 syncGroupId = enableGrouping ? NormalizeGroupId(syncGroupId) : string.Empty,
@@ -247,6 +252,7 @@ namespace YUCP.Components
                 dampingConstraintValue = source.dampingConstraintValue;
                 addLocalDebugView = source.addLocalDebugView;
                 writeDefaults = source.writeDefaults;
+                generateMenu = source.generateMenu;
                 menuLocation = source.menuLocation;
                 enableGrouping = source.enableGrouping;
                 showSceneGizmo = source.showSceneGizmo;

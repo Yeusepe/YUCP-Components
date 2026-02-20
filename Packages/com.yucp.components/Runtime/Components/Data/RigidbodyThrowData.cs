@@ -40,7 +40,10 @@ namespace YUCP.Components
         [Tooltip("Enable rotation sync for the thrown object (requires additional parameters).")]
         public bool enableRotationSync = false;
 
-        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Throw\"). Leave blank to place it at the root menu.")]
+        [Tooltip("When enabled, an expression menu toggle is generated for this throw. When disabled, no menu entry is added.")]
+        public bool generateMenu = false;
+
+        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Throw\"). Leave blank to place it at the root menu. Only used when Generate Menu is enabled.")]
         public string menuLocation = "Utility/Throw";
 
         [Header("Throw Settings")]
@@ -104,6 +107,7 @@ namespace YUCP.Components
             public GameObject appliedObject;
             public Transform appliedTransform;
             public bool enableRotationSync;
+            public bool generateMenu;
             public string menuLocation;
             public PhysicMaterial physicsMaterial;
             public int throwGesture;
@@ -152,6 +156,7 @@ namespace YUCP.Components
                 appliedObject = gameObject,
                 appliedTransform = appliedTransform,
                 enableRotationSync = enableRotationSync,
+                generateMenu = generateMenu,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 physicsMaterial = physicsMaterial,
                 throwGesture = Mathf.Clamp(throwGesture, 0, 7),
@@ -218,6 +223,7 @@ namespace YUCP.Components
             try
             {
                 enableRotationSync = source.enableRotationSync;
+                generateMenu = source.generateMenu;
                 menuLocation = source.menuLocation;
                 physicsMaterial = source.physicsMaterial;
                 throwGesture = source.throwGesture;

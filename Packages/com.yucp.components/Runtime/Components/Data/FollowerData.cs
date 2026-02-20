@@ -32,7 +32,10 @@ namespace YUCP.Components
         public Transform lookTarget;
 
         [Header("Options")]
-        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Follower\"). Leave blank to place it at the root menu.")]
+        [Tooltip("When enabled, an expression menu toggle is generated so users can stop the follower in-game. When disabled, no menu entry is added.")]
+        public bool generateMenu = false;
+
+        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Follower\"). Leave blank to place it at the root menu. Only used when Generate Menu is enabled.")]
         public string menuLocation = "Utility/Follower";
 
         [Tooltip("OPTIONAL: Base parameter name for Follower/Stop. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
@@ -74,6 +77,7 @@ namespace YUCP.Components
             public Transform positionTarget;
             public Transform lookTarget;
             public float followSpeed;
+            public bool generateMenu;
             public string menuLocation;
             public string globalParameterStop;
             public string followerGroupId;
@@ -115,6 +119,7 @@ namespace YUCP.Components
                 positionTarget = positionTarget,
                 lookTarget = lookTarget,
                 followSpeed = Mathf.Clamp(followSpeed, 0.1f, 5f),
+                generateMenu = generateMenu,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 globalParameterStop = globalParameterStop?.Trim() ?? string.Empty,
                 followerGroupId = enableGrouping ? NormalizeGroupId(followerGroupId) : string.Empty,
@@ -177,6 +182,7 @@ namespace YUCP.Components
             suppressGroupPropagation = true;
             try
             {
+                generateMenu = source.generateMenu;
                 menuLocation = source.menuLocation;
                 globalParameterStop = source.globalParameterStop;
                 lookTarget = source.lookTarget;

@@ -25,7 +25,10 @@ namespace YUCP.Components
         public Transform raycastOrigin;
 
         [Header("Options")]
-        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Raycast\"). Leave blank to place it at the root menu.")]
+        [Tooltip("When enabled, an expression menu toggle is generated for this raycast. When disabled, no menu entry is added.")]
+        public bool generateMenu = false;
+
+        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Raycast\"). Leave blank to place it at the root menu. Only used when Generate Menu is enabled.")]
         public string menuLocation = "Utility/Raycast";
 
         [Header("Raycast Settings")]
@@ -65,6 +68,7 @@ namespace YUCP.Components
         {
             public GameObject appliedObject;
             public Transform raycastOrigin;
+            public bool generateMenu;
             public string menuLocation;
             public LayerMask grounderLayers;
             public float raycastDistance;
@@ -105,6 +109,7 @@ namespace YUCP.Components
             {
                 appliedObject = gameObject,
                 raycastOrigin = raycastOrigin,
+                generateMenu = generateMenu,
                 menuLocation = menuLocation?.Trim() ?? string.Empty,
                 grounderLayers = grounderLayers,
                 raycastDistance = Mathf.Clamp(raycastDistance, 0.1f, 100f),
@@ -163,6 +168,7 @@ namespace YUCP.Components
             suppressGroupPropagation = true;
             try
             {
+                generateMenu = source.generateMenu;
                 menuLocation = source.menuLocation;
                 grounderLayers = source.grounderLayers;
                 raycastDistance = source.raycastDistance;
