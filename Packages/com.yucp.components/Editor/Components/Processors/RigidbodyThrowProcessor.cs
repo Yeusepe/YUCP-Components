@@ -653,6 +653,7 @@ namespace YUCP.Components.Editor
             public GroupSettingsSignature(RigidbodyThrowData.Settings settings)
             {
                 EnableRotationSync = settings.enableRotationSync;
+                GenerateMenu = settings.generateMenu;
                 MenuLocation = settings.menuLocation;
                 ThrowGesture = settings.throwGesture;
                 ResetGesture = settings.resetGesture;
@@ -667,6 +668,7 @@ namespace YUCP.Components.Editor
             }
 
             private bool EnableRotationSync { get; }
+            private bool GenerateMenu { get; }
             private string MenuLocation { get; }
             private int ThrowGesture { get; }
             private int ResetGesture { get; }
@@ -682,6 +684,7 @@ namespace YUCP.Components.Editor
             public bool Equals(GroupSettingsSignature other)
             {
                 return EnableRotationSync == other.EnableRotationSync &&
+                       GenerateMenu == other.GenerateMenu &&
                        MenuLocation == other.MenuLocation &&
                        ThrowGesture == other.ThrowGesture &&
                        ResetGesture == other.ResetGesture &&
@@ -705,6 +708,7 @@ namespace YUCP.Components.Editor
                 unchecked
                 {
                     var hashCode = EnableRotationSync.GetHashCode();
+                    hashCode = (hashCode * 397) ^ GenerateMenu.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ ThrowGesture.GetHashCode();
                     hashCode = (hashCode * 397) ^ ResetGesture.GetHashCode();
@@ -728,6 +732,7 @@ namespace YUCP.Components.Editor
                 ThrowGroupId = groupId;
                 IsIsolated = isIsolated;
                 EnableRotationSync = settings.enableRotationSync;
+                GenerateMenu = settings.generateMenu;
                 MenuLocation = settings.menuLocation;
                 ThrowGesture = settings.throwGesture;
                 ResetGesture = settings.resetGesture;
@@ -744,6 +749,7 @@ namespace YUCP.Components.Editor
             public string ThrowGroupId { get; }
             public bool IsIsolated { get; }
             public bool EnableRotationSync { get; }
+            public bool GenerateMenu { get; }
             public string MenuLocation { get; }
             public int ThrowGesture { get; }
             public int ResetGesture { get; }
@@ -761,6 +767,7 @@ namespace YUCP.Components.Editor
                 return ThrowGroupId == other.ThrowGroupId &&
                        IsIsolated == other.IsIsolated &&
                        EnableRotationSync == other.EnableRotationSync &&
+                       GenerateMenu == other.GenerateMenu &&
                        MenuLocation == other.MenuLocation &&
                        ThrowGesture == other.ThrowGesture &&
                        ResetGesture == other.ResetGesture &&
@@ -786,6 +793,7 @@ namespace YUCP.Components.Editor
                     var hashCode = ThrowGroupId != null ? ThrowGroupId.GetHashCode() : 0;
                     hashCode = (hashCode * 397) ^ IsIsolated.GetHashCode();
                     hashCode = (hashCode * 397) ^ EnableRotationSync.GetHashCode();
+                    hashCode = (hashCode * 397) ^ GenerateMenu.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ ThrowGesture.GetHashCode();
                     hashCode = (hashCode * 397) ^ ResetGesture.GetHashCode();

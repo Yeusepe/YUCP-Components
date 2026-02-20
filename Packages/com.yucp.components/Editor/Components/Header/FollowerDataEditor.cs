@@ -18,6 +18,7 @@ namespace YUCP.Components.Editor
         private SerializedProperty appliedObjectOverrideProp;
         private SerializedProperty positionTargetProp;
         private SerializedProperty lookTargetProp;
+        private SerializedProperty generateMenuProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty globalParameterStopProp;
         private SerializedProperty followSpeedProp;
@@ -35,6 +36,7 @@ namespace YUCP.Components.Editor
             appliedObjectOverrideProp = serializedObject.FindProperty("appliedObjectOverride");
             positionTargetProp = serializedObject.FindProperty("positionTarget");
             lookTargetProp = serializedObject.FindProperty("lookTarget");
+            generateMenuProp = serializedObject.FindProperty("generateMenu");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             globalParameterStopProp = serializedObject.FindProperty("globalParameterStop");
             followSpeedProp = serializedObject.FindProperty("followSpeed");
@@ -87,6 +89,7 @@ namespace YUCP.Components.Editor
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure follower behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
+            optionsContent.Add(YUCPUIToolkitHelper.CreateField(generateMenuProp, "Generate Menu"));
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterStopProp, "Global Parameter (Stop)"));
             optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("OPTIONAL: When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.", YUCPUIToolkitHelper.MessageType.Info));

@@ -17,6 +17,7 @@ namespace YUCP.Components.Editor
 
         private SerializedProperty appliedTransformProp;
         private SerializedProperty enableRotationSyncProp;
+        private SerializedProperty generateMenuProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty physicsMaterialProp;
         private SerializedProperty gestureHandProp;
@@ -40,6 +41,7 @@ namespace YUCP.Components.Editor
 
             appliedTransformProp = serializedObject.FindProperty("appliedTransform");
             enableRotationSyncProp = serializedObject.FindProperty("enableRotationSync");
+            generateMenuProp = serializedObject.FindProperty("generateMenu");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             physicsMaterialProp = serializedObject.FindProperty("physicsMaterial");
             gestureHandProp = serializedObject.FindProperty("gestureHand");
@@ -97,6 +99,7 @@ namespace YUCP.Components.Editor
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(enableRotationSyncProp, "Enable Rotation Sync"));
             optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, rotation will be synced alongside position. This requires additional expression parameters (27 without rotation, 51 with rotation).", YUCPUIToolkitHelper.MessageType.Info));
+            optionsContent.Add(YUCPUIToolkitHelper.CreateField(generateMenuProp, "Generate Menu"));
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
             

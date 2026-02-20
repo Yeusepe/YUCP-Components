@@ -16,6 +16,7 @@ namespace YUCP.Components.Editor
         private bool previousIncludeCredits = false;
 
         private SerializedProperty raycastOriginProp;
+        private SerializedProperty generateMenuProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty grounderLayersProp;
         private SerializedProperty raycastDistanceProp;
@@ -31,6 +32,7 @@ namespace YUCP.Components.Editor
             data = (RaycastPrefabData)target;
 
             raycastOriginProp = serializedObject.FindProperty("raycastOrigin");
+            generateMenuProp = serializedObject.FindProperty("generateMenu");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             grounderLayersProp = serializedObject.FindProperty("grounderLayers");
             raycastDistanceProp = serializedObject.FindProperty("raycastDistance");
@@ -79,6 +81,7 @@ namespace YUCP.Components.Editor
             
             var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure raycast prefab behavior.");
             var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
+            optionsContent.Add(YUCPUIToolkitHelper.CreateField(generateMenuProp, "Generate Menu"));
             optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(optionsCard);
             

@@ -37,8 +37,9 @@ namespace VRLabs.CustomObjectSyncCreator
 		public float dampingConstraintValue = 0.15f;
 		public bool quickSync;
 		public bool writeDefaults = true;
-		public bool addLocalDebugView = false;
+        public bool addLocalDebugView = false;
 		public string menuLocation = "";
+		public bool generateMenu = false;
         public bool silentMode = false;
 
 		public const string STANDARD_NEW_ANIMATION_FOLDER = "Assets/VRLabs/GeneratedAssets/CustomObjectSync/Animations/";
@@ -97,7 +98,7 @@ namespace VRLabs.CustomObjectSyncCreator
 			AnimatorController mergeController = runtimeController == null ? null : (AnimatorController) runtimeController;
 
 			VRCExpressionParameters parameterObject = descriptor.expressionParameters;
-			VRCExpressionsMenu menuObject = GetMenuFromLocation(descriptor, menuLocation);
+			VRCExpressionsMenu menuObject = generateMenu ? GetMenuFromLocation(descriptor, menuLocation) : null;
 			
 			Directory.CreateDirectory(STANDARD_NEW_ANIMATOR_FOLDER);
 			string uniqueControllerPath = AssetDatabase.GenerateUniqueAssetPath(STANDARD_NEW_ANIMATOR_FOLDER + "CustomObjectSync.controller");
@@ -139,7 +140,7 @@ namespace VRLabs.CustomObjectSyncCreator
 				return;
 			}
 			
-			if (menuObject == null)
+			if (generateMenu && menuObject == null)
 			{
 				Directory.CreateDirectory(STANDARD_NEW_MENUASSET_FOLDER);
 				string uniquePath = AssetDatabase.GenerateUniqueAssetPath(STANDARD_NEW_MENUASSET_FOLDER + "Menu.asset");
@@ -152,7 +153,7 @@ namespace VRLabs.CustomObjectSyncCreator
 				descriptor.expressionsMenu = menuObject;
 			}
 			
-			if (menuObject == null)
+			if (generateMenu && menuObject == null)
 			{
 				Debug.LogError("Creation of Menu object failed. Please report this to jellejurre on the VRLabs discord at discord.vrlabs.dev");
 				return;
@@ -271,32 +272,35 @@ namespace VRLabs.CustomObjectSyncCreator
 
 			parameterObject.parameters = parameterObject.parameters.Concat(parameterList).ToArray();
 			
-			menuObject.controls.Add(new VRCExpressionsMenu.Control()
-			{
-				name = "Enable Custom Object Sync",
-				style = VRCExpressionsMenu.Control.Style.Style1,
-				type = VRCExpressionsMenu.Control.ControlType.Toggle,
-				parameter = new VRCExpressionsMenu.Control.Parameter()
-				{
-					name = "CustomObjectSync/Enabled"
-				}
-			});
-
-			if (addLocalDebugView)
+			if (generateMenu && menuObject != null)
 			{
 				menuObject.controls.Add(new VRCExpressionsMenu.Control()
 				{
-					name = "Show Remote Position",
+					name = "Enable Custom Object Sync",
 					style = VRCExpressionsMenu.Control.Style.Style1,
 					type = VRCExpressionsMenu.Control.ControlType.Toggle,
 					parameter = new VRCExpressionsMenu.Control.Parameter()
 					{
-						name = "CustomObjectSync/LocalDebugView"
+						name = "CustomObjectSync/Enabled"
 					}
 				});
-			}
 
-			EditorUtility.SetDirty(menuObject);
+				if (addLocalDebugView)
+				{
+					menuObject.controls.Add(new VRCExpressionsMenu.Control()
+					{
+						name = "Show Remote Position",
+						style = VRCExpressionsMenu.Control.Style.Style1,
+						type = VRCExpressionsMenu.Control.ControlType.Toggle,
+						parameter = new VRCExpressionsMenu.Control.Parameter()
+						{
+							name = "CustomObjectSync/LocalDebugView"
+						}
+					});
+				}
+
+				EditorUtility.SetDirty(menuObject);
+			}
 			EditorUtility.SetDirty(parameterObject);
 			#endregion
 

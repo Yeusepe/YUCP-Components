@@ -219,6 +219,7 @@ namespace YUCP.Components.Editor
             creator.dampingConstraintValue = Mathf.Clamp(key.DampingConstraintValue, 0.01f, 1f);
             creator.addLocalDebugView = key.AddLocalDebugView;
             creator.writeDefaults = key.WriteDefaults;
+            creator.generateMenu = key.GenerateMenu;
             creator.menuLocation = ResolveMenuLocation(descriptor, key.MenuLocation);
         }
 
@@ -253,6 +254,7 @@ namespace YUCP.Components.Editor
                 DampingValue = settings.dampingConstraintValue;
                 AddDebugView = settings.addLocalDebugView;
                 WriteDefaults = settings.writeDefaults;
+                GenerateMenu = settings.generateMenu;
                 MenuLocation = settings.menuLocation;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
@@ -269,6 +271,7 @@ namespace YUCP.Components.Editor
             private float DampingValue { get; }
             private bool AddDebugView { get; }
             private bool WriteDefaults { get; }
+            private bool GenerateMenu { get; }
             private string MenuLocation { get; }
             private bool VerboseLogging { get; }
             private bool IncludeCredits { get; }
@@ -286,6 +289,7 @@ namespace YUCP.Components.Editor
                        Mathf.Approximately(DampingValue, other.DampingValue) &&
                        AddDebugView == other.AddDebugView &&
                        WriteDefaults == other.WriteDefaults &&
+                       GenerateMenu == other.GenerateMenu &&
                        MenuLocation == other.MenuLocation &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
@@ -311,6 +315,7 @@ namespace YUCP.Components.Editor
                     hashCode = (hashCode * 397) ^ DampingValue.GetHashCode();
                     hashCode = (hashCode * 397) ^ AddDebugView.GetHashCode();
                     hashCode = (hashCode * 397) ^ WriteDefaults.GetHashCode();
+                    hashCode = (hashCode * 397) ^ GenerateMenu.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();
@@ -336,6 +341,7 @@ namespace YUCP.Components.Editor
                 DampingConstraintValue = settings.dampingConstraintValue;
                 AddLocalDebugView = settings.addLocalDebugView;
                 WriteDefaults = settings.writeDefaults;
+                GenerateMenu = settings.generateMenu;
                 MenuLocation = settings.menuLocation;
                 VerboseLogging = settings.verboseLogging;
                 IncludeCredits = settings.includeCredits;
@@ -354,6 +360,7 @@ namespace YUCP.Components.Editor
             public float DampingConstraintValue { get; }
             public bool AddLocalDebugView { get; }
             public bool WriteDefaults { get; }
+            public bool GenerateMenu { get; }
             public string MenuLocation { get; }
             public bool VerboseLogging { get; }
             public bool IncludeCredits { get; }
@@ -373,6 +380,7 @@ namespace YUCP.Components.Editor
                        Mathf.Approximately(DampingConstraintValue, other.DampingConstraintValue) &&
                        AddLocalDebugView == other.AddLocalDebugView &&
                        WriteDefaults == other.WriteDefaults &&
+                       GenerateMenu == other.GenerateMenu &&
                        MenuLocation == other.MenuLocation &&
                        VerboseLogging == other.VerboseLogging &&
                        IncludeCredits == other.IncludeCredits;
@@ -400,6 +408,7 @@ namespace YUCP.Components.Editor
                     hashCode = (hashCode * 397) ^ DampingConstraintValue.GetHashCode();
                     hashCode = (hashCode * 397) ^ AddLocalDebugView.GetHashCode();
                     hashCode = (hashCode * 397) ^ WriteDefaults.GetHashCode();
+                    hashCode = (hashCode * 397) ^ GenerateMenu.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
                     hashCode = (hashCode * 397) ^ IncludeCredits.GetHashCode();

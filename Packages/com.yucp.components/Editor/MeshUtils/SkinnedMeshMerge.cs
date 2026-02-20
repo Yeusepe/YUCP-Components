@@ -49,6 +49,24 @@ namespace YUCP.Components.Editor.MeshUtils
             Transform attachmentTransform,
             Material[] attachmentMaterials,
             ClosestSurfaceMapper.SurfaceMap[] surfaceMaps,
+            int[] baseTrianglesCombined)
+        {
+            return Merge(
+                baseSmr,
+                attachmentMesh,
+                attachmentTransform,
+                attachmentMaterials,
+                surfaceMaps,
+                baseTrianglesCombined,
+                null);
+        }
+
+        public static MergeResult Merge(
+            SkinnedMeshRenderer baseSmr,
+            Mesh attachmentMesh,
+            Transform attachmentTransform,
+            Material[] attachmentMaterials,
+            ClosestSurfaceMapper.SurfaceMap[] surfaceMaps,
             int[] baseTrianglesCombined,
             AttachToBlendshapeData data)
         {

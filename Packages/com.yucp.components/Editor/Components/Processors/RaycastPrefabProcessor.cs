@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -169,6 +170,13 @@ namespace YUCP.Components.Editor
             }
         }
 
+        private static Type FindGrounderIKType()
+        {
+            return AppDomain.CurrentDomain.GetAssemblies()
+                .Select(a => a.GetType("RootMotion.FinalIK.GrounderIK"))
+                .FirstOrDefault(t => t != null);
+        }
+
         private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, RaycastPrefabData.Settings settings)
         {
             var rootObject = descriptor.gameObject;
@@ -187,21 +195,18 @@ namespace YUCP.Components.Editor
             var grounder = raycastSystem.transform.Find("IK/Grounder");
             if (grounder != null)
             {
-                var grounderIKType = System.Type.GetType("RootMotion.FinalIK.GrounderIK, Assembly-CSharp");
+                var grounderIKType = FindGrounderIKType();
                 if (grounderIKType != null)
                 {
                     var grounderIK = grounder.GetComponent(grounderIKType);
-                    if (grounderIK != null && settings.grounderLayers != -1)
+                    if (grounderIK != null)
                     {
                         var layersField = grounderIKType.GetField("layers");
                         if (layersField != null)
                         {
-                            layersField.SetValue(grounderIK, settings.grounderLayers);
+                            layersField.SetValue(grounderIK, (LayerMask)settings.grounderLayers);
                         }
-                    }
 
-                    if (settings.raycastDistance != 10f)
-                    {
                         var solverProperty = grounderIKType.GetProperty("solver");
                         if (solverProperty != null)
                         {
@@ -216,6 +221,10 @@ namespace YUCP.Components.Editor
                             }
                         }
                     }
+                }
+                else if (settings.verboseLogging)
+                {
+                    Debug.LogWarning("[YUCP Raycast Prefab] GrounderIK type not found in any loaded assembly. Grounder settings will use prefab defaults.");
                 }
             }
 
@@ -261,6 +270,7 @@ namespace YUCP.Components.Editor
         {
             public GroupSettingsSignature(RaycastPrefabData.Settings settings)
             {
+                GenerateMenu = settings.generateMenu;
                 MenuLocation = settings.menuLocation;
                 GrounderLayers = settings.grounderLayers;
                 RaycastDistance = settings.raycastDistance;
@@ -268,6 +278,7 @@ namespace YUCP.Components.Editor
                 IncludeCredits = settings.includeCredits;
             }
 
+            private bool GenerateMenu { get; }
             private string MenuLocation { get; }
             private LayerMask GrounderLayers { get; }
             private float RaycastDistance { get; }
@@ -276,7 +287,8 @@ namespace YUCP.Components.Editor
 
             public bool Equals(GroupSettingsSignature other)
             {
-                return MenuLocation == other.MenuLocation &&
+                return GenerateMenu == other.GenerateMenu &&
+                       MenuLocation == other.MenuLocation &&
                        GrounderLayers == other.GrounderLayers &&
                        Mathf.Approximately(RaycastDistance, other.RaycastDistance) &&
                        VerboseLogging == other.VerboseLogging &&
@@ -292,7 +304,8 @@ namespace YUCP.Components.Editor
             {
                 unchecked
                 {
-                    var hashCode = MenuLocation != null ? MenuLocation.GetHashCode() : 0;
+                    var hashCode = GenerateMenu.GetHashCode();
+                    hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ GrounderLayers.GetHashCode();
                     hashCode = (hashCode * 397) ^ RaycastDistance.GetHashCode();
                     hashCode = (hashCode * 397) ^ VerboseLogging.GetHashCode();
@@ -308,6 +321,7 @@ namespace YUCP.Components.Editor
             {
                 RaycastGroupId = groupId;
                 IsIsolated = isIsolated;
+                GenerateMenu = settings.generateMenu;
                 MenuLocation = settings.menuLocation;
                 GrounderLayers = settings.grounderLayers;
                 RaycastDistance = settings.raycastDistance;
@@ -317,6 +331,7 @@ namespace YUCP.Components.Editor
 
             public string RaycastGroupId { get; }
             public bool IsIsolated { get; }
+            public bool GenerateMenu { get; }
             public string MenuLocation { get; }
             public LayerMask GrounderLayers { get; }
             public float RaycastDistance { get; }
@@ -327,6 +342,7 @@ namespace YUCP.Components.Editor
             {
                 return RaycastGroupId == other.RaycastGroupId &&
                        IsIsolated == other.IsIsolated &&
+                       GenerateMenu == other.GenerateMenu &&
                        MenuLocation == other.MenuLocation &&
                        GrounderLayers == other.GrounderLayers &&
                        Mathf.Approximately(RaycastDistance, other.RaycastDistance) &&
@@ -345,6 +361,7 @@ namespace YUCP.Components.Editor
                 {
                     var hashCode = RaycastGroupId != null ? RaycastGroupId.GetHashCode() : 0;
                     hashCode = (hashCode * 397) ^ IsIsolated.GetHashCode();
+                    hashCode = (hashCode * 397) ^ GenerateMenu.GetHashCode();
                     hashCode = (hashCode * 397) ^ (MenuLocation != null ? MenuLocation.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ GrounderLayers.GetHashCode();
                     hashCode = (hashCode * 397) ^ RaycastDistance.GetHashCode();

@@ -30,6 +30,7 @@ namespace YUCP.Components.Editor
         private SerializedProperty dampingValueProp;
         private SerializedProperty addDebugProp;
         private SerializedProperty writeDefaultsProp;
+        private SerializedProperty generateMenuProp;
         private SerializedProperty menuLocationProp;
         private SerializedProperty syncParentProp;
         private SerializedProperty syncGroupIdProp;
@@ -71,6 +72,7 @@ namespace YUCP.Components.Editor
             dampingValueProp = serializedObject.FindProperty("dampingConstraintValue");
             addDebugProp = serializedObject.FindProperty("addLocalDebugView");
             writeDefaultsProp = serializedObject.FindProperty("writeDefaults");
+            generateMenuProp = serializedObject.FindProperty("generateMenu");
             menuLocationProp = serializedObject.FindProperty("menuLocation");
             syncParentProp = serializedObject.FindProperty("syncParent");
             syncGroupIdProp = serializedObject.FindProperty("syncGroupId");
@@ -172,6 +174,7 @@ namespace YUCP.Components.Editor
             motionContent.Add(dampingValueField);
             
             motionContent.Add(YUCPUIToolkitHelper.CreateField(writeDefaultsProp, "Write Defaults"));
+            motionContent.Add(YUCPUIToolkitHelper.CreateField(generateMenuProp, "Generate Menu"));
             motionContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
             root.Add(motionCard);
             
