@@ -366,7 +366,7 @@ namespace YUCP.Components.Editor
 
 
 
-            if (!string.IsNullOrEmpty(settings.menuLocation))
+            if (settings.generateMenu && !string.IsNullOrEmpty(settings.menuLocation))
             {
                 var menu = VRCFuryHelper.GetMenuFromLocation(descriptor, settings.menuLocation);
                 if (menu != null)

@@ -158,9 +158,27 @@ namespace YUCP.Components.Editor
             return true;
         }
 
-        private AttachToBlendshapeOutputMode ResolveOutputMode(AttachToBlendshapeData data, GameObject avatarRoot)
+        private AttachToBlendshapeOutputMode ResolveOutputMode(
+            AttachToBlendshapeData data,
+            GameObject avatarRoot,
+            List<string> trackedBlendshapes)
         {
             if (data == null) return AttachToBlendshapeOutputMode.LinkedRendererBake;
+
+            // Visemes are driven by VRChat's lip sync engine directly on the base mesh
+            // at runtime (not via animation clips). The only way for attachment geometry
+            // to follow visemes is to be part of the base mesh.
+            bool trackingVisemes = data.trackingMode == BlendshapeTrackingMode.VisemsOnly ||
+                                   ContainsVisemes(trackedBlendshapes);
+
+            if (trackingVisemes)
+            {
+                if (data.debugMode)
+                {
+                    Debug.Log("[AttachToBlendshapeProcessor] Tracked blendshapes include visemes. Forcing MergeIntoBaseMesh (visemes are driven on the base mesh at runtime).", data);
+                }
+                return AttachToBlendshapeOutputMode.MergeIntoBaseMesh;
+            }
 
             // Explicit override
             if (data.outputMode != AttachToBlendshapeOutputMode.Auto)
@@ -200,7 +218,6 @@ namespace YUCP.Components.Editor
 
                     if (binding.path == objectPath)
                     {
-                        // Material animations are hard to retarget reliably after a mesh-merge.
                         if (data.autoAvoidMergeIfMaterialAnimation &&
                             binding.propertyName != null &&
                             binding.propertyName.StartsWith("material."))
@@ -208,8 +225,6 @@ namespace YUCP.Components.Editor
                             hasMaterialAnimOnObject = true;
                         }
 
-                        // Accessory blendshape animations are also hard to preserve through a merge
-                        // (they would need to be re-authored onto the merged base renderer).
                         if (binding.type == typeof(SkinnedMeshRenderer) &&
                             binding.propertyName != null &&
                             binding.propertyName.StartsWith("blendShape."))
@@ -240,14 +255,27 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            // If the base blendshapes are not driven by clips (common for VRChat built-ins),
-            // MergeIntoBaseMesh is the only reliable way to have the attachment follow them.
             if (!hasBaseBlendshapeCurves)
             {
                 return AttachToBlendshapeOutputMode.MergeIntoBaseMesh;
             }
 
             return AttachToBlendshapeOutputMode.LinkedRendererBake;
+        }
+
+        private static bool ContainsVisemes(List<string> blendshapes)
+        {
+            if (blendshapes == null || blendshapes.Count == 0) return false;
+
+            foreach (var name in blendshapes)
+            {
+                if (VRChatVisemeDetector.IsVisemeBlendshape(name))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsTransformBinding(string propertyName)
@@ -829,8 +857,8 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            // Step 5: Choose output mode (Auto by default)
-            var outputModeUsed = ResolveOutputMode(data, avatarRoot);
+            // Step 5: Choose output mode (Auto by default; visemes force merge)
+            var outputModeUsed = ResolveOutputMode(data, avatarRoot, blendshapesToTrack);
 
             // Step 6: Bake output
             bool bakedOk = true;
