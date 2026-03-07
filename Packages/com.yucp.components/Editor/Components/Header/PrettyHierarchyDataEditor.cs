@@ -18,11 +18,11 @@ namespace YUCP.Components.Editor
         private SerializedProperty marginLeftProp, marginRightProp, marginTopProp, marginBottomProp;
         private SerializedProperty iconMarginLeftProp, iconMarginRightProp, iconMarginTopProp, iconMarginBottomProp;
         private SerializedProperty textMarginLeftProp, textMarginRightProp, textMarginTopProp, textMarginBottomProp;
-        private SerializedProperty showIconProp, useCustomIconProp, customIconProp, customIconBuiltInNameProp;
+        private SerializedProperty showIconProp, useCustomIconProp, useCustomIconAsTextureProp, customIconProp, customIconBuiltInNameProp;
         private SerializedProperty showCollapseIconProp, showExpandCollapseFolderIconProp, closedFolderIconNameProp, openFolderIconNameProp, closedFolderCustomIconProp, openFolderCustomIconProp, folderIconOffsetXProp, folderIconOffsetYProp, showPrefabIconProp, showEditPrefabIconProp, iconSizeProp;
         private SerializedProperty cornerRadiusUniformProp, cornerRadiusProp;
         private SerializedProperty cornerRadiusTopLeftProp, cornerRadiusTopRightProp, cornerRadiusBottomRightProp, cornerRadiusBottomLeftProp;
-        private SerializedProperty useDefaultTextColorProp, textColorProp, fontProp, fontSizeProp, fontStyleProp, alignmentProp, textDropShadowProp;
+        private SerializedProperty useDefaultTextColorProp, textColorProp, useTextGradientProp, textGradientProp, textGradientAngleProp, fontProp, fontSizeProp, fontStyleProp, alignmentProp, textDropShadowProp;
         private SerializedProperty paddingLeftProp, paddingRightProp;
         private SerializedProperty borderWidthProp, borderColorProp;
 
@@ -55,6 +55,7 @@ namespace YUCP.Components.Editor
             textMarginBottomProp = serializedObject.FindProperty("textMarginBottom");
             showIconProp = serializedObject.FindProperty("showIcon");
             useCustomIconProp = serializedObject.FindProperty("useCustomIcon");
+            useCustomIconAsTextureProp = serializedObject.FindProperty("useCustomIconAsTexture");
             customIconProp = serializedObject.FindProperty("customIcon");
             customIconBuiltInNameProp = serializedObject.FindProperty("customIconBuiltInName");
             showCollapseIconProp = serializedObject.FindProperty("showCollapseIcon");
@@ -76,6 +77,9 @@ namespace YUCP.Components.Editor
             cornerRadiusBottomLeftProp = serializedObject.FindProperty("cornerRadiusBottomLeft");
             useDefaultTextColorProp = serializedObject.FindProperty("useDefaultTextColor");
             textColorProp = serializedObject.FindProperty("textColor");
+            useTextGradientProp = serializedObject.FindProperty("useTextGradient");
+            textGradientProp = serializedObject.FindProperty("textGradient");
+            textGradientAngleProp = serializedObject.FindProperty("textGradientAngle");
             fontProp = serializedObject.FindProperty("font");
             fontSizeProp = serializedObject.FindProperty("fontSize");
             fontStyleProp = serializedObject.FindProperty("fontStyle");
@@ -103,6 +107,7 @@ namespace YUCP.Components.Editor
             if (supportBanner != null) root.Add(supportBanner);
 
             // --- PROFILE CARD ---
+            var profileFoldout = new Foldout { value = true, text = "Style Profile" };
             var profileCard = YUCPUIToolkitHelper.CreateCard("Style Profile", "Load built-in styles or configure your setup.");
             var profileContent = YUCPUIToolkitHelper.GetCardContent(profileCard);
             
@@ -110,17 +115,25 @@ namespace YUCP.Components.Editor
             profileRow.Add(CustomUI.CreateLabel("Preset", 60));
             profileRow.Add(CustomUI.CreateNativeField(presetProp, true));
             profileContent.Add(profileRow);
+            root.TrackPropertyValue(presetProp, _ => ApplyPresetToData());
             
             var saveBtn = YUCPUIToolkitHelper.CreateButton("Save as Style Prefab", SaveAsPrefab, YUCPUIToolkitHelper.ButtonVariant.Ghost);
             saveBtn.style.marginTop = 10;
             profileContent.Add(saveBtn);
-            root.Add(profileCard);
+            profileFoldout.Add(profileCard);
+            root.Add(profileFoldout);
 
             YUCPUIToolkitHelper.AddSpacing(root, 6);
 
             // --- BACKGROUND & BORDER CARD ---
             var fillCard = YUCPUIToolkitHelper.CreateCard("Background & Border", "Define background color and borders.");
             var fillContent = YUCPUIToolkitHelper.GetCardContent(fillCard);
+
+            var useDefaultBgRow = CustomUI.CreateRow(Justify.SpaceBetween);
+            useDefaultBgRow.Add(CustomUI.CreateLabel("Use Default Hierarchy Color", 100));
+            var useDefaultBgToggle = YUCPUIToolkitHelper.CreateField(useDefaultBackgroundColorProp, "");
+            useDefaultBgRow.Add(useDefaultBgToggle);
+            fillContent.Add(useDefaultBgRow);
             
             var gradientModeRow = CustomUI.CreateRow(Justify.SpaceBetween);
             gradientModeRow.Add(CustomUI.CreateLabel("Use Gradient", 100));
@@ -146,10 +159,14 @@ namespace YUCP.Components.Editor
 
             void UpdateFill()
             {
+                bool useDefault = useDefaultBackgroundColorProp.boolValue;
                 bool grad = useBackgroundGradientProp.boolValue;
-                solidFillRow.style.display = grad ? DisplayStyle.None : DisplayStyle.Flex;
-                gradientFillRow.style.display = grad ? DisplayStyle.Flex : DisplayStyle.None;
+                bool showColorControls = !useDefault;
+                solidFillRow.style.display = (showColorControls && !grad) ? DisplayStyle.Flex : DisplayStyle.None;
+                gradientFillRow.style.display = (showColorControls && grad) ? DisplayStyle.Flex : DisplayStyle.None;
+                gradientModeRow.style.display = showColorControls ? DisplayStyle.Flex : DisplayStyle.None;
             }
+            useDefaultBgToggle.RegisterValueChangeCallback(_ => UpdateFill());
             gradientToggle.RegisterValueChangeCallback(_ => UpdateFill());
             UpdateFill();
 
@@ -165,7 +182,9 @@ namespace YUCP.Components.Editor
             strokeWidthRow.Add(CustomUI.CreateCompactField(borderWidthProp));
             fillContent.Add(strokeWidthRow);
 
-            root.Add(fillCard);
+            var fillFoldout = new Foldout { value = true, text = "Background & Border" };
+            fillFoldout.Add(fillCard);
+            root.Add(fillFoldout);
             YUCPUIToolkitHelper.AddSpacing(root, 6);
 
             // --- CORNER RADIUS CARD ---
@@ -176,7 +195,9 @@ namespace YUCP.Components.Editor
                 cornerRadiusTopLeftProp, cornerRadiusTopRightProp, 
                 cornerRadiusBottomLeftProp, cornerRadiusBottomRightProp);
             cornerContent.Add(cornerBox);
-            root.Add(cornerCard);
+            var cornerFoldout = new Foldout { value = true, text = "Corner Radius" };
+            cornerFoldout.Add(cornerCard);
+            root.Add(cornerFoldout);
             YUCPUIToolkitHelper.AddSpacing(root, 6);
 
             // --- LAYOUT & PADDING CARD ---
@@ -198,37 +219,47 @@ namespace YUCP.Components.Editor
             heightTgl.RegisterValueChangeCallback(_ => UpdateHeightDisplay());
             UpdateHeightDisplay();
 
+            void ApplyMarginsAndRepaint()
+            {
+                serializedObject.ApplyModifiedProperties();
+                EditorApplication.RepaintHierarchyWindow();
+            }
+
             var boxModelsFoldout = YUCPUIToolkitHelper.CreateFoldout("Padding & Margins", true);
             var boxModelsContainer = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, justifyContent = Justify.SpaceAround, paddingTop = 10 } };
             
             var mContainer1 = new VisualElement { style = { marginBottom = 15, alignItems = Align.Center } };
             mContainer1.Add(CustomUI.CreateLabel("Row Margins", 80, true));
-            mContainer1.Add(CustomUI.CreatePaddingBoxModel(marginTopProp, marginBottomProp, marginLeftProp, marginRightProp));
+            mContainer1.Add(CustomUI.CreatePaddingBoxModel(marginTopProp, marginBottomProp, marginLeftProp, marginRightProp, ApplyMarginsAndRepaint));
             boxModelsContainer.Add(mContainer1);
 
             var mContainer2 = new VisualElement { style = { marginBottom = 15, alignItems = Align.Center } };
             mContainer2.Add(CustomUI.CreateLabel("Text Margins", 80, true));
-            mContainer2.Add(CustomUI.CreatePaddingBoxModel(textMarginTopProp, textMarginBottomProp, textMarginLeftProp, textMarginRightProp));
+            mContainer2.Add(CustomUI.CreatePaddingBoxModel(textMarginTopProp, textMarginBottomProp, textMarginLeftProp, textMarginRightProp, ApplyMarginsAndRepaint));
             boxModelsContainer.Add(mContainer2);
 
             var mContainer3 = new VisualElement { style = { marginBottom = 15, alignItems = Align.Center } };
             mContainer3.Add(CustomUI.CreateLabel("Icon Margins", 80, true));
-            mContainer3.Add(CustomUI.CreatePaddingBoxModel(iconMarginTopProp, iconMarginBottomProp, iconMarginLeftProp, iconMarginRightProp));
+            mContainer3.Add(CustomUI.CreatePaddingBoxModel(iconMarginTopProp, iconMarginBottomProp, iconMarginLeftProp, iconMarginRightProp, ApplyMarginsAndRepaint));
             boxModelsContainer.Add(mContainer3);
             
             boxModelsFoldout.Add(boxModelsContainer);
             layoutContent.Add(boxModelsFoldout);
 
-            root.Add(layoutCard);
+            var layoutFoldout = new Foldout { value = true, text = "Layout & Padding" };
+            layoutFoldout.Add(layoutCard);
+            root.Add(layoutFoldout);
             YUCPUIToolkitHelper.AddSpacing(root, 6);
 
             // --- TYPOGRAPHY CARD ---
             var typeCard = YUCPUIToolkitHelper.CreateCard("Typography", "Configure text font, sizing, color, and alignment.");
             var typeContent = YUCPUIToolkitHelper.GetCardContent(typeCard);
             
-            typeContent.Add(CustomUI.CreateTypographyEditor(useDefaultTextColorProp, textColorProp, fontProp, fontSizeProp, fontStyleProp, alignmentProp));
+            typeContent.Add(CustomUI.CreateTypographyEditor(useDefaultTextColorProp, textColorProp, useTextGradientProp, textGradientProp, textGradientAngleProp, fontProp, fontSizeProp, fontStyleProp, alignmentProp));
             
-            root.Add(typeCard);
+            var typeFoldout = new Foldout { value = true, text = "Typography" };
+            typeFoldout.Add(typeCard);
+            root.Add(typeFoldout);
             YUCPUIToolkitHelper.AddSpacing(root, 6);
 
             // --- HIERARCHY ELEMENTS CARD ---
@@ -250,20 +281,93 @@ namespace YUCP.Components.Editor
 
             extraContent.Add(new VisualElement { style = { height=1, backgroundColor=new Color(1,1,1,0.05f), marginTop=12, marginBottom=12 } });
 
-            extraContent.Add(CustomUI.CreateCustomIconPicker(useCustomIconProp, customIconProp, customIconBuiltInNameProp));
+            extraContent.Add(CustomUI.CreateCustomIconPicker(useCustomIconProp, useCustomIconAsTextureProp, customIconProp, customIconBuiltInNameProp));
             extraContent.Add(CustomUI.CreateDropShadowEditor(showShadowProp, shadowColorProp, shadowOffsetProp, shadowBlurProp));
             extraContent.Add(CustomUI.CreateVirtualFoldersEditor(closedFolderIconNameProp, openFolderIconNameProp, closedFolderCustomIconProp, openFolderCustomIconProp, folderIconOffsetXProp, folderIconOffsetYProp));
 
-            root.Add(extraCard);
+            var extraFoldout = new Foldout { value = true, text = "Hierarchy Elements" };
+            extraFoldout.Add(extraCard);
+            root.Add(extraFoldout);
             YUCPUIToolkitHelper.AddSpacing(root, 10);
 
             return root;
+        }
+
+        private void ApplyPresetToData()
+        {
+            var preset = (PrettyHierarchyPreset)presetProp.enumValueIndex;
+            if (preset == PrettyHierarchyPreset.Custom) return;
+
+            serializedObject.Update();
+            backgroundColorProp.colorValue = GetPresetColor(preset);
+            if (PresetUsesGradient(preset))
+            {
+                useBackgroundGradientProp.boolValue = true;
+                backgroundGradientProp.gradientValue = GetPresetGradient(preset);
+            }
+            else
+            {
+                useBackgroundGradientProp.boolValue = false;
+            }
+            useDefaultBackgroundColorProp.boolValue = false;
+            serializedObject.ApplyModifiedProperties();
+            EditorApplication.RepaintHierarchyWindow();
+        }
+
+        private static Color GetPresetColor(PrettyHierarchyPreset preset)
+        {
+            return preset switch
+            {
+                PrettyHierarchyPreset.Red => new Color(0.85f, 0.25f, 0.25f, 1f),
+                PrettyHierarchyPreset.Orange => new Color(0.95f, 0.55f, 0.2f, 1f),
+                PrettyHierarchyPreset.Yellow => new Color(0.95f, 0.85f, 0.25f, 1f),
+                PrettyHierarchyPreset.Green => new Color(0.25f, 0.75f, 0.35f, 1f),
+                PrettyHierarchyPreset.Blue => new Color(0.25f, 0.5f, 0.9f, 1f),
+                PrettyHierarchyPreset.Purple => new Color(0.55f, 0.35f, 0.85f, 1f),
+                PrettyHierarchyPreset.Pink => new Color(0.95f, 0.45f, 0.7f, 1f),
+                PrettyHierarchyPreset.Gray => new Color(0.4f, 0.4f, 0.45f, 1f),
+                PrettyHierarchyPreset.Black => new Color(0.12f, 0.12f, 0.14f, 1f),
+                PrettyHierarchyPreset.White => new Color(0.9f, 0.9f, 0.92f, 1f),
+                PrettyHierarchyPreset.Midnight => new Color(0.08f, 0.1f, 0.18f, 1f),
+                PrettyHierarchyPreset.Sunset => new Color(0.6f, 0.25f, 0.35f, 1f),
+                PrettyHierarchyPreset.Ocean => new Color(0.15f, 0.35f, 0.5f, 1f),
+                PrettyHierarchyPreset.Forest => new Color(0.15f, 0.35f, 0.2f, 1f),
+                _ => new Color(0.235f, 0.235f, 0.314f, 1f)
+            };
+        }
+
+        private static bool PresetUsesGradient(PrettyHierarchyPreset preset)
+        {
+            return preset is PrettyHierarchyPreset.Sunset or PrettyHierarchyPreset.Ocean or PrettyHierarchyPreset.Forest or PrettyHierarchyPreset.Midnight;
+        }
+
+        private static Gradient GetPresetGradient(PrettyHierarchyPreset preset)
+        {
+            var g = new Gradient();
+            switch (preset)
+            {
+                case PrettyHierarchyPreset.Red: g.SetKeys(new[] { new GradientColorKey(new Color(0.7f, 0.15f, 0.15f), 0f), new GradientColorKey(new Color(0.95f, 0.35f, 0.35f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Orange: g.SetKeys(new[] { new GradientColorKey(new Color(0.8f, 0.4f, 0.1f), 0f), new GradientColorKey(new Color(0.95f, 0.7f, 0.3f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Yellow: g.SetKeys(new[] { new GradientColorKey(new Color(0.7f, 0.65f, 0.1f), 0f), new GradientColorKey(new Color(0.95f, 0.9f, 0.4f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Green: g.SetKeys(new[] { new GradientColorKey(new Color(0.1f, 0.5f, 0.2f), 0f), new GradientColorKey(new Color(0.35f, 0.85f, 0.45f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Blue: g.SetKeys(new[] { new GradientColorKey(new Color(0.1f, 0.35f, 0.7f), 0f), new GradientColorKey(new Color(0.35f, 0.6f, 0.95f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Purple: g.SetKeys(new[] { new GradientColorKey(new Color(0.4f, 0.2f, 0.7f), 0f), new GradientColorKey(new Color(0.65f, 0.45f, 0.95f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Pink: g.SetKeys(new[] { new GradientColorKey(new Color(0.7f, 0.3f, 0.5f), 0f), new GradientColorKey(new Color(0.95f, 0.55f, 0.75f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Sunset: g.SetKeys(new[] { new GradientColorKey(new Color(0.5f, 0.15f, 0.25f), 0f), new GradientColorKey(new Color(0.9f, 0.4f, 0.35f), 0.5f), new GradientColorKey(new Color(0.95f, 0.7f, 0.4f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Ocean: g.SetKeys(new[] { new GradientColorKey(new Color(0.05f, 0.2f, 0.35f), 0f), new GradientColorKey(new Color(0.2f, 0.5f, 0.7f), 0.5f), new GradientColorKey(new Color(0.4f, 0.75f, 0.9f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Forest: g.SetKeys(new[] { new GradientColorKey(new Color(0.05f, 0.25f, 0.1f), 0f), new GradientColorKey(new Color(0.2f, 0.5f, 0.3f), 0.5f), new GradientColorKey(new Color(0.4f, 0.75f, 0.5f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                case PrettyHierarchyPreset.Midnight: g.SetKeys(new[] { new GradientColorKey(new Color(0.02f, 0.05f, 0.12f), 0f), new GradientColorKey(new Color(0.15f, 0.2f, 0.35f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+                default: g.SetKeys(new[] { new GradientColorKey(new Color(0.2f, 0.2f, 0.28f), 0f), new GradientColorKey(new Color(0.3f, 0.3f, 0.38f), 1f) }, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) }); break;
+            }
+            return g;
         }
 
         private void SaveAsPrefab()
         {
             string path = EditorUtility.SaveFilePanelInProject("Save Style", "PrettyHierarchyStyle", "prefab", "Save preset.");
             if (string.IsNullOrEmpty(path)) return;
+            if (!string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(path)) && !EditorUtility.DisplayDialog("Overwrite?", $"A file already exists at:\n{path}\n\nOverwrite?", "Overwrite", "Cancel"))
+                return;
             var go = new GameObject("PrettyHierarchyStyle");
             EditorUtility.CopySerialized(target as PrettyHierarchyData, go.AddComponent<PrettyHierarchyData>());
             PrefabUtility.SaveAsPrefabAsset(go, path);
@@ -348,7 +452,7 @@ namespace YUCP.Components.Editor
             return btn;
         }
 
-        public static VisualElement CreateCustomIconPicker(SerializedProperty useProp, SerializedProperty texProp, SerializedProperty nameProp)
+        public static VisualElement CreateCustomIconPicker(SerializedProperty useProp, SerializedProperty useTextureProp, SerializedProperty texProp, SerializedProperty nameProp)
         {
             return CreateEffectsPicker("Override GameObject Icon", useProp, content => {
                 var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
@@ -359,14 +463,29 @@ namespace YUCP.Components.Editor
                 previewImg.style.width = 32; previewImg.style.height = 32; previewImg.scaleMode = ScaleMode.ScaleToFit;
                 previewBox.Add(previewImg);
                 
+                var textureModeRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 4 } };
+                textureModeRow.Add(new Label("Use Custom Texture") { style = { color = new Color(1,1,1,0.6f), fontSize = 11, width = 110 } });
+                var useTextureTgl = new Toggle(); useTextureTgl.BindProperty(useTextureProp); textureModeRow.Add(useTextureTgl);
+                
                 var fields = new VisualElement { style = { flexGrow = 1, justifyContent = Justify.Center } };
-                fields.Add(YUCPUIToolkitHelper.CreateField(texProp, "Custom Texture 2D"));
+                fields.Add(textureModeRow);
+                var texField = YUCPUIToolkitHelper.CreateField(texProp, "Custom Texture 2D"); texField.style.marginTop = 5;
                 var nameF = YUCPUIToolkitHelper.CreateField(nameProp, "Unity Internal Icon Name"); nameF.style.marginTop = 5;
+                fields.Add(texField);
                 fields.Add(nameF);
                 
                 row.Add(previewBox);
                 row.Add(fields);
                 content.Add(row);
+                
+                void UpdateIconFieldsVisibility()
+                {
+                    bool useTex = useTextureProp.boolValue;
+                    texField.style.display = useTex ? DisplayStyle.Flex : DisplayStyle.None;
+                    nameF.style.display = useTex ? DisplayStyle.None : DisplayStyle.Flex;
+                }
+                useTextureTgl.RegisterValueChangedCallback(_ => UpdateIconFieldsVisibility());
+                content.schedule.Execute(UpdateIconFieldsVisibility).Every(50);
                 
                 void UpdateImg() {
                     if (texProp.objectReferenceValue != null) previewImg.image = (Texture2D)texProp.objectReferenceValue;
@@ -475,7 +594,7 @@ namespace YUCP.Components.Editor
             });
         }
 
-        public static VisualElement CreateTypographyEditor(SerializedProperty useDefaultColorProp, SerializedProperty colorProp, SerializedProperty fontProp, SerializedProperty sizeProp, SerializedProperty styleProp, SerializedProperty alignProp)
+        public static VisualElement CreateTypographyEditor(SerializedProperty useDefaultColorProp, SerializedProperty colorProp, SerializedProperty useTextGradientProp, SerializedProperty textGradientProp, SerializedProperty textGradientAngleProp, SerializedProperty fontProp, SerializedProperty sizeProp, SerializedProperty styleProp, SerializedProperty alignProp)
         {
             var container = new VisualElement { style = { backgroundColor = new Color(0,0,0,0.15f), borderTopLeftRadius=6, borderTopRightRadius=6, borderBottomLeftRadius=6, borderBottomRightRadius=6, paddingTop=12, paddingBottom=12, paddingLeft=14, paddingRight=14, borderTopWidth=1, borderBottomWidth=1, borderLeftWidth=1, borderRightWidth=1, borderTopColor=new Color(1,1,1,0.05f), borderBottomColor=new Color(1,1,1,0.05f), borderLeftColor=new Color(1,1,1,0.05f), borderRightColor=new Color(1,1,1,0.05f) } };
             
@@ -499,6 +618,24 @@ namespace YUCP.Components.Editor
             colorRow.Add(colorPickerBox);
             
             container.Add(colorRow);
+
+            var gradientRow = new VisualElement { style = { flexDirection = FlexDirection.Row, justifyContent = Justify.SpaceBetween, alignItems = Align.Center, backgroundColor = new Color(1,1,1,0.02f), borderTopLeftRadius=4, borderTopRightRadius=4, borderBottomLeftRadius=4, borderBottomRightRadius=4, paddingLeft=8, paddingRight=8, paddingTop=6, paddingBottom=6, marginBottom=6 } };
+            gradientRow.Add(new Label("Use Text Gradient") { style = { color = new Color(1,1,1,0.6f), fontSize = 11 } });
+            var gradientTgl = new Toggle(); gradientTgl.BindProperty(useTextGradientProp); gradientRow.Add(gradientTgl);
+            container.Add(gradientRow);
+
+            var gradientFields = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginBottom = 6 } };
+            gradientFields.Add(YUCPUIToolkitHelper.CreateField(textGradientProp, "Gradient"));
+            gradientFields.Add(YUCPUIToolkitHelper.CreateField(textGradientAngleProp, "Angle"));
+            container.Add(gradientFields);
+
+            void UpdateGradientVisibility()
+            {
+                bool show = useTextGradientProp.boolValue;
+                gradientFields.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            gradientTgl.RegisterValueChangedCallback(_ => UpdateGradientVisibility());
+            container.schedule.Execute(UpdateGradientVisibility).Every(50);
             
             // Font Settings Main Row
             var fontMainRow = new VisualElement { style = { flexDirection = FlexDirection.Row, justifyContent = Justify.SpaceBetween, alignItems = Align.Center, backgroundColor = new Color(1,1,1,0.02f), borderTopLeftRadius=4, borderTopRightRadius=4, borderBottomLeftRadius=4, borderBottomRightRadius=4, paddingLeft=8, paddingRight=8, paddingTop=6, paddingBottom=6, marginBottom=6 } };
@@ -510,7 +647,7 @@ namespace YUCP.Components.Editor
             
             var fontSizeBox = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginLeft = 10 } };
             fontSizeBox.Add(new Label("Size") { style = { color = new Color(1,1,1,0.6f), fontSize = 11, paddingRight = 6 } });
-            fontSizeBox.Add(CreateCompactField(sizeProp));
+            fontSizeBox.Add(CreateCompactIntField(sizeProp));
             fontMainRow.Add(fontSizeBox);
             
             container.Add(fontMainRow);
@@ -535,7 +672,7 @@ namespace YUCP.Components.Editor
                 colorPickerBox.style.display = useDef ? DisplayStyle.None : DisplayStyle.Flex;
                 previewText.style.color = useDef ? new Color(0.8f, 0.8f, 0.8f, 1f) : colorProp.colorValue;
                 
-                previewText.style.fontSize = sizeProp.floatValue > 0 ? sizeProp.floatValue : 12;
+                previewText.style.fontSize = sizeProp.intValue > 0 ? sizeProp.intValue : 12;
                 
                 var anchor = (TextAnchor)alignProp.enumValueIndex;
                 previewText.style.unityTextAlign = anchor;
@@ -564,6 +701,30 @@ namespace YUCP.Components.Editor
                 if (label != null && hideLabel) label.style.display = DisplayStyle.None;
             });
             return pField;
+        }
+
+        public static VisualElement CreateCompactIntField(SerializedProperty prop, string innerLabel = null)
+        {
+            var container = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new Color(0.12f, 0.12f, 0.12f, 1f), borderTopLeftRadius=4, borderTopRightRadius=4, borderBottomLeftRadius=4, borderBottomRightRadius=4, borderTopWidth=1, borderBottomWidth=1, borderLeftWidth=1, borderRightWidth=1, borderTopColor = new Color(1,1,1,0.1f), borderBottomColor = new Color(1,1,1,0.1f), borderLeftColor = new Color(1,1,1,0.1f), borderRightColor = new Color(1,1,1,0.1f), overflow = Overflow.Hidden, alignItems = Align.Center } };
+            if (!string.IsNullOrEmpty(innerLabel))
+            {
+                var lbl = new Label(innerLabel) { style = { color = new Color(1,1,1,0.4f), fontSize = 11, paddingLeft = 6, paddingRight = 4 } };
+                container.Add(lbl);
+            }
+            var field = new IntegerField();
+            field.BindProperty(prop);
+            field.style.flexGrow = 1;
+            field.style.width = 45;
+            field.RegisterCallback<GeometryChangedEvent>(e => {
+                var input = field.Q(className: "unity-base-field__input");
+                if (input != null) {
+                    input.style.backgroundColor = Color.clear;
+                    input.style.borderTopWidth = 0; input.style.borderBottomWidth = 0; input.style.borderLeftWidth = 0; input.style.borderRightWidth = 0;
+                    input.style.color = new Color(1,1,1,0.9f);
+                }
+            });
+            container.Add(field);
+            return container;
         }
 
         public static VisualElement CreateCompactField(SerializedProperty prop, string innerLabel = null)
@@ -609,7 +770,7 @@ namespace YUCP.Components.Editor
             return toggle;
         }
 
-        public static VisualElement CreatePaddingBoxModel(SerializedProperty top, SerializedProperty bot, SerializedProperty left, SerializedProperty right)
+        public static VisualElement CreatePaddingBoxModel(SerializedProperty top, SerializedProperty bot, SerializedProperty left, SerializedProperty right, System.Action onValueChanged = null)
         {
             var container = new VisualElement { style = { width = new StyleLength(new Length(100, LengthUnit.Percent)), alignItems = Align.Center, marginTop = 0, marginBottom = 10, flexGrow = 1, minWidth = 150 } };
             
@@ -620,20 +781,22 @@ namespace YUCP.Components.Editor
             
             outer.Add(inner);
 
-            var tField = CreateFloatInvisible(top); tField.style.position = Position.Absolute; tField.style.top = 2; tField.style.width = 40;
-            var bField = CreateFloatInvisible(bot); bField.style.position = Position.Absolute; bField.style.bottom = 2; bField.style.width = 40;
-            var lField = CreateFloatInvisible(left); lField.style.position = Position.Absolute; lField.style.left = 2; lField.style.width = 40;
-            var rField = CreateFloatInvisible(right); rField.style.position = Position.Absolute; rField.style.right = 2; rField.style.width = 40;
+            var tField = CreateFloatInvisible(top, onValueChanged); tField.style.position = Position.Absolute; tField.style.top = 2; tField.style.width = 40;
+            var bField = CreateFloatInvisible(bot, onValueChanged); bField.style.position = Position.Absolute; bField.style.bottom = 2; bField.style.width = 40;
+            var lField = CreateFloatInvisible(left, onValueChanged); lField.style.position = Position.Absolute; lField.style.left = 2; lField.style.width = 40;
+            var rField = CreateFloatInvisible(right, onValueChanged); rField.style.position = Position.Absolute; rField.style.right = 2; rField.style.width = 40;
 
             outer.Add(tField); outer.Add(bField); outer.Add(lField); outer.Add(rField);
             container.Add(outer);
             return container;
         }
 
-        public static FloatField CreateFloatInvisible(SerializedProperty prop)
+        public static FloatField CreateFloatInvisible(SerializedProperty prop, System.Action onValueChanged = null)
         {
             var f = new FloatField();
             f.BindProperty(prop);
+            if (onValueChanged != null)
+                f.RegisterValueChangedCallback(_ => onValueChanged());
             f.RegisterCallback<GeometryChangedEvent>(e => {
                 var input = f.Q(className: "unity-base-field__input");
                 if (input != null) {

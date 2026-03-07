@@ -93,9 +93,11 @@ namespace YUCP.Components.Editor
             if (obj is not GameObject go)
                 return DefaultRowHeight;
             var data = go.GetComponent<PrettyHierarchyData>();
-            if (data == null || !data.UseCustomRowHeight)
+            if (data == null)
                 return DefaultRowHeight;
-            return data.CustomRowHeight;
+            if (data.UseCustomRowHeight)
+                return data.CustomRowHeight;
+            return Mathf.Max(DefaultRowHeight, data.FontSize + 8f);
         }
 
         /// <summary>Patch TreeView.GetCustomRowHeight so Unity's layout uses our per-row heights (fixes scroll content and clipping).</summary>

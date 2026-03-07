@@ -127,6 +127,44 @@ namespace YUCP.Components.Editor
             DrawRoundedGradientRect(rect, GetGradientTexture(g), Color.white, angle, 0, 0, 0, 0, alpha);
         }
 
+        /// <summary>Draws text with a gradient by sampling the gradient along horizontal strips. Angle 0 = left-to-right, 90 = top-to-bottom.</summary>
+        public static void DrawGradientText(Rect rect, string text, GUIStyle baseStyle, Gradient gradient, float angleDeg)
+        {
+            if (gradient == null || string.IsNullOrEmpty(text)) return;
+            const int segments = 8;
+            bool horizontal = (angleDeg % 180f) < 90f;
+            if (horizontal)
+            {
+                float segH = rect.height / segments;
+                for (int i = 0; i < segments; i++)
+                {
+                    float t0 = i / (float)segments;
+                    float t1 = (i + 1) / (float)segments;
+                    Color c = gradient.Evaluate((t0 + t1) * 0.5f);
+                    Rect strip = new Rect(rect.x, rect.y + i * segH, rect.width, segH + 1f);
+                    GUI.BeginClip(strip);
+                    var style = new GUIStyle(baseStyle) { normal = new GUIStyleState { textColor = c } };
+                    EditorGUI.LabelField(new Rect(0, -i * segH, rect.width, rect.height), text, style);
+                    GUI.EndClip();
+                }
+            }
+            else
+            {
+                float segW = rect.width / segments;
+                for (int i = 0; i < segments; i++)
+                {
+                    float t0 = i / (float)segments;
+                    float t1 = (i + 1) / (float)segments;
+                    Color c = gradient.Evaluate((t0 + t1) * 0.5f);
+                    Rect strip = new Rect(rect.x + i * segW, rect.y, segW + 1f, rect.height);
+                    GUI.BeginClip(strip);
+                    var style = new GUIStyle(baseStyle) { normal = new GUIStyleState { textColor = c } };
+                    EditorGUI.LabelField(new Rect(-i * segW, 0, rect.width, rect.height), text, style);
+                    GUI.EndClip();
+                }
+            }
+        }
+
         public static void DrawBorder(Rect rect, float width, Color32 color, float topLeft, float topRight, float bottomRight, float bottomLeft)
         {
             // Simple border implementation or...

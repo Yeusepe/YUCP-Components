@@ -208,10 +208,18 @@ namespace YUCP.Components.Editor
                 font = item.Data.Font
             };
 
-            if (item.Data.TextDropShadow)
+            if (item.Data.UseTextGradient && !item.IsSelected)
+            {
+                PrettyHierarchyDrawerHelper.DrawGradientText(item.TextRect, item.GameObject.name, labelStyle, item.Data.TextGradient, item.Data.TextGradientAngle);
+            }
+            else if (item.Data.TextDropShadow)
+            {
                 EditorGUI.DropShadowLabel(item.TextRect, item.GameObject.name, labelStyle);
+            }
             else
+            {
                 EditorGUI.LabelField(item.TextRect, item.GameObject.name, labelStyle);
+            }
         }
 
         private static void PaintIcon(PrettyHierarchyItem item)
@@ -221,7 +229,7 @@ namespace YUCP.Components.Editor
             Texture icon = null;
             if (item.Data.UseCustomIcon)
             {
-                if (item.Data.CustomIcon != null)
+                if (item.Data.UseCustomIconAsTexture && item.Data.CustomIcon != null)
                     icon = item.Data.CustomIcon;
                 else
                     icon = EditorGUIUtility.IconContent(item.Data.CustomIconBuiltInName).image;

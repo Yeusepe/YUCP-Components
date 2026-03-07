@@ -79,6 +79,7 @@ namespace YUCP.Components
         [Header("Icons")]
         [SerializeField] private bool showIcon = true;
         [SerializeField] private bool useCustomIcon;
+        [SerializeField] private bool useCustomIconAsTexture;
         [SerializeField] private Texture2D customIcon;
         [SerializeField] private string customIconBuiltInName = "d_GameObject Icon";
         [SerializeField] private bool showCollapseIcon = true;
@@ -106,6 +107,9 @@ namespace YUCP.Components
         [Header("Text")]
         [SerializeField] private bool useDefaultTextColor = true;
         [SerializeField] private Color textColor = Color.white;
+        [SerializeField] private bool useTextGradient;
+        [SerializeField] private Gradient textGradient = new Gradient();
+        [SerializeField] [Range(0f, 360f)] private float textGradientAngle = 0f;
         [SerializeField] private Font font;
         [SerializeField] private int fontSize = 12;
         [SerializeField] private FontStyle fontStyle = FontStyle.Normal;
@@ -153,6 +157,7 @@ namespace YUCP.Components
 
         public bool ShowIcon => showIcon;
         public bool UseCustomIcon => useCustomIcon;
+        public bool UseCustomIconAsTexture => useCustomIconAsTexture;
         public Texture2D CustomIcon => customIcon;
         public string CustomIconBuiltInName => string.IsNullOrEmpty(customIconBuiltInName) ? "d_GameObject Icon" : customIconBuiltInName;
         public bool ShowCollapseIcon => showCollapseIcon;
@@ -176,6 +181,9 @@ namespace YUCP.Components
 
         public bool UseDefaultTextColor => useDefaultTextColor;
         public Color TextColor => textColor;
+        public bool UseTextGradient => useTextGradient;
+        public Gradient TextGradient => textGradient;
+        public float TextGradientAngle => textGradientAngle;
         public Font Font => font;
         public int FontSize => fontSize;
         public FontStyle FontStyle => fontStyle;
