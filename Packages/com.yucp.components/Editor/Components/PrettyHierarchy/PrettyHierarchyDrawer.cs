@@ -44,7 +44,7 @@ namespace YUCP.Components.Editor
                     PaintExpandCollapseFolderIcon(item);
                 PaintCollapseToggle(item);
             }
-            if (data.ShowPrefabIcon) PaintPrefabIcon(item);
+            if (data.ShowIcon) PaintIcon(item);
             if (data.ShowEditPrefabIcon) PaintEditPrefabIcon(item);
 
             if (data.BorderWidth > 0)
@@ -65,11 +65,22 @@ namespace YUCP.Components.Editor
         private static void PaintExpandCollapseFolderIcon(PrettyHierarchyItem item)
         {
             bool isExpanded = GetIsExpanded(item.InstanceID);
-            string iconName = isExpanded ? item.Data.OpenFolderIconName : item.Data.ClosedFolderIconName;
-            Texture icon = EditorGUIUtility.IconContent(iconName).image;
+            Texture icon = null;
+            
+            if (isExpanded)
+            {
+                if (item.Data.OpenFolderCustomIcon != null) icon = item.Data.OpenFolderCustomIcon;
+                else icon = EditorGUIUtility.IconContent(item.Data.OpenFolderIconName)?.image;
+            }
+            else
+            {
+                if (item.Data.ClosedFolderCustomIcon != null) icon = item.Data.ClosedFolderCustomIcon;
+                else icon = EditorGUIUtility.IconContent(item.Data.ClosedFolderIconName)?.image;
+            }
+
             if (icon == null) return;
             Color color = item.GameObject.activeInHierarchy ? Color.white : new Color(1f, 1f, 1f, 0.5f);
-            GUI.DrawTexture(item.FolderIconRect, icon, ScaleMode.StretchToFill, true, 0f, color, 0f, 0f);
+            GUI.DrawTexture(item.FolderIconRect, icon, ScaleMode.ScaleToFit, true, 0f, color, 0f, 0f);
         }
 
         private static void PaintCollapseToggle(PrettyHierarchyItem item)
@@ -203,7 +214,7 @@ namespace YUCP.Components.Editor
                 EditorGUI.LabelField(item.TextRect, item.GameObject.name, labelStyle);
         }
 
-        private static void PaintPrefabIcon(PrettyHierarchyItem item)
+        private static void PaintIcon(PrettyHierarchyItem item)
         {
             if (!item.Data.ShowIcon) return;
 
@@ -233,12 +244,31 @@ namespace YUCP.Components.Editor
 
         private static void PaintEditPrefabIcon(PrettyHierarchyItem item)
         {
-            if (PrefabUtility.GetCorrespondingObjectFromOriginalSource(item.GameObject) == null) return;
+            Object prefabSource = PrefabUtility.GetCorrespondingObjectFromOriginalSource(item.GameObject);
+            if (prefabSource == null) return;
             if (!PrefabUtility.IsAnyPrefabInstanceRoot(item.GameObject)) return;
 
             Texture icon = EditorGUIUtility.IconContent("ArrowNavigationRight").image;
             if (icon != null)
-                GUI.DrawTexture(item.EditPrefabIconRect, icon, ScaleMode.StretchToFill, true, 0f, PrettyHierarchyEditorColors.EditPrefabIconTintColor, 0f, 0f);
+            {
+                // Hover highlight tint
+                Color tint = item.EditPrefabIconRect.Contains(Event.current.mousePosition) 
+                    ? Color.white 
+                    : PrettyHierarchyEditorColors.EditPrefabIconTintColor;
+                
+                GUI.DrawTexture(item.EditPrefabIconRect, icon, ScaleMode.StretchToFill, true, 0f, tint, 0f, 0f);
+
+                // Handle click to open Prefab
+                if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && item.EditPrefabIconRect.Contains(Event.current.mousePosition))
+                {
+                    string assetPath = AssetDatabase.GetAssetPath(prefabSource);
+                    if (!string.IsNullOrEmpty(assetPath))
+                    {
+                        AssetDatabase.OpenAsset(AssetDatabase.LoadAssetAtPath<Object>(assetPath));
+                        Event.current.Use(); // Consume the event so Unity doesn't select the row behind it
+                    }
+                }
+            }
         }
     }
 }

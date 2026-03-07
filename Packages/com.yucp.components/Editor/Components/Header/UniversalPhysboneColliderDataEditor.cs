@@ -13,12 +13,14 @@ namespace YUCP.Components.Editor
 	{
 		private UniversalPhysboneColliderData data;
 		private SerializedProperty colliderProp;
+		private SerializedProperty excludeProp;
 		private SerializedProperty verboseLoggingProp;
 
 		private void OnEnable()
 		{
 			data = (UniversalPhysboneColliderData)target;
 			colliderProp = serializedObject.FindProperty("collider");
+			excludeProp = serializedObject.FindProperty("exclude");
 			verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
 		}
 
@@ -37,7 +39,7 @@ namespace YUCP.Components.Editor
 			var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
 			overviewContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
 				"At avatar build, all VRC PhysBone components will have the selected collider(s) added to their collider list. " +
-				"Assign a GameObject (all PhysBone Colliders on it and its children are used) or a single PhysBone Collider component.",
+				"Use Exclusions to skip specific PhysBones. Assign a GameObject (all PhysBone Colliders on it and its children are used) or a single PhysBone Collider component.",
 				YUCPUIToolkitHelper.MessageType.Info));
 			root.Add(overviewCard);
 
@@ -48,6 +50,14 @@ namespace YUCP.Components.Editor
 				"GameObject: every VRC PhysBone Collider on this object and its children will be added to every PhysBone. Or assign a single PhysBone Collider component.",
 				YUCPUIToolkitHelper.MessageType.None));
 			root.Add(colliderCard);
+
+			var excludeCard = YUCPUIToolkitHelper.CreateCard("Exclusions", "PhysBones to exclude from receiving the collider.");
+			var excludeContent = YUCPUIToolkitHelper.GetCardContent(excludeCard);
+			excludeContent.Add(YUCPUIToolkitHelper.CreateField(excludeProp, "Exclude PhysBones"));
+			excludeContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
+				"Assign VRCPhysBone components to exclude specific bones, or GameObjects/Transforms to exclude all PhysBones whose root is that transform or a descendant.",
+				YUCPUIToolkitHelper.MessageType.None));
+			root.Add(excludeCard);
 
 			var diagnosticsCard = YUCPUIToolkitHelper.CreateCard("Diagnostics", "Build logging.");
 			var diagnosticsContent = YUCPUIToolkitHelper.GetCardContent(diagnosticsCard);

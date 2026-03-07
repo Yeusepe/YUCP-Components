@@ -40,9 +40,20 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                     return;
                 }
                 
+                if (ProtectionLatchService.HasKey("pg_verify", out var verifyReason))
+                    throw new InvalidOperationException($"Package verification lock active: {verifyReason}");
+
                 if (CircuitBreakerService.IsCircuitBroken())
                 {
-                    Debug.LogWarning("[Import Protection] Circuit breaker active - skipping automatic protection");
+                    Debug.LogError("[Import Protection] Circuit breaker active - bounded recovery mode");
+                    if (YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                    {
+                        ProtectionLatchService.Clear("pg_import_recovery");
+                        return;
+                    }
+
+                    YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                    ProtectionLatchService.Set("pg_import_recovery", "resolver_deferred");
                     return;
                 }
                 
@@ -57,6 +68,12 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             }
             catch (Exception ex)
             {
+                if (ex is InvalidOperationException && ex.Message.StartsWith("Package verification lock active:", StringComparison.Ordinal))
+                {
+                    Debug.LogError("[Import Protection] " + ex.Message);
+                    return;
+                }
+
                 CircuitBreakerService.RecordFailure("Initialization", ex);
             }
         }
@@ -228,8 +245,10 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         /// </summary>
         public static void HandleDisabledFileConflicts()
         {
-            if (CircuitBreakerService.IsCircuitBroken())
-                return;
+            if (ProtectionLatchService.HasKey("pg_verify", out var verifyReason))
+                throw new InvalidOperationException($"Package verification lock active: {verifyReason}");
+
+            bool recoveryMode = CircuitBreakerService.IsCircuitBroken();
 
             // Architecture note:
             // Always prefer the shared resolver so .yucp_disabled handling stays identical across:
@@ -242,14 +261,29 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             try
             {
                 if (YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                {
+                    ProtectionLatchService.Clear("pg_import_recovery");
                     return;
+                }
 
                 // If nothing is found yet (installers may still be moving files), poll for a while.
                 YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+
+                if (recoveryMode)
+                {
+                    ProtectionLatchService.Set("pg_import_recovery", "resolver_deferred");
+                    throw new InvalidOperationException("Circuit breaker recovery mode requires resolver completion.");
+                }
                 return;
             }
             catch (Exception ex)
             {
+                if (recoveryMode)
+                {
+                    ProtectionLatchService.Set("pg_import_recovery", "resolver_failed");
+                    throw new InvalidOperationException("Circuit breaker recovery mode rejects legacy fallback.", ex);
+                }
+
                 Debug.LogWarning($"[Import Protection] Shared resolver failed: {ex.Message} (falling back to legacy resolver)");
             }
 
@@ -322,12 +356,14 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                     // Commit transaction
                     transaction.Commit();
                     CircuitBreakerService.RecordSuccess();
+                    ProtectionLatchService.Clear("pg_import_recovery");
                     
                     Debug.Log("[Import Protection] File conflict resolution complete");
                     AssetDatabase.Refresh();
                 }
                 catch (Exception ex)
                 {
+                    ProtectionLatchService.Set("pg_import_recovery", "legacy_conflict_failure");
                     CircuitBreakerService.RecordFailure("HandleDisabledFileConflicts", ex);
                     throw; // Let transaction rollback
                 }
@@ -626,6 +662,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 
                 AssetDatabase.Refresh();
                 CircuitBreakerService.ResetCircuitBreaker();
+                ProtectionLatchService.Clear("pg_import_recovery");
                 
                 EditorUtility.DisplayDialog(
                     "Recovery Complete",
@@ -723,8 +760,6 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         }
     }
 }
-
-
 
 
 

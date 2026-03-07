@@ -42,10 +42,17 @@ namespace YUCP.Components.Editor
 				}
 
 				var physBones = avatarRoot.GetComponentsInChildren<VRCPhysBone>(true);
+				var excludedSet = BuildExclusionSet(data.exclude, physBones);
 				int addCount = 0;
+				int excludedCount = 0;
 				foreach (var pb in physBones)
 				{
 					if (pb == null) continue;
+					if (excludedSet.Contains(pb))
+					{
+						excludedCount++;
+						continue;
+					}
 					foreach (var collider in collidersToAdd)
 					{
 						if (pb.colliders.Contains(collider)) continue;
@@ -55,7 +62,7 @@ namespace YUCP.Components.Editor
 				}
 
 				if (data.verboseLogging)
-					Debug.Log($"[YUCP Universal Physbone Collider] Added {collidersToAdd.Count} collider(s) to {physBones.Length} PhysBone(s) ({addCount} total additions).");
+					Debug.Log($"[YUCP Universal Physbone Collider] Added {collidersToAdd.Count} collider(s) to {physBones.Length - excludedCount} PhysBone(s) ({addCount} total additions, {excludedCount} excluded).");
 			}
 
 			return true;
@@ -81,6 +88,35 @@ namespace YUCP.Components.Editor
 				list.Add(collider);
 
 			return list;
+		}
+
+		private static HashSet<VRCPhysBone> BuildExclusionSet(List<Object> excludeList, VRCPhysBone[] physBones)
+		{
+			var set = new HashSet<VRCPhysBone>();
+			if (excludeList == null || excludeList.Count == 0 || physBones == null) return set;
+
+			foreach (var obj in excludeList)
+			{
+				if (obj == null) continue;
+
+				if (obj is VRCPhysBone pb)
+				{
+					set.Add(pb);
+					continue;
+				}
+
+				Transform t = obj is GameObject go ? go.transform : obj as Transform;
+				if (t == null) continue;
+
+				foreach (var physBone in physBones)
+				{
+					if (physBone == null) continue;
+					if (physBone.rootTransform == t || (physBone.rootTransform != null && physBone.rootTransform.IsChildOf(t)))
+						set.Add(physBone);
+				}
+			}
+
+			return set;
 		}
 	}
 }

@@ -86,6 +86,8 @@ namespace YUCP.Components
         [SerializeField] private bool showExpandCollapseFolderIcon = true;
         [SerializeField] private string closedFolderIconName = "d_Folder Icon";
         [SerializeField] private string openFolderIconName = "d_FolderOpened Icon";
+        [SerializeField] private Texture2D closedFolderCustomIcon;
+        [SerializeField] private Texture2D openFolderCustomIcon;
         [Tooltip("Offset the expand/collapse folder icon from its default position (pixels).")]
         [SerializeField] private float folderIconOffsetX;
         [SerializeField] private float folderIconOffsetY;
@@ -157,6 +159,8 @@ namespace YUCP.Components
         public bool ShowExpandCollapseFolderIcon => showExpandCollapseFolderIcon;
         public string ClosedFolderIconName => string.IsNullOrEmpty(closedFolderIconName) ? "d_Folder Icon" : closedFolderIconName;
         public string OpenFolderIconName => string.IsNullOrEmpty(openFolderIconName) ? "d_FolderOpened Icon" : openFolderIconName;
+        public Texture2D ClosedFolderCustomIcon => closedFolderCustomIcon;
+        public Texture2D OpenFolderCustomIcon => openFolderCustomIcon;
         public float FolderIconOffsetX => folderIconOffsetX;
         public float FolderIconOffsetY => folderIconOffsetY;
         public bool ShowPrefabIcon => showPrefabIcon;

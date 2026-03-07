@@ -7,6 +7,7 @@ using UnityEditor;
 using UnityEngine;
 using PackageGuardian.Core.Transactions;
 using YUCP.Components.PackageGuardian.Editor.Settings;
+using YUCP.Components.PackageGuardian.Editor.Services;
 
 namespace YUCP.PackageGuardian.Mini
 {
@@ -18,8 +19,6 @@ namespace YUCP.PackageGuardian.Mini
     [InitializeOnLoad]
     public class PackageGuardianMini : AssetPostprocessor
     {
-        private const int MAX_CONSECUTIVE_FAILURES = 3;
-        private const string PREF_KEY_FAILURES = "MiniGuardian_Failures";
         private const string PREF_KEY_LAST_IMPORT = "MiniGuardian_LastImport";
         
         private static bool _hasProcessedThisSession = false;
@@ -44,9 +43,14 @@ namespace YUCP.PackageGuardian.Mini
                 // Check circuit breaker
 				if (IsCircuitBroken())
                 {
-					Debug.LogWarning("[Mini Guardian] Too many failures - protection disabled. Use Tools > Package Guardian > Reset Mini Guardian");
+                    Debug.LogError("[Mini Guardian] Circuit breaker active - bounded recovery mode");
+                    if (!YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                        YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                    ProtectionLatchService.Set("pg_mini_cb", "bounded_recovery");
                     return;
                 }
+
+                ProtectionLatchService.Clear("pg_mini_cb");
                 
                 // Wait for Unity to be ready
                 if (!IsUnityReady())
@@ -67,8 +71,19 @@ namespace YUCP.PackageGuardian.Mini
         
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
-            if (_hasProcessedThisSession || IsCircuitBroken())
+            if (_hasProcessedThisSession)
                 return;
+
+            if (ProtectionLatchService.HasKey("pg_verify", out var verifyReason))
+                throw new InvalidOperationException($"Package verification lock active: {verifyReason}");
+
+            if (IsCircuitBroken())
+            {
+                if (!YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                    YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                ProtectionLatchService.Set("pg_mini_cb", "bounded_recovery");
+                return;
+            }
                 
             // Check if this is a YUCP package import
             bool hasYucpFiles = importedAssets.Any(a => 
@@ -566,40 +581,33 @@ namespace YUCP.PackageGuardian.Mini
         
         private static bool IsCircuitBroken()
         {
-            int failures = EditorPrefs.GetInt(PREF_KEY_FAILURES, 0);
-            return failures >= MAX_CONSECUTIVE_FAILURES;
+            return CircuitBreakerService.IsCircuitBroken();
         }
         
         private static void RecordFailure(string operation, Exception ex)
         {
-            int failures = EditorPrefs.GetInt(PREF_KEY_FAILURES, 0) + 1;
-            EditorPrefs.SetInt(PREF_KEY_FAILURES, failures);
-            
-            Debug.LogError($"[Mini Guardian] {operation} failed ({failures}/{MAX_CONSECUTIVE_FAILURES}): {ex.Message}");
-            
-			if (failures >= MAX_CONSECUTIVE_FAILURES)
-            {
-                Debug.LogError("[Mini Guardian] Circuit breaker activated - protection disabled!");
-				Debug.LogError("[Mini Guardian] Use Tools > Package Guardian > Reset Mini Guardian to re-enable");
-            }
+            CircuitBreakerService.RecordFailure("MiniGuardian." + operation, ex);
+            ProtectionLatchService.Set("pg_mini_cb", "failure");
         }
         
         private static void RecordSuccess()
         {
-            EditorPrefs.SetInt(PREF_KEY_FAILURES, 0);
+            CircuitBreakerService.RecordSuccess();
+            ProtectionLatchService.Clear("pg_mini_cb");
         }
         
 		[MenuItem("Tools/Package Guardian/Reset Mini Guardian")]
         public static void ResetCircuitBreaker()
         {
-            EditorPrefs.SetInt(PREF_KEY_FAILURES, 0);
-            Debug.Log("[Mini Guardian] Circuit breaker reset - protection re-enabled");
+            CircuitBreakerService.ResetCircuitBreaker();
+            ProtectionLatchService.Clear("pg_mini_cb");
+            Debug.Log("[Mini Guardian] Circuit breaker reset");
         }
         
 		[MenuItem("Tools/Package Guardian/Mini Guardian Status")]
         public static void ShowStatus()
         {
-            int failures = EditorPrefs.GetInt(PREF_KEY_FAILURES, 0);
+            int failures = CircuitBreakerService.GetConsecutiveFailures();
             string lastImport = EditorPrefs.GetString(PREF_KEY_LAST_IMPORT, "Never");
             
             string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
@@ -608,13 +616,13 @@ namespace YUCP.PackageGuardian.Mini
                 : 0;
             
             string status = "Mini Package Guardian Status:\n\n";
-            status += failures >= MAX_CONSECUTIVE_FAILURES 
+            status += failures >= 3
                 ? "Circuit Breaker: ACTIVE (protection disabled)\n" 
-                : $"Circuit Breaker: OK ({failures}/{MAX_CONSECUTIVE_FAILURES} failures)\n";
+                : $"Circuit Breaker: OK ({failures}/3 failures)\n";
             status += $".yucp_disabled files: {disabledCount}\n";
             status += $"Last import: {(lastImport == "Never" ? "Never" : "Recently")}\n\n";
             
-            if (failures >= MAX_CONSECUTIVE_FAILURES)
+            if (failures >= 3)
             {
                 status += "Protection is disabled. Use 'Reset Mini Guardian' to re-enable.\n";
             }
@@ -637,7 +645,6 @@ namespace YUCP.PackageGuardian.Mini
         }
     }
 }
-
 
 
 

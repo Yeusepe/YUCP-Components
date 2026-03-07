@@ -429,30 +429,52 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                         Debug.LogWarning($"[Package Guardian] {issue.Title}: {issue.Description}");
                     }
                 }
-                
-                // If there are critical issues, show a dialog
-                var criticalIssues = packageIssues.Where(i => 
-                    i.Severity == global::PackageGuardian.Core.Validation.IssueSeverity.Critical).ToList();
-                
-                if (criticalIssues.Count > 0)
+
+                string lockReason;
+                if (EvaluateVerificationLock(packageIssues, out lockReason))
                 {
-                    string message = string.Join("\n\n", criticalIssues.Select(i => 
-                        $"{i.Title}\n{i.Description}").ToArray());
-                    
+                    ProtectionLatchService.Set("pg_verify", lockReason);
+                    Debug.LogError($"[Package Guardian] Verification hard lock engaged: {lockReason}");
+
                     EditorApplication.delayCall += () =>
                     {
                         EditorUtility.DisplayDialog(
-                            "Package Guardian - Critical Package Issues",
-                            $"Detected {criticalIssues.Count} critical package issue(s):\n\n{message}\n\nCheck the Console and Health & Safety window for details.",
+                            "Package Guardian - Verification Block",
+                            "Package verification reported critical issues. Imports and builds are blocked until resolved.",
                             "OK"
                         );
                     };
                 }
+                else
+                {
+                    ProtectionLatchService.Clear("pg_verify");
+                }
             }
             catch (Exception ex)
             {
+                ProtectionLatchService.Set("pg_verify", "validator_exception");
                 Debug.LogWarning($"[Package Guardian] Failed to validate package changes: {ex.Message}");
             }
+        }
+
+        internal static bool EvaluateVerificationLock(IEnumerable<global::PackageGuardian.Core.Validation.ValidationIssue> issues, out string reason)
+        {
+            reason = string.Empty;
+            if (issues == null)
+                return false;
+
+            var hard = issues.Where(i =>
+                i != null &&
+                (i.Severity == global::PackageGuardian.Core.Validation.IssueSeverity.Error ||
+                 i.Severity == global::PackageGuardian.Core.Validation.IssueSeverity.Critical))
+                .Take(3)
+                .ToList();
+
+            if (hard.Count == 0)
+                return false;
+
+            reason = string.Join(" | ", hard.Select(i => i.Title + ": " + i.Description));
+            return true;
         }
         #endif
         
@@ -475,4 +497,3 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
         }
     }
 }
-

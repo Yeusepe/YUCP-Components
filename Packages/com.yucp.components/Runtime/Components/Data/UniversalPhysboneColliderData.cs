@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using VRC.SDKBase;
 
@@ -17,6 +18,10 @@ namespace YUCP.Components
 		[Header("Collider")]
 		[Tooltip("Assign a GameObject (all VRC PhysBone Colliders on it and its children will be added to every PhysBone) or a single VRC PhysBone Collider component. Must be under this avatar.")]
 		public Object collider;
+
+		[Header("Exclusions")]
+		[Tooltip("PhysBones to exclude. Assign VRCPhysBone components, or GameObjects/Transforms to exclude all PhysBones whose root is that transform or a descendant.")]
+		public List<Object> exclude = new List<Object>();
 
 		[Header("Diagnostics")]
 		[Tooltip("Print how many PhysBones were updated when building.")]
