@@ -111,7 +111,11 @@ namespace YUCP.Components.Editor
 				foreach (var physBone in physBones)
 				{
 					if (physBone == null) continue;
-					if (physBone.rootTransform == t || (physBone.rootTransform != null && physBone.rootTransform.IsChildOf(t)))
+					// Use effective root: when rootTransform is null, PhysBone uses the component's transform
+					Transform effectiveRoot = physBone.rootTransform != null ? physBone.rootTransform : physBone.transform;
+					// Exclude when: t is the root, t is parent of root, OR t is in the chain (descendant of root)
+					bool match = effectiveRoot == t || effectiveRoot.IsChildOf(t) || t.IsChildOf(effectiveRoot);
+					if (match)
 						set.Add(physBone);
 				}
 			}

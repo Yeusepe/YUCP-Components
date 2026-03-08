@@ -20,7 +20,7 @@ namespace YUCP.Components
 		public Object collider;
 
 		[Header("Exclusions")]
-		[Tooltip("PhysBones to exclude. Assign VRCPhysBone components, or GameObjects/Transforms to exclude all PhysBones whose root is that transform or a descendant.")]
+		[Tooltip("PhysBones to exclude. Assign VRCPhysBone components, or GameObjects/Transforms (bones). Excludes any PhysBone that contains that bone: as root, as parent of root, or anywhere in the chain.")]
 		public List<Object> exclude = new List<Object>();
 
 		[Header("Diagnostics")]
