@@ -35,17 +35,20 @@
     },
     "one.razgriz.harmony-vpm": {
       "version": "2.2.2"
+    },
+    "com.vrchat.core.vpm-resolver": {
+      "version": "0.1.29"
     }
   },
   "locked": {
     "com.vrchat.base": {
-      "version": "3.10.0",
+      "version": "3.10.2",
       "dependencies": {}
     },
     "com.vrchat.avatars": {
-      "version": "3.10.0",
+      "version": "3.10.2",
       "dependencies": {
-        "com.vrchat.base": "3.10.0"
+        "com.vrchat.base": "3.10.2"
       }
     },
     "nadena.dev.ndmf": {
@@ -72,7 +75,7 @@
       }
     },
     "com.vrcfury.vrcfury": {
-      "version": "1.1273.0",
+      "version": "1.1282.0",
       "dependencies": {}
     },
     "d4rkpl4y3r.d4rkavataroptimizer": {
@@ -93,6 +96,10 @@
     },
     "com.poiyomi.toon": {
       "version": "9.2.79",
+      "dependencies": {}
+    },
+    "com.vrchat.core.vpm-resolver": {
+      "version": "0.1.29",
       "dependencies": {}
     }
   }
