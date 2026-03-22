@@ -35,7 +35,21 @@ namespace YUCP.Components.Editor
                     string[] pathSegments = SplitPathSegments(headingMatch.Title, config != null && config.useSlashAsPathSeparator);
                     int baseDepth = Mathf.Max(1, headingMatch.Depth);
 
-                    for (int segmentIndex = 0; segmentIndex < pathSegments.Length; segmentIndex++)
+                    while (sectionStack.Count > 0 && sectionStack.Peek().Depth >= baseDepth)
+                    {
+                        sectionStack.Pop();
+                    }
+
+                    if (sectionStack.Count == 0)
+                    {
+                        sectionStack.Push(document.Root);
+                    }
+
+                    BlendshapeMarkdownSection baseParent = sectionStack.Peek();
+                    string[] parentPathSegments = SplitFullPath(baseParent.FullPath);
+                    int sharedPrefixLength = GetParentSuffixOverlapLength(parentPathSegments, pathSegments);
+
+                    for (int segmentIndex = sharedPrefixLength; segmentIndex < pathSegments.Length; segmentIndex++)
                     {
                         string segment = pathSegments[segmentIndex];
                         if (string.IsNullOrWhiteSpace(segment))
@@ -43,7 +57,7 @@ namespace YUCP.Components.Editor
                             continue;
                         }
 
-                        int sectionDepth = baseDepth + segmentIndex;
+                        int sectionDepth = baseDepth + (segmentIndex - sharedPrefixLength);
 
                         while (sectionStack.Count > 0 && sectionStack.Peek().Depth >= sectionDepth)
                         {
@@ -362,6 +376,55 @@ namespace YUCP.Components.Editor
             }
 
             return parts;
+        }
+
+        private static string[] SplitFullPath(string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath))
+            {
+                return Array.Empty<string>();
+            }
+
+            string[] parts = fullPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int index = 0; index < parts.Length; index++)
+            {
+                parts[index] = parts[index].Trim();
+            }
+
+            return parts;
+        }
+
+        private static int GetParentSuffixOverlapLength(string[] parentSegments, string[] pathSegments)
+        {
+            if (parentSegments == null || pathSegments == null || parentSegments.Length == 0 || pathSegments.Length == 0)
+            {
+                return 0;
+            }
+
+            int maxOverlap = Mathf.Min(parentSegments.Length, pathSegments.Length);
+            for (int overlapLength = maxOverlap; overlapLength > 0; overlapLength--)
+            {
+                bool matches = true;
+
+                for (int index = 0; index < overlapLength; index++)
+                {
+                    string parentSegment = parentSegments[parentSegments.Length - overlapLength + index];
+                    string pathSegment = pathSegments[index];
+
+                    if (!string.Equals(parentSegment, pathSegment, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matches = false;
+                        break;
+                    }
+                }
+
+                if (matches)
+                {
+                    return overlapLength;
+                }
+            }
+
+            return 0;
         }
     }
 }
