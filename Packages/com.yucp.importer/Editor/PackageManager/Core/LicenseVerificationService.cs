@@ -105,9 +105,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             Action<string> onSuccess,
             Action<string> onError)
         {
-            // Buyer must be signed in to YUCP so the server can look up their Discord account.
-            // Token is stored in EditorPrefs by YucpOAuthService (com.yucp.devtools).
-            string accessToken = GetYucpAccessToken();
+            var tokenTask = CreatorIdentityOAuthService.GetValidAccessTokenAsync(serverUrl);
+            while (!tokenTask.IsCompleted)
+            {
+                yield return null;
+            }
+
+            string accessToken = !tokenTask.IsFaulted && !tokenTask.IsCanceled ? tokenTask.Result : null;
             if (string.IsNullOrEmpty(accessToken))
             {
                 onError?.Invoke(
@@ -158,22 +162,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Reads the YUCP access token from EditorPrefs (stored there by YucpOAuthService in com.yucp.devtools).
-        /// Returns null if not signed in or token is expired.
-        /// </summary>
-        private static string GetYucpAccessToken()
-        {
-            const string KeyToken  = "YUCP_OAuth_AccessToken";
-            const string KeyExpiry = "YUCP_OAuth_TokenExpiry";
-            if (!EditorPrefs.HasKey(KeyToken) || !EditorPrefs.HasKey(KeyExpiry)) return null;
-            string token = EditorPrefs.GetString(KeyToken, "");
-            if (string.IsNullOrEmpty(token)) return null;
-            long expiry = (long)EditorPrefs.GetInt(KeyExpiry, 0);
-            if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() >= expiry) return null;
-            return token;
-        }
 
         private static string GenerateNonce()
         {

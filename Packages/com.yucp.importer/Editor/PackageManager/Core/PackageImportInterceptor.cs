@@ -1,6 +1,7 @@
 
 #if !YUCP_PACKAGE_MANAGER_DISABLED
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
@@ -240,6 +241,13 @@ namespace YUCP.Importer.Editor.PackageManager
                     stepItems = allItems;
                 }
 
+                if (!TryGetInterceptionReason(allItems, out string reason))
+                {
+                    Debug.Log($"[YUCP PackageManager] Early interception skipped for '{Path.GetFileName(packagePath)}': no YUCP markers found.");
+                    return false;
+                }
+
+                Debug.Log($"[YUCP PackageManager] Intercepting '{Path.GetFileName(packagePath)}' via early polling because {reason}.");
                 ShowCustomImportWindow(wizardInstance, stepItems, allItems, packagePath, iconPath);
                 return true;
             }
@@ -250,10 +258,13 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
-        private static bool HasYUCPMetadata(System.Array importItems)
+        private static bool TryGetInterceptionReason(System.Array importItems, out string reason)
         {
+            reason = null;
             if (importItems == null || importItems.Length == 0)
+            {
                 return false;
+            }
 
             var itemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
             if (itemType == null) return false;
@@ -266,8 +277,29 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (item == null) continue;
 
                 string destinationPath = destinationPathField.GetValue(item) as string;
-                if (destinationPath != null && destinationPath.Equals("Assets/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(destinationPath))
                 {
+                    continue;
+                }
+
+                if (PackageMetadataExtractor.IsMetadataAssetPath(destinationPath))
+                {
+                    reason = "it contains YUCP_PackageInfo.json";
+                    return true;
+                }
+
+                string normalizedPath = destinationPath.Replace('\\', '/');
+
+                if (normalizedPath.EndsWith("/_Signing/PackageManifest.json", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedPath.EndsWith("/_Signing/PackageManifest.sig", StringComparison.OrdinalIgnoreCase))
+                {
+                    reason = "it contains YUCP signing data";
+                    return true;
+                }
+
+                if (PackageMetadataExtractor.IsTempInstallPackageJsonPath(destinationPath))
+                {
+                    reason = "it contains a YUCP temp-install descriptor";
                     return true;
                 }
             }
@@ -489,10 +521,16 @@ namespace YUCP.Importer.Editor.PackageManager
                     return true;
                 }
 
+                if (!TryGetInterceptionReason(itemsArray, out string reason))
+                {
+                    Debug.Log($"[YUCP PackageManager] Allowing Unity default import for '{Path.GetFileName(packagePath)}': no YUCP markers found.");
+                    return true;
+                }
+
                 _mPackagePathField?.SetValue(__instance, packagePath);
                 _mPackageIconPathField?.SetValue(__instance, packageIconPath);
                 _mInitialImportItemsField?.SetValue(__instance, itemsArray);
-                
+
                 EditorApplication.delayCall += () =>
                 {
                     try
@@ -505,7 +543,8 @@ namespace YUCP.Importer.Editor.PackageManager
                         
                         bool isProjectStep = GetFieldValue<bool>(__instance, _mIsProjectSettingStepField);
                         System.Array stepItems = itemsArray;
-                        
+
+                        Debug.Log($"[YUCP PackageManager] Intercepting '{Path.GetFileName(packagePath)}' via Harmony because {reason}.");
                         _customWindowShown = true;
                         ShowCustomImportWindow(__instance, stepItems, itemsArray, packagePath, packageIconPath);
                     }

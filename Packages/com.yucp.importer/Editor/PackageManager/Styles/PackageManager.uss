@@ -1,12 +1,14 @@
 /* ============================================================================
-   YUCP Package Manager - Styles   
+   YUCP Package Manager — Redesigned UI
+   Modern · Sleek · Minimal · Beautiful
    ============================================================================ */
 
 /* ============================================================================
    SCROLL CONTENT
    ============================================================================ */
 .yucp-scroll-content {
-    flex-grow: 1;
+    flex-grow: 0;
+    flex-shrink: 0;
 }
 
 /* ============================================================================
@@ -23,6 +25,16 @@
 .yucp-content-wrapper {
     flex-shrink: 0;
     position: relative;
+    margin-left: 16px;
+    margin-right: 16px;
+    margin-bottom: 16px;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.yucp-content-wrapper-details {
+    flex-grow: 0;
+    margin-top: 20px;
 }
 
 /* ============================================================================
@@ -60,42 +72,89 @@
 }
 
 /* ============================================================================
-   METADATA SECTION - Hero-style layout (Read-only)
+   BASE SECTION CARD
    ============================================================================ */
 .yucp-section {
-    background-color: rgba(22, 22, 22, 0.1);
-    border-radius: 8px;
-    padding: 20px;
+    background-color: rgba(8, 8, 11, 0.72);
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 18px;
+    padding-bottom: 18px;
+}
+
+/* ============================================================================
+   INSTALLER SUMMARY (Package info card — import wizard)
+   ============================================================================ */
+.yucp-installer-summary {
+    background-color: rgba(10, 10, 14, 0.86);
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 18px;
+    padding-bottom: 22px;
 }
 
 .yucp-metadata-section {
-    padding: 20px;
-    margin-left: 20px;
-    margin-right: 20px;
-    margin-bottom: 20px;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 10px;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0;
+    padding-bottom: 0;
     background-color: transparent;
 }
 
 .yucp-metadata-header {
-    padding-bottom: 16px;
-    border-bottom-width: 0;
+    flex-direction: row;
+    align-items: flex-start;
     flex-wrap: wrap;
     min-width: 0;
+    padding-bottom: 0;
 }
 
 .yucp-action-buttons-container {
     flex-shrink: 0;
     min-width: 0;
+    flex-direction: row;
+    align-items: flex-start;
+    margin-left: 14px;
 }
 
+/* Icon */
 .yucp-metadata-icon-container {
     width: 80px;
     height: 80px;
     min-width: 80px;
     min-height: 80px;
-    background-color: rgba(42, 42, 42, 0.3);
-    border-width: 0;
-    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
     justify-content: center;
     align-items: center;
     overflow: hidden;
@@ -119,10 +178,11 @@
     top: -3.5%;
 }
 
+/* Name / text */
 .yucp-metadata-name-field {
-    font-size: 20px;
+    font-size: 19px;
     -unity-font-style: bold;
-    color: #ffffff;
+    color: #f2f2f4;
     margin-bottom: 0;
 }
 
@@ -133,104 +193,539 @@
 }
 
 .yucp-metadata-section Label {
-    color: #ffffff;
+    color: #f2f2f4;
 }
 
-.yucp-product-link-container {
+.yucp-package-context-label {
+    color: rgba(255, 255, 255, 0.38);
+    font-size: 10px;
+    -unity-font-style: bold;
+    margin-bottom: 3px;
 }
 
-.yucp-product-link-label {
+.yucp-package-author-label {
+    color: rgba(240, 240, 244, 0.52);
+    font-size: 12px;
+    margin-top: 3px;
+}
+
+.yucp-version-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 6px;
+}
+
+.yucp-version-row Label {
+    color: rgba(240, 240, 244, 0.65);
+    font-size: 12px;
+}
+
+.yucp-package-description {
+    color: rgba(220, 220, 226, 0.72);
+    font-size: 12px;
+    margin-top: 10px;
+    white-space: normal;
+}
+
+.yucp-product-link-container {}
+.yucp-product-link-label {}
+
+/* ============================================================================
+   DETAILS TOGGLE — VisualElement row, full custom styling, no Button chrome
+   ============================================================================ */
+
+/* Outer row — the whole clickable strip */
+.yucp-dtb {
+    flex-direction: row;
+    align-items: stretch;
+    margin-top: 8px;
+    min-height: 46px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 0;
+    border-top-color: rgba(255, 255, 255, 0.07);
+    border-right-color: rgba(255, 255, 255, 0.07);
+    border-bottom-color: rgba(255, 255, 255, 0.07);
+    overflow: hidden;
+    cursor: link;
+    transition-duration: 0.12s;
+    transition-property: background-color;
+}
+
+.yucp-dtb:hover {
+    background-color: rgba(255, 255, 255, 0.09);
+}
+
+/* Teal left accent bar — hidden */
+.yucp-dtb-accent {
+    display: none;
+}
+
+/* Icon (≡ or ←) */
+.yucp-dtb-icon {
+    font-size: 15px;
+    color: rgba(54, 191, 177, 0.75);
+    margin-left: 14px;
+    margin-right: 10px;
+    flex-shrink: 0;
+    width: 18px;
+    -unity-text-align: middle-center;
+    align-self: center;
+}
+
+/* Main label */
+.yucp-dtb-text {
+    font-size: 12px;
+    -unity-font-style: normal;
+    color: rgba(224, 224, 230, 0.85);
+    align-self: center;
+    flex-shrink: 0;
+}
+
+/* Count badge (file/dep indicator) */
+.yucp-dtb-count {
+    font-size: 10px;
+    color: rgba(54, 191, 177, 0.60);
+    background-color: rgba(54, 191, 177, 0.09);
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    padding-left: 7px;
+    padding-right: 7px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    margin-right: 10px;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+/* Right chevron › */
+.yucp-dtb-arrow {
+    font-size: 18px;
+    color: rgba(210, 210, 216, 0.28);
+    margin-right: 14px;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+/* Keep the old class name around in case anything still references it */
+.yucp-details-toggle-button {
+    display: none;
 }
 
 /* ============================================================================
-   DETAILS TOGGLE BUTTON
+   ACTION BUTTONS
    ============================================================================ */
-.yucp-details-toggle-button {
-    margin-top: 8px;
-    margin-bottom: 12px;
-    margin-left: 20px;
-    margin-right: 20px;
-    padding: 4px 10px;
-    min-height: 24px;
-    max-height: 24px;
+.yucp-action-button {
+    min-width: 84px;
+    min-height: 34px;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+    font-size: 12px;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    color: #f2f2f4;
+    margin-left: 8px;
+    transition-duration: 0.14s;
+    transition-property: background-color, opacity;
+}
+
+.yucp-cancel-button {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-right-color: rgba(255, 255, 255, 0.12);
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+    border-left-color: rgba(255, 255, 255, 0.12);
+    color: rgba(240, 240, 244, 0.80);
+}
+
+.yucp-cancel-button:hover {
+    background-color: rgba(255, 255, 255, 0.10);
+}
+
+.yucp-import-button {
+    background-color: rgba(255, 255, 255, 0.95);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.28);
+    border-right-color: rgba(255, 255, 255, 0.28);
+    border-bottom-color: rgba(255, 255, 255, 0.28);
+    border-left-color: rgba(255, 255, 255, 0.28);
+    color: rgba(14, 14, 16, 0.96);
+}
+
+.yucp-import-button Label {
+    color: rgba(14, 14, 16, 0.96);
+}
+
+.yucp-import-button:hover {
+    background-color: rgba(255, 255, 255, 1.0);
+}
+
+/* ============================================================================
+   CONTENTS SECTION
+   ============================================================================ */
+.yucp-contents-section {
+    overflow: visible;
+    flex-shrink: 0;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    padding-bottom: 22px;
+    margin-top: 0;
+}
+
+.yucp-details-header {
+    margin-bottom: 14px;
+}
+
+.yucp-details-title {
+    font-size: 9px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.28);
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+}
+
+.yucp-details-subtitle {
+    color: rgba(210, 210, 216, 0.42);
     font-size: 11px;
+    white-space: normal;
+}
+
+/* ============================================================================
+   CONFLICT MODE (Replace / Keep segment control)
+   ============================================================================ */
+.yucp-conflict-mode-section {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.yucp-conflict-mode-label {
+    color: rgba(218, 218, 224, 0.70);
+    font-size: 12px;
+    -unity-font-style: bold;
+}
+
+.yucp-conflict-segment {
+    flex-direction: row;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    padding-left: 3px;
+    padding-right: 3px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.07);
+    border-right-color: rgba(255, 255, 255, 0.07);
+    border-bottom-color: rgba(255, 255, 255, 0.07);
+    border-left-color: rgba(255, 255, 255, 0.07);
+}
+
+.yucp-conflict-option {
+    min-height: 26px;
+    padding-left: 14px;
+    padding-right: 14px;
     background-color: transparent;
+    border-width: 0;
+    color: rgba(210, 210, 216, 0.58);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    font-size: 12px;
+    transition-duration: 0.12s;
+    transition-property: background-color, color;
+}
+
+.yucp-conflict-option:hover {
+    color: rgba(240, 240, 244, 0.82);
+}
+
+.yucp-conflict-option-selected {
+    background-color: rgba(255, 255, 255, 0.14);
+    color: #f2f2f4;
+}
+
+/* ============================================================================
+   FILE TREE — Export Inspector Design Language
+   Depth hierarchy via colored left-border groups, clean compact rows
+   ============================================================================ */
+
+/* Outer scroll container */
+.yucp-tree-scroll {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
     border-top-width: 0;
     border-right-width: 0;
     border-bottom-width: 0;
     border-left-width: 0;
-    transition-property: opacity;
-    transition-duration: 0.15s;
-    transition-timing-function: ease-out;
+    padding-left: 6px;
+    padding-right: 6px;
+    padding-top: 6px;
+    padding-bottom: 6px;
 }
 
-.yucp-details-toggle-button:hover {
-    opacity: 0.7;
+/* Row — folder or file */
+.yucp-tree-item {
+    flex-direction: row;
+    align-items: center;
+    min-height: 24px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    padding-left: 0;
+    padding-right: 4px;
+    margin-bottom: 0;
+    border-radius: 4px;
+    background-color: transparent;
+    transition-duration: 0.10s;
+    transition-property: background-color;
 }
 
-.yucp-details-toggle-button:active {
-    opacity: 0.5;
+.yucp-tree-item:hover {
+    background-color: rgba(255, 255, 255, 0.04);
 }
 
-/* ============================================================================
-   ACTION BUTTONS (Import/Cancel)
-   ============================================================================ */
-.yucp-action-button {
-    min-width: 80px;
-    min-height: 28px;
-    padding: 6px 16px;
-    font-size: 12px;
+/* Folder row — slightly bolder row tint */
+.yucp-tree-folder {
+    margin-top: 1px;
+}
+
+/* ── Depth group containers (children of an expanded folder) ── */
+.yucp-tree-group {
+    margin-left: 6px;
+    padding-left: 8px;
+    border-left-width: 2px;
+    margin-bottom: 2px;
+    border-radius: 0 0 0 4px;
+}
+
+/* Depth 1 — Teal (brand) */
+.yucp-tree-group-depth-1 {
+    border-left-color: rgba(54, 191, 177, 0.38);
+    background-color: rgba(54, 191, 177, 0.015);
+}
+/* Depth 2 — Blue */
+.yucp-tree-group-depth-2 {
+    border-left-color: rgba(66, 135, 245, 0.38);
+    background-color: rgba(66, 135, 245, 0.015);
+}
+/* Depth 3 — Purple */
+.yucp-tree-group-depth-3 {
+    border-left-color: rgba(167, 66, 245, 0.38);
+    background-color: rgba(167, 66, 245, 0.015);
+}
+/* Depth 4 — Orange */
+.yucp-tree-group-depth-4 {
+    border-left-color: rgba(245, 144, 66, 0.38);
+    background-color: rgba(245, 144, 66, 0.015);
+}
+/* Depth 5 — Rose */
+.yucp-tree-group-depth-5 {
+    border-left-color: rgba(245, 66, 102, 0.38);
+    background-color: rgba(245, 66, 102, 0.015);
+}
+/* Depth 6+ — Cyan */
+.yucp-tree-group-depth-6 {
+    border-left-color: rgba(34, 211, 238, 0.38);
+    background-color: rgba(34, 211, 238, 0.015);
+}
+
+/* Group hover — intensify the depth indicator */
+.yucp-tree-group:hover { border-left-color: rgba(255, 255, 255, 0.28); }
+.yucp-tree-group-depth-1:hover { border-left-color: rgba(54, 191, 177, 0.80); background-color: rgba(54, 191, 177, 0.035); }
+.yucp-tree-group-depth-2:hover { border-left-color: rgba(66, 135, 245, 0.80); background-color: rgba(66, 135, 245, 0.035); }
+.yucp-tree-group-depth-3:hover { border-left-color: rgba(167, 66, 245, 0.80); background-color: rgba(167, 66, 245, 0.035); }
+.yucp-tree-group-depth-4:hover { border-left-color: rgba(245, 144, 66, 0.80); background-color: rgba(245, 144, 66, 0.035); }
+.yucp-tree-group-depth-5:hover { border-left-color: rgba(245, 66, 102, 0.80); background-color: rgba(245, 66, 102, 0.035); }
+.yucp-tree-group-depth-6:hover { border-left-color: rgba(34, 211, 238, 0.80); background-color: rgba(34, 211, 238, 0.035); }
+
+/* Inner content row */
+.yucp-tree-item-content {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+    min-height: 24px;
+    padding-left: 6px;
+    min-width: 0;
+}
+
+/* Expand / collapse button */
+.yucp-tree-expand-button {
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0;
+    margin: 0;
+    margin-right: 4px;
+    background-color: transparent;
+    border-width: 0;
+    color: rgba(180, 180, 190, 0.50);
+    font-size: 10px;
+    -unity-text-align: middle-center;
+    flex-shrink: 0;
     border-radius: 3px;
-    margin-left: 8px;
-    transition-property: background-color, opacity;
-    transition-duration: 0.15s;
-    transition-timing-function: ease-out;
+    transition-duration: 0.10s;
+    transition-property: background-color, color;
 }
 
-.yucp-cancel-button {
-    background-color: rgba(255, 255, 255, 0.1);
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    border-top-color: rgba(255, 255, 255, 0.2);
-    border-right-color: rgba(255, 255, 255, 0.2);
-    border-bottom-color: rgba(255, 255, 255, 0.2);
-    border-left-color: rgba(255, 255, 255, 0.2);
+.yucp-tree-expand-button:hover {
+    color: #36BFB1;
+    background-color: rgba(54, 191, 177, 0.14);
 }
 
-.yucp-cancel-button:hover {
-    background-color: rgba(255, 255, 255, 0.15);
+/* Checkbox */
+.yucp-tree-checkbox {
+    margin-right: 5px;
+    margin-left: 0;
+    flex-shrink: 0;
 }
 
-.yucp-import-button {
-    background-color: rgba(100, 150, 255, 0.3);
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    border-top-color: rgba(100, 150, 255, 0.5);
-    border-right-color: rgba(100, 150, 255, 0.5);
-    border-bottom-color: rgba(100, 150, 255, 0.5);
-    border-left-color: rgba(100, 150, 255, 0.5);
+.yucp-tree-checkbox-mixed {
+    opacity: 0.70;
 }
 
-.yucp-import-button:hover {
-    background-color: rgba(100, 150, 255, 0.4);
+/* File / folder icons */
+.yucp-tree-icon {
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    flex-shrink: 0;
+    font-size: 12px;
+    -unity-text-align: middle-center;
 }
 
-/* ============================================================================
-   CONTENTS SECTION - Smooth animation
-   ============================================================================ */
-.yucp-contents-section {
-    transition-property: max-height;
-    transition-duration: 0.35s;
-    transition-timing-function: ease-in-out;
+.yucp-tree-folder-icon {
+    /* Unity folder icon image handles colour */
+}
+
+.yucp-tree-file-icon {
+    color: rgba(200, 200, 210, 0.45);
+}
+
+/* Labels */
+.yucp-tree-label {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: #e0e0e4;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 8px;
+}
+
+.yucp-tree-folder-label {
+    color: #f2f2f4;
+    -unity-font-style: bold;
+}
+
+.yucp-tree-file-label {
+    color: rgba(220, 220, 228, 0.80);
+    -unity-font-style: normal;
+}
+
+/* Conflict / exists states */
+.yucp-tree-item-exists {
+    opacity: 0.68;
+}
+
+.yucp-tree-item-conflict {
+    background-color: rgba(239, 68, 68, 0.06);
+}
+
+.yucp-tree-item-conflict:hover {
+    background-color: rgba(239, 68, 68, 0.10);
+}
+
+/* ── Badges ── */
+.yucp-tree-badge {
+    margin-left: 6px;
+    padding-left: 6px;
+    padding-right: 6px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.yucp-tree-badge Label {
+    font-size: 9px;
+    -unity-font-style: bold;
+}
+
+/* Licensed / protected badge */
+.yucp-tree-badge-protected {
+    background-color: rgba(99, 130, 220, 0.26);
+}
+
+.yucp-tree-badge-protected Label {
+    color: rgba(210, 225, 255, 1.0);
+}
+
+/* Conflict badge (Replace / Keep) */
+.yucp-tree-badge-conflict {
+    background-color: rgba(239, 68, 68, 0.13);
+}
+
+.yucp-tree-badge-conflict Label {
+    color: rgba(252, 130, 130, 0.92);
 }
 
 /* ============================================================================
-   RESPONSIVE DESIGN
+   VERIFICATION ICON
+   ============================================================================ */
+.yucp-verification-icon {
+    margin-left: 7px;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.yucp-verification-icon Image {
+    width: 18px;
+    height: 18px;
+}
+
+/* ============================================================================
+   MAIN SCROLL VIEW
+   ============================================================================ */
+.yucp-main-scrollview {
+    background-color: transparent;
+}
+
+/* ============================================================================
+   RESPONSIVE
    ============================================================================ */
 @media (max-width: 800px) {
     .yucp-metadata-header {
@@ -240,7 +735,7 @@
     .yucp-action-buttons-container {
         width: 100%;
         margin-left: 0;
-        margin-top: 12px;
+        margin-top: 10px;
         justify-content: flex-end;
     }
 }
@@ -252,278 +747,454 @@
     }
 
     .yucp-metadata-icon-container {
-        margin-bottom: 12px;
+        margin-bottom: 10px;
     }
 
     .yucp-metadata-name-field {
-        font-size: 18px;
+        font-size: 17px;
     }
 
     .yucp-action-buttons-container {
         width: 100%;
         margin-left: 0;
-        margin-top: 12px;
+        margin-top: 10px;
         justify-content: flex-start;
     }
 }
 
 /* ============================================================================
-   TREE VIEW
+   LICENSE CARDS
    ============================================================================ */
-.yucp-tree-item {
-    min-height: 20px;
-    padding-top: 2px;
-    padding-bottom: 2px;
+.yucp-license-card {
+    background-color: rgba(9, 9, 13, 0.88);
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.09);
+    border-right-color: rgba(255, 255, 255, 0.09);
+    border-bottom-color: rgba(255, 255, 255, 0.09);
+    border-left-color: rgba(255, 255, 255, 0.09);
+    padding-left: 18px;
+    padding-right: 18px;
+    padding-top: 18px;
+    padding-bottom: 18px;
+    margin-top: 12px;
+    transition-duration: 0.18s;
+    transition-property: background-color, border-top-color, border-right-color, border-bottom-color, border-left-color, opacity;
 }
 
-.yucp-tree-item-content {
-    min-height: 20px;
-    padding-top: 2px;
-    padding-bottom: 2px;
-}
-
-.yucp-tree-expand-button {
-    min-width: 20px;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    margin-right: 4px;
-    background-color: transparent;
-    border-width: 0;
+.yucp-license-eyebrow {
+    color: rgba(255, 255, 255, 0.40);
     font-size: 10px;
-    color: #cccccc;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
 }
 
-.yucp-tree-expand-button:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+.yucp-license-title {
+    color: #f2f2f4;
+    font-size: 16px;
+    -unity-font-style: bold;
+    margin-bottom: 5px;
 }
 
-.yucp-tree-checkbox {
-    margin-right: 6px;
-    margin-left: 0;
-}
-
-.yucp-tree-checkbox-mixed {
-    /* Mixed state - checkbox appears checked but with opacity to indicate mixed */
-    opacity: 0.7;
-}
-
-.yucp-tree-icon {
-    width: 16px;
-    height: 16px;
-    margin-right: 6px;
-    font-size: 14px;
-}
-
-.yucp-tree-folder-icon {
-    color: #4a9eff;
-}
-
-.yucp-tree-file-icon {
-    color: #cccccc;
-}
-
-.yucp-tree-label {
-    flex-grow: 1;
+.yucp-license-body {
+    color: rgba(218, 218, 224, 0.76);
     font-size: 12px;
-    color: #cccccc;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    margin-bottom: 14px;
+    white-space: normal;
 }
 
-.yucp-tree-folder-label {
-    color: #ffffff;
-    -unity-font-style: normal;
+.yucp-license-button-row {
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
 }
 
-.yucp-tree-file-label {
-    color: #cccccc;
+.yucp-license-primary-button {
+    min-height: 36px;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    background-color: rgba(255, 255, 255, 0.96);
+    border-width: 0;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    width: 220px;
+    max-width: 320px;
 }
 
-.yucp-tree-item:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+.yucp-license-primary-button-label {
+    color: rgba(12, 12, 14, 0.98);
+    font-size: 12px;
+    -unity-font-style: bold;
 }
 
-.yucp-tree-item-exists {
-    opacity: 0.8;
+.yucp-license-verified-row {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
 }
 
-.yucp-tree-item-conflict {
-    background-color: rgba(255, 100, 100, 0.1);
+.yucp-license-verified-copy {
+    color: rgba(218, 218, 224, 0.88);
+    font-size: 12px;
+    margin-right: 10px;
+    flex-grow: 1;
 }
 
-.yucp-tree-item-conflict:hover {
-    background-color: rgba(255, 100, 100, 0.15);
+.yucp-license-chip {
+    flex-direction: row;
+    align-items: center;
+    background-color: transparent;
+    padding-left: 0;
+    padding-right: 12px;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-right: 8px;
+    margin-bottom: 6px;
+}
+
+.yucp-license-chip-count {
+    min-width: 20px;
+    height: 20px;
+    -unity-text-align: middle-center;
+    background-color: rgba(255, 255, 255, 0.88);
+    color: rgba(20, 20, 22, 0.96);
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    font-size: 10px;
+    -unity-font-style: bold;
+    margin-right: 6px;
+}
+
+.yucp-license-chip-label {
+    color: rgba(210, 210, 216, 0.66);
+    font-size: 10px;
 }
 
 /* ============================================================================
-   VERIFICATION ICON
+   PROTECTED SUMMARY — amber left-border accent, minimal chrome
    ============================================================================ */
-.yucp-verification-icon {
-    margin-left: 8px;
-    width: 20px;
-    height: 20px;
+.yucp-protected-summary-card {
+    flex-direction: column;
+    background-color: rgba(250, 176, 5, 0.04);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 2px;
+    border-left-color: rgba(250, 176, 5, 0.42);
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+}
+
+.yucp-protected-summary-title {
+    font-size: 9px;
+    -unity-font-style: bold;
+    color: rgba(250, 176, 5, 0.65);
+    margin-bottom: 0;
+}
+
+.yucp-protected-summary-count {
+    font-size: 10px;
+    color: rgba(250, 176, 5, 0.45);
     flex-shrink: 0;
 }
 
-.yucp-verification-icon Image {
-    width: 20px;
-    height: 20px;
+.yucp-protected-stat-row {
+    display: none;
+}
+
+.yucp-protected-preview-list {
+    flex-direction: column;
+    margin-top: 4px;
+}
+
+.yucp-protected-preview-item {
+    flex-direction: row;
+    align-items: center;
+    background-color: transparent;
+    border-width: 0;
+    color: rgba(210, 210, 216, 0.55);
+    font-size: 11px;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    margin-bottom: 0;
+}
+
+.yucp-protected-preview-icon {
+    font-size: 10px;
+    color: rgba(250, 176, 5, 0.45);
+    margin-right: 6px;
+    flex-shrink: 0;
+    width: 12px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-protected-preview-more {
+    color: rgba(210, 210, 216, 0.30);
+    font-size: 10px;
+    margin-top: 3px;
+    padding-left: 18px;
 }
 
 /* ============================================================================
    INSTALLED PACKAGES VIEW
    ============================================================================ */
 .installed-packages-view {
-    background-color: rgba(30, 30, 30, 0.5);
-    padding-left: 16px;
-    padding-right: 16px;
-    padding-top: 16px;
-    padding-bottom: 16px;
+    flex-grow: 1;
+    flex-direction: column;
+    flex-shrink: 1;
+    min-height: 0;
+    background-color: #111114;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+/* Top bar — title + accent line */
+.installed-packages-topbar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 18px;
+    padding-right: 18px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.055);
+    flex-shrink: 0;
+}
+
+.installed-packages-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: rgba(242, 242, 244, 0.88);
+}
+
+.installed-packages-subtitle {
+    font-size: 10px;
+    color: rgba(54, 191, 177, 0.70);
+    margin-top: 1px;
+}
+
+/* Search + filter area */
+.installed-packages-search-area {
+    flex-direction: column;
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 12px;
+    padding-bottom: 10px;
+    flex-shrink: 0;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.04);
 }
 
 .packages-view-header {
     flex-direction: column;
-    margin-bottom: 16px;
+    margin-bottom: 0;
+    flex-shrink: 0;
 }
 
+/* Search field */
 .packages-search-field {
     width: 100%;
-    min-height: 32px;
+    min-height: 34px;
     padding-left: 12px;
     padding-right: 12px;
-    padding-top: 6px;
-    padding-bottom: 6px;
-    font-size: 13px;
-    background-color: rgba(42, 42, 42, 0.6);
-    border-top-width: 0;
-    border-right-width: 0;
-    border-bottom-width: 0;
-    border-left-width: 0;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
-    border-bottom-left-radius: 6px;
-    border-bottom-right-radius: 6px;
-    color: #ffffff;
-    transition-property: background-color;
-    transition-duration: 0.15s;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 12px;
+    background-color: rgba(255, 255, 255, 0.042);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.07);
+    border-right-color: rgba(255, 255, 255, 0.07);
+    border-bottom-color: rgba(255, 255, 255, 0.07);
+    border-left-color: rgba(255, 255, 255, 0.07);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    color: #f2f2f4;
+    margin-bottom: 8px;
+    transition-duration: 0.14s;
+    transition-property: background-color, border-top-color, border-right-color, border-bottom-color, border-left-color;
 }
 
 .packages-search-field:focus {
-    background-color: rgba(50, 50, 50, 0.8);
+    background-color: rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.14);
+    border-right-color: rgba(255, 255, 255, 0.14);
+    border-bottom-color: rgba(255, 255, 255, 0.14);
+    border-left-color: rgba(255, 255, 255, 0.14);
 }
 
 .packages-search-field > .unity-text-input {
     background-color: transparent;
     border-width: 0;
-    color: #ffffff;
+    color: #f2f2f4;
+    padding-left: 0;
+    padding-right: 0;
 }
 
 .packages-search-field > .unity-text-input:focus {
     background-color: transparent;
 }
 
+/* Filter row */
 .packages-filter-row {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
     width: 100%;
+    margin-top: 2px;
 }
 
 .packages-filter-container {
     flex-direction: row;
-    flex-wrap: wrap;
-}
-
-.packages-filter-button {
-    min-width: 80px;
-    min-height: 28px;
-    padding-left: 16px;
-    padding-right: 16px;
-    padding-top: 6px;
-    padding-bottom: 6px;
-    font-size: 12px;
-    background-color: rgba(42, 42, 42, 0.4);
-    border-top-width: 0;
-    border-right-width: 0;
-    border-bottom-width: 0;
-    border-left-width: 0;
-    border-top-left-radius: 3px;
-    border-top-right-radius: 3px;
-    border-bottom-left-radius: 3px;
-    border-bottom-right-radius: 3px;
-    color: #cccccc;
-    transition-property: background-color;
-    transition-duration: 0.15s;
-}
-
-.packages-filter-button:hover {
-    background-color: rgba(50, 50, 50, 0.6);
-    color: #ffffff;
-}
-
-.packages-filter-button-active {
-    background-color: rgba(64, 224, 208, 0.3);
-    color: #ffffff;
-}
-
-.packages-filter-button-active:hover {
-    background-color: rgba(64, 224, 208, 0.4);
+    flex-wrap: nowrap;
 }
 
 .packages-filter-container > * {
-    margin-right: 8px;
+    margin-right: 6px;
 }
 
+.packages-filter-button {
+    min-width: 0;
+    min-height: 26px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    font-size: 11px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.07);
+    border-right-color: rgba(255, 255, 255, 0.07);
+    border-bottom-color: rgba(255, 255, 255, 0.07);
+    border-left-color: rgba(255, 255, 255, 0.07);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    color: rgba(210, 210, 216, 0.60);
+    transition-duration: 0.12s;
+    transition-property: background-color, border-top-color, border-right-color, border-bottom-color, border-left-color, color;
+}
+
+.packages-filter-button:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-right-color: rgba(255, 255, 255, 0.12);
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+    border-left-color: rgba(255, 255, 255, 0.12);
+    color: rgba(240, 240, 244, 0.88);
+}
+
+.packages-filter-button-active {
+    background-color: rgba(107, 159, 255, 0.14);
+    border-top-color: rgba(107, 159, 255, 0.28);
+    border-right-color: rgba(107, 159, 255, 0.28);
+    border-bottom-color: rgba(107, 159, 255, 0.28);
+    border-left-color: rgba(107, 159, 255, 0.28);
+    color: #8cb4ff;
+}
+
+.packages-filter-button-active:hover {
+    background-color: rgba(107, 159, 255, 0.20);
+    color: #a8c8ff;
+}
+
+/* View toggle */
 .packages-view-toggle {
-    min-width: 80px;
-    min-height: 28px;
-    padding-left: 16px;
-    padding-right: 16px;
-    padding-top: 6px;
-    padding-bottom: 6px;
-    font-size: 12px;
-    background-color: rgba(42, 42, 42, 0.4);
-    border-top-width: 0;
-    border-right-width: 0;
-    border-bottom-width: 0;
-    border-left-width: 0;
-    border-top-left-radius: 3px;
-    border-top-right-radius: 3px;
-    border-bottom-left-radius: 3px;
-    border-bottom-right-radius: 3px;
-    color: #cccccc;
-    transition-property: background-color;
-    transition-duration: 0.15s;
+    min-width: 0;
+    min-height: 26px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    font-size: 11px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.07);
+    border-right-color: rgba(255, 255, 255, 0.07);
+    border-bottom-color: rgba(255, 255, 255, 0.07);
+    border-left-color: rgba(255, 255, 255, 0.07);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    color: rgba(210, 210, 216, 0.60);
+    transition-duration: 0.12s;
+    transition-property: background-color, border-top-color, border-right-color, border-bottom-color, border-left-color, color;
 }
 
 .packages-view-toggle:hover {
-    background-color: rgba(50, 50, 50, 0.6);
+    background-color: rgba(255, 255, 255, 0.07);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-right-color: rgba(255, 255, 255, 0.12);
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+    border-left-color: rgba(255, 255, 255, 0.12);
+    color: rgba(240, 240, 244, 0.88);
 }
 
+/* Scroll / container */
 .packages-scroll-view {
     flex-grow: 1;
     flex-shrink: 1;
+    min-height: 0;
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 12px;
+    padding-bottom: 14px;
 }
 
 .packages-container {
     flex-direction: row;
     flex-wrap: wrap;
-    padding-left: 8px;
-    padding-right: 8px;
-    padding-top: 8px;
-    padding-bottom: 8px;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .packages-container > * {
-    margin-right: 12px;
-    margin-bottom: 12px;
+    margin-right: 10px;
+    margin-bottom: 10px;
 }
 
 .packages-container-grid {
     flex-direction: row;
     flex-wrap: wrap;
+    align-content: flex-start;
 }
 
 .packages-container-list {
@@ -535,59 +1206,66 @@
    PACKAGE CARD
    ============================================================================ */
 .package-card {
-    background-color: rgba(60, 60, 60, 0.6);
-    border-top-width: 0;
-    border-right-width: 0;
-    border-bottom-width: 0;
-    border-left-width: 0;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
-    padding-top: 12px;
-    padding-bottom: 12px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.07);
+    border-right-color: rgba(255, 255, 255, 0.07);
+    border-bottom-color: rgba(255, 255, 255, 0.07);
+    border-left-color: rgba(255, 255, 255, 0.07);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
     position: relative;
     overflow: hidden;
-    transition-property: background-color;
-    transition-duration: 0.2s;
+    transition-duration: 0.16s;
+    transition-property: background-color, border-top-color, border-right-color, border-bottom-color, border-left-color;
 }
 
 .package-card:hover {
-    background-color: rgba(70, 70, 70, 0.8);
+    background-color: rgba(255, 255, 255, 0.07);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-right-color: rgba(255, 255, 255, 0.12);
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+    border-left-color: rgba(255, 255, 255, 0.12);
 }
 
 .package-card:active {
-    background-color: rgba(65, 65, 65, 0.7);
+    background-color: rgba(255, 255, 255, 0.05);
 }
 
+/* Grid card */
 .package-card-grid {
-    width: 280px;
-    min-width: 280px;
+    width: 188px;
+    min-width: 188px;
     flex-direction: column;
 }
 
+/* List card */
 .package-card-list {
     width: 100%;
     flex-direction: row;
     align-items: center;
+    padding-left: 12px;
+    padding-right: 14px;
+    padding-top: 10px;
+    padding-bottom: 10px;
 }
 
+/* Icon */
 .package-card-icon {
-    width: 64px;
-    height: 64px;
-    min-width: 64px;
-    min-height: 64px;
-    background-color: rgba(30, 30, 30, 0.5);
-    border-top-width: 0;
-    border-right-width: 0;
-    border-bottom-width: 0;
-    border-left-width: 0;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
-    border-bottom-left-radius: 6px;
-    border-bottom-right-radius: 6px;
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    min-height: 52px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
     justify-content: center;
     align-items: center;
     overflow: hidden;
@@ -596,22 +1274,28 @@
 
 .package-card-grid .package-card-icon {
     width: 100%;
-    height: 180px;
-    min-height: 180px;
-    margin-bottom: 12px;
+    height: 110px;
+    min-height: 110px;
+    margin-bottom: 0;
+    border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
 }
 
 .package-card-icon-image {
     width: 100%;
     height: 100%;
+    -unity-background-scale-mode: scale-and-crop;
 }
 
 .package-card-icon-placeholder {
-    width: 100%;
-    height: 100%;
-    opacity: 0.5;
+    width: 55%;
+    height: 55%;
+    opacity: 0.22;
 }
 
+/* Card content */
 .package-card-content {
     flex-grow: 1;
     flex-direction: column;
@@ -619,60 +1303,52 @@
 }
 
 .package-card-list .package-card-content {
-    margin-left: 16px;
+    margin-left: 13px;
 }
 
 .package-card-grid .package-card-content {
     margin-left: 0;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 12px;
 }
 
+/* Name row */
 .package-card-name-row {
     flex-direction: row;
     align-items: center;
     flex-wrap: nowrap;
     position: relative;
+    margin-bottom: 3px;
 }
 
 .package-card-name {
-    font-size: 15px;
+    font-size: 13px;
     -unity-font-style: bold;
-    color: #ffffff;
+    color: #f2f2f4;
     flex-shrink: 1;
     flex-grow: 0;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin-right: 8px;
-}
-
-.package-card-update-badge {
-    font-size: 10px;
-    padding-left: 6px;
-    padding-right: 6px;
-    padding-top: 2px;
-    padding-bottom: 2px;
-    background-color: rgba(64, 224, 208, 0.3);
-    border-top-left-radius: 3px;
-    border-top-right-radius: 3px;
-    border-bottom-left-radius: 3px;
-    border-bottom-right-radius: 3px;
-    color: #ffffff;
-    -unity-font-style: normal;
-    flex-shrink: 0;
-    position: relative;
+    margin-right: 5px;
 }
 
 .package-card-version {
-    font-size: 12px;
-    color: #aaaaaa;
-    -unity-font-style: normal;
+    font-size: 11px;
+    color: rgba(210, 210, 216, 0.45);
+    margin-top: 2px;
 }
 
 .package-card-author {
-    font-size: 12px;
-    color: #888888;
-    -unity-font-style: normal;
+    font-size: 11px;
+    color: rgba(210, 210, 216, 0.40);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .package-card-verified-badge {
@@ -681,9 +1357,519 @@
     flex-shrink: 0;
 }
 
+/* Update badge — green tint */
+.package-card-update-badge {
+    font-size: 10px;
+    padding-left: 7px;
+    padding-right: 7px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    background-color: rgba(74, 222, 128, 0.13);
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(74, 222, 128, 0.24);
+    border-right-color: rgba(74, 222, 128, 0.24);
+    border-bottom-color: rgba(74, 222, 128, 0.24);
+    border-left-color: rgba(74, 222, 128, 0.24);
+    color: #6de89e;
+    -unity-font-style: normal;
+    flex-shrink: 0;
+}
+
+/* Hover banner */
 .package-card-hover-banner {
     overflow: hidden;
     background-color: transparent;
 }
 
+/* ============================================================================
+   PACKAGE DETAILS VIEW
+   ============================================================================ */
+.package-details-view {
+    flex-grow: 1;
+    flex-direction: column;
+    background-color: #111114;
+}
 
+/* Info row inside details */
+.yucp-info-row {
+    flex-direction: row;
+    align-items: flex-start;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+
+.yucp-info-row:last-child {
+    border-bottom-width: 0;
+    padding-bottom: 0;
+}
+
+.yucp-info-label {
+    width: 100px;
+    min-width: 100px;
+    font-size: 11px;
+    color: rgba(210, 210, 216, 0.40);
+}
+
+.yucp-info-value {
+    flex-grow: 1;
+    font-size: 11px;
+    color: rgba(240, 240, 244, 0.82);
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Section title */
+.yucp-section-title {
+    font-size: 9px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.30);
+    margin-bottom: 12px;
+}
+
+/* File list item */
+.yucp-file-item {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    border-radius: 3px;
+    transition-duration: 0.08s;
+    transition-property: background-color;
+}
+
+.yucp-file-item:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.yucp-file-item-icon {
+    font-size: 11px;
+    color: rgba(54, 191, 177, 0.50);
+    margin-right: 8px;
+    flex-shrink: 0;
+    width: 14px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-file-item-path {
+    font-size: 11px;
+    color: rgba(210, 210, 216, 0.60);
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Dependency row */
+.yucp-dep-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    background-color: rgba(255, 255, 255, 0.038);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    margin-bottom: 6px;
+    border-width: 0;
+}
+
+.yucp-dep-name {
+    font-size: 12px;
+    color: rgba(240, 240, 244, 0.80);
+    flex-grow: 1;
+}
+
+.yucp-dep-version {
+    font-size: 11px;
+    color: rgba(107, 159, 255, 0.80);
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   LICENSE GATE — unified single section, no nested bubbles
+   ============================================================================ */
+
+/* Root container — sits inside the installer summary card, flows as one block */
+.lgate-root {
+    flex-direction: column;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.07);
+}
+
+/* Creator Identity row — no individual background, flows into package rows */
+.lgate-id-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0;
+    padding-bottom: 8px;
+}
+
+.lgate-id-title {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: rgba(242, 242, 244, 0.90);
+    margin-bottom: 2px;
+}
+
+.lgate-id-hint {
+    font-size: 10px;
+    color: rgba(218, 218, 224, 0.48);
+    white-space: normal;
+}
+
+/* Section label — acts as a sub-header within the combined block */
+.lgate-section-label {
+    font-size: 9px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.28);
+    margin-top: 12px;
+    margin-bottom: 8px;
+}
+
+/* Per-requirement verification block — no bubble, divider between entries */
+.lgate-req-block {
+    flex-direction: column;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    margin-bottom: 0;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.lgate-req-name-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+
+.lgate-req-name {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: rgba(242, 242, 244, 0.92);
+    flex-grow: 1;
+    margin-right: 12px;
+}
+
+.lgate-req-id {
+    font-size: 9px;
+    color: rgba(210, 210, 216, 0.30);
+    margin-bottom: 8px;
+}
+
+.lgate-req-note {
+    font-size: 11px;
+    color: rgba(109, 232, 158, 0.72);
+    white-space: normal;
+}
+
+/* Provider selection tabs */
+.lgate-tab-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 8px;
+    margin-bottom: 10px;
+}
+
+.lgate-tab-sep {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.16);
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
+.lgate-tab {
+    background-color: transparent;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 1px;
+    border-left-width: 0;
+    border-bottom-color: transparent;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0;
+    padding-bottom: 4px;
+    font-size: 11px;
+    color: rgba(210, 210, 216, 0.44);
+    transition-duration: 0.12s;
+    transition-property: color, border-bottom-color;
+}
+
+.lgate-tab:hover {
+    color: rgba(242, 242, 244, 0.76);
+}
+
+.lgate-tab-active {
+    color: #f2f2f4;
+    border-bottom-color: rgba(107, 159, 255, 0.55);
+}
+
+/* License key input row */
+.lgate-input-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 6px;
+    margin-bottom: 6px;
+}
+
+.lgate-key-field {
+    flex-grow: 1;
+    height: 32px;
+    font-size: 11px;
+    margin-right: 6px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    color: #f2f2f4;
+}
+
+.lgate-key-field > .unity-text-input {
+    background-color: transparent;
+    border-width: 0;
+    color: #f2f2f4;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+/* Solid button (Verify / Connect) */
+.lgate-solid-btn {
+    height: 32px;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 11px;
+    background-color: rgba(255, 255, 255, 0.09);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.15);
+    border-right-color: rgba(255, 255, 255, 0.15);
+    border-bottom-color: rgba(255, 255, 255, 0.15);
+    border-left-color: rgba(255, 255, 255, 0.15);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    color: #f2f2f4;
+    flex-shrink: 0;
+    transition-duration: 0.12s;
+    transition-property: background-color;
+}
+
+.lgate-solid-btn:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Link/ghost button (Sign out) */
+.lgate-link-btn {
+    background-color: transparent;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    color: rgba(210, 210, 216, 0.46);
+    font-size: 10px;
+    padding-left: 0;
+    padding-right: 0;
+    flex-shrink: 0;
+    transition-duration: 0.10s;
+    transition-property: color;
+}
+
+.lgate-link-btn:hover {
+    color: rgba(242, 242, 244, 0.80);
+}
+
+/* Discord / Creator Identity verify row */
+.lgate-discord-row {
+    flex-direction: column;
+    align-items: stretch;
+    margin-top: 8px;
+}
+
+/* Discord / Creator Identity verify button — same style as lgate-solid-btn */
+.lgate-discord-btn {
+    height: 32px;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 11px;
+    background-color: rgba(255, 255, 255, 0.09);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.15);
+    border-right-color: rgba(255, 255, 255, 0.15);
+    border-bottom-color: rgba(255, 255, 255, 0.15);
+    border-left-color: rgba(255, 255, 255, 0.15);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    color: #f2f2f4;
+    flex-shrink: 0;
+    transition-duration: 0.12s;
+    transition-property: background-color;
+}
+
+.lgate-discord-btn:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.lgate-discord-note {
+    font-size: 10px;
+    color: rgba(210, 210, 216, 0.38);
+    white-space: normal;
+    margin-top: 5px;
+}
+
+/* Inline status indicator (dot + text) */
+.lgate-status {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.lgate-status-dot {
+    width: 6px;
+    height: 6px;
+    border-top-left-radius: 999px;
+    border-top-right-radius: 999px;
+    border-bottom-left-radius: 999px;
+    border-bottom-right-radius: 999px;
+    flex-shrink: 0;
+    margin-right: 5px;
+}
+
+.lgate-status-dot-verified {
+    background-color: rgba(109, 232, 158, 0.80);
+}
+
+.lgate-status-dot-unverified {
+    background-color: rgba(210, 210, 216, 0.18);
+}
+
+.lgate-status-text {
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.lgate-status-text-verified {
+    color: rgba(109, 232, 158, 0.82);
+}
+
+.lgate-status-text-unverified {
+    color: rgba(210, 210, 216, 0.40);
+}
+
+/* Footer note */
+.lgate-footer {
+    font-size: 10px;
+    color: rgba(210, 210, 216, 0.32);
+    white-space: normal;
+    margin-top: 10px;
+}
+
+/* Secondary "Use license key instead" toggle link */
+.lgate-key-toggle {
+    background-color: transparent;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    color: rgba(180, 180, 192, 0.38);
+    font-size: 10px;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 8px;
+    -unity-text-align: middle-left;
+    transition-duration: 0.10s;
+    transition-property: color;
+}
+
+.lgate-key-toggle:hover {
+    color: rgba(210, 210, 216, 0.70);
+}
+
+/* Warning box */
+.lgate-warning {
+    flex-direction: column;
+    background-color: rgba(239, 68, 68, 0.06);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(239, 68, 68, 0.14);
+    border-right-color: rgba(239, 68, 68, 0.14);
+    border-bottom-color: rgba(239, 68, 68, 0.14);
+    border-left-color: rgba(239, 68, 68, 0.14);
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    margin-top: 10px;
+}
+
+.lgate-warning-title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(252, 165, 165, 0.90);
+    margin-bottom: 3px;
+}
+
+.lgate-warning-body {
+    font-size: 11px;
+    color: rgba(230, 196, 194, 0.72);
+    white-space: normal;
+}
+
+/* Legacy: simplified flow classes kept for compatibility */
+.lgate-simple { flex-direction: column; margin-top: 16px; }
+.lgate-simple-verified { flex-direction: row; align-items: center; margin-top: 2px; }
+.lgate-check { font-size: 13px; color: rgba(109, 232, 158, 0.85); margin-right: 6px; }
+.lgate-simple-btn-row { flex-direction: row; align-items: center; margin-top: 4px; }
+.lgate-eyebrow { font-size: 9px; -unity-font-style: bold; color: rgba(255,255,255,0.28); margin-bottom: 3px; }
+.lgate-title { font-size: 15px; -unity-font-style: bold; color: #f2f2f4; }
+.lgate-body { font-size: 11px; color: rgba(218,218,224,0.52); white-space: normal; margin-top: 4px; }
+.lgate-divider { height: 0; margin-top: 8px; }

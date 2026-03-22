@@ -1,9 +1,7 @@
 {
     "name": "com.yucp.importer.Editor",
     "rootNamespace": "YUCP.Importer.Editor",
-    "references": [
-        "com.yucp.components.Editor"
-    ],
+    "references": [],
     "includePlatforms": [
         "Editor"
     ],

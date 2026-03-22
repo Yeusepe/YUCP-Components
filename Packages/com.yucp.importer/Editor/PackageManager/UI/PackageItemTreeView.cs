@@ -103,37 +103,43 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void RenderNode(PackageItemNode node, VisualElement parent, int depth)
         {
-            // Skip root "Assets" node if it has no direct children/files
+            // Skip root if empty
             if (depth == 0 && node.Children.Count == 0)
-            {
                 return;
-            }
 
-            // Render folder header (skip root, but show if it has direct files)
-            if (node.IsFolder && (depth > 0 || node.Children.Any(c => !c.IsFolder)))
+            // Render folder row (not for root)
+            if (node.IsFolder && depth > 0)
             {
-                if (depth > 0)
-                {
-                    var folderRow = CreateFolderRow(node, depth);
-                    parent.Add(folderRow);
-                }
+                var folderRow = CreateFolderRow(node, depth);
+                parent.Add(folderRow);
             }
 
-            // Render children if expanded (root is always considered expanded for rendering)
+            // Children only render if expanded (root always renders)
             bool shouldRenderChildren = depth == 0 || node.IsExpanded;
-            if (shouldRenderChildren)
+            if (!shouldRenderChildren) return;
+
+            // Wrap children in a depth-colored group for visual hierarchy
+            VisualElement childContainer;
+            if (node.IsFolder && depth > 0)
             {
-                foreach (var child in node.Children)
+                childContainer = new VisualElement();
+                childContainer.AddToClassList("yucp-tree-group");
+                childContainer.AddToClassList($"yucp-tree-group-depth-{Mathf.Min(depth, 6)}");
+                parent.Add(childContainer);
+            }
+            else
+            {
+                childContainer = parent;
+            }
+
+            foreach (var child in node.Children)
+            {
+                if (child.IsFolder)
+                    RenderNode(child, childContainer, depth + 1);
+                else
                 {
-                    if (child.IsFolder)
-                    {
-                        RenderNode(child, parent, depth + 1);
-                    }
-                    else
-                    {
-                        var fileRow = CreateFileRow(child, depth + 1);
-                        parent.Add(fileRow);
-                    }
+                    var fileRow = CreateFileRow(child, depth + 1);
+                    childContainer.Add(fileRow);
                 }
             }
         }
@@ -143,7 +149,6 @@ namespace YUCP.Importer.Editor.PackageManager
             var row = new VisualElement();
             row.AddToClassList("yucp-tree-item");
             row.AddToClassList("yucp-tree-folder");
-            row.style.paddingLeft = 8 + (depth * 20);
 
             var content = new VisualElement();
             content.AddToClassList("yucp-tree-item-content");
@@ -211,6 +216,11 @@ namespace YUCP.Importer.Editor.PackageManager
             nameLabel.tooltip = node.FullPath;
             content.Add(nameLabel);
 
+            if (HasProtectedDescendants(node))
+            {
+                content.Add(CreateBadge("Licensed", "yucp-tree-badge-protected"));
+            }
+
             row.Add(content);
             return row;
         }
@@ -220,7 +230,6 @@ namespace YUCP.Importer.Editor.PackageManager
             var row = new VisualElement();
             row.AddToClassList("yucp-tree-item");
             row.AddToClassList("yucp-tree-file");
-            row.style.paddingLeft = 8 + (depth * 20);
 
             // Check for file states
             bool exists = GetExists(node.ImportItem);
@@ -290,34 +299,55 @@ namespace YUCP.Importer.Editor.PackageManager
             nameLabel.AddToClassList("yucp-tree-label");
             nameLabel.AddToClassList("yucp-tree-file-label");
             nameLabel.tooltip = node.FullPath;
-
-            // Add status indicators
-            if (hasConflict)
-            {
-                nameLabel.text += node.IsSelected ? " [Overwrite]" : " [Keep]";
-                nameLabel.tooltip += node.IsSelected
-                    ? "\nWARNING: Conflict: this file already exists and WILL be overwritten"
-                    : "\nINFO: Conflict: keeping existing file (this item will NOT be imported)";
-            }
-            else if (exists && isChanged)
-            {
-                nameLabel.text += node.IsSelected ? " [Overwrite]" : " [Keep]";
-                nameLabel.tooltip += node.IsSelected
-                    ? "\nWARNING: This file exists and WILL be overwritten/updated"
-                    : "\nINFO: Keeping existing file (this item will NOT be imported)";
-            }
-            else if (exists)
-            {
-                nameLabel.text += node.IsSelected ? " [Overwrite]" : " [Keep]";
-                nameLabel.tooltip += node.IsSelected
-                    ? "\nWARNING: This file already exists and WILL be overwritten"
-                    : "\nINFO: Keeping existing file (this item will NOT be imported)";
-            }
-
             content.Add(nameLabel);
+
+            if (PackageManagerWindow.IsProtectedPayloadPath(node.FullPath))
+            {
+                content.Add(CreateBadge("Licensed", "yucp-tree-badge-protected"));
+            }
+
+            if (hasConflict || exists || isChanged)
+            {
+                string badgeText = node.IsSelected ? "Replace" : "Keep";
+                content.Add(CreateBadge(badgeText, "yucp-tree-badge-conflict"));
+
+                nameLabel.tooltip += node.IsSelected
+                    ? "\nThis file will be imported over the existing project copy."
+                    : "\nThis file will be skipped and the existing project copy will be kept.";
+            }
 
             row.Add(content);
             return row;
+        }
+
+        private bool HasProtectedDescendants(PackageItemNode node)
+        {
+            foreach (var child in node.Children)
+            {
+                if (!child.IsFolder && PackageManagerWindow.IsProtectedPayloadPath(child.FullPath))
+                {
+                    return true;
+                }
+
+                if (child.IsFolder && HasProtectedDescendants(child))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private VisualElement CreateBadge(string text, string className)
+        {
+            var badge = new VisualElement();
+            badge.AddToClassList("yucp-tree-badge");
+            badge.AddToClassList(className);
+
+            var label = new Label(text);
+            label.style.whiteSpace = WhiteSpace.NoWrap;
+            badge.Add(label);
+            return badge;
         }
 
         private void UpdateParentSelectionStates(PackageItemNode node)

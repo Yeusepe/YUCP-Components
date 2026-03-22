@@ -9,12 +9,12 @@ using UnityEditor.Compilation;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
-using YUCP.Components.Editor.PackageVerifier;
-using YUCP.Components.Editor.PackageVerifier.Core;
-using YUCP.Components.Editor.PackageVerifier.Data;
 using YUCP.Importer.Editor.PackageManager.Core;
-using YUCP.UI.DesignSystem.Utilities;
-using PackageVerifierCore = YUCP.Components.Editor.PackageVerifier.Core;
+using YUCP.Importer.Editor.PackageVerifier;
+using YUCP.Importer.Editor.PackageVerifier.Core;
+using YUCP.Importer.Editor.PackageVerifier.Data;
+using YUCP.Importer.Editor.PackageVerifier.Settings;
+using PackageVerifierCore = YUCP.Importer.Editor.PackageVerifier.Core;
 
 namespace YUCP.Importer.Editor.PackageManager
 {
@@ -72,20 +72,27 @@ namespace YUCP.Importer.Editor.PackageManager
         private VisualElement _metadataSection;
         private VisualElement _contentsSection;
         private ScrollView _mainScrollView;
-        private Button _detailsToggleButton;
+        private VisualElement _detailsToggleButton;
         private VisualElement _contentWrapper;
+        private VisualElement _scrollContent;
+        private VisualElement _summarySpacer;
         private Button _importButton;
         private Button _cancelButton;
         private Button _backButton;
+        private VisualElement _conflictModeSection;
+        private Button _overwriteModeButton;
+        private Button _keepExistingModeButton;
 
         // State
         private PackageMetadata _currentMetadata;
         private Texture2D _bannerGradientTexture;
         private bool _detailsExpanded = false;
+        private bool _preferOverwriteExisting = true;
         private int _cachedGradientHeight = 0;
         private const string DefaultGridPlaceholderPath = "Packages/com.yucp.devtools/Resources/DefaultGrid.png";
+        private const string CreatorIdentityBagIconPath = "Packages/com.yucp.devtools/Editor/PackageSigning/Resources/Bag.png";
         private PackageItemTreeView _treeView;
-        private ScrollView _treeScrollView;
+        private VisualElement _treeScrollView;
         private System.Array _currentImportItems; // Unity's ImportPackageItem[] array (current step)
         private System.Array _allImportItems; // Unity's ImportPackageItem[] array (all items in package)
         private string _currentPackagePath;
@@ -97,10 +104,27 @@ namespace YUCP.Importer.Editor.PackageManager
         private PackageVerifierCore.VerificationResult _verificationResult;
         private VisualElement _verificationStatusElement;
         private bool _isPackageSigned = false; // Track if package has signing data (even if invalid)
+        private PackageManifest _cachedManifest;
+        private SignatureData _cachedSignature;
+        private string _cachedSigningExtractionError;
+        private PackageMetadata _cachedMetadata;
+        private static PackageMetadata s_lastImportMetadata;
+        private static string s_lastImportPackagePath;
 
         // License gate state
         private VisualElement _licenseSection;
         private readonly Dictionary<string, LicenseVerificationState> _licenseStates = new Dictionary<string, LicenseVerificationState>();
+        private bool _isCreatorIdentitySigningIn;
+        private readonly List<ProtectedDerivedDescriptor> _protectedDerivedDescriptors = new List<ProtectedDerivedDescriptor>();
+        private static readonly HashSet<string> s_protectedDerivedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        private class ProtectedDerivedDescriptor
+        {
+            public string destinationPath;
+            public string licensePackageId;
+            public string displayName;
+            public string sourceFolder;
+        }
 
         private class LicenseVerificationState
         {
@@ -249,9 +273,7 @@ namespace YUCP.Importer.Editor.PackageManager
             root.Clear();
             
             root.style.flexDirection = FlexDirection.Column;
-
-            // Load design system styles
-            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
+            root.AddToClassList("yucp-root");
             
             // Load stylesheet
             var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>("Packages/com.yucp.importer/Editor/PackageManager/Styles/PackageManager.uss");
@@ -269,14 +291,21 @@ namespace YUCP.Importer.Editor.PackageManager
 
             // Main scroll view (for installer view only) - create but don't add to view container yet
             _mainScrollView = new ScrollView();
+            _mainScrollView.AddToClassList("yucp-main-scrollview");
             _mainScrollView.style.flexGrow = 1;
+            _mainScrollView.style.flexShrink = 1;
+            _mainScrollView.style.minHeight = 0;
+            _mainScrollView.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            _mainScrollView.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             _mainScrollView.style.display = DisplayStyle.None; // Hidden by default, shown only in installer mode
 
             // Get the scroll view's content container
-            var scrollContent = _mainScrollView.contentContainer;
-            scrollContent.style.flexDirection = FlexDirection.Column;
-            scrollContent.style.position = Position.Relative;
-            scrollContent.AddToClassList("yucp-scroll-content");
+            _scrollContent = _mainScrollView.contentContainer;
+            _scrollContent.style.flexDirection = FlexDirection.Column;
+            _scrollContent.style.flexGrow = 0;
+            _scrollContent.style.flexShrink = 0;
+            _scrollContent.style.position = Position.Relative;
+            _scrollContent.AddToClassList("yucp-scroll-content");
 
             // Banner section (background layer, positioned absolutely at top)
             _bannerContainer = CreateBannerSection();
@@ -284,13 +313,13 @@ namespace YUCP.Importer.Editor.PackageManager
             _bannerContainer.style.top = 0;
             _bannerContainer.style.left = 0;
             _bannerContainer.style.right = 0;
-            scrollContent.Add(_bannerContainer);
+            _scrollContent.Add(_bannerContainer);
             _bannerContainer.SendToBack();
 
             // Spacer to push content to bottom (in scroll content, not content wrapper)
-            var spacer = new VisualElement();
-            spacer.AddToClassList("yucp-spacer");
-            scrollContent.Add(spacer);
+            _summarySpacer = new VisualElement();
+            _summarySpacer.AddToClassList("yucp-spacer");
+            _scrollContent.Add(_summarySpacer);
 
             // Content wrapper - at bottom (normal flow, will appear on top of banner)
             _contentWrapper = new VisualElement();
@@ -298,7 +327,7 @@ namespace YUCP.Importer.Editor.PackageManager
             _contentWrapper.style.flexShrink = 0;
             _contentWrapper.style.position = Position.Relative;
             _contentWrapper.AddToClassList("yucp-content-wrapper");
-            scrollContent.Add(_contentWrapper);
+            _scrollContent.Add(_contentWrapper);
 
             // Metadata section (at bottom, no background)
             _metadataSection = CreateMetadataSection();
@@ -350,6 +379,12 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             if (_bannerContainer == null || rootVisualElement == null) return;
 
+            if (_detailsExpanded)
+            {
+                _bannerContainer.style.height = 0;
+                return;
+            }
+
             // Use root visual element height or window position height
             var rootHeight = rootVisualElement.resolvedStyle.height;
             if (rootHeight <= 0)
@@ -357,7 +392,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 rootHeight = position.height;
             }
 
-            var bannerHeight = rootHeight * 0.75f; // 3/4 of window height
+            var bannerHeight = Mathf.Clamp(rootHeight * 0.58f, 280f, 520f);
             _bannerContainer.style.height = bannerHeight;
 
             int newGradientHeight = Mathf.RoundToInt(bannerHeight);
@@ -479,20 +514,15 @@ namespace YUCP.Importer.Editor.PackageManager
 
             _bannerGradientTexture = new Texture2D(width, height, TextureFormat.RGBA32, false);
 
-            // Gradient from transparent to #3e3e3e (0x3e = 62, so 62/255 = 0.243f)
-            Color gradientEndColor = new Color(0.220f, 0.220f, 0.220f);
+            Color tintColor = new Color(60f / 255f, 60f / 255f, 60f / 255f, 1f);
 
-            // Gradient from transparent at top to fully opaque at bottom
             for (int y = 0; y < height; y++)
             {
-                float t = (float)y / (height - 1); // 0 at top, 1 at bottom
-                float alpha = t; // Linear interpolation from 0 (transparent) to 1 (fully opaque)
-                // At bottom, alpha = 1.0 (fully opaque), at top alpha = 0.0 (transparent)
-                Color color = new Color(gradientEndColor.r, gradientEndColor.g, gradientEndColor.b, alpha);
-
+                float vertical = (float)y / Mathf.Max(1, height - 1);
+                float alpha = vertical;
                 for (int x = 0; x < width; x++)
                 {
-                    // Set pixel from top to bottom (y=0 is top, y=height-1 is bottom)
+                    Color color = new Color(tintColor.r, tintColor.g, tintColor.b, alpha);
                     _bannerGradientTexture.SetPixel(x, height - 1 - y, color);
                 }
             }
@@ -511,22 +541,17 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
-            // When details are expanded, fully grey-out the banner background.
-            // When collapsed, restore the transparent->grey gradient.
-            Color solidGrey = new Color(0.220f, 0.220f, 0.220f, 1f);
-
-            if (_detailsExpanded)
+            if (_bannerGradientTexture != null && !_detailsExpanded)
             {
-                _bannerGradientOverlay.style.backgroundImage = StyleKeyword.None;
-                _bannerGradientOverlay.style.backgroundColor = solidGrey;
+                _bannerGradientOverlay.style.backgroundImage = new StyleBackground(_bannerGradientTexture);
+                _bannerGradientOverlay.style.backgroundColor = Color.clear;
             }
             else
             {
-                _bannerGradientOverlay.style.backgroundColor = new Color(0, 0, 0, 0);
-                if (_bannerGradientTexture != null)
-                {
-                    _bannerGradientOverlay.style.backgroundImage = new StyleBackground(_bannerGradientTexture);
-                }
+                _bannerGradientOverlay.style.backgroundImage = StyleKeyword.None;
+                _bannerGradientOverlay.style.backgroundColor = _detailsExpanded
+                    ? new Color(0.05f, 0.05f, 0.05f, 0.96f)
+                    : new Color(0.05f, 0.05f, 0.05f, 0.62f);
             }
 
             // Force a repaint
@@ -542,15 +567,14 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             var section = new VisualElement();
             section.AddToClassList("yucp-metadata-section");
+            section.AddToClassList("yucp-installer-summary");
 
-            // Hero-style header with icon and name
             var headerRow = new VisualElement();
             headerRow.AddToClassList("yucp-metadata-header");
             headerRow.style.flexDirection = FlexDirection.Row;
-            headerRow.style.alignItems = Align.Center;
+            headerRow.style.alignItems = Align.FlexStart;
             headerRow.style.marginBottom = 0;
 
-            // Icon (read-only, no interaction)
             var iconContainer = new VisualElement();
             iconContainer.AddToClassList("yucp-metadata-icon-container");
 
@@ -569,15 +593,17 @@ namespace YUCP.Importer.Editor.PackageManager
             iconContainer.Add(iconImageContainer);
             headerRow.Add(iconContainer);
 
-            // Name and version in a column (read-only)
             var nameVersionColumn = new VisualElement();
             nameVersionColumn.style.flexGrow = 1;
-            nameVersionColumn.style.flexShrink = 1; // Allow shrinking
+            nameVersionColumn.style.flexShrink = 1;
             nameVersionColumn.style.marginLeft = 16;
-            nameVersionColumn.style.minWidth = 0; // Allow shrinking for ellipsis
+            nameVersionColumn.style.minWidth = 0;
             nameVersionColumn.style.overflow = Overflow.Hidden;
 
-            // Package Name row with verification icon
+            var packageContext = new Label("Package");
+            packageContext.AddToClassList("yucp-package-context-label");
+            nameVersionColumn.Add(packageContext);
+
             var nameRow = new VisualElement();
             nameRow.style.flexDirection = FlexDirection.Row;
             nameRow.style.alignItems = Align.Center;
@@ -591,7 +617,7 @@ namespace YUCP.Importer.Editor.PackageManager
             nameLabel.AddToClassList("yucp-ellipsis-text");
             nameLabel.style.fontSize = 20;
             nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            nameLabel.tooltip = packageName; // Show full text on hover
+            nameLabel.tooltip = packageName;
             nameLabel.style.flexShrink = 1;
             nameLabel.style.minWidth = 0;
             nameRow.Add(nameLabel);
@@ -603,28 +629,27 @@ namespace YUCP.Importer.Editor.PackageManager
                 verificationIcon.style.flexShrink = 0;
                 nameRow.Add(verificationIcon);
             }
-            
-            // Spacer to push icon next to name (allows row to expand for ellipsis while keeping icon close)
+
             var spacer = new VisualElement();
             spacer.style.flexGrow = 1;
             spacer.style.flexShrink = 0;
             nameRow.Add(spacer);
-            
+
             nameVersionColumn.Add(nameRow);
 
-            // Author (below package name, above version) with ellipsis
             if (!string.IsNullOrEmpty(_currentMetadata?.author))
             {
                 var authorValueLabel = new Label(_currentMetadata.author);
+                authorValueLabel.AddToClassList("yucp-package-author-label");
                 authorValueLabel.AddToClassList("yucp-ellipsis-text");
                 authorValueLabel.style.marginTop = 4;
                 authorValueLabel.style.fontSize = 12;
-                authorValueLabel.tooltip = _currentMetadata.author; // Show full text on hover
+                authorValueLabel.tooltip = _currentMetadata.author;
                 nameVersionColumn.Add(authorValueLabel);
             }
 
-            // Version badge (read-only)
             var versionRow = new VisualElement();
+            versionRow.AddToClassList("yucp-version-row");
             versionRow.style.flexDirection = FlexDirection.Row;
             versionRow.style.alignItems = Align.Center;
             versionRow.style.marginTop = 6;
@@ -640,15 +665,13 @@ namespace YUCP.Importer.Editor.PackageManager
             nameVersionColumn.Add(versionRow);
             headerRow.Add(nameVersionColumn);
 
-            // Action buttons on the right side
             var buttonContainer = new VisualElement();
             buttonContainer.AddToClassList("yucp-action-buttons-container");
             buttonContainer.style.flexDirection = FlexDirection.Row;
-            buttonContainer.style.alignItems = Align.Center;
+            buttonContainer.style.alignItems = Align.FlexStart;
             buttonContainer.style.marginLeft = 16;
             buttonContainer.style.flexShrink = 0;
 
-            // Cancel button
             _cancelButton = new Button(OnCancelClicked)
             {
                 text = "Cancel"
@@ -657,7 +680,6 @@ namespace YUCP.Importer.Editor.PackageManager
             _cancelButton.AddToClassList("yucp-cancel-button");
             buttonContainer.Add(_cancelButton);
 
-            // Back button (for multi-step wizard, shown on project settings step)
             _backButton = new Button(OnBackClicked)
             {
                 text = "Back"
@@ -666,7 +688,6 @@ namespace YUCP.Importer.Editor.PackageManager
             _backButton.style.display = DisplayStyle.None; // Hidden by default
             buttonContainer.Add(_backButton);
 
-            // Import button
             _importButton = new Button(OnImportClicked)
             {
                 text = "Import"
@@ -678,27 +699,24 @@ namespace YUCP.Importer.Editor.PackageManager
             headerRow.Add(buttonContainer);
             section.Add(headerRow);
 
-            // Description (read-only, multiline, no title)
             if (!string.IsNullOrEmpty(_currentMetadata?.description))
             {
                 var descValueLabel = new Label(_currentMetadata.description);
+                descValueLabel.AddToClassList("yucp-package-description");
                 descValueLabel.style.whiteSpace = WhiteSpace.Normal;
                 descValueLabel.style.maxHeight = 100;
                 descValueLabel.style.overflow = Overflow.Hidden;
-                descValueLabel.style.marginTop = 0;
+                descValueLabel.style.marginTop = 8;
                 section.Add(descValueLabel);
             }
 
-            // Verification Status
             _verificationStatusElement = CreateVerificationStatusElement();
             section.Add(_verificationStatusElement);
 
-            // License Gate Section (shown when metadata has licensePackages)
             _licenseSection = new VisualElement();
-            _licenseSection.style.display = DisplayStyle.None; // Hidden until metadata loaded
+            _licenseSection.style.display = DisplayStyle.None;
             section.Add(_licenseSection);
 
-            // Product Links (icon only, tooltip on hover)
             if (_currentMetadata?.productLinks != null && _currentMetadata.productLinks.Count > 0)
             {
                 var linksContainer = new VisualElement();
@@ -721,12 +739,10 @@ namespace YUCP.Importer.Editor.PackageManager
                     });
 
                     linkButton.AddToClassList("yucp-product-link-button");
-                    
-                    // Set tooltip with title and URL
+
                     string tooltipText = string.IsNullOrEmpty(link.label) ? link.url : $"{link.label}\n{link.url}";
                     linkButton.tooltip = tooltipText;
 
-                    // Icon
                     var linkIcon = new Image();
                     Texture2D displayLinkIcon = link.GetDisplayIcon();
                     if (displayLinkIcon == null)
@@ -736,8 +752,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     linkIcon.image = displayLinkIcon;
                     linkIcon.style.width = 32;
                     linkIcon.style.height = 32;
-                    
-                    // Remove default button styling
+
                     linkButton.style.backgroundImage = StyleKeyword.None;
                     linkButton.style.borderTopWidth = 0;
                     linkButton.style.borderRightWidth = 0;
@@ -762,17 +777,175 @@ namespace YUCP.Importer.Editor.PackageManager
             return section;
         }
 
+        private void ResetCachedSigningData()
+        {
+            _cachedManifest = null;
+            _cachedSignature = null;
+            _cachedSigningExtractionError = null;
+        }
+
+        private void CacheSigningExtractionResult(PackageVerifierCore.ManifestExtractor.ExtractionResult extractionResult)
+        {
+            ResetCachedSigningData();
+
+            if (extractionResult == null)
+            {
+                _cachedSigningExtractionError = "Extraction result was null.";
+                return;
+            }
+
+            _cachedManifest = extractionResult.manifest;
+            _cachedSignature = extractionResult.signature;
+            _cachedSigningExtractionError = extractionResult.error;
+        }
+
+        private static int GetImportItemCount(System.Array items)
+        {
+            return items?.Length ?? 0;
+        }
+
+        private static bool HasDirectVpmInstallerLoaded()
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.GetType("YUCP.DirectVpmInstaller.DirectVpmInstaller") != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ImportItemsContainInstallerPayload(System.Array items)
+        {
+            if (items == null || items.Length == 0)
+            {
+                return IsInstallerPayloadPresentOnDisk();
+            }
+
+            var itemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
+            var destinationPathField = itemType?.GetField("destinationAssetPath");
+            if (destinationPathField == null)
+            {
+                return false;
+            }
+
+            foreach (var item in items)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                string path = destinationPathField.GetValue(item) as string;
+                if (string.IsNullOrEmpty(path))
+                {
+                    continue;
+                }
+
+                if (!path.StartsWith("Packages/yucp.installed-packages/Editor/", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (path.IndexOf("YUCP_Installer_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    path.IndexOf("YUCP_FullDomainReload_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    path.IndexOf("YUCP_InstallerTxn_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    path.IndexOf("YUCP_InstallerHealthTools_", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return IsInstallerPayloadPresentOnDisk();
+        }
+
+        private static bool IsInstallerPayloadPresentOnDisk()
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string installerRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor");
+                if (!Directory.Exists(installerRoot))
+                {
+                    return false;
+                }
+
+                foreach (string path in Directory.GetFiles(installerRoot, "*.cs", SearchOption.TopDirectoryOnly))
+                {
+                    string fileName = Path.GetFileName(path);
+                    if (fileName.StartsWith("YUCP_Installer_", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.StartsWith("YUCP_FullDomainReload_", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.StartsWith("YUCP_InstallerTxn_", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.StartsWith("YUCP_InstallerHealthTools_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                foreach (string path in Directory.GetFiles(installerRoot, "*.asmdef", SearchOption.TopDirectoryOnly))
+                {
+                    if (Path.GetFileName(path).StartsWith("YUCP_Installer_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private void LogTempInstallStatus()
+        {
+            string packageJsonPath = PackageMetadataExtractor.GetPackageJsonDestinationPath(_allImportItems ?? _currentImportItems);
+            if (string.IsNullOrEmpty(packageJsonPath))
+            {
+                return;
+            }
+
+            bool hasTempInstallDescriptor = PackageMetadataExtractor.HasTempInstallDescriptor(_allImportItems ?? _currentImportItems);
+            bool hasInstallerPayload = ImportItemsContainInstallerPayload(_allImportItems ?? _currentImportItems);
+            Debug.Log($"[YUCP PackageManager] package.json import marker: '{packageJsonPath}'. tempInstallDescriptor={hasTempInstallDescriptor}, installerPayloadPresent={hasInstallerPayload}");
+
+            if (!hasTempInstallDescriptor)
+            {
+                return;
+            }
+
+            if (HasDirectVpmInstallerLoaded())
+            {
+                return;
+            }
+
+            if (hasInstallerPayload)
+            {
+                Debug.Log("[YUCP PackageManager] DirectVpmInstaller payload is present in the import. It will become available after Unity compiles the imported editor scripts.");
+            }
+            else
+            {
+                Debug.LogError("[YUCP PackageManager] Detected a YUCP temp-install descriptor, but the import items do not include a DirectVpmInstaller payload. Derived-content/VPM handoff cannot run.");
+            }
+        }
+
         private void VerifyPackage(string packagePath)
         {
+            ResetCachedSigningData();
+
             if (string.IsNullOrEmpty(packagePath) || !File.Exists(packagePath))
             {
                 _verificationResult = null;
                 _isPackageSigned = false;
+                _cachedSigningExtractionError = "Package path was empty or the file does not exist.";
                 return;
             }
 
             try
             {
+                Debug.Log($"[YUCP PackageManager] Starting verification for '{packagePath}'. importItems={GetImportItemCount(_allImportItems)}");
 
                 // Reload all keys (root, cached, etc.) in case they were updated
                 TrustedAuthority.ReloadAllKeys();
@@ -781,9 +954,28 @@ namespace YUCP.Importer.Editor.PackageManager
                 // Pass ImportPackageItem array if available (during import) - this avoids needing SharpZipLib
                 // Use _allImportItems to ensure we check all package contents, not just current step
                 var extractionResult = PackageVerifierCore.ManifestExtractor.ExtractSigningData(packagePath, _allImportItems);
+                if (extractionResult == null)
+                {
+                    _isPackageSigned = false;
+                    _cachedSigningExtractionError = "ManifestExtractor returned null.";
+                    _verificationResult = new PackageVerifierCore.VerificationResult
+                    {
+                        valid = false,
+                        errors = { _cachedSigningExtractionError }
+                    };
+                    Debug.LogError("[YUCP PackageManager] ManifestExtractor returned null during verification.");
+                    return;
+                }
+                CacheSigningExtractionResult(extractionResult);
 
                 // Check if package has signing data (manifest or signature found)
                 _isPackageSigned = extractionResult.manifest != null && extractionResult.signature != null;
+                Debug.Log($"[YUCP PackageManager] Signing extraction finished. success={extractionResult.success}, signed={_isPackageSigned}, manifestPresent={extractionResult.manifest != null}, signaturePresent={extractionResult.signature != null}, error='{extractionResult.error ?? ""}'");
+
+                if (extractionResult.manifest != null)
+                {
+                    Debug.Log($"[YUCP PackageManager] Extracted manifest summary: packageId='{extractionResult.manifest.packageId}', version='{extractionResult.manifest.version}', authorityId='{extractionResult.manifest.authorityId}', publisherId='{extractionResult.manifest.publisherId}', hasCertificateChain={extractionResult.manifest.certificateChain != null && extractionResult.manifest.certificateChain.Length > 0}");
+                }
 
                 if (!extractionResult.success || !_isPackageSigned)
                 {
@@ -794,6 +986,7 @@ namespace YUCP.Importer.Editor.PackageManager
                         valid = false,
                         errors = { extractionResult.error ?? "Package is not signed. This package was exported without a signature." }
                     };
+                    Debug.LogWarning($"[YUCP PackageManager] Package is not fully signed/verified: {_verificationResult.errors[0]}");
                     return;
                 }
 
@@ -807,6 +1000,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 if (_verificationResult.valid)
                 {
+                    Debug.Log($"[YUCP PackageManager] Package verification succeeded. packageId='{_verificationResult.packageId}', publisherId='{_verificationResult.publisherId}', version='{_verificationResult.version}'");
                 }
                 else
                 {
@@ -1001,53 +1195,22 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 // Package is signed but verification failed - this means it was modified
                 var warningContainer = new VisualElement();
-                warningContainer.style.flexDirection = FlexDirection.Column;
-                warningContainer.style.paddingLeft = 12;
-                warningContainer.style.paddingRight = 12;
-                warningContainer.style.paddingTop = 8;
-                warningContainer.style.paddingBottom = 8;
-                warningContainer.style.backgroundColor = new Color(0.6f, 0.5f, 0.2f, 0.2f);
-                warningContainer.style.borderLeftWidth = 3;
-                warningContainer.style.borderLeftColor = new Color(0.8f, 0.6f, 0.2f);
-                warningContainer.style.borderTopLeftRadius = 4;
-                warningContainer.style.borderTopRightRadius = 4;
-                warningContainer.style.borderBottomLeftRadius = 4;
-                warningContainer.style.borderBottomRightRadius = 4;
-
-                var warningRow = new VisualElement();
-                warningRow.style.flexDirection = FlexDirection.Row;
-                warningRow.style.alignItems = Align.Center;
-
-                var warningIcon = new Label("WARNING");
-                warningIcon.style.fontSize = 14;
-                warningIcon.style.color = new Color(0.8f, 0.6f, 0.2f);
-                warningIcon.style.marginRight = 8;
-                warningRow.Add(warningIcon);
+                warningContainer.AddToClassList("lgate-warning");
 
                 var statusText = new Label("Package Not Verified");
-                statusText.style.fontSize = 12;
-                statusText.style.unityFontStyleAndWeight = FontStyle.Bold;
-                statusText.style.color = new Color(1f, 0.9f, 0.7f);
-                warningRow.Add(statusText);
-
-                warningContainer.Add(warningRow);
+                statusText.AddToClassList("lgate-warning-title");
+                warningContainer.Add(statusText);
 
                 // Show error details if available
                 if (_verificationResult.errors != null && _verificationResult.errors.Count > 0)
                 {
                     var errorText = new Label(_verificationResult.errors[0]);
-                    errorText.style.fontSize = 11;
-                    errorText.style.color = new Color(0.9f, 0.8f, 0.6f);
-                    errorText.style.marginTop = 4;
-                    errorText.style.whiteSpace = WhiteSpace.Normal;
+                    errorText.AddToClassList("lgate-warning-body");
                     warningContainer.Add(errorText);
                 }
 
                 var noteText = new Label("You can still import this package, but it may be unsafe.");
-                noteText.style.fontSize = 10;
-                noteText.style.color = new Color(0.8f, 0.7f, 0.5f);
-                noteText.style.marginTop = 4;
-                noteText.style.whiteSpace = WhiteSpace.Normal;
+                noteText.AddToClassList("lgate-warning-body");
                 warningContainer.Add(noteText);
 
                 container.Add(warningContainer);
@@ -1056,46 +1219,48 @@ namespace YUCP.Importer.Editor.PackageManager
             return container;
         }
 
-        private Button CreateDetailsToggleButton()
+        private VisualElement CreateDetailsToggleButton()
         {
-            var button = new Button(OnDetailsToggleClicked);
-            button.AddToClassList("yucp-details-toggle-button");
-            
-            // Remove default button text
-            button.text = "";
-            
-            // Create button content container
-            var buttonContent = new VisualElement();
-            buttonContent.style.flexDirection = FlexDirection.Row;
-            buttonContent.style.alignItems = Align.Center;
-            buttonContent.style.justifyContent = Justify.Center;
-            
-            // Text label
-            var buttonText = new Label("Details");
-            buttonText.name = "details-text";
-            buttonText.style.marginRight = 4;
-            buttonText.style.fontSize = 11;
-            buttonContent.Add(buttonText);
-            
-            // Dependencies indicator (if any)
+            var row = new VisualElement();
+            row.AddToClassList("yucp-dtb");
+            row.AddManipulator(new Clickable(OnDetailsToggleClicked));
+
+            // Teal left accent bar
+            var accent = new VisualElement();
+            accent.AddToClassList("yucp-dtb-accent");
+            row.Add(accent);
+
+            // Icon
+            var icon = new Label("≡");
+            icon.name = "details-icon";
+            icon.AddToClassList("yucp-dtb-icon");
+            row.Add(icon);
+
+            // Main text
+            var text = new Label("Review package contents");
+            text.name = "details-text";
+            text.AddToClassList("yucp-dtb-text");
+            row.Add(text);
+
+            // Spacer
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1;
+            row.Add(spacer);
+
+            // Dependencies / file count badge
             var depsIndicator = new Label();
             depsIndicator.name = "dependencies-indicator";
+            depsIndicator.AddToClassList("yucp-dtb-count");
             depsIndicator.style.display = DisplayStyle.None;
-            depsIndicator.style.marginRight = 4;
-            depsIndicator.style.fontSize = 10;
-            depsIndicator.style.color = new Color(0.6f, 0.8f, 1f);
-            buttonContent.Add(depsIndicator);
-            
-            // Arrow icon (down arrow when collapsed, up when expanded)
-            var arrowIcon = new Label("▼");
-            arrowIcon.name = "details-arrow";
-            arrowIcon.style.fontSize = 9;
-            arrowIcon.style.marginLeft = 0;
-            buttonContent.Add(arrowIcon);
-            
-            button.Add(buttonContent);
-            
-            return button;
+            row.Add(depsIndicator);
+
+            // Chevron
+            var arrow = new Label("›");
+            arrow.name = "details-arrow";
+            arrow.AddToClassList("yucp-dtb-arrow");
+            row.Add(arrow);
+
+            return row;
         }
 
         private void OnDetailsToggleClicked()
@@ -1106,155 +1271,571 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void AnimateDetailsToggle()
         {
-            var arrowIcon = _detailsToggleButton.Q<Label>("details-arrow");
-
-            // Update banner overlay immediately based on expand/collapse state
-            ApplyGradientToOverlay();
-            
-            if (_detailsExpanded)
-            {
-                // Animate arrow change
-                if (arrowIcon != null)
-                {
-                    arrowIcon.text = "▲";
-                }
-                
-                // First, measure the natural height by temporarily showing it with auto height
-                _contentsSection.style.display = DisplayStyle.Flex;
-                _contentsSection.style.maxHeight = StyleKeyword.Auto;
-                _contentsSection.style.overflow = Overflow.Hidden;
-                
-                // Wait for layout calculation
-                rootVisualElement.schedule.Execute(() =>
-                {
-                    // Get natural height after layout is calculated
-                    float naturalHeight = _contentsSection.resolvedStyle.height;
-                    if (naturalHeight <= 0)
-                    {
-                        naturalHeight = _contentsSection.layout.height;
-                    }
-                    if (naturalHeight <= 0) naturalHeight = 400; // Fallback
-                    
-                    // Now set to 0 and animate to natural height
-                    _contentsSection.style.maxHeight = 0;
-                    
-                    // Wait a frame before starting animation to ensure smooth start
-                    rootVisualElement.schedule.Execute(() =>
-                    {
-                        _contentsSection.style.maxHeight = naturalHeight;
-                        
-                        // After animation completes, set to auto
-                        _contentsSection.schedule.Execute(() =>
-                        {
-                            _contentsSection.style.maxHeight = StyleKeyword.Auto;
-                            _contentsSection.style.overflow = Overflow.Visible;
-                        }).StartingIn(350);
-                    });
-                });
-            }
-            else
-            {
-                // Animate arrow change
-                if (arrowIcon != null)
-                {
-                    arrowIcon.text = "▼";
-                }
-                
-                // Get current height
-                float currentHeight = _contentsSection.resolvedStyle.height;
-                if (currentHeight <= 0)
-                {
-                    currentHeight = _contentsSection.layout.height;
-                }
-                if (currentHeight <= 0) currentHeight = 400; // Fallback
-                
-                // Animate collapse using max-height
-                _contentsSection.style.maxHeight = currentHeight;
-                _contentsSection.style.overflow = Overflow.Hidden;
-                
-                rootVisualElement.schedule.Execute(() =>
-                {
-                    _contentsSection.style.maxHeight = 0;
-                    
-                    // After animation, hide completely
-                    _contentsSection.schedule.Execute(() =>
-                    {
-                        _contentsSection.style.display = DisplayStyle.None;
-                        _contentsSection.style.maxHeight = StyleKeyword.Auto;
-                    }).StartingIn(350);
-                });
-            }
+            UpdateInstallerLayout();
         }
 
         private VisualElement CreateContentsSection()
         {
             var section = new VisualElement();
-            section.AddToClassList("yucp-section");
             section.AddToClassList("yucp-contents-section");
-            section.style.marginTop = 20;
-            section.style.paddingLeft = 10;
-            section.style.paddingRight = 10;
-            section.style.paddingTop = 10;
-            section.style.paddingBottom = 10;
 
-            // Dependencies section container (will be populated/refreshed when metadata is available)
+            var detailsHeader = new VisualElement();
+            detailsHeader.AddToClassList("yucp-details-header");
+
+            var detailsTitle = new Label("Package Contents");
+            detailsTitle.AddToClassList("yucp-details-title");
+            detailsHeader.Add(detailsTitle);
+
+            var detailsSubtitle = new Label("Review files, licensed derived content, and any existing-file conflicts before installing.");
+            detailsSubtitle.AddToClassList("yucp-details-subtitle");
+            detailsSubtitle.style.whiteSpace = WhiteSpace.Normal;
+            detailsHeader.Add(detailsSubtitle);
+            section.Add(detailsHeader);
+
             var dependenciesContainer = new VisualElement();
             dependenciesContainer.name = "dependencies-container";
             section.Add(dependenciesContainer);
 
-            var titleLabel = new Label("Package Contents");
-            titleLabel.style.fontSize = 14;
-            titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            titleLabel.style.marginBottom = 10;
-            titleLabel.style.marginTop = 0;
-            section.Add(titleLabel);
+            var protectedSummaryContainer = new VisualElement();
+            protectedSummaryContainer.name = "protected-summary-container";
+            section.Add(protectedSummaryContainer);
 
-            // Overwrite/keep existing quick actions
-            var overwriteActionsRow = new VisualElement();
-            overwriteActionsRow.style.flexDirection = FlexDirection.Row;
-            overwriteActionsRow.style.justifyContent = Justify.FlexEnd;
-            overwriteActionsRow.style.alignItems = Align.Center;
-            overwriteActionsRow.style.marginBottom = 8;
+            _conflictModeSection = new VisualElement();
+            _conflictModeSection.AddToClassList("yucp-conflict-mode-section");
 
-            var overwriteExistingButton = new Button(() => _treeView?.SetOverwriteExisting(true))
+            var conflictLabel = new Label("Conflicting files");
+            conflictLabel.AddToClassList("yucp-conflict-mode-label");
+            _conflictModeSection.Add(conflictLabel);
+
+            var conflictSegment = new VisualElement();
+            conflictSegment.AddToClassList("yucp-conflict-segment");
+
+            _overwriteModeButton = new Button(() => ApplyConflictSelectionMode(true))
             {
-                text = "Overwrite Existing"
+                text = "Replace"
             };
-            overwriteExistingButton.tooltip = "Select all items that already exist in the project (they will be overwritten on import).";
-            overwriteExistingButton.style.marginRight = 6;
-            overwriteExistingButton.style.minHeight = 22;
-            overwriteExistingButton.style.paddingLeft = 10;
-            overwriteExistingButton.style.paddingRight = 10;
-            overwriteExistingButton.style.fontSize = 11;
+            _overwriteModeButton.AddToClassList("yucp-conflict-option");
+            _overwriteModeButton.tooltip = "Import and replace files that already exist in the project.";
+            conflictSegment.Add(_overwriteModeButton);
 
-            var keepExistingButton = new Button(() => _treeView?.SetOverwriteExisting(false))
+            _keepExistingModeButton = new Button(() => ApplyConflictSelectionMode(false))
             {
-                text = "Keep Existing"
+                text = "Keep"
             };
-            keepExistingButton.tooltip = "Deselect all items that already exist in the project (existing files will be kept).";
-            keepExistingButton.style.minHeight = 22;
-            keepExistingButton.style.paddingLeft = 10;
-            keepExistingButton.style.paddingRight = 10;
-            keepExistingButton.style.fontSize = 11;
+            _keepExistingModeButton.AddToClassList("yucp-conflict-option");
+            _keepExistingModeButton.tooltip = "Skip importing files that already exist in the project.";
+            conflictSegment.Add(_keepExistingModeButton);
 
-            overwriteActionsRow.Add(overwriteExistingButton);
-            overwriteActionsRow.Add(keepExistingButton);
-            section.Add(overwriteActionsRow);
+            _conflictModeSection.Add(conflictSegment);
+            section.Add(_conflictModeSection);
 
-            // Tree view scroll container
-            _treeScrollView = new ScrollView();
-            _treeScrollView.style.minHeight = 200;
-            _treeScrollView.style.maxHeight = 400;
-            _treeScrollView.style.flexGrow = 1;
+            _treeScrollView = new VisualElement();
+            _treeScrollView.AddToClassList("yucp-tree-scroll");
+            _treeScrollView.style.minHeight = 260;
+            _treeScrollView.style.flexGrow = 0;
+            _treeScrollView.style.flexShrink = 0;
 
-            // Create tree view
-            _treeView = new PackageItemTreeView(_treeScrollView.contentContainer);
+            _treeView = new PackageItemTreeView(_treeScrollView);
             section.Add(_treeScrollView);
 
-            // Show sample tree for demonstration (will be replaced with real data when import starts)
             ShowSampleTree();
+            UpdateConflictModeSection();
 
             return section;
+        }
+
+        private void UpdateInstallerLayout()
+        {
+            if (_metadataSection == null || _contentsSection == null || _detailsToggleButton == null || _bannerContainer == null)
+            {
+                return;
+            }
+
+            if (_summarySpacer != null)
+            {
+                _summarySpacer.style.display = _detailsExpanded ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+
+            _bannerContainer.style.display = _detailsExpanded ? DisplayStyle.None : DisplayStyle.Flex;
+            _metadataSection.style.display = _detailsExpanded ? DisplayStyle.None : DisplayStyle.Flex;
+            _contentsSection.style.display = _detailsExpanded ? DisplayStyle.Flex : DisplayStyle.None;
+
+            if (_contentWrapper != null)
+            {
+                _contentWrapper.EnableInClassList("yucp-content-wrapper-details", _detailsExpanded);
+                _contentWrapper.style.marginTop = _detailsExpanded ? 20 : 0;
+            }
+
+            if (_scrollContent != null)
+            {
+                if (_detailsExpanded)
+                {
+                    _scrollContent.style.minHeight = StyleKeyword.Auto;
+                }
+                else
+                {
+                    float contentHeight = rootVisualElement?.resolvedStyle.height > 0
+                        ? rootVisualElement.resolvedStyle.height
+                        : position.height;
+                    _scrollContent.style.minHeight = contentHeight;
+                }
+            }
+
+            if (_treeScrollView != null)
+            {
+                _treeScrollView.style.minHeight = _detailsExpanded ? Mathf.Max(280f, position.height - 250f) : 260f;
+                _treeScrollView.style.maxHeight = StyleKeyword.None;
+            }
+
+            var dtbText = _detailsToggleButton.Q<Label>("details-text");
+            if (dtbText != null)
+                dtbText.text = _detailsExpanded ? "Back to summary" : "Review package contents";
+
+            var dtbIcon = _detailsToggleButton.Q<Label>("details-icon");
+            if (dtbIcon != null)
+                dtbIcon.text = _detailsExpanded ? "←" : "≡";
+
+            var dtbArrow = _detailsToggleButton.Q<Label>("details-arrow");
+            if (dtbArrow != null)
+                dtbArrow.style.display = _detailsExpanded ? DisplayStyle.None : DisplayStyle.Flex;
+
+            if (_detailsExpanded && _mainScrollView != null && _contentsSection != null)
+            {
+                _mainScrollView.schedule.Execute(() => _mainScrollView.ScrollTo(_contentsSection)).ExecuteLater(1);
+            }
+
+            ApplyGradientToOverlay();
+            UpdateBannerHeight();
+        }
+
+        private void ApplyConflictSelectionMode(bool overwriteExisting)
+        {
+            _preferOverwriteExisting = overwriteExisting;
+            _treeView?.SetOverwriteExisting(overwriteExisting);
+            UpdateConflictModeControls(overwriteExisting);
+        }
+
+        private void UpdateConflictModeSection()
+        {
+            if (_conflictModeSection == null)
+            {
+                return;
+            }
+
+            int conflictCount = CountConflictingImportItems(_currentImportItems);
+            _conflictModeSection.style.display = conflictCount > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            UpdateConflictModeControls(_preferOverwriteExisting);
+        }
+
+        private void UpdateConflictModeControls(bool overwriteExisting)
+        {
+            if (_overwriteModeButton == null || _keepExistingModeButton == null)
+            {
+                return;
+            }
+
+            _overwriteModeButton.EnableInClassList("yucp-conflict-option-selected", overwriteExisting);
+            _keepExistingModeButton.EnableInClassList("yucp-conflict-option-selected", !overwriteExisting);
+        }
+
+        private void RefreshProtectedSummarySection()
+        {
+            if (_contentsSection == null)
+            {
+                return;
+            }
+
+            var container = _contentsSection.Q<VisualElement>("protected-summary-container");
+            if (container == null)
+            {
+                return;
+            }
+
+            container.Clear();
+            RefreshProtectedDerivedDescriptors();
+
+            if (_protectedDerivedDescriptors.Count == 0)
+            {
+                return;
+            }
+
+            var card = new VisualElement();
+            card.AddToClassList("yucp-protected-summary-card");
+
+            // Header: eyebrow + count
+            var cardHeader = new VisualElement();
+            cardHeader.style.flexDirection = FlexDirection.Row;
+            cardHeader.style.alignItems = Align.Center;
+            cardHeader.style.marginBottom = 4;
+
+            var title = new Label("LICENSED CONTENT");
+            title.AddToClassList("yucp-protected-summary-title");
+            title.style.flexGrow = 1;
+            cardHeader.Add(title);
+
+            int assetCount = _protectedDerivedDescriptors.Count;
+            var countLabel = new Label($"{assetCount} asset{(assetCount == 1 ? "" : "s")} locked");
+            countLabel.AddToClassList("yucp-protected-summary-count");
+            cardHeader.Add(countLabel);
+
+            card.Add(cardHeader);
+
+            var previewList = new VisualElement();
+            previewList.AddToClassList("yucp-protected-preview-list");
+
+            foreach (var descriptor in _protectedDerivedDescriptors.Take(4))
+            {
+                var row = new VisualElement();
+                row.AddToClassList("yucp-protected-preview-item");
+                row.tooltip = descriptor.destinationPath;
+
+                var lockIcon = new Label("◈");
+                lockIcon.AddToClassList("yucp-protected-preview-icon");
+                row.Add(lockIcon);
+
+                var nameLabel = new Label(descriptor.displayName);
+                nameLabel.style.flexGrow = 1;
+                nameLabel.style.overflow = Overflow.Hidden;
+                row.Add(nameLabel);
+
+                previewList.Add(row);
+            }
+
+            if (_protectedDerivedDescriptors.Count > 4)
+            {
+                var moreLabel = new Label($"+ {_protectedDerivedDescriptors.Count - 4} more");
+                moreLabel.AddToClassList("yucp-protected-preview-more");
+                previewList.Add(moreLabel);
+            }
+
+            card.Add(previewList);
+            container.Add(card);
+        }
+
+        private VisualElement BuildInfoChip(string count, string labelText)
+        {
+            var chip = new VisualElement();
+            chip.AddToClassList("yucp-license-chip");
+
+            var countBadge = new Label(count);
+            countBadge.AddToClassList("yucp-license-chip-count");
+            chip.Add(countBadge);
+
+            var label = new Label(labelText);
+            label.AddToClassList("yucp-license-chip-label");
+            label.style.whiteSpace = WhiteSpace.NoWrap;
+            chip.Add(label);
+            return chip;
+        }
+
+        private void RefreshProtectedDerivedDescriptors()
+        {
+            _protectedDerivedDescriptors.Clear();
+            s_protectedDerivedPaths.Clear();
+
+            var items = _allImportItems ?? _currentImportItems;
+            if (items == null || items.Length == 0)
+            {
+                return;
+            }
+
+            foreach (var item in items)
+            {
+                if (!TryBuildProtectedDerivedDescriptor(item, out var descriptor))
+                {
+                    continue;
+                }
+
+                descriptor.destinationPath = NormalizeImportPath(descriptor.destinationPath);
+                if (string.IsNullOrEmpty(descriptor.destinationPath))
+                {
+                    continue;
+                }
+
+                if (s_protectedDerivedPaths.Add(descriptor.destinationPath))
+                {
+                    _protectedDerivedDescriptors.Add(descriptor);
+                }
+            }
+        }
+
+        private static bool TryBuildProtectedDerivedDescriptor(object item, out ProtectedDerivedDescriptor descriptor)
+        {
+            descriptor = null;
+            if (item == null)
+            {
+                return false;
+            }
+
+            string destinationPath = NormalizeImportPath(GetImportItemString(item, "destinationAssetPath"));
+            if (string.IsNullOrEmpty(destinationPath) ||
+                !destinationPath.StartsWith("Packages/com.yucp.temp/Patches/DerivedFbxAsset_", StringComparison.OrdinalIgnoreCase) ||
+                !destinationPath.EndsWith(".asset", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string sourceFolder = GetImportItemString(item, "sourceFolder");
+            string assetText = ReadImportItemAssetText(item);
+            if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(assetText))
+            {
+                return false;
+            }
+
+            if (!TryReadSerializedBool(assetText, "requiresLicense", out bool requiresLicense) || !requiresLicense)
+            {
+                return false;
+            }
+
+            string licensePackageId = TryReadSerializedValue(assetText, "licensePackageId");
+            if (string.IsNullOrWhiteSpace(licensePackageId))
+            {
+                return false;
+            }
+
+            string displayName = TryReadSerializedValue(assetText, "targetFbxName");
+            if (string.IsNullOrWhiteSpace(displayName))
+            {
+                displayName = TryReadSerializedValue(assetText, "friendlyName");
+            }
+
+            if (string.IsNullOrWhiteSpace(displayName))
+            {
+                string fileName = Path.GetFileNameWithoutExtension(destinationPath);
+                displayName = fileName.StartsWith("DerivedFbxAsset_", StringComparison.OrdinalIgnoreCase)
+                    ? fileName.Substring("DerivedFbxAsset_".Length).Trim('_')
+                    : fileName;
+            }
+
+            descriptor = new ProtectedDerivedDescriptor
+            {
+                destinationPath = destinationPath,
+                licensePackageId = licensePackageId.Trim(),
+                displayName = displayName.Trim(),
+                sourceFolder = sourceFolder
+            };
+            return true;
+        }
+
+        private static string ReadImportItemAssetText(object item)
+        {
+            string sourceFolder = GetImportItemString(item, "sourceFolder");
+            string exportedAssetPath = GetImportItemString(item, "exportedAssetPath");
+            if (string.IsNullOrEmpty(sourceFolder))
+            {
+                return null;
+            }
+
+            string assetPath = Path.Combine(sourceFolder, "asset");
+            if (File.Exists(assetPath))
+            {
+                return File.ReadAllText(assetPath);
+            }
+
+            if (!string.IsNullOrEmpty(exportedAssetPath))
+            {
+                string alternatePath = Path.Combine(sourceFolder, exportedAssetPath);
+                if (File.Exists(alternatePath))
+                {
+                    return File.ReadAllText(alternatePath);
+                }
+            }
+
+            return null;
+        }
+
+        private static string GetImportItemString(object item, string memberName)
+        {
+            if (item == null || string.IsNullOrEmpty(memberName))
+            {
+                return null;
+            }
+
+            var type = item.GetType();
+            var field = type.GetField(memberName);
+            if (field != null)
+            {
+                return field.GetValue(item) as string;
+            }
+
+            var property = type.GetProperty(memberName);
+            return property?.GetValue(item) as string;
+        }
+
+        private static bool TryReadSerializedBool(string assetText, string propertyName, out bool value)
+        {
+            value = false;
+            string serializedValue = TryReadSerializedValue(assetText, propertyName);
+            if (string.IsNullOrEmpty(serializedValue))
+            {
+                return false;
+            }
+
+            serializedValue = serializedValue.Trim();
+            if (serializedValue == "1" || serializedValue.Equals("true", StringComparison.OrdinalIgnoreCase))
+            {
+                value = true;
+                return true;
+            }
+
+            if (serializedValue == "0" || serializedValue.Equals("false", StringComparison.OrdinalIgnoreCase))
+            {
+                value = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string TryReadSerializedValue(string assetText, string propertyName)
+        {
+            if (string.IsNullOrEmpty(assetText) || string.IsNullOrEmpty(propertyName))
+            {
+                return null;
+            }
+
+            using (var reader = new StringReader(assetText))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    string trimmed = line.Trim();
+                    if (!trimmed.StartsWith(propertyName + ":", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    int colonIndex = trimmed.IndexOf(':');
+                    if (colonIndex < 0 || colonIndex >= trimmed.Length - 1)
+                    {
+                        return string.Empty;
+                    }
+
+                    return trimmed.Substring(colonIndex + 1).Trim().Trim('"');
+                }
+            }
+
+            return null;
+        }
+
+        private void PopulateCreatorIdentityButton(Button button, string labelText)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            button.text = string.Empty;
+            button.Clear();
+            button.style.backgroundColor = Color.white;
+            button.style.borderTopLeftRadius = 14;
+            button.style.borderTopRightRadius = 14;
+            button.style.borderBottomLeftRadius = 14;
+            button.style.borderBottomRightRadius = 14;
+            button.style.flexDirection = FlexDirection.Row;
+            button.style.alignItems = Align.Center;
+            button.style.justifyContent = Justify.Center;
+            button.style.paddingLeft = 20;
+            button.style.paddingRight = 20;
+            button.style.paddingTop = 10;
+            button.style.paddingBottom = 10;
+            button.style.alignSelf = Align.Center;
+            button.style.minHeight = 36;
+            button.style.width = 220;
+            button.style.maxWidth = 320;
+            button.style.flexGrow = 0;
+            button.style.flexShrink = 0;
+            button.style.unityTextAlign = TextAnchor.MiddleCenter;
+            button.style.borderTopWidth = 0;
+            button.style.borderRightWidth = 0;
+            button.style.borderBottomWidth = 0;
+            button.style.borderLeftWidth = 0;
+            button.style.opacity = 1f;
+
+            var content = new VisualElement();
+            content.style.flexDirection = FlexDirection.Row;
+            content.style.alignItems = Align.Center;
+            content.style.justifyContent = Justify.Center;
+
+            Texture2D bag = AssetDatabase.LoadAssetAtPath<Texture2D>(CreatorIdentityBagIconPath);
+            if (bag != null)
+            {
+                var iconWrap = new VisualElement();
+                iconWrap.style.width = 20;
+                iconWrap.style.height = 20;
+                iconWrap.style.flexShrink = 0;
+                iconWrap.style.overflow = Overflow.Hidden;
+                iconWrap.style.alignItems = Align.Center;
+                iconWrap.style.justifyContent = Justify.Center;
+
+                var image = new Image();
+                image.image = bag;
+                image.scaleMode = ScaleMode.ScaleToFit;
+                image.style.width = Length.Percent(100);
+                image.style.height = Length.Percent(100);
+                iconWrap.Add(image);
+                content.Add(iconWrap);
+            }
+
+            var label = new Label(labelText);
+            label.AddToClassList("yucp-license-primary-button-label");
+            label.style.marginLeft = 6;
+            label.style.alignSelf = Align.Center;
+            label.style.color = new Color(0.08f, 0.08f, 0.08f);
+            label.style.fontSize = 12;
+            label.style.unityFontStyleAndWeight = FontStyle.Bold;
+            content.Add(label);
+
+            button.Add(content);
+            button.RegisterCallback<MouseEnterEvent>(_ => button.style.opacity = 0.92f);
+            button.RegisterCallback<MouseLeaveEvent>(_ => button.style.opacity = 1f);
+        }
+
+        private int CountConflictingImportItems(System.Array items)
+        {
+            if (items == null || items.Length == 0)
+            {
+                return 0;
+            }
+
+            return items.Cast<object>().Count(item =>
+                GetImportItemBool(item, "exists") ||
+                GetImportItemBool(item, "pathConflict") ||
+                GetImportItemBool(item, "assetChanged"));
+        }
+
+        private bool GetImportItemBool(object item, string propertyName)
+        {
+            if (item == null)
+            {
+                return false;
+            }
+
+            var property = item.GetType().GetProperty(propertyName);
+            if (property == null)
+            {
+                return false;
+            }
+
+            var value = property.GetValue(item);
+            return value is bool b && b;
+        }
+
+        private List<string> GetProtectedPayloadPaths(System.Array items)
+        {
+            RefreshProtectedDerivedDescriptors();
+            return _protectedDerivedDescriptors.Select(descriptor => descriptor.destinationPath).ToList();
+        }
+
+        internal static bool IsProtectedPayloadPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return false;
+            }
+
+            string normalized = NormalizeImportPath(path);
+            return s_protectedDerivedPaths.Contains(normalized);
         }
 
         private void BuildLicenseSection()
@@ -1271,266 +1852,329 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
+            bool creatorSignedIn = CreatorIdentityOAuthService.IsSignedIn();
+            string creatorName = CreatorIdentityOAuthService.GetDisplayName() ?? "Creator";
+            string serverUrl = GetLicenseServerUrl();
+
+            if (creatorSignedIn)
+            {
+                CreatorIdentityOAuthService.TryBeginBackgroundRefresh(serverUrl, () =>
+                {
+                    BuildLicenseSection();
+                    UpdateImportButtonEnabled();
+                });
+            }
+
             _licenseSection.style.display = DisplayStyle.Flex;
-            _licenseSection.style.marginTop = 12;
-            _licenseSection.style.marginBottom = 4;
+            _licenseSection.RemoveFromClassList("yucp-license-gate");
+            _licenseSection.AddToClassList("lgate-root");
 
-            // Header
-            var headerRow = new VisualElement();
-            headerRow.style.flexDirection  = FlexDirection.Row;
-            headerRow.style.alignItems     = Align.Center;
-            headerRow.style.marginBottom   = 8;
-
-            var lockLabel = new Label("🔒  License Required");
-            lockLabel.style.fontSize = 13;
-            lockLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            lockLabel.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f));
-            headerRow.Add(lockLabel);
-            _licenseSection.Add(headerRow);
-
-            var subLabel = new Label("Verify your purchase to unlock derived content in this package.");
-            subLabel.style.fontSize    = 10;
-            subLabel.style.whiteSpace  = WhiteSpace.Normal;
-            subLabel.style.marginBottom = 10;
-            subLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
-            _licenseSection.Add(subLabel);
-
-            // One card per license package requirement
+            // Pre-compute verification states
             foreach (var req in reqs)
             {
                 if (req == null || string.IsNullOrEmpty(req.packageId)) continue;
-
                 var cachedToken = LicenseVerificationService.GetCachedToken(req.packageId);
-                var state = new LicenseVerificationState { isVerified = cachedToken != null };
-                _licenseStates[req.packageId] = state;
+                _licenseStates[req.packageId] = new LicenseVerificationState { isVerified = cachedToken != null };
+            }
 
-                var card = new VisualElement();
-                card.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.12f, 0.8f));
-                card.style.borderTopLeftRadius = card.style.borderTopRightRadius =
-                    card.style.borderBottomLeftRadius = card.style.borderBottomRightRadius = 6;
-                card.style.paddingLeft = card.style.paddingRight = 12;
-                card.style.paddingTop  = card.style.paddingBottom = 10;
-                card.style.marginBottom = 8;
-                card.style.borderTopWidth = card.style.borderBottomWidth =
-                    card.style.borderLeftWidth = card.style.borderRightWidth = 1;
-                card.style.borderTopColor = card.style.borderBottomColor =
-                    card.style.borderLeftColor = card.style.borderRightColor =
-                    new StyleColor(new Color(0.22f, 0.22f, 0.22f));
+            if (!creatorSignedIn)
+            {
+                // ── NOT SIGNED IN: one unified block — packages + sign-in action ──
+                var unifiedBlock = new VisualElement();
+                unifiedBlock.AddToClassList("lgate-req-block");
+                unifiedBlock.style.borderBottomWidth = 0;
 
-                // Package name + status badge row
-                var topRow = new VisualElement();
-                topRow.style.flexDirection  = FlexDirection.Row;
-                topRow.style.alignItems     = Align.Center;
-                topRow.style.justifyContent = Justify.SpaceBetween;
-                topRow.style.marginBottom   = 10;
-
-                string displayName = string.IsNullOrEmpty(req.packageName) ? req.packageId : req.packageName;
-                var pkgLabel = new Label(displayName);
-                pkgLabel.style.fontSize = 12;
-                pkgLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-                pkgLabel.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f));
-                topRow.Add(pkgLabel);
-
-                var badge = BuildLicenseBadge(state.isVerified);
-                state.statusBadge = badge;
-                topRow.Add(badge);
-                card.Add(topRow);
-
-                if (!state.isVerified)
+                foreach (var req in reqs)
                 {
-                    bool hasGumroad  = !string.IsNullOrEmpty(req.gumroadPermalink);
-                    bool hasJinxxy   = !string.IsNullOrEmpty(req.jinxxyProductId);
-                    bool hasDiscord  = !string.IsNullOrEmpty(req.discordGuildId);
+                    if (req == null || string.IsNullOrEmpty(req.packageId)) continue;
+                    var state = _licenseStates[req.packageId];
+                    string displayName = string.IsNullOrEmpty(req.packageName) ? req.packageId : req.packageName;
 
-                    if (hasGumroad && !hasJinxxy && !hasDiscord) state.selectedProvider = "gumroad";
-                    else if (hasJinxxy && !hasGumroad && !hasDiscord) state.selectedProvider = "jinxxy";
-                    else if (hasDiscord && !hasGumroad && !hasJinxxy) state.selectedProvider = "discord";
+                    var nameRow = new VisualElement();
+                    nameRow.AddToClassList("lgate-req-name-row");
 
-                    // Provider chips
-                    if (hasGumroad || hasJinxxy || hasDiscord)
-                    {
-                        var providerRow = new VisualElement();
-                        providerRow.style.flexDirection = FlexDirection.Row;
-                        providerRow.style.marginBottom  = 8;
-                        var capturedState = state;
-                        var capturedRow   = providerRow;
+                    var pkgName = new Label(displayName);
+                    pkgName.AddToClassList("lgate-req-name");
+                    nameRow.Add(pkgName);
 
-                        void MakeChip(string label, string key)
-                        {
-                            var chip = new Button();
-                            chip.text = label;
-                            chip.style.height     = 24;
-                            chip.style.paddingLeft = chip.style.paddingRight  = 10;
-                            chip.style.paddingTop  = chip.style.paddingBottom = 0;
-                            chip.style.marginRight = 6;
-                            chip.style.fontSize    = 10;
-                            chip.style.borderTopLeftRadius = chip.style.borderTopRightRadius =
-                                chip.style.borderBottomLeftRadius = chip.style.borderBottomRightRadius = 12;
-                            chip.style.borderTopWidth = chip.style.borderBottomWidth =
-                                chip.style.borderLeftWidth = chip.style.borderRightWidth = 1;
-
-                            var capturedKey = key;
-                            void Refresh()
-                            {
-                                bool sel = capturedState.selectedProvider == capturedKey;
-                                chip.style.backgroundColor = sel
-                                    ? new StyleColor(new Color(0.21f, 0.75f, 0.69f, 0.25f))
-                                    : new StyleColor(new Color(0.2f, 0.2f, 0.2f));
-                                chip.style.borderTopColor = chip.style.borderBottomColor =
-                                    chip.style.borderLeftColor = chip.style.borderRightColor = sel
-                                    ? new StyleColor(new Color(0.21f, 0.75f, 0.69f))
-                                    : new StyleColor(new Color(0.3f, 0.3f, 0.3f));
-                                chip.style.color = sel
-                                    ? new StyleColor(new Color(0.21f, 0.75f, 0.69f))
-                                    : new StyleColor(new Color(0.7f, 0.7f, 0.7f));
-                            }
-                            Refresh();
-                            chip.clicked += () =>
-                            {
-                                capturedState.selectedProvider = capturedKey;
-                                foreach (var child in capturedRow.Children())
-                                {
-                                    if (child.userData is Action refresh) refresh();
-                                }
-                                // Show/hide the key input row vs the discord button based on selection
-                                if (capturedState.keyInputRow != null)
-                                    capturedState.keyInputRow.style.display = capturedKey == "discord"
-                                        ? DisplayStyle.None : DisplayStyle.Flex;
-                                if (capturedState.discordRow != null)
-                                    capturedState.discordRow.style.display = capturedKey == "discord"
-                                        ? DisplayStyle.Flex : DisplayStyle.None;
-                            };
-                            chip.userData = (Action)Refresh;
-                            capturedRow.Add(chip);
-                        }
-
-                        if (hasGumroad) MakeChip("Gumroad", "gumroad");
-                        if (hasJinxxy) MakeChip("Jinxxy",  "jinxxy");
-                        if (hasDiscord) MakeChip("Discord", "discord");
-                        card.Add(providerRow);
-                    }
-
-                    // Key input row (Gumroad / Jinxxy)
-                    bool discordDefault = state.selectedProvider == "discord";
-
-                    var inputRow = new VisualElement();
-                    inputRow.style.flexDirection = FlexDirection.Row;
-                    inputRow.style.alignItems    = Align.Center;
-                    inputRow.style.display = discordDefault ? DisplayStyle.None : DisplayStyle.Flex;
-                    state.keyInputRow = inputRow;
-
-                    var keyField = new TextField { value = state.licenseKey };
-                    keyField.style.flexGrow    = 1;
-                    keyField.style.height      = 28;
-                    keyField.style.fontSize    = 11;
-                    keyField.style.marginRight = 6;
-                    var capturedState2 = state;
-                    keyField.RegisterValueChangedCallback(e => capturedState2.licenseKey = e.newValue);
-
-                    var verifyBtn = new Button { text = "Verify" };
-                    verifyBtn.style.height      = 28;
-                    verifyBtn.style.paddingLeft  = verifyBtn.style.paddingRight  = 12;
-                    verifyBtn.style.paddingTop   = verifyBtn.style.paddingBottom = 0;
-                    verifyBtn.style.fontSize     = 11;
-                    verifyBtn.style.backgroundColor = new StyleColor(new Color(0.21f, 0.75f, 0.69f, 0.15f));
-                    verifyBtn.style.color           = new StyleColor(new Color(0.21f, 0.75f, 0.69f));
-                    verifyBtn.style.borderTopColor = verifyBtn.style.borderBottomColor =
-                        verifyBtn.style.borderLeftColor = verifyBtn.style.borderRightColor =
-                        new StyleColor(new Color(0.21f, 0.75f, 0.69f, 0.4f));
-                    verifyBtn.style.borderTopWidth = verifyBtn.style.borderBottomWidth =
-                        verifyBtn.style.borderLeftWidth = verifyBtn.style.borderRightWidth = 1;
-                    verifyBtn.style.borderTopLeftRadius = verifyBtn.style.borderTopRightRadius =
-                        verifyBtn.style.borderBottomLeftRadius = verifyBtn.style.borderBottomRightRadius = 4;
-                    state.verifyButton = verifyBtn;
-
-                    var capturedReq    = req;
-                    var capturedState3 = state;
-                    var capturedBadge  = badge;
-                    verifyBtn.clicked += () => OnVerifyLicenseClicked(capturedReq, capturedState3, capturedBadge);
-
-                    inputRow.Add(keyField);
-                    inputRow.Add(verifyBtn);
-                    card.Add(inputRow);
-
-                    // Discord verification row — only shown when Discord chip is selected
-                    var discordRow = new VisualElement();
-                    discordRow.style.display = discordDefault ? DisplayStyle.Flex : DisplayStyle.None;
-                    state.discordRow = discordRow;
-
-                    var discordBtn = new Button { text = "Sign in with Discord" };
-                    discordBtn.style.height     = 28;
-                    discordBtn.style.paddingLeft = discordBtn.style.paddingRight  = 14;
-                    discordBtn.style.paddingTop  = discordBtn.style.paddingBottom = 0;
-                    discordBtn.style.fontSize    = 11;
-                    // Discord blurple
-                    discordBtn.style.backgroundColor = new StyleColor(new Color(0.35f, 0.39f, 0.87f, 0.2f));
-                    discordBtn.style.color           = new StyleColor(new Color(0.60f, 0.64f, 0.97f));
-                    discordBtn.style.borderTopColor = discordBtn.style.borderBottomColor =
-                        discordBtn.style.borderLeftColor = discordBtn.style.borderRightColor =
-                        new StyleColor(new Color(0.35f, 0.39f, 0.87f, 0.5f));
-                    discordBtn.style.borderTopWidth = discordBtn.style.borderBottomWidth =
-                        discordBtn.style.borderLeftWidth = discordBtn.style.borderRightWidth = 1;
-                    discordBtn.style.borderTopLeftRadius = discordBtn.style.borderTopRightRadius =
-                        discordBtn.style.borderBottomLeftRadius = discordBtn.style.borderBottomRightRadius = 4;
-
-                    var capturedState4 = state;
-                    var capturedReq2   = req;
-                    var capturedBadge2 = badge;
-                    discordBtn.clicked += () => OnVerifyDiscordClicked(capturedReq2, capturedState4, capturedBadge2, discordBtn);
-
-                    var discordHint = new Label("Verifies your purchase via your Discord server membership.");
-                    discordHint.style.fontSize  = 9;
-                    discordHint.style.color     = new StyleColor(new Color(0.45f, 0.45f, 0.55f));
-                    discordHint.style.marginTop = 4;
-                    discordHint.style.whiteSpace = WhiteSpace.Normal;
-
-                    discordRow.Add(discordBtn);
-                    discordRow.Add(discordHint);
-                    card.Add(discordRow);
+                    var badge = BuildLicenseBadge(state.isVerified);
+                    state.statusBadge = badge;
+                    nameRow.Add(badge);
+                    unifiedBlock.Add(nameRow);
                 }
 
-                _licenseSection.Add(card);
+                var signInBtn = new Button(OnCreatorIdentitySignInClicked)
+                {
+                    text = _isCreatorIdentitySigningIn ? "Connecting…" : "Sign in to verify"
+                };
+                signInBtn.SetEnabled(!_isCreatorIdentitySigningIn);
+                signInBtn.AddToClassList("lgate-solid-btn");
+                signInBtn.style.marginTop = 10;
+                PopulateCreatorIdentityButton(signInBtn, _isCreatorIdentitySigningIn ? "Connecting…" : "Sign in to verify");
+                unifiedBlock.Add(signInBtn);
+
+                // License key fallback (collapsed)
+                foreach (var req in reqs)
+                {
+                    if (req == null || string.IsNullOrEmpty(req.packageId)) continue;
+                    bool hasGumroad = !string.IsNullOrEmpty(req.gumroadPermalink);
+                    bool hasJinxxy = !string.IsNullOrEmpty(req.jinxxyProductId);
+                    if (!hasGumroad && !hasJinxxy) continue;
+
+                    var state = _licenseStates[req.packageId];
+                    state.selectedProvider = hasGumroad ? "gumroad" : "jinxxy";
+
+                    var keyInputRow = new VisualElement();
+                    keyInputRow.AddToClassList("lgate-input-row");
+                    keyInputRow.style.display = DisplayStyle.None;
+                    state.keyInputRow = keyInputRow;
+
+                    var keyField = new TextField { value = state.licenseKey };
+                    keyField.AddToClassList("lgate-key-field");
+                    keyField.RegisterValueChangedCallback(e => state.licenseKey = e.newValue);
+
+                    var verifyBtn = new Button { text = "Verify" };
+                    verifyBtn.AddToClassList("lgate-solid-btn");
+                    state.verifyButton = verifyBtn;
+                    verifyBtn.clicked += () => OnVerifyLicenseClicked(req, state, state.statusBadge);
+
+                    keyInputRow.Add(keyField);
+                    keyInputRow.Add(verifyBtn);
+
+                    var keyToggle = new Button(() =>
+                    {
+                        bool visible = keyInputRow.style.display == DisplayStyle.Flex;
+                        keyInputRow.style.display = visible ? DisplayStyle.None : DisplayStyle.Flex;
+                    });
+                    keyToggle.text = "Use license key instead";
+                    keyToggle.AddToClassList("lgate-key-toggle");
+                    unifiedBlock.Add(keyToggle);
+                    unifiedBlock.Add(keyInputRow);
+                }
+
+                _licenseSection.Add(unifiedBlock);
+            }
+            else
+            {
+                // ── SIGNED IN: "Connected as X | Sign out" → per-package rows ─────
+                var idRow = new VisualElement();
+                idRow.AddToClassList("lgate-id-row");
+
+                var connectedLabel = new Label($"Connected as {creatorName}");
+                connectedLabel.AddToClassList("lgate-id-title");
+                connectedLabel.style.flexGrow = 1;
+                idRow.Add(connectedLabel);
+
+                var signOutBtn = new Button(() =>
+                {
+                    CreatorIdentityOAuthService.SignOut();
+                    BuildLicenseSection();
+                }) { text = "Sign out" };
+                signOutBtn.AddToClassList("lgate-link-btn");
+                idRow.Add(signOutBtn);
+                _licenseSection.Add(idRow);
+
+                foreach (var req in reqs)
+                {
+                    if (req == null || string.IsNullOrEmpty(req.packageId)) continue;
+                    var state = _licenseStates[req.packageId];
+                    string displayName = string.IsNullOrEmpty(req.packageName) ? req.packageId : req.packageName;
+
+                    bool hasDiscord = HasDiscordProvider(req);
+                    bool hasGumroad = !string.IsNullOrEmpty(req.gumroadPermalink);
+                    bool hasJinxxy = !string.IsNullOrEmpty(req.jinxxyProductId);
+                    bool hasLicenseKey = hasGumroad || hasJinxxy;
+                    state.selectedProvider = hasDiscord ? "discord" : (hasGumroad ? "gumroad" : "jinxxy");
+
+                    var block = new VisualElement();
+                    block.AddToClassList("lgate-req-block");
+
+                    var nameRow = new VisualElement();
+                    nameRow.AddToClassList("lgate-req-name-row");
+
+                    var pkgName = new Label(displayName);
+                    pkgName.AddToClassList("lgate-req-name");
+                    nameRow.Add(pkgName);
+
+                    var badge = BuildLicenseBadge(state.isVerified);
+                    state.statusBadge = badge;
+                    nameRow.Add(badge);
+                    block.Add(nameRow);
+
+                    if (state.isVerified)
+                    {
+                        var note = new Label("Licensed content is unlocked on this machine.");
+                        note.AddToClassList("lgate-req-note");
+                        block.Add(note);
+                    }
+                    else
+                    {
+                        if (hasDiscord)
+                        {
+                            var discordRow = new VisualElement();
+                            discordRow.AddToClassList("lgate-discord-row");
+                            state.discordRow = discordRow;
+
+                            var discordBtn = new Button { text = "Verify Purchase" };
+                            discordBtn.AddToClassList("lgate-discord-btn");
+                            PopulateCreatorIdentityButton(discordBtn, "Verify Purchase");
+                            discordBtn.clicked += () => OnVerifyDiscordClicked(req, state, badge, discordBtn);
+                            discordRow.Add(discordBtn);
+                            block.Add(discordRow);
+                        }
+
+                        if (hasLicenseKey)
+                        {
+                            var keyInputRow = new VisualElement();
+                            keyInputRow.AddToClassList("lgate-input-row");
+                            keyInputRow.style.display = DisplayStyle.None;
+                            state.keyInputRow = keyInputRow;
+
+                            var keyField = new TextField { value = state.licenseKey };
+                            keyField.AddToClassList("lgate-key-field");
+                            keyField.RegisterValueChangedCallback(e => state.licenseKey = e.newValue);
+
+                            var verifyBtn = new Button { text = "Verify" };
+                            verifyBtn.AddToClassList("lgate-solid-btn");
+                            state.verifyButton = verifyBtn;
+                            verifyBtn.clicked += () => OnVerifyLicenseClicked(req, state, badge);
+
+                            keyInputRow.Add(keyField);
+                            keyInputRow.Add(verifyBtn);
+
+                            string toggleText = hasDiscord ? "Use license key instead" : "Enter license key";
+                            var keyToggle = new Button(() =>
+                            {
+                                bool visible = keyInputRow.style.display == DisplayStyle.Flex;
+                                keyInputRow.style.display = visible ? DisplayStyle.None : DisplayStyle.Flex;
+                            });
+                            keyToggle.text = toggleText;
+                            keyToggle.AddToClassList("lgate-key-toggle");
+                            block.Add(keyToggle);
+                            block.Add(keyInputRow);
+                        }
+                    }
+
+                    _licenseSection.Add(block);
+                }
             }
 
             UpdateImportButtonEnabled();
         }
 
-        private VisualElement BuildLicenseBadge(bool verified)
+        private static bool HasDiscordProvider(LicensePackageRequirement req)
         {
-            var badge = new VisualElement();
-            badge.style.flexDirection = FlexDirection.Row;
-            badge.style.alignItems    = Align.Center;
-            badge.style.paddingLeft   = badge.style.paddingRight  = 8;
-            badge.style.paddingTop    = badge.style.paddingBottom = 3;
-            badge.style.borderTopLeftRadius = badge.style.borderTopRightRadius =
-                badge.style.borderBottomLeftRadius = badge.style.borderBottomRightRadius = 10;
-            badge.style.borderTopWidth = badge.style.borderBottomWidth =
-                badge.style.borderLeftWidth = badge.style.borderRightWidth = 1;
+            return req != null &&
+                ((!string.IsNullOrEmpty(req.productId) && !string.IsNullOrEmpty(req.creatorAuthUserId)) ||
+                 !string.IsNullOrEmpty(req.discordGuildId) ||
+                 !string.IsNullOrEmpty(req.discordRoleId));
+        }
 
-            if (verified)
+        private static bool IsDiscordOnlyRequirement(LicensePackageRequirement req)
+        {
+            return HasDiscordProvider(req) &&
+                string.IsNullOrEmpty(req.gumroadPermalink) &&
+                string.IsNullOrEmpty(req.jinxxyProductId);
+        }
+
+        private static VisualElement BuildHeroPill(string text)
+        {
+            var pill = new VisualElement();
+            pill.AddToClassList("yucp-hero-pill");
+
+            var label = new Label(text);
+            label.style.fontSize = 9;
+            label.style.unityFontStyleAndWeight = FontStyle.Bold;
+            label.style.color = new StyleColor(new Color(0.95f, 0.95f, 0.97f));
+            pill.Add(label);
+            return pill;
+        }
+
+        private void BuildSimplifiedDiscordLicenseSection(LicensePackageRequirement req, bool creatorSignedIn, string creatorName)
+        {
+            if (req == null || string.IsNullOrEmpty(req.packageId))
             {
-                badge.style.backgroundColor = new StyleColor(new Color(0.21f, 0.75f, 0.69f, 0.18f));
-                badge.style.borderTopColor = badge.style.borderBottomColor =
-                    badge.style.borderLeftColor = badge.style.borderRightColor =
-                    new StyleColor(new Color(0.21f, 0.75f, 0.69f, 0.5f));
-                var lbl = new Label("✓  Verified");
-                lbl.style.fontSize = 10;
-                lbl.style.color    = new StyleColor(new Color(0.21f, 0.75f, 0.69f));
-                badge.Add(lbl);
+                return;
+            }
+
+            var cachedToken = LicenseVerificationService.GetCachedToken(req.packageId);
+            var state = new LicenseVerificationState
+            {
+                isVerified = cachedToken != null,
+                selectedProvider = "discord"
+            };
+            _licenseStates[req.packageId] = state;
+
+            var block = new VisualElement();
+            block.AddToClassList("lgate-simple");
+
+            var eyebrow = new Label("PURCHASE VERIFICATION");
+            eyebrow.AddToClassList("lgate-eyebrow");
+            block.Add(eyebrow);
+
+            var title = new Label("Unlock licensed content");
+            title.AddToClassList("lgate-title");
+            block.Add(title);
+
+            var body = new Label("You can always install. Verify your purchase to unlock licensed derived assets on this machine.");
+            body.AddToClassList("lgate-body");
+            block.Add(body);
+
+            var div = new VisualElement();
+            div.AddToClassList("lgate-divider");
+            block.Add(div);
+
+            if (state.isVerified)
+            {
+                var verifiedRow = new VisualElement();
+                verifiedRow.AddToClassList("lgate-simple-verified");
+
+                var checkLabel = new Label("✓");
+                checkLabel.AddToClassList("lgate-check");
+                verifiedRow.Add(checkLabel);
+
+                var verifiedText = new Label(creatorSignedIn
+                    ? $"Verified for {creatorName} on this machine."
+                    : "Verified on this machine.");
+                verifiedText.AddToClassList("lgate-req-note");
+                verifiedRow.Add(verifiedText);
+                block.Add(verifiedRow);
             }
             else
             {
-                badge.style.backgroundColor = new StyleColor(new Color(0.9f, 0.6f, 0.1f, 0.12f));
-                badge.style.borderTopColor = badge.style.borderBottomColor =
-                    badge.style.borderLeftColor = badge.style.borderRightColor =
-                    new StyleColor(new Color(0.9f, 0.6f, 0.1f, 0.35f));
-                var lbl = new Label("Not verified");
-                lbl.style.fontSize = 10;
-                lbl.style.color    = new StyleColor(new Color(0.9f, 0.6f, 0.1f));
-                badge.Add(lbl);
+                var btnRow = new VisualElement();
+                btnRow.AddToClassList("lgate-simple-btn-row");
+
+                var verifyBtn = new Button();
+                verifyBtn.AddToClassList("lgate-discord-btn");
+                PopulateCreatorIdentityButton(verifyBtn, _isCreatorIdentitySigningIn ? "Connecting…" : "Verify Your License");
+                verifyBtn.SetEnabled(!_isCreatorIdentitySigningIn);
+                verifyBtn.clicked += () => OnVerifyDiscordClicked(req, state, null, verifyBtn);
+                btnRow.Add(verifyBtn);
+                block.Add(btnRow);
             }
 
-            return badge;
+            _licenseSection.Add(block);
+        }
+
+        private VisualElement BuildLicenseBadge(bool verified)
+        {
+            var status = new VisualElement();
+            status.AddToClassList("lgate-status");
+
+            var dot = new VisualElement();
+            dot.AddToClassList("lgate-status-dot");
+            dot.EnableInClassList("lgate-status-dot-verified", verified);
+            dot.EnableInClassList("lgate-status-dot-unverified", !verified);
+            status.Add(dot);
+
+            var text = new Label(verified ? "Verified" : "Not verified");
+            text.AddToClassList("lgate-status-text");
+            text.EnableInClassList("lgate-status-text-verified", verified);
+            text.EnableInClassList("lgate-status-text-unverified", !verified);
+            status.Add(text);
+
+            return status;
         }
 
         private void OnVerifyLicenseClicked(
@@ -1546,7 +2190,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
             state.verifyButton?.SetEnabled(false);
 
-            string serverUrl = EditorPrefs.GetString("yucp_server_url", "https://rare-squid-409.convex.site");
+            string serverUrl = GetLicenseServerUrl();
             string permalink = state.selectedProvider == "gumroad" ? req.gumroadPermalink : null;
             string jinxxyId  = state.selectedProvider == "jinxxy"  ? req.jinxxyProductId  : null;
 
@@ -1561,17 +2205,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     state.isVerified = true;
                     EditorApplication.delayCall += () =>
                     {
-                        if (badgeSlot?.parent != null)
-                        {
-                            var parent = badgeSlot.parent;
-                            int idx    = parent.IndexOf(badgeSlot);
-                            badgeSlot.RemoveFromHierarchy();
-                            var newBadge = BuildLicenseBadge(true);
-                            parent.Insert(idx, newBadge);
-                            state.statusBadge = newBadge;
-                        }
-                        if (state.verifyButton?.parent != null)
-                            state.verifyButton.parent.Remove(state.verifyButton);
+                        BuildLicenseSection();
                         UpdateImportButtonEnabled();
                     };
                 },
@@ -1592,10 +2226,16 @@ namespace YUCP.Importer.Editor.PackageManager
             VisualElement badgeSlot,
             Button discordBtn)
         {
-            discordBtn.SetEnabled(false);
-            discordBtn.text = "Signing in…";
+            if (!CreatorIdentityOAuthService.IsSignedIn())
+            {
+                BeginCreatorIdentitySignIn();
+                return;
+            }
 
-            string serverUrl = EditorPrefs.GetString("yucp_server_url", "https://rare-squid-409.convex.site");
+            discordBtn.SetEnabled(false);
+            discordBtn.text = "Verifying…";
+
+            string serverUrl = GetLicenseServerUrl();
 
             LicenseVerificationService.VerifyDiscordAsync(
                 serverUrl,
@@ -1607,16 +2247,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     state.isVerified = true;
                     EditorApplication.delayCall += () =>
                     {
-                        if (badgeSlot?.parent != null)
-                        {
-                            var parent = badgeSlot.parent;
-                            int idx    = parent.IndexOf(badgeSlot);
-                            badgeSlot.RemoveFromHierarchy();
-                            var newBadge = BuildLicenseBadge(true);
-                            parent.Insert(idx, newBadge);
-                            state.statusBadge = newBadge;
-                        }
-                        state.discordRow?.RemoveFromHierarchy();
+                        BuildLicenseSection();
                         UpdateImportButtonEnabled();
                     };
                 },
@@ -1625,7 +2256,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     EditorApplication.delayCall += () =>
                     {
                         discordBtn.SetEnabled(true);
-                        discordBtn.text = "Sign in with Discord";
+                        PopulateCreatorIdentityButton(discordBtn, "Verify Your License");
                         EditorUtility.DisplayDialog("Discord Verification Failed",
                             $"{err}", "OK");
                     };
@@ -1635,45 +2266,153 @@ namespace YUCP.Importer.Editor.PackageManager
         private void UpdateImportButtonEnabled()
         {
             if (_importButton == null) return;
-            bool allVerified = true;
+            bool hasUnverifiedLicense = false;
             foreach (var kv in _licenseStates)
-                if (!kv.Value.isVerified) { allVerified = false; break; }
-            _importButton.SetEnabled(allVerified);
+            {
+                if (!kv.Value.isVerified)
+                {
+                    hasUnverifiedLicense = true;
+                    break;
+                }
+            }
+
+            _importButton.SetEnabled(!hasUnverifiedLicense);
+            _importButton.tooltip = hasUnverifiedLicense
+                ? "Verify your purchase above to enable import."
+                : string.Empty;
+        }
+
+        private void OnCreatorIdentitySignInClicked()
+        {
+            BeginCreatorIdentitySignIn();
+        }
+
+        private void BeginCreatorIdentitySignIn(Action onSuccess = null)
+        {
+            if (_isCreatorIdentitySigningIn)
+            {
+                return;
+            }
+
+            _isCreatorIdentitySigningIn = true;
+            BuildLicenseSection();
+
+            string serverUrl = GetLicenseServerUrl();
+#pragma warning disable CS4014
+            CreatorIdentityOAuthService.SignInAsync(
+                serverUrl,
+                () =>
+                {
+                    EditorApplication.delayCall += () =>
+                    {
+                        _isCreatorIdentitySigningIn = false;
+                        BuildLicenseSection();
+                        onSuccess?.Invoke();
+                    };
+                },
+                error =>
+                {
+                    EditorApplication.delayCall += () =>
+                    {
+                        _isCreatorIdentitySigningIn = false;
+                        BuildLicenseSection();
+                        EditorUtility.DisplayDialog("Creator Identity Sign-in Failed", error, "OK");
+                    };
+                });
+#pragma warning restore CS4014
+        }
+
+        private static string GetLicenseServerUrl()
+        {
+            const string preferredServerUrlKey = "YUCP.PackageManager.PreferredServerUrl";
+
+            string preferredUrl = TrustedAuthoritiesSettings.NormalizeUrl(EditorPrefs.GetString(preferredServerUrlKey, string.Empty));
+            string signingUrl = TrustedAuthoritiesSettings.NormalizeUrl(GetSigningSettingsServerUrl());
+            string legacyUrl = TrustedAuthoritiesSettings.NormalizeUrl(EditorPrefs.GetString("yucp_server_url", string.Empty));
+            List<string> trustedUrls = TrustedAuthoritiesSettings.GetUrls();
+
+            if (trustedUrls.Count == 0)
+            {
+                return preferredUrl
+                    ?? signingUrl
+                    ?? legacyUrl
+                    ?? TrustedAuthoritiesSettings.DefaultTrustedUrl;
+            }
+
+            if (!string.IsNullOrEmpty(preferredUrl) && TrustedAuthoritiesSettings.IsTrustedUrl(preferredUrl))
+            {
+                return preferredUrl;
+            }
+
+            if (!string.IsNullOrEmpty(signingUrl) && TrustedAuthoritiesSettings.IsTrustedUrl(signingUrl))
+            {
+                return signingUrl;
+            }
+
+            if (!string.IsNullOrEmpty(legacyUrl) && TrustedAuthoritiesSettings.IsTrustedUrl(legacyUrl))
+            {
+                return legacyUrl;
+            }
+
+            return trustedUrls[0];
+        }
+
+        private static string GetSigningSettingsServerUrl()
+        {
+            try
+            {
+                string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
+                if (guids.Length > 0)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                    Type signingSettingsType = null;
+
+                    foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        signingSettingsType = assembly.GetType("YUCP.DevTools.Editor.PackageSigning.Data.SigningSettings");
+                        if (signingSettingsType != null)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (signingSettingsType == null)
+                    {
+                        signingSettingsType = Type.GetType("YUCP.DevTools.Editor.PackageSigning.Data.SigningSettings, Assembly-CSharp-Editor");
+                    }
+
+                    if (signingSettingsType != null)
+                    {
+                        var settings = AssetDatabase.LoadAssetAtPath(path, signingSettingsType);
+                        if (settings != null)
+                        {
+                            var field = signingSettingsType.GetField("serverUrl", BindingFlags.Public | BindingFlags.Instance);
+                            return field?.GetValue(settings) as string;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to resolve license server URL from SigningSettings: {ex.Message}");
+            }
+
+            return null;
         }
 
         private void RefreshDependenciesSection()
         {
-
             var dependenciesContainer = _contentsSection.Q<VisualElement>("dependencies-container");
             if (dependenciesContainer == null) return;
 
-            // Clear existing dependencies
             dependenciesContainer.Clear();
 
-            // Add new dependencies section if metadata has dependencies
             var dependenciesSection = CreateDependenciesSection();
             if (dependenciesSection != null)
             {
                 dependenciesContainer.Add(dependenciesSection);
-                
-                // Update Package Contents title margin
-                var titleLabel = _contentsSection.Q<Label>();
-                if (titleLabel != null)
-                {
-                    titleLabel.style.marginTop = 20;
-                }
-            }
-            else
-            {
-                // No dependencies, remove margin from Package Contents title
-                var titleLabel = _contentsSection.Q<Label>();
-                if (titleLabel != null)
-                {
-                    titleLabel.style.marginTop = 0;
-                }
             }
 
-            // Update details button indicator
             UpdateDetailsButtonDependenciesIndicator();
         }
 
@@ -1684,9 +2423,23 @@ namespace YUCP.Importer.Editor.PackageManager
             var indicator = _detailsToggleButton.Q<Label>("dependencies-indicator");
             if (indicator == null) return;
 
-            if (_currentMetadata != null && _currentMetadata.dependencies != null && _currentMetadata.dependencies.Count > 0)
+            int dependencyCount = _currentMetadata?.dependencies?.Count ?? 0;
+            int protectedCount = GetProtectedPayloadPaths(_allImportItems ?? _currentImportItems).Count;
+
+            if (dependencyCount > 0 || protectedCount > 0)
             {
-                indicator.text = $"({_currentMetadata.dependencies.Count} required package{(_currentMetadata.dependencies.Count > 1 ? "s" : "")})";
+                var bits = new List<string>();
+                if (dependencyCount > 0)
+                {
+                    bits.Add($"{dependencyCount} required package{(dependencyCount == 1 ? string.Empty : "s")}");
+                }
+
+                if (protectedCount > 0)
+                {
+                    bits.Add($"{protectedCount} licensed");
+                }
+
+                indicator.text = $"({string.Join(" • ", bits)})";
                 indicator.style.display = DisplayStyle.Flex;
             }
             else
@@ -1775,7 +2528,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     var iconLabel = new Label("•");
                     iconLabel.style.fontSize = 12;
                     iconLabel.style.marginRight = 10;
-                    iconLabel.style.color = new Color(0.6f, 0.8f, 1f);
+                    iconLabel.style.color = new Color(0.86f, 0.86f, 0.86f);
                     depItem.Add(iconLabel);
                 }
 
@@ -1789,7 +2542,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 // Version
                 var versionLabel = new Label($"v{dependency.Value}");
                 versionLabel.style.fontSize = 11;
-                versionLabel.style.color = new Color(0.6f, 0.8f, 1f);
+                versionLabel.style.color = new Color(0.84f, 0.84f, 0.84f);
                 depItem.Add(versionLabel);
 
                 dependenciesList.Add(depItem);
@@ -1957,6 +2710,11 @@ namespace YUCP.Importer.Editor.PackageManager
             _currentPackageIconPath = packageIconPath;
             _packageImportWizardInstance = wizardInstance;
             _isProjectSettingsStep = isProjectSettingsStep;
+            _detailsExpanded = false;
+            _preferOverwriteExisting = true;
+            RefreshProtectedDerivedDescriptors();
+
+            Debug.Log($"[YUCP PackageManager] InitializeForImport: packagePath='{packagePath}', stepItems={GetImportItemCount(importItems)}, allItems={GetImportItemCount(_allImportItems)}, packageIconPath='{packageIconPath}', isProjectSettingsStep={isProjectSettingsStep}");
 
             // Set window title to match Unity's default
             titleContent = new GUIContent("Import Unity Package");
@@ -1978,6 +2736,9 @@ namespace YUCP.Importer.Editor.PackageManager
             // Also pass packageIconPath to extract icon even if no YUCP metadata exists
             var metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(allImportItems ?? importItems, packagePath, packageIconPath);
             SetMetadata(metadata);
+            s_lastImportMetadata = metadata;
+            s_lastImportPackagePath = packagePath;
+            LogTempInstallStatus();
 
             // Build tree from current step's import items
             SetImportItems(importItems);
@@ -2406,6 +3167,7 @@ namespace YUCP.Importer.Editor.PackageManager
         public void SetImportItems(System.Array importItems)
         {
             _currentImportItems = importItems;
+            RefreshProtectedDerivedDescriptors();
             if (_treeView != null)
             {
                 BuildTreeFromImportItems();
@@ -2445,7 +3207,10 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             // Refresh dependencies section in details view
+            RefreshProtectedDerivedDescriptors();
             RefreshDependenciesSection();
+            RefreshProtectedSummarySection();
+            UpdateConflictModeSection();
 
             if (_bannerImageContainer != null)
             {
@@ -2471,6 +3236,13 @@ namespace YUCP.Importer.Editor.PackageManager
                 parent.Insert(index, newStatus);
                 _verificationStatusElement = newStatus;
             }
+
+            if (_licenseSection != null)
+            {
+                BuildLicenseSection();
+            }
+
+            UpdateInstallerLayout();
         }
 
         /// <summary>
@@ -2479,7 +3251,13 @@ namespace YUCP.Importer.Editor.PackageManager
         /// </summary>
         public void SetMetadata(PackageMetadata metadata)
         {
-            _currentMetadata = metadata ?? new PackageMetadata();
+            _cachedMetadata = metadata ?? new PackageMetadata();
+            _currentMetadata = _cachedMetadata;
+            if (!string.IsNullOrEmpty(_currentPackagePath))
+            {
+                s_lastImportMetadata = _cachedMetadata;
+                s_lastImportPackagePath = _currentPackagePath;
+            }
             RefreshUI();
             BuildLicenseSection();
         }
@@ -2514,7 +3292,7 @@ namespace YUCP.Importer.Editor.PackageManager
             _waitingForImportCompletion = false;
             _pendingPackageName = null;
 
-            Debug.Log($"[YUCP PackageManager] Import completed for '{packageName}', organizing assets and registering package...");
+            Debug.Log($"[YUCP PackageManager] Import completed for '{packageName}'. packagePath='{_currentPackagePath}', allItems={GetImportItemCount(_allImportItems)}, signed={_isPackageSigned}, verificationValid={_verificationResult != null && _verificationResult.valid}");
 
             // Use delayCall to ensure Unity has fully finished processing the import
             EditorApplication.delayCall += () =>
@@ -2593,7 +3371,8 @@ namespace YUCP.Importer.Editor.PackageManager
                     return;
                 }
 
-                Debug.Log($"[YUCP PackageManager] Updating import item selections...");
+                int selectedCount = _treeView != null ? _treeView.GetSelectedPaths().Count : 0;
+                Debug.Log($"[YUCP PackageManager] Updating import item selections. selectedPaths={selectedCount}, currentStepItems={GetImportItemCount(_currentImportItems)}, allItems={GetImportItemCount(_allImportItems)}");
                 // Update enabledStatus in ImportPackageItem[] based on tree selections
                 UpdateImportItemSelections();
 
@@ -2633,7 +3412,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                 }
 
-                Debug.Log("[YUCP PackageManager] Import initiated, waiting for completion...");
+                Debug.Log($"[YUCP PackageManager] Import initiated, waiting for completion. packagePath='{_currentPackagePath}', packageSigned={_isPackageSigned}, verificationValid={_verificationResult != null && _verificationResult.valid}");
 
                 // Remember which package we're expecting completion for
                 _waitingForImportCompletion = true;
@@ -2753,12 +3532,11 @@ namespace YUCP.Importer.Editor.PackageManager
                     if (item == null) continue;
 
                     string destinationPath = destinationPathField.GetValue(item) as string;
-                    bool isFolder = (bool)(isFolderField.GetValue(item) ?? false);
-
                     if (string.IsNullOrEmpty(destinationPath)) continue;
 
                     // Check if item is selected
-                    bool isSelected = selectedSet.Contains(destinationPath);
+                    string normalizedDestinationPath = NormalizeImportPath(destinationPath);
+                    bool isSelected = selectedSet.Contains(normalizedDestinationPath);
                     enabledStatusField.SetValue(item, isSelected ? 1 : -1);
                 }
 
@@ -2775,6 +3553,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     // Check if any children are selected
                     bool hasSelected = false;
                     bool hasUnselected = false;
+                    string normalizedFolderPath = NormalizeImportPath(folderPath);
 
                     foreach (var childItem in _currentImportItems)
                     {
@@ -2783,7 +3562,9 @@ namespace YUCP.Importer.Editor.PackageManager
                         string childPath = destinationPathField.GetValue(childItem) as string;
                         if (string.IsNullOrEmpty(childPath)) continue;
 
-                        if (childPath.StartsWith(folderPath + "/", StringComparison.OrdinalIgnoreCase))
+                        string normalizedChildPath = NormalizeImportPath(childPath);
+
+                        if (normalizedChildPath.StartsWith(normalizedFolderPath + "/", StringComparison.OrdinalIgnoreCase))
                         {
                             int status = (int)(enabledStatusField.GetValue(childItem) ?? -1);
                             if (status > 0) hasSelected = true;
@@ -2809,6 +3590,16 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 Debug.LogWarning($"[YUCP PackageManager] Failed to update import item selections: {ex.Message}");
             }
+        }
+
+        private static string NormalizeImportPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return path;
+            }
+
+            return path.Replace('\\', '/').TrimStart('/');
         }
 
         // View management methods
@@ -2909,11 +3700,24 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (string.IsNullOrEmpty(_currentPackagePath))
                     return;
 
+                Debug.Log($"[YUCP PackageManager] RegisterPackageAfterImport starting. packagePath='{_currentPackagePath}', allItems={GetImportItemCount(_allImportItems)}, cachedManifestPresent={_cachedManifest != null}, cachedSignaturePresent={_cachedSignature != null}");
+
                 // Extract metadata
-                var metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(
-                    _allImportItems ?? _currentImportItems, 
-                    _currentPackagePath, 
-                    _currentPackageIconPath);
+                var metadata = _cachedMetadata;
+                if (metadata == null &&
+                    !string.IsNullOrEmpty(_currentPackagePath) &&
+                    string.Equals(s_lastImportPackagePath, _currentPackagePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    metadata = s_lastImportMetadata;
+                }
+
+                if (metadata == null)
+                {
+                    metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(
+                        _allImportItems ?? _currentImportItems,
+                        _currentPackagePath,
+                        _currentPackageIconPath);
+                }
 
                 // Extract manifest and packageId
                 string packageId = null;
@@ -2923,13 +3727,25 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 try
                 {
-                    var extractionResult = PackageVerifierCore.ManifestExtractor.ExtractSigningData(_currentPackagePath, _allImportItems);
-                    if (extractionResult != null && extractionResult.success && extractionResult.manifest != null)
+                    if (_cachedManifest != null)
                     {
-                        var manifest = extractionResult.manifest;
-                        packageId = manifest.packageId;
-                        archiveSha256 = manifest.archiveSha256;
-                        publisherId = manifest.publisherId;
+                        packageId = _cachedManifest.packageId;
+                        archiveSha256 = _cachedManifest.archiveSha256;
+                        publisherId = _cachedManifest.publisherId;
+                        Debug.Log($"[YUCP PackageManager] Using cached manifest for registration. packageId='{packageId}', archiveSha256Present={!string.IsNullOrEmpty(archiveSha256)}, publisherId='{publisherId}'");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[YUCP PackageManager] Cached manifest unavailable during registration. Falling back to re-extract signing data from import items. Previous extraction error: '{_cachedSigningExtractionError ?? ""}'");
+                        var extractionResult = PackageVerifierCore.ManifestExtractor.ExtractSigningData(_currentPackagePath, _allImportItems);
+                        CacheSigningExtractionResult(extractionResult);
+                        if (extractionResult != null && extractionResult.success && extractionResult.manifest != null)
+                        {
+                            var manifest = extractionResult.manifest;
+                            packageId = manifest.packageId;
+                            archiveSha256 = manifest.archiveSha256;
+                            publisherId = manifest.publisherId;
+                        }
                     }
 
                     // Check verification
@@ -2940,7 +3756,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[PackageManager] Failed to extract manifest: {ex.Message}");
+                    Debug.LogWarning($"[YUCP PackageManager] Failed to extract manifest during registration: {ex.Message}");
                 }
 
                 // Move imported assets into the dedicated installed-packages container and
@@ -2958,7 +3774,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[PackageManager] Failed to organize installed files under '{InstalledPackagesOrganizer.RootAssetPath}': {ex.Message}");
+                    Debug.LogWarning($"[YUCP PackageManager] Failed to organize installed files under '{InstalledPackagesOrganizer.RootAssetPath}': {ex.Message}");
                     // Fallback: keep original destination paths if we can't move them
                     installedFiles = new List<string>();
                     if (_allImportItems != null)
@@ -2990,6 +3806,25 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                 }
 
+                Debug.Log($"[YUCP PackageManager] Post-import file tracking collected {installedFiles.Count} paths. FirstPath='{installedFiles.FirstOrDefault() ?? ""}'");
+
+                bool hasTempInstallDescriptor = PackageMetadataExtractor.HasTempInstallDescriptor(_allImportItems ?? _currentImportItems);
+                if (hasTempInstallDescriptor)
+                {
+                    if (HasDirectVpmInstallerLoaded())
+                    {
+                        Debug.Log("[YUCP PackageManager] Temp-install descriptor detected. Waiting for DirectVpmInstaller/YUCP disabled-file resolution to complete the derived-content handoff.");
+                    }
+                    else if (ImportItemsContainInstallerPayload(_allImportItems ?? _currentImportItems))
+                    {
+                        Debug.Log("[YUCP PackageManager] Temp-install descriptor detected and installer payload was imported. Waiting for Unity script compilation/domain reload before the derived-content handoff runs.");
+                    }
+                    else
+                    {
+                        Debug.LogError("[YUCP PackageManager] Temp-install descriptor detected, but the imported package did not include a DirectVpmInstaller payload. The Unity import completed, but derived-content/VPM installation cannot run.");
+                    }
+                }
+
                 // Create InstalledPackageInfo
                 var installedInfo = new InstalledPackageInfo
                 {
@@ -3010,15 +3845,21 @@ namespace YUCP.Importer.Editor.PackageManager
                 };
                 installedInfo.SetInstalledDateTime(DateTime.Now);
 
+                if (string.IsNullOrEmpty(installedInfo.packageId))
+                {
+                    Debug.LogWarning($"[YUCP PackageManager] Imported assets but skipped registry registration because packageId is unavailable. packageName='{installedInfo.packageName}', signed={_isPackageSigned}, verificationValid={isVerified}, cachedExtractionError='{_cachedSigningExtractionError ?? ""}'");
+                    return;
+                }
+
                 // Register in registry
                 var registry = InstalledPackageRegistry.GetOrCreate();
                 registry.RegisterPackage(installedInfo);
 
-                Debug.Log($"[PackageManager] Registered package: {installedInfo.packageName} (ID: {packageId})");
+                Debug.Log($"[YUCP PackageManager] Registered package: {installedInfo.packageName} (ID: {packageId}, verified={installedInfo.isVerified}, installedFiles={installedInfo.installedFiles?.Count ?? 0})");
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[PackageManager] Failed to register package after import: {ex.Message}");
+                Debug.LogError($"[YUCP PackageManager] Failed to register package after import: {ex.Message}");
                 Debug.LogException(ex);
             }
         }

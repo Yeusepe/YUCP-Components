@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -8,21 +9,19 @@ using UnityEngine.UIElements;
 namespace YUCP.Importer.Editor.PackageManager
 {
     /// <summary>
-    /// Details view for an installed package, matching installer design
+    /// Details view for an installed package — modern, clean layout.
     /// </summary>
     public class PackageDetailsView : VisualElement
     {
-        private InstalledPackageInfo _packageInfo;
-        private Action _onBack;
-        private Action<InstalledPackageInfo> _onUpdate;
-        private Action<InstalledPackageInfo> _onUninstall;
-        
+        private readonly InstalledPackageInfo _packageInfo;
+        private readonly Action _onBack;
+        private readonly Action<InstalledPackageInfo> _onUpdate;
+        private readonly Action<InstalledPackageInfo> _onUninstall;
+
         private VisualElement _bannerContainer;
         private VisualElement _bannerImageContainer;
         private VisualElement _bannerGradientOverlay;
         private Texture2D _bannerGradientTexture;
-        private ScrollView _mainScrollView;
-        private VisualElement _contentWrapper;
 
         public PackageDetailsView(
             InstalledPackageInfo packageInfo,
@@ -36,81 +35,61 @@ namespace YUCP.Importer.Editor.PackageManager
             _onUninstall = onUninstall;
 
             AddToClassList("package-details-view");
-            
             BuildView();
         }
 
         private void BuildView()
         {
-            // Main scroll view
-            _mainScrollView = new ScrollView();
-            _mainScrollView.style.flexGrow = 1;
-            Add(_mainScrollView);
+            var scrollView = new ScrollView();
+            scrollView.style.flexGrow = 1;
+            Add(scrollView);
 
-            var scrollContent = _mainScrollView.contentContainer;
-            scrollContent.style.flexDirection = FlexDirection.Column;
-            scrollContent.style.position = Position.Relative;
-            scrollContent.AddToClassList("yucp-scroll-content");
+            var sc = scrollView.contentContainer;
+            sc.style.flexDirection = FlexDirection.Column;
+            sc.style.position = Position.Relative;
+            sc.AddToClassList("yucp-scroll-content");
 
-            // Banner section
-            _bannerContainer = CreateBannerSection();
+            // Banner (absolutely positioned behind content)
+            _bannerContainer = BuildBanner();
             _bannerContainer.style.position = Position.Absolute;
             _bannerContainer.style.top = 0;
             _bannerContainer.style.left = 0;
             _bannerContainer.style.right = 0;
-            scrollContent.Add(_bannerContainer);
+            sc.Add(_bannerContainer);
             _bannerContainer.SendToBack();
 
-            // Spacer to push content to bottom
+            // Spacer that pushes cards down under the banner
             var spacer = new VisualElement();
             spacer.AddToClassList("yucp-spacer");
-            scrollContent.Add(spacer);
+            sc.Add(spacer);
 
-            // Content wrapper
-            _contentWrapper = new VisualElement();
-            _contentWrapper.style.flexDirection = FlexDirection.Column;
-            _contentWrapper.style.flexShrink = 0;
-            _contentWrapper.style.position = Position.Relative;
-            _contentWrapper.AddToClassList("yucp-content-wrapper");
-            scrollContent.Add(_contentWrapper);
+            // Content wrapper — cards stack here
+            var wrapper = new VisualElement();
+            wrapper.AddToClassList("yucp-content-wrapper");
+            sc.Add(wrapper);
 
-            // Metadata section
-            var metadataSection = CreateMetadataSection();
-            _contentWrapper.Add(metadataSection);
+            wrapper.Add(BuildMetadataCard());
+            wrapper.Add(BuildInfoCard());
 
-            // Package Information card
-            var infoCard = CreatePackageInfoCard();
-            _contentWrapper.Add(infoCard);
-
-            // Dependencies card (if any)
             if (_packageInfo.dependencies != null && _packageInfo.dependencies.Count > 0)
-            {
-                var dependenciesCard = CreateDependenciesCard();
-                _contentWrapper.Add(dependenciesCard);
-            }
+                wrapper.Add(BuildDependenciesCard());
 
-            // Installed Files section
-            var filesSection = CreateInstalledFilesSection();
-            _contentWrapper.Add(filesSection);
+            wrapper.Add(BuildFilesCard());
 
-            // Update gradient after layout
-            schedule.Execute(() => CreateBannerGradientTexture());
+            schedule.Execute(() => CreateBannerGradient());
         }
 
-        private VisualElement CreateBannerSection()
+        // ─── Banner ──────────────────────────────────────────────────────────
+        private VisualElement BuildBanner()
         {
-            var bannerContainer = new VisualElement();
-            bannerContainer.AddToClassList("yucp-banner-container");
-            _bannerContainer = bannerContainer;
+            var c = new VisualElement();
+            c.AddToClassList("yucp-banner-container");
+            c.style.position = Position.Relative;
+            c.style.height = Length.Percent(75);
+            c.style.width = Length.Percent(100);
+            c.style.flexShrink = 0;
+            c.style.overflow = Overflow.Hidden;
 
-            bannerContainer.style.position = Position.Relative;
-            bannerContainer.style.height = Length.Percent(75);
-            bannerContainer.style.marginBottom = 0;
-            bannerContainer.style.width = Length.Percent(100);
-            bannerContainer.style.flexShrink = 0;
-            bannerContainer.style.overflow = Overflow.Hidden;
-
-            // Banner image container
             _bannerImageContainer = new VisualElement();
             _bannerImageContainer.AddToClassList("yucp-banner-image-container");
             _bannerImageContainer.style.position = Position.Absolute;
@@ -119,18 +98,12 @@ namespace YUCP.Importer.Editor.PackageManager
             _bannerImageContainer.style.right = 0;
             _bannerImageContainer.style.bottom = 0;
 
-            Texture2D displayBanner = _packageInfo?.banner;
-            if (displayBanner == null)
-            {
-                displayBanner = GetPlaceholderTexture();
-            }
-            if (displayBanner != null)
-            {
-                _bannerImageContainer.style.backgroundImage = new StyleBackground(displayBanner);
-            }
-            bannerContainer.Add(_bannerImageContainer);
+            var banner = _packageInfo?.banner ?? GetPlaceholder();
+            if (banner != null)
+                _bannerImageContainer.style.backgroundImage = new StyleBackground(banner);
 
-            // Gradient overlay
+            c.Add(_bannerImageContainer);
+
             _bannerGradientOverlay = new VisualElement();
             _bannerGradientOverlay.AddToClassList("yucp-banner-gradient-overlay");
             _bannerGradientOverlay.style.position = Position.Absolute;
@@ -139,482 +112,465 @@ namespace YUCP.Importer.Editor.PackageManager
             _bannerGradientOverlay.style.right = 0;
             _bannerGradientOverlay.style.bottom = 0;
             _bannerGradientOverlay.pickingMode = PickingMode.Ignore;
-            bannerContainer.Add(_bannerGradientOverlay);
+            c.Add(_bannerGradientOverlay);
 
-            return bannerContainer;
+            return c;
         }
 
-        private void CreateBannerGradientTexture()
+        private void CreateBannerGradient()
         {
             if (_bannerContainer == null) return;
 
-            var parent = _bannerContainer.parent;
-            float bannerHeight = _bannerContainer.resolvedStyle.height;
-            if (bannerHeight <= 0)
-            {
-                bannerHeight = _bannerContainer.layout.height;
-            }
-            if (bannerHeight <= 0)
-            {
-                // Use parent height if available
-                if (parent != null)
-                {
-                    var parentHeight = parent.resolvedStyle.height;
-                    if (parentHeight <= 0) parentHeight = parent.layout.height;
-                    bannerHeight = parentHeight > 0 ? parentHeight * 0.75f : 400;
-                }
-                else
-                {
-                    bannerHeight = 400;
-                }
-            }
+            float h = _bannerContainer.resolvedStyle.height;
+            if (h <= 0) h = _bannerContainer.layout.height;
+            if (h <= 0) h = 340;
 
-            int width = 4;
-            int height = Mathf.RoundToInt(bannerHeight);
-            if (height <= 0) height = 400;
-
+            int height = Mathf.RoundToInt(h);
             if (_bannerGradientTexture != null)
-            {
                 UnityEngine.Object.DestroyImmediate(_bannerGradientTexture);
-            }
 
-            _bannerGradientTexture = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            Color gradientEndColor = new Color(0.220f, 0.220f, 0.220f);
+            _bannerGradientTexture = new Texture2D(4, height, TextureFormat.RGBA32, false);
+            var end = new Color(0.067f, 0.067f, 0.078f);
 
             for (int y = 0; y < height; y++)
             {
                 float t = (float)y / (height - 1);
-                float alpha = t;
-                Color color = new Color(gradientEndColor.r, gradientEndColor.g, gradientEndColor.b, alpha);
-
-                for (int x = 0; x < width; x++)
-                {
-                    _bannerGradientTexture.SetPixel(x, height - 1 - y, color);
-                }
+                var c = new Color(end.r, end.g, end.b, t);
+                for (int x = 0; x < 4; x++)
+                    _bannerGradientTexture.SetPixel(x, height - 1 - y, c);
             }
-
             _bannerGradientTexture.Apply();
             _bannerGradientTexture.wrapMode = TextureWrapMode.Clamp;
 
-            if (_bannerGradientOverlay != null && _bannerGradientTexture != null)
+            if (_bannerGradientOverlay != null)
             {
                 _bannerGradientOverlay.style.backgroundImage = new StyleBackground(_bannerGradientTexture);
                 _bannerGradientOverlay.MarkDirtyRepaint();
             }
         }
 
-        private static Texture2D GetPlaceholderTexture()
+        // ─── Metadata card ───────────────────────────────────────────────────
+        private VisualElement BuildMetadataCard()
         {
-            return AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/DefaultGrid.png");
-        }
+            var card = new VisualElement();
+            card.AddToClassList("yucp-section");
+            card.AddToClassList("yucp-installer-summary");
+            card.style.marginBottom = 10;
 
-        private VisualElement CreateMetadataSection()
-        {
-            var section = new VisualElement();
-            section.AddToClassList("yucp-metadata-section");
-
-            // Header row with icon, name, version, author
-            var headerRow = new VisualElement();
-            headerRow.AddToClassList("yucp-metadata-header");
-            headerRow.style.flexDirection = FlexDirection.Row;
-            headerRow.style.alignItems = Align.Center;
-            headerRow.style.marginBottom = 0;
+            // Header row: icon | info | buttons
+            var header = new VisualElement();
+            header.AddToClassList("yucp-metadata-header");
+            header.style.flexDirection = FlexDirection.Row;
+            header.style.alignItems = Align.FlexStart;
 
             // Icon
-            var iconContainer = new VisualElement();
-            iconContainer.AddToClassList("yucp-metadata-icon-container");
+            var iconWrap = new VisualElement();
+            iconWrap.AddToClassList("yucp-metadata-icon-container");
+            var iconImgWrap = new VisualElement();
+            iconImgWrap.AddToClassList("yucp-metadata-icon-image-container");
+            var icon = new Image { image = _packageInfo?.icon ?? GetPlaceholder() };
+            icon.AddToClassList("yucp-metadata-icon-image");
+            iconImgWrap.Add(icon);
+            iconWrap.Add(iconImgWrap);
+            header.Add(iconWrap);
 
-            var iconImageContainer = new VisualElement();
-            iconImageContainer.AddToClassList("yucp-metadata-icon-image-container");
+            // Name / author / version column
+            var col = new VisualElement();
+            col.style.flexGrow = 1;
+            col.style.flexShrink = 1;
+            col.style.marginLeft = 16;
+            col.style.minWidth = 0;
+            col.style.overflow = Overflow.Hidden;
 
-            var iconImage = new Image();
-            Texture2D displayIcon = _packageInfo?.icon;
-            if (displayIcon == null)
-            {
-                displayIcon = GetPlaceholderTexture();
-            }
-            iconImage.image = displayIcon;
-            iconImage.AddToClassList("yucp-metadata-icon-image");
-            iconImageContainer.Add(iconImage);
-            iconContainer.Add(iconImageContainer);
-            headerRow.Add(iconContainer);
+            // "Package" eyebrow
+            var eyebrow = new Label("Installed Package");
+            eyebrow.AddToClassList("yucp-package-context-label");
+            col.Add(eyebrow);
 
-            // Name and version column
-            var nameVersionColumn = new VisualElement();
-            nameVersionColumn.style.flexGrow = 1;
-            nameVersionColumn.style.flexShrink = 1;
-            nameVersionColumn.style.marginLeft = 16;
-            nameVersionColumn.style.minWidth = 0;
-            nameVersionColumn.style.overflow = Overflow.Hidden;
-
-            // Package Name row
+            // Name + badges row
             var nameRow = new VisualElement();
             nameRow.style.flexDirection = FlexDirection.Row;
             nameRow.style.alignItems = Align.Center;
             nameRow.style.flexShrink = 1;
             nameRow.style.minWidth = 0;
 
-            string packageName = string.IsNullOrEmpty(_packageInfo?.packageName) ? "Unknown Package" : _packageInfo.packageName;
-            var nameLabel = new Label(packageName);
+            string name = string.IsNullOrEmpty(_packageInfo?.packageName) ? "Unknown Package" : _packageInfo.packageName;
+            var nameLabel = new Label(name);
             nameLabel.AddToClassList("yucp-metadata-name-field");
             nameLabel.AddToClassList("yucp-ellipsis-text");
-            nameLabel.style.fontSize = 20;
-            nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            nameLabel.tooltip = packageName;
             nameLabel.style.flexShrink = 1;
             nameLabel.style.minWidth = 0;
+            nameLabel.tooltip = name;
             nameRow.Add(nameLabel);
 
-            // Verified badge
             if (_packageInfo.isVerified)
             {
-                var verifiedBadge = new Label("✓ Verified");
-                verifiedBadge.style.marginLeft = 8;
-                verifiedBadge.style.fontSize = 11;
-                verifiedBadge.style.color = new Color(0.2f, 0.8f, 0.2f);
-                nameRow.Add(verifiedBadge);
+                var vBadge = new Label("✓ Verified");
+                vBadge.style.marginLeft = 8;
+                vBadge.style.fontSize = 11;
+                vBadge.style.color = new Color(0.30f, 0.85f, 0.50f);
+                vBadge.style.flexShrink = 0;
+                nameRow.Add(vBadge);
             }
 
-            // Update badge
             if (_packageInfo.hasUpdate)
             {
-                var updateBadge = new Label("Update Available");
-                updateBadge.style.marginLeft = 8;
-                updateBadge.style.fontSize = 11;
-                updateBadge.style.color = new Color(0.2f, 0.6f, 1f);
-                nameRow.Add(updateBadge);
+                var uBadge = new Label("Update");
+                uBadge.AddToClassList("package-card-update-badge");
+                uBadge.style.marginLeft = 8;
+                nameRow.Add(uBadge);
             }
 
-            var spacer = new VisualElement();
-            spacer.style.flexGrow = 1;
-            spacer.style.flexShrink = 0;
-            nameRow.Add(spacer);
+            col.Add(nameRow);
 
-            nameVersionColumn.Add(nameRow);
-
-            // Author
             if (!string.IsNullOrEmpty(_packageInfo?.author))
             {
-                var authorLabel = new Label(_packageInfo.author);
-                authorLabel.AddToClassList("yucp-ellipsis-text");
-                authorLabel.style.marginTop = 4;
-                authorLabel.style.fontSize = 12;
-                authorLabel.tooltip = _packageInfo.author;
-                nameVersionColumn.Add(authorLabel);
+                var author = new Label(_packageInfo.author);
+                author.AddToClassList("yucp-package-author-label");
+                author.AddToClassList("yucp-ellipsis-text");
+                author.tooltip = _packageInfo.author;
+                col.Add(author);
             }
 
-            // Version
             var versionRow = new VisualElement();
+            versionRow.AddToClassList("yucp-version-row");
             versionRow.style.flexDirection = FlexDirection.Row;
             versionRow.style.alignItems = Align.Center;
-            versionRow.style.marginTop = 6;
 
             var versionLabel = new Label("Version:");
             versionLabel.style.marginRight = 6;
             versionRow.Add(versionLabel);
 
-            var versionValueLabel = new Label(_packageInfo?.installedVersion ?? "");
-            versionValueLabel.style.marginRight = 6;
-            versionRow.Add(versionValueLabel);
+            var versionValue = new Label(_packageInfo?.installedVersion ?? "—");
+            versionRow.Add(versionValue);
 
-            nameVersionColumn.Add(versionRow);
-            headerRow.Add(nameVersionColumn);
+            col.Add(versionRow);
+            header.Add(col);
 
             // Action buttons
-            var buttonContainer = new VisualElement();
-            buttonContainer.AddToClassList("yucp-action-buttons-container");
-            buttonContainer.style.flexDirection = FlexDirection.Row;
-            buttonContainer.style.alignItems = Align.Center;
-            buttonContainer.style.marginLeft = 16;
-            buttonContainer.style.flexShrink = 0;
+            var buttons = new VisualElement();
+            buttons.AddToClassList("yucp-action-buttons-container");
+            buttons.style.flexDirection = FlexDirection.Row;
+            buttons.style.alignItems = Align.FlexStart;
+            buttons.style.marginLeft = 14;
+            buttons.style.flexShrink = 0;
 
-            // Back button
-            var backButton = new Button(() => _onBack?.Invoke()) { text = "Back" };
-            backButton.AddToClassList("yucp-action-button");
-            buttonContainer.Add(backButton);
+            var backBtn = new Button(() => _onBack?.Invoke()) { text = "Back" };
+            backBtn.AddToClassList("yucp-action-button");
+            backBtn.AddToClassList("yucp-cancel-button");
+            buttons.Add(backBtn);
 
-            // Update button (if available)
             if (_packageInfo.hasUpdate)
             {
-                var updateButton = new Button(() => _onUpdate?.Invoke(_packageInfo)) { text = "Update" };
-                updateButton.AddToClassList("yucp-action-button");
-                updateButton.AddToClassList("yucp-import-button");
-                buttonContainer.Add(updateButton);
+                var updateBtn = new Button(() => _onUpdate?.Invoke(_packageInfo)) { text = "Update" };
+                updateBtn.AddToClassList("yucp-action-button");
+                updateBtn.AddToClassList("yucp-import-button");
+                buttons.Add(updateBtn);
             }
 
-            // Uninstall button
-            var uninstallButton = new Button(() => _onUninstall?.Invoke(_packageInfo)) { text = "Uninstall" };
-            uninstallButton.AddToClassList("yucp-action-button");
-            uninstallButton.AddToClassList("yucp-cancel-button");
-            buttonContainer.Add(uninstallButton);
+            var uninstallBtn = new Button(() => _onUninstall?.Invoke(_packageInfo)) { text = "Uninstall" };
+            uninstallBtn.AddToClassList("yucp-action-button");
+            uninstallBtn.AddToClassList("yucp-cancel-button");
+            buttons.Add(uninstallBtn);
 
-            headerRow.Add(buttonContainer);
-            section.Add(headerRow);
+            header.Add(buttons);
+            card.Add(header);
 
             // Description
             if (!string.IsNullOrEmpty(_packageInfo?.description))
             {
-                var descLabel = new Label(_packageInfo.description);
-                descLabel.style.whiteSpace = WhiteSpace.Normal;
-                descLabel.style.marginTop = 16;
-                section.Add(descLabel);
+                var desc = new Label(_packageInfo.description);
+                desc.AddToClassList("yucp-package-description");
+                desc.style.marginTop = 12;
+                card.Add(desc);
             }
 
-            // Product Links
+            // Product links
             if (_packageInfo?.productLinks != null && _packageInfo.productLinks.Count > 0)
             {
-                var linksContainer = new VisualElement();
-                linksContainer.style.flexDirection = FlexDirection.Row;
-                linksContainer.style.flexWrap = Wrap.Wrap;
-                linksContainer.style.marginTop = 16;
+                var links = new VisualElement();
+                links.style.flexDirection = FlexDirection.Row;
+                links.style.flexWrap = Wrap.Wrap;
+                links.style.marginTop = 14;
 
                 foreach (var link in _packageInfo.productLinks)
                 {
                     if (string.IsNullOrEmpty(link.url)) continue;
 
-                    var linkButton = new Button(() => Application.OpenURL(link.url));
-                    linkButton.style.marginRight = 8;
-                    linkButton.style.marginBottom = 8;
+                    var btn = new Button(() => Application.OpenURL(link.url));
+                    btn.style.flexDirection = FlexDirection.Row;
+                    btn.style.alignItems = Align.Center;
+                    btn.style.marginRight = 8;
+                    btn.style.marginBottom = 6;
+                    btn.style.paddingLeft = 10;
+                    btn.style.paddingRight = 12;
+                    btn.style.paddingTop = 5;
+                    btn.style.paddingBottom = 5;
+                    btn.style.backgroundColor = new Color(1, 1, 1, 0.06f);
+                    btn.style.borderTopWidth = 1;
+                    btn.style.borderRightWidth = 1;
+                    btn.style.borderBottomWidth = 1;
+                    btn.style.borderLeftWidth = 1;
+                    btn.style.borderTopColor = new Color(1, 1, 1, 0.10f);
+                    btn.style.borderRightColor = new Color(1, 1, 1, 0.10f);
+                    btn.style.borderBottomColor = new Color(1, 1, 1, 0.10f);
+                    btn.style.borderLeftColor = new Color(1, 1, 1, 0.10f);
+                    btn.style.borderTopLeftRadius = 8;
+                    btn.style.borderTopRightRadius = 8;
+                    btn.style.borderBottomLeftRadius = 8;
+                    btn.style.borderBottomRightRadius = 8;
 
-                    var linkContent = new VisualElement();
-                    linkContent.style.flexDirection = FlexDirection.Row;
-                    linkContent.style.alignItems = Align.Center;
-
-                    Texture2D linkIcon = link.GetDisplayIcon();
+                    var linkIcon = link.GetDisplayIcon();
                     if (linkIcon != null)
                     {
-                        var icon = new Image { image = linkIcon };
-                        icon.style.width = 16;
-                        icon.style.height = 16;
-                        icon.style.marginRight = 6;
-                        linkContent.Add(icon);
+                        var img = new Image { image = linkIcon };
+                        img.style.width = 14;
+                        img.style.height = 14;
+                        img.style.marginRight = 7;
+                        btn.Add(img);
                     }
 
-                    var linkLabel = new Label(string.IsNullOrEmpty(link.label) ? link.url : link.label);
-                    linkContent.Add(linkLabel);
-                    linkButton.Add(linkContent);
-                    linksContainer.Add(linkButton);
+                    var lbl = new Label(string.IsNullOrEmpty(link.label) ? link.url : link.label);
+                    lbl.style.fontSize = 12;
+                    lbl.style.color = new Color(0.85f, 0.85f, 0.90f);
+                    btn.Add(lbl);
+
+                    links.Add(btn);
                 }
 
-                section.Add(linksContainer);
+                card.Add(links);
             }
 
-            return section;
+            return card;
         }
 
-        private VisualElement CreatePackageInfoCard()
+        // ─── Package info card ────────────────────────────────────────────────
+        private VisualElement BuildInfoCard()
         {
             var card = new VisualElement();
             card.AddToClassList("yucp-section");
-            card.style.marginTop = 20;
-            card.style.paddingLeft = 16;
-            card.style.paddingRight = 16;
-            card.style.paddingTop = 16;
-            card.style.paddingBottom = 16;
+            card.style.marginBottom = 10;
 
             var title = new Label("Package Information");
-            title.style.fontSize = 14;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 12;
+            title.AddToClassList("yucp-section-title");
             card.Add(title);
 
-            var infoGrid = new VisualElement();
-            infoGrid.style.flexDirection = FlexDirection.Column;
+            var rows = new VisualElement();
 
-            AddInfoRow(infoGrid, "Version", _packageInfo.installedVersion ?? "Unknown");
-            AddInfoRow(infoGrid, "Installed Date", _packageInfo.GetInstalledDateTime() != DateTime.MinValue 
-                ? _packageInfo.GetInstalledDateTime().ToString("yyyy-MM-dd HH:mm:ss") 
-                : "Unknown");
-            
-            // Calculate size
-            long totalSize = 0;
-            foreach (var filePath in _packageInfo.installedFiles)
-            {
-                if (File.Exists(filePath))
-                {
-                    try
-                    {
-                        var fileInfo = new FileInfo(filePath);
-                        totalSize += fileInfo.Length;
-                    }
-                    catch { }
-                }
-            }
-            string sizeStr = totalSize > 0 ? FormatBytes(totalSize) : "Unknown";
-            AddInfoRow(infoGrid, "Size", sizeStr);
+            AddInfoRow(rows, "Version", _packageInfo.installedVersion ?? "Unknown");
+
+            var dt = _packageInfo.GetInstalledDateTime();
+            AddInfoRow(rows, "Installed", dt != DateTime.MinValue ? dt.ToString("yyyy-MM-dd  HH:mm") : "Unknown");
+
+            long totalSize = CalculateSize(_packageInfo.installedFiles);
+            AddInfoRow(rows, "Size", totalSize > 0 ? FormatBytes(totalSize) : "Unknown");
 
             if (!string.IsNullOrEmpty(_packageInfo.publisherId))
-            {
-                AddInfoRow(infoGrid, "Publisher", _packageInfo.publisherId);
-            }
+                AddInfoRow(rows, "Publisher", _packageInfo.publisherId);
 
             if (!string.IsNullOrEmpty(_packageInfo.packageId))
-            {
-                AddInfoRow(infoGrid, "Package ID", _packageInfo.packageId);
-            }
+                AddInfoRow(rows, "Package ID", _packageInfo.packageId);
 
             if (!string.IsNullOrEmpty(_packageInfo.archiveSha256))
             {
-                AddInfoRow(infoGrid, "Archive Hash", _packageInfo.archiveSha256.Substring(0, Math.Min(16, _packageInfo.archiveSha256.Length)) + "...");
+                string hash = _packageInfo.archiveSha256;
+                AddInfoRow(rows, "Archive Hash",
+                    hash.Substring(0, Math.Min(16, hash.Length)) + (hash.Length > 16 ? "…" : ""));
             }
 
-            card.Add(infoGrid);
-
+            card.Add(rows);
             return card;
         }
 
         private void AddInfoRow(VisualElement container, string label, string value)
         {
             var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginBottom = 8;
+            row.AddToClassList("yucp-info-row");
 
-            var labelElement = new Label(label + ":");
-            labelElement.style.width = 120;
-            labelElement.style.fontSize = 12;
-            labelElement.style.color = new Color(0.7f, 0.7f, 0.7f);
-            row.Add(labelElement);
+            var lbl = new Label(label);
+            lbl.AddToClassList("yucp-info-label");
+            row.Add(lbl);
 
-            var valueElement = new Label(value);
-            valueElement.style.fontSize = 12;
-            valueElement.style.flexGrow = 1;
-            row.Add(valueElement);
+            var val = new Label(value);
+            val.AddToClassList("yucp-info-value");
+            row.Add(val);
 
             container.Add(row);
         }
 
-        private string FormatBytes(long bytes)
+        // ─── Dependencies card ────────────────────────────────────────────────
+        private VisualElement BuildDependenciesCard()
+        {
+            var card = new VisualElement();
+            card.AddToClassList("yucp-section");
+            card.style.marginBottom = 10;
+
+            var title = new Label("Dependencies");
+            title.AddToClassList("yucp-section-title");
+            card.Add(title);
+
+            foreach (var dep in _packageInfo.dependencies)
+            {
+                var row = new VisualElement();
+                row.AddToClassList("yucp-dep-row");
+
+                var name = new Label(dep.Key);
+                name.AddToClassList("yucp-dep-name");
+                row.Add(name);
+
+                var ver = new Label($"v{dep.Value}");
+                ver.AddToClassList("yucp-dep-version");
+                row.Add(ver);
+
+                card.Add(row);
+            }
+
+            return card;
+        }
+
+        // ─── Installed files card ─────────────────────────────────────────────
+        private VisualElement BuildFilesCard()
+        {
+            var card = new VisualElement();
+            card.AddToClassList("yucp-section");
+            card.style.marginBottom = 10;
+
+            var header = new VisualElement();
+            header.style.flexDirection = FlexDirection.Row;
+            header.style.alignItems = Align.Center;
+            header.style.marginBottom = 12;
+
+            var title = new Label("Installed Files");
+            title.AddToClassList("yucp-section-title");
+            title.style.marginBottom = 0;
+            title.style.flexGrow = 1;
+            header.Add(title);
+
+            int count = _packageInfo.installedFiles?.Count ?? 0;
+            var countBadge = new Label(count.ToString());
+            countBadge.style.fontSize = 11;
+            countBadge.style.color = new Color(0.60f, 0.60f, 0.65f);
+            countBadge.style.backgroundColor = new Color(1, 1, 1, 0.06f);
+            countBadge.style.paddingLeft = 8;
+            countBadge.style.paddingRight = 8;
+            countBadge.style.paddingTop = 2;
+            countBadge.style.paddingBottom = 2;
+            countBadge.style.borderTopLeftRadius = 8;
+            countBadge.style.borderTopRightRadius = 8;
+            countBadge.style.borderBottomLeftRadius = 8;
+            countBadge.style.borderBottomRightRadius = 8;
+            header.Add(countBadge);
+
+            card.Add(header);
+
+            if (count == 0)
+            {
+                var empty = new Label("No files recorded.");
+                empty.style.fontSize = 12;
+                empty.style.color = new Color(0.55f, 0.55f, 0.60f);
+                card.Add(empty);
+                return card;
+            }
+
+            // Group files by top-level folder for cleaner display
+            var scroll = new ScrollView();
+            scroll.style.maxHeight = 380;
+            scroll.style.minHeight = 80;
+
+            var fileList = new VisualElement();
+            fileList.style.flexDirection = FlexDirection.Column;
+
+            // Sort and group
+            var sorted = new List<string>(_packageInfo.installedFiles);
+            sorted.Sort(StringComparer.OrdinalIgnoreCase);
+
+            string lastFolder = null;
+            foreach (var filePath in sorted)
+            {
+                string folder = GetTopFolder(filePath);
+
+                // Folder separator label
+                if (folder != lastFolder && !string.IsNullOrEmpty(folder))
+                {
+                    if (lastFolder != null)
+                    {
+                        var sep = new VisualElement();
+                        sep.style.height = 1;
+                        sep.style.backgroundColor = new Color(1, 1, 1, 0.05f);
+                        sep.style.marginTop = 4;
+                        sep.style.marginBottom = 4;
+                        fileList.Add(sep);
+                    }
+
+                    var folderLabel = new Label("▸  " + folder);
+                    folderLabel.style.fontSize = 11;
+                    folderLabel.style.color = new Color(0.42f, 0.62f, 1.0f);
+                    folderLabel.style.marginBottom = 3;
+                    folderLabel.style.marginTop = 2;
+                    fileList.Add(folderLabel);
+                    lastFolder = folder;
+                }
+
+                var row = new VisualElement();
+                row.AddToClassList("yucp-file-item");
+                row.style.paddingLeft = 16;
+
+                var dot = new Label("·");
+                dot.AddToClassList("yucp-file-item-icon");
+                row.Add(dot);
+
+                var pathLabel = new Label(GetFileName(filePath));
+                pathLabel.AddToClassList("yucp-file-item-path");
+                pathLabel.tooltip = filePath;
+                row.Add(pathLabel);
+
+                fileList.Add(row);
+            }
+
+            scroll.Add(fileList);
+            card.Add(scroll);
+
+            return card;
+        }
+
+        // ─── Utilities ────────────────────────────────────────────────────────
+        private static Texture2D GetPlaceholder() =>
+            AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/DefaultGrid.png");
+
+        private static long CalculateSize(System.Collections.Generic.List<string> files)
+        {
+            if (files == null) return 0;
+            long total = 0;
+            foreach (var f in files)
+            {
+                try { if (File.Exists(f)) total += new FileInfo(f).Length; } catch { }
+            }
+            return total;
+        }
+
+        private static string FormatBytes(long bytes)
         {
             string[] sizes = { "B", "KB", "MB", "GB" };
             double len = bytes;
             int order = 0;
-            while (len >= 1024 && order < sizes.Length - 1)
-            {
-                order++;
-                len = len / 1024;
-            }
+            while (len >= 1024 && order < sizes.Length - 1) { order++; len /= 1024; }
             return $"{len:0.##} {sizes[order]}";
         }
 
-        private VisualElement CreateDependenciesCard()
+        private static string GetTopFolder(string path)
         {
-            var card = new VisualElement();
-            card.AddToClassList("yucp-section");
-            card.style.marginTop = 20;
-            card.style.paddingLeft = 16;
-            card.style.paddingRight = 16;
-            card.style.paddingTop = 16;
-            card.style.paddingBottom = 16;
-
-            var title = new Label("Dependencies");
-            title.style.fontSize = 14;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 12;
-            card.Add(title);
-
-            var depsList = new VisualElement();
-            depsList.style.flexDirection = FlexDirection.Column;
-
-            foreach (var dep in _packageInfo.dependencies)
-            {
-                var depRow = new VisualElement();
-                depRow.style.flexDirection = FlexDirection.Row;
-                depRow.style.marginBottom = 8;
-                depRow.style.paddingLeft = 8;
-                depRow.style.paddingRight = 8;
-                depRow.style.paddingTop = 8;
-                depRow.style.paddingBottom = 8;
-                depRow.style.backgroundColor = new Color(0.15f, 0.15f, 0.15f, 0.5f);
-                depRow.style.borderTopLeftRadius = 4;
-                depRow.style.borderTopRightRadius = 4;
-                depRow.style.borderBottomLeftRadius = 4;
-                depRow.style.borderBottomRightRadius = 4;
-
-                var nameLabel = new Label(dep.Key);
-                nameLabel.style.fontSize = 12;
-                nameLabel.style.flexGrow = 1;
-                depRow.Add(nameLabel);
-
-                var versionLabel = new Label($"v{dep.Value}");
-                versionLabel.style.fontSize = 11;
-                versionLabel.style.color = new Color(0.6f, 0.8f, 1f);
-                depRow.Add(versionLabel);
-
-                depsList.Add(depRow);
-            }
-
-            card.Add(depsList);
-            return card;
+            if (string.IsNullOrEmpty(path)) return string.Empty;
+            string normalized = path.Replace('\\', '/');
+            int slash = normalized.IndexOf('/');
+            if (slash < 0) return string.Empty;
+            int second = normalized.IndexOf('/', slash + 1);
+            return second < 0 ? normalized.Substring(0, slash) : normalized.Substring(0, second);
         }
 
-        private VisualElement CreateInstalledFilesSection()
+        private static string GetFileName(string path)
         {
-            var section = new VisualElement();
-            section.AddToClassList("yucp-section");
-            section.style.marginTop = 20;
-            section.style.paddingLeft = 16;
-            section.style.paddingRight = 16;
-            section.style.paddingTop = 16;
-            section.style.paddingBottom = 16;
-
-            var title = new Label("Installed Files");
-            title.style.fontSize = 14;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 12;
-            section.Add(title);
-
-            var scrollView = new ScrollView();
-            scrollView.style.minHeight = 200;
-            scrollView.style.maxHeight = 400;
-
-            var filesList = new VisualElement();
-            filesList.style.flexDirection = FlexDirection.Column;
-
-            foreach (var filePath in _packageInfo.installedFiles)
-            {
-                var fileRow = new Label(filePath);
-                fileRow.style.fontSize = 11;
-                fileRow.style.marginBottom = 4;
-                fileRow.style.color = new Color(0.8f, 0.8f, 0.8f);
-                filesList.Add(fileRow);
-            }
-
-            scrollView.Add(filesList);
-            section.Add(scrollView);
-
-            return section;
+            if (string.IsNullOrEmpty(path)) return path;
+            return path.Replace('\\', '/').Split('/')[^1];
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

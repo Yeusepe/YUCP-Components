@@ -7,8 +7,5 @@
   "author": {
     "name": "YUCP Club",
     "url": "http://vpm.yucp.club/"
-  },
-  "vpmDependencies": {
-    "com.yucp.components": ">=0.3.32"
   }
 }

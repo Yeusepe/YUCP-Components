@@ -51,19 +51,56 @@ namespace YUCP.Importer.Editor.PackageManager
             style.flexDirection = FlexDirection.Column;
             style.flexGrow = 1;
             style.flexShrink = 1;
-            
+
+            // ── Top bar ────────────────────────────────────────────────────
+            var topBar = new VisualElement();
+            topBar.AddToClassList("installed-packages-topbar");
+
+            var titleCol = new VisualElement();
+            var title = new Label("YUCP Packages");
+            title.AddToClassList("installed-packages-title");
+            titleCol.Add(title);
+            var subtitle = new Label("Manage your installed content");
+            subtitle.AddToClassList("installed-packages-subtitle");
+            titleCol.Add(subtitle);
+            topBar.Add(titleCol);
+            Add(topBar);
+
+            // ── Search + filter area ────────────────────────────────────────
+            var searchArea = new VisualElement();
+            searchArea.AddToClassList("installed-packages-search-area");
+
             // Header with search and filters
             var header = new VisualElement();
             header.AddToClassList("packages-view-header");
             header.style.flexShrink = 0;
-            
-            // Search bar
+
+            // Search bar with inline placeholder
+            var searchWrap = new VisualElement();
+            searchWrap.style.position = Position.Relative;
+            searchWrap.style.flexShrink = 0;
+
             _searchField = new TextField();
             _searchField.AddToClassList("packages-search-field");
             _searchField.RegisterValueChangedCallback(OnSearchChanged);
-            // Use tooltip as placeholder hint
-            _searchField.tooltip = "Search packages...";
-            header.Add(_searchField);
+
+            // Placeholder label shown when empty
+            var placeholder = new Label("Search packages…");
+            placeholder.style.position = Position.Absolute;
+            placeholder.style.left = 12;
+            placeholder.style.top = 0;
+            placeholder.style.bottom = 0;
+            placeholder.style.fontSize = 13;
+            placeholder.style.color = new Color(0.75f, 0.75f, 0.80f, 0.32f);
+            placeholder.style.unityTextAlign = TextAnchor.MiddleLeft;
+            placeholder.pickingMode = PickingMode.Ignore;
+
+            _searchField.RegisterValueChangedCallback(e =>
+                placeholder.style.display = string.IsNullOrEmpty(e.newValue) ? DisplayStyle.Flex : DisplayStyle.None);
+
+            searchWrap.Add(_searchField);
+            searchWrap.Add(placeholder);
+            header.Add(searchWrap);
             
             // Filter row with buttons on left and view toggle on right
             var filterRow = new VisualElement();
@@ -101,9 +138,10 @@ namespace YUCP.Importer.Editor.PackageManager
             filterRow.Add(_viewToggleButton);
             
             header.Add(filterRow);
-            
-            Add(header);
-            
+
+            searchArea.Add(header);
+            Add(searchArea);
+
             // Packages container
             _packagesScrollView = new ScrollView();
             _packagesScrollView.AddToClassList("packages-scroll-view");
@@ -371,18 +409,21 @@ namespace YUCP.Importer.Editor.PackageManager
                 emptyContainer.style.flexGrow = 1;
                 emptyContainer.style.alignItems = Align.Center;
                 emptyContainer.style.justifyContent = Justify.Center;
-                
-                var emptyLabel = new Label("No packages installed");
-                emptyLabel.style.fontSize = 14;
-                emptyLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+                emptyContainer.style.paddingTop = 40;
+                emptyContainer.style.paddingBottom = 40;
+
+                var emptyLabel = new Label("No packages found");
+                emptyLabel.style.fontSize = 15;
+                emptyLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                emptyLabel.style.color = new Color(0.75f, 0.75f, 0.82f, 0.70f);
                 emptyContainer.Add(emptyLabel);
-                
-                var hintLabel = new Label("Packages will appear here after installation");
-                hintLabel.style.fontSize = 11;
-                hintLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-                hintLabel.style.marginTop = 8;
+
+                var hintLabel = new Label("Packages you install will appear here");
+                hintLabel.style.fontSize = 12;
+                hintLabel.style.color = new Color(0.55f, 0.55f, 0.62f, 0.60f);
+                hintLabel.style.marginTop = 6;
                 emptyContainer.Add(hintLabel);
-                
+
                 _packagesContainer.Add(emptyContainer);
                 return;
             }

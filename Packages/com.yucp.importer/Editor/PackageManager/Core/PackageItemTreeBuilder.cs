@@ -32,17 +32,17 @@ namespace YUCP.Importer.Editor.PackageManager
         /// </summary>
         public static PackageItemNode BuildTree(System.Array importItems)
         {
+            var root = new PackageItemNode("Package Contents", string.Empty, true, -1);
+            root.IsExpanded = true;
+
             if (importItems == null || importItems.Length == 0)
             {
-                return new PackageItemNode("Assets", "Assets", true, 0);
+                return root;
             }
-
-            var root = new PackageItemNode("Assets", "Assets", true, 0);
-            root.IsExpanded = true;
 
             // Group items by path
             var pathMap = new Dictionary<string, PackageItemNode>();
-            pathMap["Assets"] = root;
+            pathMap[string.Empty] = root;
 
             foreach (var item in importItems)
             {
@@ -55,11 +55,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 bool isFolder = GetIsFolder(item);
                 int enabledStatus = GetEnabledStatus(item);
 
-                // Normalize path
-                if (!destinationPath.StartsWith("Assets/") && !destinationPath.StartsWith("Assets\\"))
-                {
-                    destinationPath = "Assets/" + destinationPath.TrimStart('/', '\\');
-                }
+                destinationPath = NormalizePath(destinationPath);
 
                 // Get or create folder nodes for the path
                 string parentPath = GetParentPath(destinationPath);
@@ -155,7 +151,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private static string GetParentPath(string path)
         {
             int lastSlash = Math.Max(path.LastIndexOf('/'), path.LastIndexOf('\\'));
-            if (lastSlash <= 0) return "Assets";
+            if (lastSlash <= 0) return string.Empty;
             return path.Substring(0, lastSlash);
         }
 
@@ -189,17 +185,19 @@ namespace YUCP.Importer.Editor.PackageManager
 
             // Build path from root
             string[] segments = folderPath.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length == 0 || segments[0] != "Assets")
+            if (segments.Length == 0)
             {
                 return root;
             }
 
             PackageItemNode current = root;
-            string currentPath = "Assets";
+            string currentPath = string.Empty;
 
-            for (int i = 1; i < segments.Length; i++)
+            for (int i = 0; i < segments.Length; i++)
             {
-                currentPath = currentPath + "/" + segments[i];
+                currentPath = string.IsNullOrEmpty(currentPath)
+                    ? segments[i]
+                    : currentPath + "/" + segments[i];
 
                 if (pathMap.TryGetValue(currentPath, out var child))
                 {
@@ -216,6 +214,17 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             return current;
+        }
+
+        private static string NormalizePath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return path;
+            }
+
+            string normalized = path.Replace('\\', '/').TrimStart('/');
+            return normalized;
         }
 
         private static void SortTree(PackageItemNode node)
@@ -245,7 +254,6 @@ namespace YUCP.Importer.Editor.PackageManager
         }
     }
 }
-
 
 
 

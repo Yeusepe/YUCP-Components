@@ -17,6 +17,8 @@ namespace YUCP.Importer.Editor.PackageManager
         private const string MetadataAssetPath = "Assets/YUCP_PackageInfo.json";
         private const string PackageJsonFileName = "package.json";
         private const string PackageJsonAssetPath = "Assets/package.json";
+        private const string InstalledPackagesRootAssetPath = "Packages/yucp.installed-packages/";
+        private const string InstalledPackagesTempSegment = "/_temp/";
 
         private static Type _importPackageItemType;
         private static FieldInfo _destinationAssetPathField;
@@ -50,12 +52,14 @@ namespace YUCP.Importer.Editor.PackageManager
             object metadataItem = FindMetadataItem(importItems);
             if (metadataItem == null)
             {
+                Debug.Log("[YUCP PackageManager] No YUCP metadata file found in import items. Falling back to package name and Unity icon.");
                 return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
 
             // Read metadata file from extracted package location
             string sourceFolder = GetFieldValue<string>(metadataItem, _sourceFolderField);
             string exportedPath = GetFieldValue<string>(metadataItem, _exportedAssetPathField);
+            string destinationPath = GetFieldValue<string>(metadataItem, _destinationAssetPathField);
 
             if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
             {
@@ -63,8 +67,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
             }
 
-            // Read JSON from extracted location
-            string fullPath = Path.Combine(sourceFolder, exportedPath);
+            Debug.Log($"[YUCP PackageManager] Reading metadata from import item '{destinationPath ?? exportedPath}'.");
             string json = ReadMetadataFile(sourceFolder, exportedPath);
             
             if (string.IsNullOrEmpty(json))
@@ -160,6 +163,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                 }
 
+                Debug.Log($"[YUCP PackageManager] Parsed package metadata. packageName='{metadata.packageName}', version='{metadata.version}', iconLoaded={metadata.icon != null}, bannerLoaded={metadata.banner != null}, productLinks={metadata.productLinks.Count}, dependencies={metadata.dependencies.Count}");
                 return metadata;
             }
             catch (Exception ex)
@@ -214,7 +218,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (item == null) continue;
 
                 string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
-                if (destinationPath != null && destinationPath.Equals(MetadataAssetPath, StringComparison.OrdinalIgnoreCase))
+                if (IsMetadataAssetPath(destinationPath))
                 {
                     return item;
                 }
@@ -281,12 +285,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 return null;
             }
 
-            // Normalize path
-            string normalizedPath = relativePath;
-            if (!normalizedPath.StartsWith("Assets/"))
-            {
-                normalizedPath = "Assets/" + normalizedPath;
-            }
+            string[] normalizedCandidates = BuildDestinationPathCandidates(relativePath);
 
             // Find matching ImportPackageItem
             foreach (var item in importItems)
@@ -294,8 +293,8 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (item == null) continue;
 
                 string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
-                
-                if (destinationPath != null && destinationPath.Equals(normalizedPath, StringComparison.OrdinalIgnoreCase))
+
+                if (destinationPath != null && normalizedCandidates.Any(candidate => destinationPath.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
                 {
                     string sourceFolder = GetFieldValue<string>(item, _sourceFolderField);
                     string exportedPath = GetFieldValue<string>(item, _exportedAssetPathField);
@@ -306,6 +305,7 @@ namespace YUCP.Importer.Editor.PackageManager
                         
                         if (File.Exists(fullPath))
                         {
+                            Debug.Log($"[YUCP PackageManager] Resolved texture '{relativePath}' from import item '{destinationPath}'.");
                             return fullPath;
                         }
                         else
@@ -315,6 +315,7 @@ namespace YUCP.Importer.Editor.PackageManager
                             string altPath = Path.Combine(sourceFolder, exportedPath);
                             if (File.Exists(altPath))
                             {
+                                Debug.Log($"[YUCP PackageManager] Resolved texture '{relativePath}' from alternate extracted path '{altPath}'.");
                                 return altPath;
                             }
                         }
@@ -326,8 +327,70 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
             }
 
-            Debug.LogWarning($"[YUCP PackageManager] No matching item found for path: {normalizedPath}");
+            // Fallback: package-based imports may preserve only the tail portion of the original Assets path.
+            string normalizedRelativePath = relativePath.Replace('\\', '/');
+            string exportProfilesSuffix = TryGetExportProfilesSuffix(normalizedRelativePath);
+            string fileName = Path.GetFileName(normalizedRelativePath);
+
+            foreach (var item in importItems)
+            {
+                if (item == null) continue;
+
+                string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
+                if (string.IsNullOrEmpty(destinationPath)) continue;
+
+                string normalizedDestinationPath = destinationPath.Replace('\\', '/');
+                bool suffixMatch = !string.IsNullOrEmpty(exportProfilesSuffix) &&
+                    normalizedDestinationPath.EndsWith(exportProfilesSuffix, StringComparison.OrdinalIgnoreCase);
+                bool fileNameMatch = !string.IsNullOrEmpty(fileName) &&
+                    string.Equals(Path.GetFileName(normalizedDestinationPath), fileName, StringComparison.OrdinalIgnoreCase);
+
+                if (!suffixMatch && !fileNameMatch)
+                {
+                    continue;
+                }
+
+                string sourceFolder = GetFieldValue<string>(item, _sourceFolderField);
+                string exportedPath = GetFieldValue<string>(item, _exportedAssetPathField);
+                if (string.IsNullOrEmpty(sourceFolder))
+                {
+                    continue;
+                }
+
+                string fullPath = Path.Combine(sourceFolder, "asset");
+                if (File.Exists(fullPath))
+                {
+                    Debug.Log($"[YUCP PackageManager] Resolved texture '{relativePath}' via fallback match on import item '{destinationPath}'.");
+                    return fullPath;
+                }
+
+                string altPath = Path.Combine(sourceFolder, exportedPath);
+                if (File.Exists(altPath))
+                {
+                    Debug.Log($"[YUCP PackageManager] Resolved texture '{relativePath}' via fallback extracted path '{altPath}'.");
+                    return altPath;
+                }
+            }
+
+            Debug.LogWarning($"[YUCP PackageManager] No matching import item found for texture path '{relativePath}'. Candidates: {string.Join(", ", normalizedCandidates)}");
             return null;
+        }
+
+        private static string TryGetExportProfilesSuffix(string normalizedPath)
+        {
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return null;
+            }
+
+            const string marker = "YUCP/ExportProfiles/";
+            int markerIndex = normalizedPath.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (markerIndex < 0)
+            {
+                return null;
+            }
+
+            return normalizedPath.Substring(markerIndex);
         }
 
         /// <summary>
@@ -460,6 +523,23 @@ namespace YUCP.Importer.Editor.PackageManager
             return metadata;
         }
 
+        internal static bool HasTempInstallDescriptor(System.Array importItems)
+        {
+            string destinationPath = GetPackageJsonDestinationPath(importItems);
+            return IsTempInstallPackageJsonPath(destinationPath);
+        }
+
+        internal static string GetPackageJsonDestinationPath(System.Array importItems)
+        {
+            object packageJsonItem = FindPackageJsonItem(importItems);
+            if (packageJsonItem == null)
+            {
+                return null;
+            }
+
+            return GetFieldValue<string>(packageJsonItem, _destinationAssetPathField);
+        }
+
         /// <summary>
         /// Extract dependencies from package.json file in the package.
         /// </summary>
@@ -524,19 +604,82 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (destinationPath == null) continue;
 
                 // Check for exact match (Assets/package.json)
-                if (destinationPath.Equals(PackageJsonAssetPath, StringComparison.OrdinalIgnoreCase))
+                if (IsPackageJsonAssetPath(destinationPath))
                 {
                     return item;
                 }
 
-                // Check for temporary install path pattern (Assets/YUCP_TempInstall_{guid}.json)
-                if (destinationPath.StartsWith("Assets/YUCP_TempInstall_", StringComparison.OrdinalIgnoreCase) &&
-                    destinationPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                // Check for temporary install path pattern
+                if (IsTempInstallPackageJsonPath(destinationPath))
                 {
                     return item;
                 }
             }
             return null;
+        }
+
+        internal static bool IsTempInstallPackageJsonPath(string destinationPath)
+        {
+            if (string.IsNullOrEmpty(destinationPath))
+            {
+                return false;
+            }
+
+            string normalizedPath = destinationPath.Replace('\\', '/');
+            if (normalizedPath.StartsWith("Assets/YUCP_TempInstall_", StringComparison.OrdinalIgnoreCase) &&
+                normalizedPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return normalizedPath.StartsWith(InstalledPackagesRootAssetPath, StringComparison.OrdinalIgnoreCase) &&
+                normalizedPath.Contains(InstalledPackagesTempSegment, StringComparison.OrdinalIgnoreCase) &&
+                Path.GetFileName(normalizedPath).StartsWith("YUCP_TempInstall_", StringComparison.OrdinalIgnoreCase) &&
+                normalizedPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool IsMetadataAssetPath(string destinationPath)
+        {
+            if (string.IsNullOrEmpty(destinationPath))
+            {
+                return false;
+            }
+
+            string normalizedPath = destinationPath.Replace('\\', '/');
+            return normalizedPath.Equals(MetadataAssetPath, StringComparison.OrdinalIgnoreCase) ||
+                (normalizedPath.StartsWith(InstalledPackagesRootAssetPath, StringComparison.OrdinalIgnoreCase) &&
+                 normalizedPath.EndsWith("/" + MetadataFileName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsPackageJsonAssetPath(string destinationPath)
+        {
+            if (string.IsNullOrEmpty(destinationPath))
+            {
+                return false;
+            }
+
+            string normalizedPath = destinationPath.Replace('\\', '/');
+            return normalizedPath.Equals(PackageJsonAssetPath, StringComparison.OrdinalIgnoreCase) ||
+                normalizedPath.Equals("Packages/yucp.installed-packages/package.json", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string[] BuildDestinationPathCandidates(string relativePath)
+        {
+            string normalizedPath = relativePath.Replace('\\', '/');
+            var candidates = new List<string>();
+
+            if (!string.IsNullOrEmpty(normalizedPath))
+            {
+                candidates.Add(normalizedPath);
+
+                if (!normalizedPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) &&
+                    !normalizedPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+                {
+                    candidates.Add("Assets/" + normalizedPath);
+                }
+            }
+
+            return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         }
 
         /// <summary>
