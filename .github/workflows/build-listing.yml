@@ -3,6 +3,7 @@ name: Build Repo Listing
 env:
   listPublishDirectory: Website
   pathToCi: ci
+  packageNames: com.yucp.components com.yucp.importer
   
 on: 
   workflow_dispatch:
@@ -58,7 +59,10 @@ jobs:
       
       # Build Package Version Listing with Nuke
       - name: Build Package Version Listing
-        run: ${{ env.pathToCi }}/build.cmd BuildRepoListing --root ${{ env.pathToCi }} --list-publish-directory $GITHUB_WORKSPACE/${{ env.listPublishDirectory }} --current-package-name ${{ vars.PACKAGE_NAME }} --current-listing-url "https://vpm.yucp.club/index.json"
+        run: |
+          for package in ${{ env.packageNames }}; do
+            ${{ env.pathToCi }}/build.cmd BuildRepoListing --root ${{ env.pathToCi }} --list-publish-directory $GITHUB_WORKSPACE/${{ env.listPublishDirectory }} --current-package-name "$package" --current-listing-url "https://vpm.yucp.club/index.json"
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -1,0 +1,22 @@
+{
+    "name": "com.yucp.importer.Editor",
+    "rootNamespace": "YUCP.Importer.Editor",
+    "references": [
+        "com.yucp.components.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Newtonsoft.Json.dll",
+        "ICSharpCode.SharpZipLib.dll",
+        "0Harmony.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

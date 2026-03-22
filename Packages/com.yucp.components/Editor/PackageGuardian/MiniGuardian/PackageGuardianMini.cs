@@ -44,8 +44,8 @@ namespace YUCP.PackageGuardian.Mini
 				if (IsCircuitBroken())
                 {
                     Debug.LogError("[Mini Guardian] Circuit breaker active - bounded recovery mode");
-                    if (!YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
-                        YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                    if (!YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                        YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
                     ProtectionLatchService.Set("pg_mini_cb", "bounded_recovery");
                     return;
                 }
@@ -79,8 +79,8 @@ namespace YUCP.PackageGuardian.Mini
 
             if (IsCircuitBroken())
             {
-                if (!YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
-                    YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                if (!YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                    YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
                 ProtectionLatchService.Set("pg_mini_cb", "bounded_recovery");
                 return;
             }
@@ -101,10 +101,10 @@ namespace YUCP.PackageGuardian.Mini
             // When Package Guardian is disabled we skip the rest of protection logic, but still run the resolver.
             try
             {
-                if (!YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                if (!YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
                 {
                     // If installers are still moving files, poll for a while.
-                    YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                    YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
                 }
             }
             catch (Exception ex)
@@ -169,10 +169,10 @@ namespace YUCP.PackageGuardian.Mini
             // This avoids behavior drift and ensures .meta is moved/restored properly.
             try
             {
-                if (!YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                if (!YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
                 {
                     // If installers are still moving files, poll for a while.
-                    YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                    YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
                 }
             }
             catch (Exception ex)
@@ -645,6 +645,5 @@ namespace YUCP.PackageGuardian.Mini
         }
     }
 }
-
 
 

@@ -46,13 +46,13 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 if (CircuitBreakerService.IsCircuitBroken())
                 {
                     Debug.LogError("[Import Protection] Circuit breaker active - bounded recovery mode");
-                    if (YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                    if (YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
                     {
                         ProtectionLatchService.Clear("pg_import_recovery");
                         return;
                     }
 
-                    YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                    YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
                     ProtectionLatchService.Set("pg_import_recovery", "resolver_deferred");
                     return;
                 }
@@ -260,14 +260,14 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             // and restoring original GUIDs from meta userData.
             try
             {
-                if (YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
+                if (YucpDisabledFileResolver.ResolveNow(requestCompilation: true))
                 {
                     ProtectionLatchService.Clear("pg_import_recovery");
                     return;
                 }
 
                 // If nothing is found yet (installers may still be moving files), poll for a while.
-                YUCP.Components.Editor.PackageManager.YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
+                YucpDisabledFileResolver.ScheduleResolveAfterImport(timeoutSeconds: 60.0);
 
                 if (recoveryMode)
                 {
@@ -760,7 +760,6 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         }
     }
 }
-
 
 
 

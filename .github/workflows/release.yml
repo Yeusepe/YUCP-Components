@@ -4,34 +4,18 @@ on:
   workflow_dispatch:
 
 jobs:
-
-  # Validate Repository Configuration
-  config:
-    runs-on: ubuntu-latest
-    outputs:
-      config_package: ${{ steps.config_package.outputs.configPackage }}
-    steps:
-
-    # Ensure that required repository variable has been created for the Package
-    - name: Validate Package Config
-      id: config_package
-      run: |
-        if [ "${{ vars.PACKAGE_NAME }}" != "" ]; then
-          echo "configPackage=true" >> $GITHUB_OUTPUT;
-        else
-          echo "configPackage=false" >> $GITHUB_OUTPUT;
-        fi
-
-  # Build and release the Package
-  # If the repository is not configured properly, this job will be skipped
   build:
-    needs: config
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    strategy:
+      matrix:
+        package:
+          - com.yucp.components
+          - com.yucp.importer
     env:
-      packagePath: Packages/${{ vars.PACKAGE_NAME }}
-    if: needs.config.outputs.config_package == 'true'
+      packageName: ${{ matrix.package }}
+      packagePath: Packages/${{ matrix.package }}
     steps:
 
       # Checkout Local Repository
@@ -49,8 +33,9 @@ jobs:
       # Configure the Environment Variables needed for releasing the Package
       - name: Set Environment Variables
         run: |
-          echo "zipFile=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}".zip >> $GITHUB_ENV
-          echo "unityPackage=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
+          echo "zipFile=${{ env.packageName }}-${{ steps.version.outputs.value }}".zip >> $GITHUB_ENV
+          echo "unityPackage=${{ env.packageName }}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
+          echo "packageTag=${{ env.packageName }}-${{ steps.version.outputs.value }}" >> $GITHUB_ENV
           echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
 
       # Zip the Package for release
@@ -74,7 +59,7 @@ jobs:
         id: tag_version
         uses: rickstaa/action-create-tag@88dbf7ff6fe2405f8e8f6c6fdfd78829bc631f83
         with:
-          tag: "${{ env.version }}"
+          tag: "${{ env.packageTag }}"
       
       # Publish the Release to GitHub
       - name: Make Release
@@ -84,4 +69,4 @@ jobs:
             ${{ env.zipFile }}
             ${{ env.unityPackage }}
             ${{ env.packagePath }}/package.json
-          tag_name: ${{ env.version }}
+          tag_name: ${{ env.packageTag }}

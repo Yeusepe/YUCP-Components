@@ -7,6 +7,12 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
+    "com.poiyomi.toon": {
+      "version": "file:com.poiyomi.toon",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
     "com.unity.ai.navigation": {
       "version": "1.1.5",
       "depth": 0,
@@ -239,6 +245,24 @@
     },
     "com.yucp.components": {
       "version": "file:com.yucp.components",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.yucp.importer": {
+      "version": "file:com.yucp.importer",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "lyuma.av3emulator": {
+      "version": "file:lyuma.av3emulator",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "vrchat.blackstartx.gesture-manager": {
+      "version": "file:vrchat.blackstartx.gesture-manager",
       "depth": 0,
       "source": "embedded",
       "dependencies": {}

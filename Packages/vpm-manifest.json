@@ -1,19 +1,7 @@
 {
   "dependencies": {
-    "com.vrchat.base": {
-      "version": "3.9.0"
-    },
-    "com.vrchat.avatars": {
-      "version": "3.9.0"
-    },
     "nadena.dev.modular-avatar": {
       "version": "1.14.3"
-    },
-    "vrchat.blackstartx.gesture-manager": {
-      "version": "3.9.5"
-    },
-    "lyuma.av3emulator": {
-      "version": "3.4.9"
     },
     "com.furality.sylvashader": {
       "version": ">=1.0.0"
@@ -30,27 +18,23 @@
     "dev.vrlabs.custom-object-sync": {
       "version": "1.0.3"
     },
-    "com.poiyomi.toon": {
-      "version": "9.2.79"
-    },
     "one.razgriz.harmony-vpm": {
       "version": "2.2.2"
     },
     "com.vrchat.core.vpm-resolver": {
       "version": "0.1.29"
+    },
+    "vrchat.blackstartx.gesture-manager": {
+      "version": "3.9.6"
+    },
+    "lyuma.av3emulator": {
+      "version": "3.4.9"
+    },
+    "com.poiyomi.toon": {
+      "version": "9.2.79"
     }
   },
   "locked": {
-    "com.vrchat.base": {
-      "version": "3.10.2",
-      "dependencies": {}
-    },
-    "com.vrchat.avatars": {
-      "version": "3.10.2",
-      "dependencies": {
-        "com.vrchat.base": "3.10.2"
-      }
-    },
     "nadena.dev.ndmf": {
       "version": "1.9.4",
       "dependencies": {}
@@ -60,18 +44,6 @@
       "dependencies": {
         "com.vrchat.avatars": ">=3.7.4",
         "nadena.dev.ndmf": ">=1.9.2 <2.0.0-a"
-      }
-    },
-    "vrchat.blackstartx.gesture-manager": {
-      "version": "3.9.6",
-      "dependencies": {
-        "com.vrchat.avatars": ">=3.5.2 <3.10.X"
-      }
-    },
-    "lyuma.av3emulator": {
-      "version": "3.4.9",
-      "dependencies": {
-        "com.vrchat.avatars": "^3.1.0"
       }
     },
     "com.vrcfury.vrcfury": {
@@ -94,12 +66,34 @@
         "com.vrchat.avatars": "^3.7.0"
       }
     },
-    "com.poiyomi.toon": {
-      "version": "9.2.79",
-      "dependencies": {}
-    },
     "com.vrchat.core.vpm-resolver": {
       "version": "0.1.29",
+      "dependencies": {}
+    },
+    "vrchat.blackstartx.gesture-manager": {
+      "version": "3.9.6",
+      "dependencies": {
+        "com.vrchat.avatars": ">=3.5.2 < 3.10.X"
+      }
+    },
+    "com.vrchat.avatars": {
+      "version": "3.9.0",
+      "dependencies": {
+        "com.vrchat.base": "3.9.0"
+      }
+    },
+    "com.vrchat.base": {
+      "version": "3.9.0",
+      "dependencies": {}
+    },
+    "lyuma.av3emulator": {
+      "version": "3.4.9",
+      "dependencies": {
+        "com.vrchat.avatars": "^3.1.0"
+      }
+    },
+    "com.poiyomi.toon": {
+      "version": "9.2.79",
       "dependencies": {}
     }
   }
