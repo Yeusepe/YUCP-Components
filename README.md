@@ -37,6 +37,7 @@ Advanced VRChat avatar components with VRCFury integration, distributed via VPM.
 
 ### Utility Components
 - **Auto UDIM Discard** (Beta) - Auto-detect UV regions for UDIM toggles
+- **Blendshape Markdown** - Organize blendshapes into markdown-style nested sections inside the native `SkinnedMeshRenderer` inspector
 - **Avatar Optimizer Plugin** (Beta) - Integration with d4rkAvatarOptimizer
   - Automatic configuration based on avatar complexity
   - Per-avatar optimization settings
@@ -83,6 +84,8 @@ Access via `Tools > YUCP > Pakacage Guardian`:
 2. Configure component settings in the Inspector
 3. Build your avatar - components process automatically via VRCFury
 4. No manual setup needed - VRCFury handles all integration
+
+`Blendshape Markdown` is editor-only: add it to a `SkinnedMeshRenderer`, configure the heading/color rules, and the native renderer inspector will replace the flat blendshape list with markdown-style nested foldouts.
 
 For detailed component documentation, see [Packages/com.yucp.components/README.md](Packages/com.yucp.components/README.md)
 

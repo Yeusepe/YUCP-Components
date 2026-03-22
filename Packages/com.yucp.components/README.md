@@ -16,6 +16,7 @@ Advanced VRChat avatar components with VRCFury integration and Pakacage Guardian
 - **Symmetric Armature Auto-Link** - Automatically attach objects to left/right body parts
 - **Closest Bone Auto-Link** - Find and attach to nearest bone (including extra bones like ears, tails)
 - **View Position & Head Auto-Link** - Position objects at avatar view position
+- **Blendshape Markdown** - Organize blendshapes into markdown-style nested sections inside the native `SkinnedMeshRenderer` inspector
 
 ### Mesh Components
 - **Auto Body Hider** - Automatically hide body parts covered by clothing
@@ -76,6 +77,8 @@ Access Package Manager via `Tools > YUCP > Package Manager`:
 3. Build your avatar - components process automatically
 4. No manual setup needed - VRCFury handles all integration
 
+For `Blendshape Markdown`, add the component to the renderer you want to organize, configure heading rules such as `# Title`, `==Body/Head==`, or `|---Section---|`, and then use the native `SkinnedMeshRenderer` inspector to browse the grouped foldouts.
+
 ## Documentation
 
 For detailed documentation on each component:
@@ -91,4 +94,3 @@ For detailed documentation on each component:
 ## License
 
 MIT License - See LICENSE.md
-
