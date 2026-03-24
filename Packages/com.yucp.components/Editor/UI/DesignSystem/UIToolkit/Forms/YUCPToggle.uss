@@ -6,22 +6,21 @@
     transition-duration: 0.2s;
     transition-timing-function: ease-out;
     transition-property: background-color;
-    cursor: pointer;
+    cursor: link;
 }
 
 .yucp-toggle:hover {
     transition-duration: 0.15s;
 }
 
-.yucp-toggle:checked {
+.yucp-toggle.checked {
     background-color: var(--yucp-accent-primary);
 }
 
-.yucp-toggle:not(:checked) {
+.yucp-toggle.unchecked {
     background-color: var(--yucp-bg-tertiary);
 }
 
-.yucp-toggle:checked:hover {
+.yucp-toggle.checked:hover {
     background-color: var(--yucp-accent-primary-hover);
 }
-

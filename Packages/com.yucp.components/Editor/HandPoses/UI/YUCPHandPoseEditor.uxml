@@ -1,5 +1,5 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
-    <Style src="project://database/Packages/com.yucp.components/Editor/HandPoses/UI/YUCPHandPoseStyle.uss?fileID=7433441132597879392&guid=0000000000000000a000000000000000&type=3" />
+    <Style src="project://database/Packages/com.yucp.components/Editor/HandPoses/UI/YUCPHandPoseStyle.uss?fileID=7433441132597879392&amp;guid=0000000000000000a000000000000000&amp;type=3" />
     <ui:VisualElement class="yucp-handpose-window">
         <ui:VisualElement class="yucp-header">
             <ui:Label class="yucp-header-title" text="Hand Pose Editor" />
