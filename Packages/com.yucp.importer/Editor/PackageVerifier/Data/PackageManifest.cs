@@ -15,6 +15,8 @@ namespace YUCP.Importer.Editor.PackageVerifier.Data
         public string vrchatAuthorUserId;
         public Dictionary<string, string> fileHashes;
         public CertificateData[] certificateChain; // Certificate chain: [Publisher, Intermediate?, Root]
+        public string gumroadProductId;
+        public string jinxxyProductId;
     }
 }
 

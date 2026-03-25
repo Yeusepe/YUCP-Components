@@ -113,16 +113,12 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                 }
 
                 // Check if root is trusted (hardcoded YUCP root or from URL cache)
-                if (!TrustedAuthority.IsTrustedKey(rootCert.keyId))
+                byte[] trustedRootKey = TrustedAuthority.GetPublicKey(rootCert.keyId);
+                if (trustedRootKey == null || !trustedRootKey.SequenceEqual(rootPublicKey))
                 {
-                    // Also try to get by the public key itself (if keyId doesn't match but key does)
-                    byte[] trustedRootKey = TrustedAuthority.GetPublicKey(rootCert.keyId);
-                    if (trustedRootKey == null || !trustedRootKey.SequenceEqual(rootPublicKey))
-                    {
-                        result.valid = false;
-                        result.errors.Add($"Root certificate with keyId '{rootCert.keyId}' is not trusted");
-                        return result;
-                    }
+                    result.valid = false;
+                    result.errors.Add($"Root certificate with keyId '{rootCert.keyId}' is not trusted");
+                    return result;
                 }
 
                 // Verify root certificate signature (if present, root may be self-signed or unsigned)

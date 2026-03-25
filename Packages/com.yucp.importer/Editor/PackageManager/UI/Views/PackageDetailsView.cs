@@ -154,14 +154,12 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             var card = new VisualElement();
             card.AddToClassList("yucp-section");
-            card.AddToClassList("yucp-installer-summary");
+            card.AddToClassList("yucp-product-panel");
             card.style.marginBottom = 10;
 
-            // Header row: icon | info | buttons
+            // ── Header: Icon + Title Block + Action Buttons ──
             var header = new VisualElement();
-            header.AddToClassList("yucp-metadata-header");
-            header.style.flexDirection = FlexDirection.Row;
-            header.style.alignItems = Align.FlexStart;
+            header.AddToClassList("yucp-product-header");
 
             // Icon
             var iconWrap = new VisualElement();
@@ -174,33 +172,21 @@ namespace YUCP.Importer.Editor.PackageManager
             iconWrap.Add(iconImgWrap);
             header.Add(iconWrap);
 
-            // Name / author / version column
-            var col = new VisualElement();
-            col.style.flexGrow = 1;
-            col.style.flexShrink = 1;
-            col.style.marginLeft = 16;
-            col.style.minWidth = 0;
-            col.style.overflow = Overflow.Hidden;
+            // Title block
+            var titleBlock = new VisualElement();
+            titleBlock.AddToClassList("yucp-product-title-block");
 
-            // "Package" eyebrow
-            var eyebrow = new Label("Installed Package");
-            eyebrow.AddToClassList("yucp-package-context-label");
-            col.Add(eyebrow);
-
-            // Name + badges row
+            string name = string.IsNullOrEmpty(_packageInfo?.packageName) ? "Unknown Package" : _packageInfo.packageName;
             var nameRow = new VisualElement();
             nameRow.style.flexDirection = FlexDirection.Row;
             nameRow.style.alignItems = Align.Center;
-            nameRow.style.flexShrink = 1;
             nameRow.style.minWidth = 0;
 
-            string name = string.IsNullOrEmpty(_packageInfo?.packageName) ? "Unknown Package" : _packageInfo.packageName;
             var nameLabel = new Label(name);
-            nameLabel.AddToClassList("yucp-metadata-name-field");
-            nameLabel.AddToClassList("yucp-ellipsis-text");
+            nameLabel.AddToClassList("yucp-product-name");
+            nameLabel.tooltip = name;
             nameLabel.style.flexShrink = 1;
             nameLabel.style.minWidth = 0;
-            nameLabel.tooltip = name;
             nameRow.Add(nameLabel);
 
             if (_packageInfo.isVerified)
@@ -221,62 +207,92 @@ namespace YUCP.Importer.Editor.PackageManager
                 nameRow.Add(uBadge);
             }
 
-            col.Add(nameRow);
+            titleBlock.Add(nameRow);
 
+            // Author + version inline
+            string authorLine = "";
             if (!string.IsNullOrEmpty(_packageInfo?.author))
+                authorLine += $"By {_packageInfo.author}";
+            string ver = _packageInfo?.installedVersion ?? _packageInfo?.version;
+            if (!string.IsNullOrEmpty(ver))
             {
-                var author = new Label(_packageInfo.author);
-                author.AddToClassList("yucp-package-author-label");
-                author.AddToClassList("yucp-ellipsis-text");
-                author.tooltip = _packageInfo.author;
-                col.Add(author);
+                if (authorLine.Length > 0) authorLine += "  ·  ";
+                authorLine += $"v{ver}";
+            }
+            if (authorLine.Length > 0)
+            {
+                var authorLabel = new Label(authorLine);
+                authorLabel.AddToClassList("yucp-product-author");
+                authorLabel.tooltip = authorLine;
+                titleBlock.Add(authorLabel);
             }
 
-            var versionRow = new VisualElement();
-            versionRow.AddToClassList("yucp-version-row");
-            versionRow.style.flexDirection = FlexDirection.Row;
-            versionRow.style.alignItems = Align.Center;
+            // Tagline
+            if (!string.IsNullOrEmpty(_packageInfo?.tagline))
+            {
+                var taglineLabel = new Label(_packageInfo.tagline);
+                taglineLabel.AddToClassList("yucp-product-tagline");
+                titleBlock.Add(taglineLabel);
+            }
 
-            var versionLabel = new Label("Version:");
-            versionLabel.style.marginRight = 6;
-            versionRow.Add(versionLabel);
+            header.Add(titleBlock);
 
-            var versionValue = new Label(_packageInfo?.installedVersion ?? "—");
-            versionRow.Add(versionValue);
+            // Action buttons column
+            var ctaCol = new VisualElement();
+            ctaCol.AddToClassList("yucp-cta-column");
 
-            col.Add(versionRow);
-            header.Add(col);
-
-            // Action buttons
-            var buttons = new VisualElement();
-            buttons.AddToClassList("yucp-action-buttons-container");
-            buttons.style.flexDirection = FlexDirection.Row;
-            buttons.style.alignItems = Align.FlexStart;
-            buttons.style.marginLeft = 14;
-            buttons.style.flexShrink = 0;
-
-            var backBtn = new Button(() => _onBack?.Invoke()) { text = "Back" };
-            backBtn.AddToClassList("yucp-action-button");
-            backBtn.AddToClassList("yucp-cancel-button");
-            buttons.Add(backBtn);
+            var backBtn = new Button(() => _onBack?.Invoke()) { text = "← Back" };
+            backBtn.AddToClassList("yucp-cta-cancel");
+            ctaCol.Add(backBtn);
 
             if (_packageInfo.hasUpdate)
             {
-                var updateBtn = new Button(() => _onUpdate?.Invoke(_packageInfo)) { text = "Update" };
-                updateBtn.AddToClassList("yucp-action-button");
-                updateBtn.AddToClassList("yucp-import-button");
-                buttons.Add(updateBtn);
+                var updateBtn = new Button(() => _onUpdate?.Invoke(_packageInfo)) { text = "↓  Update" };
+                updateBtn.AddToClassList("yucp-cta-button");
+                updateBtn.style.marginTop = 6;
+                ctaCol.Add(updateBtn);
             }
 
             var uninstallBtn = new Button(() => _onUninstall?.Invoke(_packageInfo)) { text = "Uninstall" };
-            uninstallBtn.AddToClassList("yucp-action-button");
-            uninstallBtn.AddToClassList("yucp-cancel-button");
-            buttons.Add(uninstallBtn);
+            uninstallBtn.AddToClassList("yucp-cta-cancel");
+            uninstallBtn.style.marginTop = 6;
+            ctaCol.Add(uninstallBtn);
 
-            header.Add(buttons);
+            header.Add(ctaCol);
             card.Add(header);
 
-            // Description
+            // ── Chip row: category + platforms + tags + derived safety badges ──
+            {
+                var chips = new List<(string text, string variant)>();
+
+                if (!string.IsNullOrEmpty(_packageInfo?.category) && _packageInfo.category != "None")
+                    chips.Add((_packageInfo.category, "yucp-chip-category"));
+                if (_packageInfo?.supportedPlatforms != null)
+                    foreach (var p in _packageInfo.supportedPlatforms)
+                        if (!string.IsNullOrEmpty(p)) chips.Add((p, "yucp-chip-platform"));
+                if (_packageInfo?.tags != null)
+                    foreach (var tag in _packageInfo.tags.Where(t => !string.IsNullOrEmpty(t)).Take(6))
+                        chips.Add((tag, "yucp-chip-content"));
+                foreach (var safetyChip in GetDerivedSafetyChips())
+                    chips.Add((safetyChip, ""));
+
+                if (chips.Count > 0)
+                {
+                    var chipRow = new VisualElement();
+                    chipRow.AddToClassList("yucp-chip-row");
+                    foreach (var (text, variant) in chips)
+                    {
+                        var chip = new VisualElement();
+                        chip.AddToClassList("yucp-chip");
+                        if (!string.IsNullOrEmpty(variant)) chip.AddToClassList(variant);
+                        chip.Add(new Label(text));
+                        chipRow.Add(chip);
+                    }
+                    card.Add(chipRow);
+                }
+            }
+
+            // ── Description ──
             if (!string.IsNullOrEmpty(_packageInfo?.description))
             {
                 var desc = new Label(_packageInfo.description);
@@ -285,63 +301,149 @@ namespace YUCP.Importer.Editor.PackageManager
                 card.Add(desc);
             }
 
-            // Product links
-            if (_packageInfo?.productLinks != null && _packageInfo.productLinks.Count > 0)
+            // ── What's Inside (asset breakdown) ──
+            bool hasBreakdown = _packageInfo?.assetBreakdown != null && _packageInfo.assetBreakdown.Count > 0;
+            if (hasBreakdown)
             {
-                var links = new VisualElement();
-                links.style.flexDirection = FlexDirection.Row;
-                links.style.flexWrap = Wrap.Wrap;
-                links.style.marginTop = 14;
+                var insideSection = new VisualElement();
+                insideSection.AddToClassList("yucp-info-section-block");
+                insideSection.Add(CreateSectionTitle("WHAT'S INSIDE"));
 
-                foreach (var link in _packageInfo.productLinks)
+                var statsRow = new VisualElement();
+                statsRow.AddToClassList("yucp-info-section-body");
+                for (int i = 0; i < _packageInfo.assetBreakdown.Count; i++)
                 {
-                    if (string.IsNullOrEmpty(link.url)) continue;
-
-                    var btn = new Button(() => Application.OpenURL(link.url));
-                    btn.style.flexDirection = FlexDirection.Row;
-                    btn.style.alignItems = Align.Center;
-                    btn.style.marginRight = 8;
-                    btn.style.marginBottom = 6;
-                    btn.style.paddingLeft = 10;
-                    btn.style.paddingRight = 12;
-                    btn.style.paddingTop = 5;
-                    btn.style.paddingBottom = 5;
-                    btn.style.backgroundColor = new Color(1, 1, 1, 0.06f);
-                    btn.style.borderTopWidth = 1;
-                    btn.style.borderRightWidth = 1;
-                    btn.style.borderBottomWidth = 1;
-                    btn.style.borderLeftWidth = 1;
-                    btn.style.borderTopColor = new Color(1, 1, 1, 0.10f);
-                    btn.style.borderRightColor = new Color(1, 1, 1, 0.10f);
-                    btn.style.borderBottomColor = new Color(1, 1, 1, 0.10f);
-                    btn.style.borderLeftColor = new Color(1, 1, 1, 0.10f);
-                    btn.style.borderTopLeftRadius = 8;
-                    btn.style.borderTopRightRadius = 8;
-                    btn.style.borderBottomLeftRadius = 8;
-                    btn.style.borderBottomRightRadius = 8;
-
-                    var linkIcon = link.GetDisplayIcon();
-                    if (linkIcon != null)
+                    var ab = _packageInfo.assetBreakdown[i];
+                    if (i > 0)
                     {
-                        var img = new Image { image = linkIcon };
-                        img.style.width = 14;
-                        img.style.height = 14;
-                        img.style.marginRight = 7;
-                        btn.Add(img);
+                        var sep = new Label("·");
+                        sep.AddToClassList("yucp-asset-stat-separator");
+                        statsRow.Add(sep);
                     }
+                    var stat = new Label($"{ab.count} {ab.type}{(ab.count != 1 ? "s" : "")}");
+                    stat.AddToClassList("yucp-asset-stat");
+                    statsRow.Add(stat);
+                }
+                insideSection.Add(statsRow);
 
-                    var lbl = new Label(string.IsNullOrEmpty(link.label) ? link.url : link.label);
-                    lbl.style.fontSize = 12;
-                    lbl.style.color = new Color(0.85f, 0.85f, 0.90f);
-                    btn.Add(lbl);
-
-                    links.Add(btn);
+                if (!string.IsNullOrEmpty(_packageInfo?.minimumUnityVersion))
+                {
+                    var unityLabel = new Label($"Unity {_packageInfo.minimumUnityVersion}+");
+                    unityLabel.AddToClassList("yucp-requirement-text");
+                    insideSection.Add(unityLabel);
                 }
 
-                card.Add(links);
+                card.Add(insideSection);
+            }
+
+            // ── From the Creator ──
+            bool hasCreatorNote = !string.IsNullOrEmpty(_packageInfo?.creatorNote);
+            bool hasProductLinks = _packageInfo?.productLinks != null && _packageInfo.productLinks.Count > 0;
+            if (hasCreatorNote || hasProductLinks)
+            {
+                var creatorSection = new VisualElement();
+                creatorSection.AddToClassList("yucp-info-section-block");
+                creatorSection.Add(CreateSectionTitle("FROM THE CREATOR"));
+
+                if (hasCreatorNote)
+                {
+                    var noteLabel = new Label($"\"{_packageInfo.creatorNote}\"");
+                    noteLabel.AddToClassList("yucp-creator-note");
+                    creatorSection.Add(noteLabel);
+                }
+
+                if (hasProductLinks)
+                {
+                    var linksRow = new VisualElement();
+                    linksRow.AddToClassList("yucp-creator-links");
+                    foreach (var link in _packageInfo.productLinks)
+                    {
+                        if (string.IsNullOrEmpty(link.url)) continue;
+                        var btn = new Button(() => Application.OpenURL(link.url));
+                        btn.AddToClassList("yucp-creator-link-button");
+                        btn.tooltip = string.IsNullOrEmpty(link.label) ? link.url : $"{link.label}\n{link.url}";
+                        var linkIcon = link.GetDisplayIcon() ?? GetPlaceholder();
+                        var img = new Image { image = linkIcon };
+                        img.style.width = 28;
+                        img.style.height = 28;
+                        btn.Add(img);
+                        linksRow.Add(btn);
+                    }
+                    creatorSection.Add(linksRow);
+                }
+
+                card.Add(creatorSection);
+            }
+
+            // ── Release Notes ──
+            if (!string.IsNullOrEmpty(_packageInfo?.releaseNotes))
+            {
+                var relSection = new VisualElement();
+                relSection.AddToClassList("yucp-info-section-block");
+                string verSuffix = !string.IsNullOrEmpty(ver) ? $" (v{ver})" : "";
+                relSection.Add(CreateSectionTitle($"WHAT'S NEW{verSuffix}"));
+                var notes = new Label(_packageInfo.releaseNotes);
+                notes.AddToClassList("yucp-release-notes-text");
+                relSection.Add(notes);
+                card.Add(relSection);
+            }
+
+            // ── Gallery ──
+            if (_packageInfo?.galleryImages != null && _packageInfo.galleryImages.Count > 0)
+            {
+                var gallery = new VisualElement();
+                gallery.AddToClassList("yucp-gallery-strip");
+                foreach (var tex in _packageInfo.galleryImages)
+                {
+                    if (tex == null) continue;
+                    var thumb = new VisualElement();
+                    thumb.AddToClassList("yucp-gallery-thumb");
+                    thumb.style.backgroundImage = new StyleBackground(tex);
+                    var capturedTex = tex;
+                    thumb.RegisterCallback<ClickEvent>(evt =>
+                    {
+                        if (_bannerImageContainer != null)
+                            _bannerImageContainer.style.backgroundImage = new StyleBackground(capturedTex);
+                        foreach (var child in gallery.Children())
+                            child.RemoveFromClassList("yucp-gallery-thumb-selected");
+                        thumb.AddToClassList("yucp-gallery-thumb-selected");
+                    });
+                    gallery.Add(thumb);
+                }
+                card.Add(gallery);
             }
 
             return card;
+        }
+
+        private static Label CreateSectionTitle(string text)
+        {
+            var label = new Label(text);
+            label.AddToClassList("yucp-info-section-title");
+            return label;
+        }
+
+        private IEnumerable<string> GetDerivedSafetyChips()
+        {
+            var chips = new List<string>();
+
+            bool hasAssetBreakdown = _packageInfo?.assetBreakdown != null && _packageInfo.assetBreakdown.Count > 0;
+            bool hasAssemblies = hasAssetBreakdown && _packageInfo.assetBreakdown.Any(ab =>
+                string.Equals(ab.type, "Assembly", StringComparison.OrdinalIgnoreCase));
+
+            if (hasAssetBreakdown)
+                chips.Add(hasAssemblies ? "Contains DLLs" : "No DLLs");
+
+            if (_packageInfo?.dependencies != null && _packageInfo.dependencies.Count > 0)
+                chips.Add("Dependencies Required");
+
+            if (_packageInfo?.licensePackages != null && _packageInfo.licensePackages.Count > 0)
+                chips.Add("Protected Assets");
+
+            if (_packageInfo?.isVerified == true)
+                chips.Add("Verified Package");
+
+            return chips;
         }
 
         // ─── Package info card ────────────────────────────────────────────────
@@ -384,6 +486,12 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void AddInfoRow(VisualElement container, string label, string value)
         {
+            if (container.childCount > 0 && container[container.childCount - 1] is VisualElement previousRow)
+            {
+                previousRow.style.borderBottomWidth = 1;
+                previousRow.style.paddingBottom = 8;
+            }
+
             var row = new VisualElement();
             row.AddToClassList("yucp-info-row");
 
@@ -396,6 +504,8 @@ namespace YUCP.Importer.Editor.PackageManager
             row.Add(val);
 
             container.Add(row);
+            row.style.borderBottomWidth = 0;
+            row.style.paddingBottom = 0;
         }
 
         // ─── Dependencies card ────────────────────────────────────────────────

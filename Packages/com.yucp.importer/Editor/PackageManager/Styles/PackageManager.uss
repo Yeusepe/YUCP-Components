@@ -4,40 +4,6 @@
    ============================================================================ */
 
 /* ============================================================================
-   SCROLL CONTENT
-   ============================================================================ */
-.yucp-scroll-content {
-    flex-grow: 0;
-    flex-shrink: 0;
-}
-
-/* ============================================================================
-   SPACER
-   ============================================================================ */
-.yucp-spacer {
-    flex-grow: 1;
-    min-height: 1px;
-}
-
-/* ============================================================================
-   CONTENT WRAPPER
-   ============================================================================ */
-.yucp-content-wrapper {
-    flex-shrink: 0;
-    position: relative;
-    margin-left: 16px;
-    margin-right: 16px;
-    margin-bottom: 16px;
-    padding-left: 0;
-    padding-right: 0;
-}
-
-.yucp-content-wrapper-details {
-    flex-grow: 0;
-    margin-top: 20px;
-}
-
-/* ============================================================================
    BANNER SECTION
    ============================================================================ */
 .yucp-banner-container {
@@ -56,6 +22,25 @@
     bottom: 0;
     background-size: cover;
     background-position: center;
+}
+
+/* Crossfade overlay: sits between the banner image and gradient */
+.yucp-banner-fade-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    transition-property: opacity;
+    transition-duration: 0.45s;
+    transition-timing-function: ease-in-out;
+}
+
+.yucp-banner-fade-overlay.yucp-fade-active {
+    opacity: 1;
 }
 
 .yucp-banner-gradient-overlay {
@@ -270,7 +255,7 @@
 /* Icon (≡ or ←) */
 .yucp-dtb-icon {
     font-size: 15px;
-    color: rgba(54, 191, 177, 0.75);
+    color: rgba(224, 224, 230, 0.72);
     margin-left: 14px;
     margin-right: 10px;
     flex-shrink: 0;
@@ -291,8 +276,8 @@
 /* Count badge (file/dep indicator) */
 .yucp-dtb-count {
     font-size: 10px;
-    color: rgba(54, 191, 177, 0.60);
-    background-color: rgba(54, 191, 177, 0.09);
+    color: rgba(224, 224, 230, 0.62);
+    background-color: rgba(255, 255, 255, 0.05);
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     border-bottom-left-radius: 6px;
@@ -383,8 +368,8 @@
    CONTENTS SECTION
    ============================================================================ */
 .yucp-contents-section {
-    overflow: visible;
-    flex-shrink: 0;
+    overflow: hidden;
+    flex-shrink: 1;
     padding-left: 20px;
     padding-right: 20px;
     padding-top: 14px;
@@ -492,6 +477,14 @@
     padding-right: 6px;
     padding-top: 6px;
     padding-bottom: 6px;
+}
+
+/* Scroll wrapper — fills remaining height, shows scrollbar for asset list only */
+.yucp-tree-scroll-wrapper {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    margin-top: 6px;
 }
 
 /* Row — folder or file */
@@ -1407,11 +1400,6 @@
     border-bottom-color: rgba(255, 255, 255, 0.04);
 }
 
-.yucp-info-row:last-child {
-    border-bottom-width: 0;
-    padding-bottom: 0;
-}
-
 .yucp-info-label {
     width: 100px;
     min-width: 100px;
@@ -1873,3 +1861,675 @@
 .lgate-title { font-size: 15px; -unity-font-style: bold; color: #f2f2f4; }
 .lgate-body { font-size: 11px; color: rgba(218,218,224,0.52); white-space: normal; margin-top: 4px; }
 .lgate-divider { height: 0; margin-top: 8px; }
+
+/* ============================================================================
+   PRODUCT PANEL — Floating marketplace-style card
+   ============================================================================ */
+.yucp-product-panel {
+    background-color: transparent;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    padding-left: 24px;
+    padding-right: 24px;
+    padding-top: 22px;
+    padding-bottom: 24px;
+    margin-top: 0;
+    opacity: 1;
+    transition-property: opacity;
+    transition-duration: 0.35s;
+}
+
+.yucp-product-panel-loading {
+    opacity: 0;
+}
+
+/* ---------- Header: icon + title block + CTA ---------- */
+.yucp-product-header {
+    flex-direction: row;
+    align-items: flex-start;
+    margin-bottom: 0;
+    min-width: 0;
+}
+
+.yucp-product-title-block {
+    flex-grow: 1;
+    flex-shrink: 1;
+    margin-left: 16px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.yucp-product-name {
+    font-size: 22px;
+    -unity-font-style: bold;
+    color: #f2f2f4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yucp-product-author {
+    font-size: 12px;
+    color: rgba(218, 218, 224, 0.60);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yucp-product-tagline {
+    font-size: 13px;
+    color: rgba(218, 218, 224, 0.72);
+    margin-top: 6px;
+    white-space: normal;
+    -unity-font-style: italic;
+}
+
+/* ---------- CTA column ---------- */
+.yucp-cta-column {
+    flex-shrink: 0;
+    margin-left: 16px;
+    align-items: flex-end;
+}
+
+.yucp-cta-button {
+    min-width: 160px;
+    min-height: 40px;
+    padding-left: 20px;
+    padding-right: 24px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    background-color: rgba(244, 244, 248, 0.96);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.26);
+    border-right-color: rgba(255, 255, 255, 0.26);
+    border-bottom-color: rgba(255, 255, 255, 0.26);
+    border-left-color: rgba(255, 255, 255, 0.26);
+    color: rgba(10, 10, 14, 0.96);
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    transition-property: background-color, scale, border-color;
+    transition-duration: 0.16s;
+}
+
+.yucp-cta-button:hover {
+    background-color: rgba(255, 255, 255, 1.0);
+    color: rgba(10, 10, 14, 0.96);
+    scale: 1.03 1.03;
+    border-top-color: rgba(255, 255, 255, 0.38);
+    border-right-color: rgba(255, 255, 255, 0.38);
+    border-bottom-color: rgba(255, 255, 255, 0.38);
+    border-left-color: rgba(255, 255, 255, 0.38);
+}
+
+.yucp-cta-button Label {
+    color: rgba(10, 10, 14, 0.96);
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.yucp-cta-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    -unity-background-image-tint-color: rgba(10, 10, 14, 0.90);
+}
+
+.yucp-cta-sublabel {
+    font-size: 10px;
+    color: rgba(218, 218, 224, 0.44);
+    margin-top: 4px;
+    -unity-text-align: middle-right;
+}
+
+.yucp-verify-status {
+    font-size: 10px;
+    color: rgba(180, 200, 255, 0.75);
+    margin-top: 4px;
+    -unity-text-align: middle-right;
+    -unity-font-style: italic;
+}
+
+.yucp-cta-cancel {
+    min-width: 70px;
+    min-height: 40px;
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 0;
+    font-size: 11px;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+    color: rgba(240, 240, 244, 0.60);
+    transition-property: background-color, color;
+    transition-duration: 0.14s;
+}
+
+.yucp-cta-cancel:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: rgba(240, 240, 244, 0.85);
+}
+
+/* ---------- Chip row & chips ---------- */
+.yucp-chip-row {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    margin-top: 12px;
+    margin-bottom: 2px;
+}
+
+.yucp-chip {
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    margin-right: 6px;
+    margin-bottom: 6px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+    transition-property: opacity, translate;
+    transition-duration: 0.25s;
+}
+
+.yucp-chip Label {
+    font-size: 11px;
+    color: rgba(218, 218, 224, 0.80);
+}
+
+.yucp-chip-category {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.yucp-chip-category Label {
+    color: rgba(218, 218, 224, 0.80);
+}
+
+.yucp-chip-platform {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.yucp-chip-platform Label {
+    color: rgba(218, 218, 224, 0.80);
+}
+
+.yucp-chip-content {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.yucp-chip-content Label {
+    color: rgba(218, 218, 224, 0.80);
+}
+
+/* Overflow indicator chip — shown when tag count exceeds max */
+.yucp-chip-overflow {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-top-color: rgba(255, 255, 255, 0.06);
+    border-right-color: rgba(255, 255, 255, 0.06);
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+    border-left-color: rgba(255, 255, 255, 0.06);
+}
+
+.yucp-chip-overflow Label {
+    color: rgba(218, 218, 224, 0.40);
+    font-size: 10px;
+}
+
+/* Package description — always visible, clipped to ~3 lines */
+.yucp-meta-description {
+    font-size: 12px;
+    color: rgba(218, 218, 224, 0.60);
+    white-space: normal;
+    overflow: hidden;
+    max-height: 58px;
+    margin-top: 8px;
+    margin-bottom: 2px;
+}
+
+/* Chip overflow "+N" tooltip popup */
+.yucp-chip-tooltip {
+    position: absolute;
+    background-color: rgba(18, 18, 24, 0.97);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-right-color: rgba(255, 255, 255, 0.12);
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+    border-left-color: rgba(255, 255, 255, 0.12);
+    padding-left: 12px;
+    padding-right: 14px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    min-width: 110px;
+    max-width: 220px;
+    flex-direction: column;
+}
+
+.yucp-chip-tooltip-row {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 3px;
+    padding-bottom: 3px;
+}
+
+.yucp-chip-tooltip-dot {
+    color: rgba(218, 218, 224, 0.30);
+    font-size: 14px;
+    margin-right: 7px;
+    flex-shrink: 0;
+}
+
+.yucp-chip-tooltip-label {
+    color: rgba(218, 218, 224, 0.80);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.yucp-chip-slide-up {
+    translate: 0 4px;
+    opacity: 0;
+}
+
+/* ---------- Info sections ---------- */
+.yucp-info-section-block {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+.yucp-info-section-title {
+    font-size: 10px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.28);
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+}
+
+.yucp-info-section-body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.yucp-info-section-text {
+    font-size: 12px;
+    color: rgba(218, 218, 224, 0.68);
+    white-space: normal;
+    margin-bottom: 4px;
+}
+
+.yucp-asset-stat {
+    font-size: 11px;
+    color: rgba(218, 218, 224, 0.72);
+    margin-right: 4px;
+}
+
+.yucp-asset-stat-separator {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.18);
+    margin-right: 4px;
+}
+
+.yucp-requirement-text {
+    font-size: 11px;
+    color: rgba(218, 218, 224, 0.56);
+    margin-top: 4px;
+    white-space: normal;
+}
+
+/* ---------- Creator section ---------- */
+.yucp-creator-note {
+    font-size: 12px;
+    color: rgba(218, 218, 224, 0.68);
+    white-space: normal;
+    -unity-font-style: italic;
+    margin-bottom: 8px;
+}
+
+.yucp-creator-links {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.yucp-creator-link-button {
+    width: 28px;
+    height: 28px;
+    margin-right: 6px;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    background-color: transparent;
+    transition-property: opacity;
+    transition-duration: 0.14s;
+    opacity: 0.60;
+}
+
+.yucp-creator-link-button:hover {
+    opacity: 1.0;
+}
+
+/* ---------- Release notes ---------- */
+.yucp-release-notes-text {
+    font-size: 11px;
+    color: rgba(218, 218, 224, 0.60);
+    white-space: normal;
+}
+
+/* ---------- Show-more toggle button ---------- */
+.yucp-show-more-button {
+    align-self: flex-start;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    font-size: 11px;
+    color: rgba(218, 218, 224, 0.55);
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    transition-property: background-color, color;
+    transition-duration: 0.12s;
+}
+
+.yucp-show-more-button:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: rgba(218, 218, 224, 0.85);
+}
+
+/* ---------- Gallery strip ---------- */
+.yucp-gallery-strip {
+    flex-direction: row;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.yucp-gallery-thumb {
+    width: 80px;
+    height: 48px;
+    min-width: 80px;
+    min-height: 48px;
+    margin-right: 8px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    background-size: cover;
+    background-position: center;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+    opacity: 0.72;
+    transition-property: opacity, border-color;
+    transition-duration: 0.16s;
+}
+
+.yucp-gallery-thumb:hover {
+    opacity: 1.0;
+    border-top-color: rgba(54, 191, 177, 0.50);
+    border-right-color: rgba(54, 191, 177, 0.50);
+    border-bottom-color: rgba(54, 191, 177, 0.50);
+    border-left-color: rgba(54, 191, 177, 0.50);
+}
+
+.yucp-gallery-thumb-selected {
+    opacity: 1.0;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgba(54, 191, 177, 0.80);
+    border-right-color: rgba(54, 191, 177, 0.80);
+    border-bottom-color: rgba(54, 191, 177, 0.80);
+    border-left-color: rgba(54, 191, 177, 0.80);
+}
+
+/* ---------- Verification badge inline ---------- */
+.yucp-product-verified-badge {
+    width: 16px;
+    height: 16px;
+    margin-left: 6px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   INSTALLER ROOT — single-page, no-scroll container
+   ============================================================================ */
+.yucp-installer-root {
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ============================================================================
+   BANNER SECTION — in normal flow (position: relative), contains hero overlay
+   ============================================================================ */
+.yucp-banner-section {
+    position: relative;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 160px;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* ============================================================================
+   HERO OVERLAY — absolute, pinned to bottom of banner section
+   ============================================================================ */
+.yucp-hero-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    flex-direction: row;
+    align-items: flex-end;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-bottom: 16px;
+}
+
+.yucp-hero-icon {
+    width: 62px;
+    height: 62px;
+    min-width: 62px;
+    min-height: 62px;
+    border-top-left-radius: 13px;
+    border-top-right-radius: 13px;
+    border-bottom-left-radius: 13px;
+    border-bottom-right-radius: 13px;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-right: 13px;
+    margin-bottom: 2px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.20);
+    border-right-color: rgba(255, 255, 255, 0.20);
+    border-bottom-color: rgba(255, 255, 255, 0.20);
+    border-left-color: rgba(255, 255, 255, 0.20);
+    background-color: rgba(0, 0, 0, 0.18);
+}
+
+.yucp-hero-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-bottom: 2px;
+}
+
+.yucp-hero-name-row {
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+}
+
+.yucp-hero-name {
+    font-size: 22px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.yucp-hero-meta {
+    font-size: 11px;
+    color: rgba(240, 240, 244, 0.68);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yucp-hero-tagline {
+    font-size: 12px;
+    color: rgba(232, 232, 238, 0.76);
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -unity-font-style: italic;
+}
+
+/* ============================================================================
+   METADATA SECTION — compact 2-column grid below the banner
+   ============================================================================ */
+.yucp-metadata-section {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    padding-bottom: 0;
+}
+
+.yucp-meta-grid {
+    flex-direction: row;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    margin-top: 10px;
+}
+
+.yucp-meta-col {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.yucp-meta-col-right {
+    margin-left: 16px;
+}
+
+.yucp-meta-section {
+    flex-shrink: 0;
+    margin-bottom: 10px;
+}
+
+.yucp-meta-section-title {
+    font-size: 9px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.26);
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+.yucp-meta-section-body {
+    font-size: 11px;
+    color: rgba(218, 218, 224, 0.68);
+    white-space: normal;
+    overflow: hidden;
+}
+

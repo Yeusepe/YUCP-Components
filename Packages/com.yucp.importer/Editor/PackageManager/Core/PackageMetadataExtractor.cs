@@ -15,6 +15,7 @@ namespace YUCP.Importer.Editor.PackageManager
     {
         private const string MetadataFileName = "YUCP_PackageInfo.json";
         private const string MetadataAssetPath = "Assets/YUCP_PackageInfo.json";
+        private const string ProtectedPayloadFileName = "YUCP_ProtectedPayload.json";
         private const string PackageJsonFileName = "package.json";
         private const string PackageJsonAssetPath = "Assets/package.json";
         private const string InstalledPackagesRootAssetPath = "Packages/yucp.installed-packages/";
@@ -163,6 +164,44 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                 }
 
+                // Propagate storefront metadata
+                metadata.tagline = metadataJson.tagline ?? "";
+                metadata.category = metadataJson.category ?? "";
+                metadata.minimumUnityVersion = metadataJson.minimumUnityVersion ?? "";
+                metadata.creatorNote = metadataJson.creatorNote ?? "";
+                metadata.releaseNotes = metadataJson.releaseNotes ?? "";
+                metadata.exportDate = metadataJson.exportDate ?? "";
+                metadata.totalFileCount = metadataJson.totalFileCount;
+                metadata.totalFileSize = metadataJson.totalFileSize;
+
+                if (metadataJson.supportedPlatforms != null)
+                    metadata.supportedPlatforms = new List<string>(metadataJson.supportedPlatforms);
+                if (metadataJson.tags != null)
+                    metadata.tags = new List<string>(metadataJson.tags);
+
+                if (metadataJson.assetBreakdown != null)
+                {
+                    foreach (var ab in metadataJson.assetBreakdown)
+                    {
+                        if (ab != null && !string.IsNullOrEmpty(ab.type))
+                            metadata.assetBreakdown.Add(new AssetBreakdownEntry(ab.type, ab.count));
+                    }
+                }
+
+                // Resolve gallery images from embedded paths
+                if (metadataJson.galleryImages != null)
+                {
+                    foreach (var galleryPath in metadataJson.galleryImages)
+                    {
+                        if (string.IsNullOrEmpty(galleryPath)) continue;
+                        var tex = ResolveTextureFromPath(galleryPath, importItems);
+                        if (tex != null)
+                            metadata.galleryImages.Add(tex);
+                    }
+                }
+
+                metadata.protectedPayload = ExtractProtectedPayloadDescriptor(importItems);
+
                 Debug.Log($"[YUCP PackageManager] Parsed package metadata. packageName='{metadata.packageName}', version='{metadata.version}', iconLoaded={metadata.icon != null}, bannerLoaded={metadata.banner != null}, productLinks={metadata.productLinks.Count}, dependencies={metadata.dependencies.Count}");
                 return metadata;
             }
@@ -186,6 +225,20 @@ namespace YUCP.Importer.Editor.PackageManager
             public string versionRule;
             public string versionRuleName;
             public List<LicensePackageJson> licensePackages;
+            
+            // Storefront metadata
+            public string tagline;
+            public string category;
+            public List<string> supportedPlatforms;
+            public string minimumUnityVersion;
+            public string creatorNote;
+            public string releaseNotes;
+            public List<string> galleryImages;
+            public List<string> tags;
+            public int totalFileCount;
+            public long totalFileSize;
+            public List<AssetBreakdownJsonImport> assetBreakdown;
+            public string exportDate;
         }
 
         [Serializable]
@@ -209,22 +262,75 @@ namespace YUCP.Importer.Editor.PackageManager
             public string icon; // Path to custom icon texture
         }
 
+        [Serializable]
+        private class AssetBreakdownJsonImport
+        {
+            public string type;
+            public int count;
+        }
+
         private static object FindMetadataItem(System.Array importItems)
         {
-            if (_destinationAssetPathField == null) return null;
+            return FindItemByDestinationPath(importItems, IsMetadataAssetPath);
+        }
+
+        private static object FindItemByDestinationPath(System.Array importItems, Func<string, bool> predicate)
+        {
+            if (_destinationAssetPathField == null || predicate == null || importItems == null)
+                return null;
 
             foreach (var item in importItems)
             {
                 if (item == null) continue;
 
                 string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
-                if (IsMetadataAssetPath(destinationPath))
+                if (predicate(destinationPath))
                 {
                     return item;
                 }
             }
 
             return null;
+        }
+
+        internal static ProtectedPayloadDescriptor ExtractProtectedPayloadDescriptor(System.Array importItems)
+        {
+            if (importItems == null || importItems.Length == 0)
+                return null;
+
+            object descriptorItem = FindItemByDestinationPath(importItems, IsProtectedPayloadAssetPath);
+            if (descriptorItem == null)
+                return null;
+
+            string sourceFolder = GetFieldValue<string>(descriptorItem, _sourceFolderField);
+            string exportedPath = GetFieldValue<string>(descriptorItem, _exportedAssetPathField);
+            if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
+                return null;
+
+            string json = ReadMetadataFile(sourceFolder, exportedPath);
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            try
+            {
+                var descriptor = JsonUtility.FromJson<ProtectedPayloadDescriptor>(json);
+                if (descriptor == null)
+                    return null;
+
+                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
+                descriptor.protectedAssetId ??= "";
+                descriptor.blobAssetPath ??= "";
+                descriptor.cipher ??= "";
+                descriptor.archiveFormat ??= "";
+                descriptor.ciphertextSha256 ??= "";
+                descriptor.plaintextSha256 ??= "";
+                return descriptor;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse protected payload descriptor: {ex.Message}");
+                return null;
+            }
         }
 
         private static string ReadMetadataFile(string sourceFolder, string exportedPath)
@@ -649,6 +755,19 @@ namespace YUCP.Importer.Editor.PackageManager
             return normalizedPath.Equals(MetadataAssetPath, StringComparison.OrdinalIgnoreCase) ||
                 (normalizedPath.StartsWith(InstalledPackagesRootAssetPath, StringComparison.OrdinalIgnoreCase) &&
                  normalizedPath.EndsWith("/" + MetadataFileName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        internal static bool IsProtectedPayloadAssetPath(string destinationPath)
+        {
+            if (string.IsNullOrEmpty(destinationPath))
+            {
+                return false;
+            }
+
+            string normalizedPath = destinationPath.Replace('\\', '/');
+            return normalizedPath.Equals("Assets/" + ProtectedPayloadFileName, StringComparison.OrdinalIgnoreCase) ||
+                (normalizedPath.StartsWith(InstalledPackagesRootAssetPath, StringComparison.OrdinalIgnoreCase) &&
+                 normalizedPath.EndsWith("/" + ProtectedPayloadFileName, StringComparison.OrdinalIgnoreCase));
         }
 
         private static bool IsPackageJsonAssetPath(string destinationPath)

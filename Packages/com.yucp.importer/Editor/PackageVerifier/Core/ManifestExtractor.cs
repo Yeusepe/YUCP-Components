@@ -194,7 +194,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                             try
                             {
                                 string manifestJson = File.ReadAllText(assetFile);
-                                manifest = JsonUtility.FromJson<PackageManifest>(manifestJson);
+                                manifest = PackageManifestJson.ParseManifest(manifestJson);
                                 if (manifest == null)
                                 {
                                     Debug.LogWarning("[ManifestExtractor] Manifest JSON deserialization returned null");
@@ -212,7 +212,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                             if (File.Exists(altPath))
                             {
                                 string manifestJson = File.ReadAllText(altPath);
-                                manifest = JsonUtility.FromJson<PackageManifest>(manifestJson);
+                                manifest = PackageManifestJson.ParseManifest(manifestJson);
                             }
                             else
                             {
@@ -240,7 +240,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                             try
                             {
                                 string signatureJson = File.ReadAllText(assetFile);
-                                signature = JsonUtility.FromJson<SignatureData>(signatureJson);
+                                signature = PackageManifestJson.ParseSignature(signatureJson);
                                 if (signature == null)
                                 {
                                     Debug.LogWarning("[ManifestExtractor] Signature JSON deserialization returned null");
@@ -258,7 +258,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                             if (File.Exists(altPath))
                             {
                                 string signatureJson = File.ReadAllText(altPath);
-                                signature = JsonUtility.FromJson<SignatureData>(signatureJson);
+                                signature = PackageManifestJson.ParseSignature(signatureJson);
                             }
                             else
                             {
@@ -355,12 +355,12 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                             if (pathname == ManifestPath)
                             {
                                 string manifestJson = File.ReadAllText(assetFile);
-                                manifest = JsonUtility.FromJson<PackageManifest>(manifestJson);
+                                manifest = PackageManifestJson.ParseManifest(manifestJson);
                             }
                             else if (pathname == SignaturePath)
                             {
                                 string signatureJson = File.ReadAllText(assetFile);
-                                signature = JsonUtility.FromJson<SignatureData>(signatureJson);
+                                signature = PackageManifestJson.ParseSignature(signatureJson);
                             }
                         }
                     }

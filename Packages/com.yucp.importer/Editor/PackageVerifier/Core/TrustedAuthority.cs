@@ -15,7 +15,14 @@ namespace YUCP.Importer.Editor.PackageVerifier
         public const string DisplayName = "YUCP Signing Authority";
         public const string ApiBaseUrl = "https://signing.yucp.club"; // configurable
 
-        private const string YUCP_ROOT_CA_PUBLIC_KEY_BASE64 = "u+sK1+JxPQdbB8SC8B8OkhyAmof9txJLX2dith0pIrg=";
+        private const string YUCP_ROOT_CA_PUBLIC_KEY_BASE64 = "y+8Zs9/mS1MFZFeF4CFjwqe0nsLW8lCcwmyvBx6H0Zo=";
+        private static readonly string[] BuiltInRootKeyIds =
+        {
+            "yucp-authority-2025",
+            "yucp-root-2025",
+            "yucp-root-ca",
+            "yucp-root",
+        };
 
         private static Dictionary<string, byte[]> _publicKeysByKeyId;
         private static bool _initialized = false;
@@ -38,10 +45,7 @@ namespace YUCP.Importer.Editor.PackageVerifier
             byte[] hardcodedRootKey = LoadHardcodedRootKey();
             if (hardcodedRootKey != null && hardcodedRootKey.Length == 32)
             {
-                // Support multiple key IDs that might reference the YUCP root
-                _publicKeysByKeyId["yucp-authority-2025"] = hardcodedRootKey;
-                _publicKeysByKeyId["yucp-root-2025"] = hardcodedRootKey;
-                _publicKeysByKeyId["yucp-root-ca"] = hardcodedRootKey;
+                RegisterBuiltInRootKeyAliases(hardcodedRootKey);
             }
             else
             {
@@ -51,8 +55,7 @@ namespace YUCP.Importer.Editor.PackageVerifier
             byte[] settingsRootKey = LoadRootPublicKeyFromSettings();
             if (settingsRootKey != null && settingsRootKey.Length == 32)
             {
-                _publicKeysByKeyId["yucp-authority-2025"] = settingsRootKey;
-                _publicKeysByKeyId["yucp-root-2025"] = settingsRootKey;
+                RegisterBuiltInRootKeyAliases(settingsRootKey);
             }
             
             // 3. Load keys from URL-fetched cache
@@ -243,8 +246,7 @@ namespace YUCP.Importer.Editor.PackageVerifier
             try
             {
                 byte[] key = Convert.FromBase64String(base64Key);
-                _publicKeysByKeyId["yucp-authority-2025"] = key;
-                _publicKeysByKeyId["yucp-root-2025"] = key;
+                RegisterBuiltInRootKeyAliases(key);
             }
             catch (Exception ex)
             {
@@ -260,6 +262,32 @@ namespace YUCP.Importer.Editor.PackageVerifier
         {
             _initialized = false;
             Initialize();
+        }
+
+        internal static bool IsBuiltInKeyId(string keyId)
+        {
+            if (string.IsNullOrEmpty(keyId))
+            {
+                return false;
+            }
+
+            foreach (string alias in BuiltInRootKeyIds)
+            {
+                if (string.Equals(alias, keyId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void RegisterBuiltInRootKeyAliases(byte[] key)
+        {
+            foreach (string alias in BuiltInRootKeyIds)
+            {
+                _publicKeysByKeyId[alias] = key;
+            }
         }
 
         /// <summary>

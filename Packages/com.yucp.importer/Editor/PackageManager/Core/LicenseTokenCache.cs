@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -29,6 +30,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         // SessionState keys follow the pattern used by YucpOAuthService
         private const string SessionKeyPrefix = "yucp.license.";
         private const int DiskCacheDays = 30;
+        private static readonly HashSet<string> KnownSessionKeys = new HashSet<string>(StringComparer.Ordinal);
 
         // ── Path helpers ─────────────────────────────────────────────────────
 
@@ -40,6 +42,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             // URL-encode the package ID to make it a safe filename
             string safe = packageId.Replace('/', '_').Replace('\\', '_').Replace(':', '_');
             return Path.Combine(CacheDir, $"{safe}.dat");
+        }
+
+        private static string GetSessionKey(string packageId)
+        {
+            return SessionKeyPrefix + packageId;
         }
 
         // ── Key derivation ───────────────────────────────────────────────────
@@ -133,10 +140,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         /// </summary>
         public static string GetValidToken(string packageId)
         {
+            if (!EditorMainThreadDispatcher.IsMainThread)
+                return EditorMainThreadDispatcher.Invoke(() => GetValidToken(packageId));
+
             // 1. Check in-session cache first
-            string sessionToken = SessionState.GetString(SessionKeyPrefix + packageId, null);
+            string sessionKey = GetSessionKey(packageId);
+            string sessionToken = SessionState.GetString(sessionKey, null);
             if (!string.IsNullOrEmpty(sessionToken) && IsTokenValid(sessionToken, packageId))
+            {
+                TrackSessionKey(sessionKey);
                 return sessionToken;
+            }
 
             // 2. Try disk cache
             string path = CacheFilePath(packageId);
@@ -158,7 +172,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 if (!IsTokenValid(cached.token, packageId)) return null;
 
                 // Promote to session cache
-                SessionState.SetString(SessionKeyPrefix + packageId, cached.token);
+                SessionState.SetString(sessionKey, cached.token);
+                TrackSessionKey(sessionKey);
                 return cached.token;
             }
             catch
@@ -172,10 +187,18 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         /// </summary>
         public static void StoreToken(string packageId, string jwt)
         {
+            if (!EditorMainThreadDispatcher.IsMainThread)
+            {
+                EditorMainThreadDispatcher.Invoke(() => StoreToken(packageId, jwt));
+                return;
+            }
+
             if (string.IsNullOrEmpty(jwt)) return;
 
             // Write to session state immediately
-            SessionState.SetString(SessionKeyPrefix + packageId, jwt);
+            string sessionKey = GetSessionKey(packageId);
+            SessionState.SetString(sessionKey, jwt);
+            TrackSessionKey(sessionKey);
 
             // Write to disk
             try
@@ -199,7 +222,18 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         /// <summary>Evicts the cached token for a package from both tiers.</summary>
         public static void Evict(string packageId)
         {
-            SessionState.EraseString(SessionKeyPrefix + packageId);
+            if (!EditorMainThreadDispatcher.IsMainThread)
+            {
+                EditorMainThreadDispatcher.Invoke(() => Evict(packageId));
+                return;
+            }
+
+            if (string.IsNullOrEmpty(packageId))
+                return;
+
+            string sessionKey = GetSessionKey(packageId);
+            SessionState.EraseString(sessionKey);
+            ForgetSessionKey(sessionKey);
             string path = CacheFilePath(packageId);
             if (File.Exists(path))
             {
@@ -207,52 +241,68 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        // ── Token claim validation (no signature verify — see design notes) ──
-
-        private static bool IsTokenValid(string jwt, string expectedPackageId)
+        internal static void ClearAll(IEnumerable<string> packageIds)
         {
+            if (!EditorMainThreadDispatcher.IsMainThread)
+            {
+                List<string> packageIdList = packageIds != null ? new List<string>(packageIds) : null;
+                EditorMainThreadDispatcher.Invoke(() => ClearAll(packageIdList));
+                return;
+            }
+
+            var sessionKeys = new HashSet<string>(KnownSessionKeys, StringComparer.Ordinal);
+            if (packageIds != null)
+            {
+                foreach (string packageId in packageIds)
+                {
+                    if (string.IsNullOrWhiteSpace(packageId))
+                        continue;
+
+                    sessionKeys.Add(GetSessionKey(packageId));
+                }
+            }
+
+            foreach (string sessionKey in sessionKeys)
+            {
+                SessionState.EraseString(sessionKey);
+            }
+
+            KnownSessionKeys.Clear();
+
             try
             {
-                // JWT is base64url(header).base64url(payload).base64url(sig)
-                string[] parts = jwt.Split('.');
-                if (parts.Length != 3) return false;
-
-                string payloadJson = Encoding.UTF8.GetString(Base64UrlDecode(parts[1]));
-                var claims = JsonUtility.FromJson<JwtPayload>(payloadJson);
-                if (claims == null) return false;
-
-                long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
-                // Expiry
-                if (claims.exp <= now) return false;
-
-                // Audience
-                if (claims.aud != "yucp-license-gate") return false;
-
-                // Package ID
-                if (claims.package_id != expectedPackageId) return false;
-
-                // Machine fingerprint
-                string fingerprint = MachineFingerprintService.GetFingerprint();
-                if (claims.machine_fingerprint != fingerprint) return false;
-
-                return true;
+                if (Directory.Exists(CacheDir))
+                {
+                    Directory.Delete(CacheDir, true);
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                return false;
+                Debug.LogWarning($"[YUCP License] Could not clear cached license directory: {ex.Message}");
             }
         }
 
-        private static byte[] Base64UrlDecode(string input)
+        // ── Token validation ──────────────────────────────────────────────────
+
+        private static bool IsTokenValid(string jwt, string expectedPackageId)
         {
-            string padded = input.Replace('-', '+').Replace('_', '/');
-            switch (padded.Length % 4)
+            return YucpJwtTokenUtility.TryValidateLicenseToken(jwt, expectedPackageId, out _);
+        }
+
+        private static void TrackSessionKey(string sessionKey)
+        {
+            if (!string.IsNullOrWhiteSpace(sessionKey))
             {
-                case 2: padded += "=="; break;
-                case 3: padded += "="; break;
+                KnownSessionKeys.Add(sessionKey);
             }
-            return Convert.FromBase64String(padded);
+        }
+
+        private static void ForgetSessionKey(string sessionKey)
+        {
+            if (!string.IsNullOrWhiteSpace(sessionKey))
+            {
+                KnownSessionKeys.Remove(sessionKey);
+            }
         }
 
         // ── Serialization helpers ────────────────────────────────────────────
@@ -265,18 +315,5 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public long cachedAt;
         }
 
-        [Serializable]
-        private class JwtPayload
-        {
-            public string iss;
-            public string aud;
-            public string sub;
-            public string jti;
-            public string package_id;
-            public string machine_fingerprint;
-            public string provider;
-            public long iat;
-            public long exp;
-        }
     }
 }

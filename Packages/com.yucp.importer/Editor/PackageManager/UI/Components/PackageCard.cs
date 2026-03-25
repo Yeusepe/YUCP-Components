@@ -64,11 +64,42 @@ namespace YUCP.Importer.Editor.PackageManager
                 content.Add(author);
             }
 
+            // Tagline (1 line, if available)
+            if (!string.IsNullOrEmpty(_packageInfo.tagline))
+            {
+                var tagline = new Label(_packageInfo.tagline);
+                tagline.AddToClassList("package-card-author");
+                tagline.style.fontSize = 10;
+                tagline.style.marginTop = 2;
+                tagline.style.opacity = 0.6f;
+                tagline.style.overflow = Overflow.Hidden;
+                tagline.style.textOverflow = TextOverflow.Ellipsis;
+                tagline.style.whiteSpace = WhiteSpace.NoWrap;
+                content.Add(tagline);
+            }
+
             // Version + update badge row
             var metaRow = new VisualElement();
             metaRow.style.flexDirection = FlexDirection.Row;
             metaRow.style.alignItems = Align.Center;
             metaRow.style.marginTop = 5;
+
+            // Category badge
+            if (!string.IsNullOrEmpty(_packageInfo.category) && _packageInfo.category != "None")
+            {
+                var catBadge = new VisualElement();
+                catBadge.AddToClassList("yucp-chip");
+                catBadge.AddToClassList("yucp-chip-category");
+                catBadge.style.paddingTop = 1;
+                catBadge.style.paddingBottom = 1;
+                catBadge.style.paddingLeft = 6;
+                catBadge.style.paddingRight = 6;
+                catBadge.style.marginRight = 6;
+                var catLabel = new Label(_packageInfo.category);
+                catLabel.style.fontSize = 9;
+                catBadge.Add(catLabel);
+                metaRow.Add(catBadge);
+            }
 
             if (!string.IsNullOrEmpty(_packageInfo.installedVersion))
             {
@@ -123,12 +154,43 @@ namespace YUCP.Importer.Editor.PackageManager
                 content.Add(author);
             }
 
-            // Right side: version + update badge
+            // Tagline (compact, for list view)
+            if (!string.IsNullOrEmpty(_packageInfo.tagline))
+            {
+                var tagline = new Label(_packageInfo.tagline);
+                tagline.AddToClassList("package-card-author");
+                tagline.style.fontSize = 10;
+                tagline.style.marginTop = 1;
+                tagline.style.opacity = 0.6f;
+                tagline.style.overflow = Overflow.Hidden;
+                tagline.style.textOverflow = TextOverflow.Ellipsis;
+                tagline.style.whiteSpace = WhiteSpace.NoWrap;
+                content.Add(tagline);
+            }
+
+            // Right side: category + version + update badge
             var rightSide = new VisualElement();
             rightSide.style.flexDirection = FlexDirection.Row;
             rightSide.style.alignItems = Align.Center;
             rightSide.style.flexShrink = 0;
             rightSide.style.marginLeft = 12;
+
+            // Category chip
+            if (!string.IsNullOrEmpty(_packageInfo.category) && _packageInfo.category != "None")
+            {
+                var catBadge = new VisualElement();
+                catBadge.AddToClassList("yucp-chip");
+                catBadge.AddToClassList("yucp-chip-category");
+                catBadge.style.paddingTop = 1;
+                catBadge.style.paddingBottom = 1;
+                catBadge.style.paddingLeft = 6;
+                catBadge.style.paddingRight = 6;
+                catBadge.style.marginRight = 8;
+                var catLabel = new Label(_packageInfo.category);
+                catLabel.style.fontSize = 9;
+                catBadge.Add(catLabel);
+                rightSide.Add(catBadge);
+            }
 
             if (!string.IsNullOrEmpty(_packageInfo.installedVersion))
             {
