@@ -1,0 +1,255 @@
+#if !YUCP_PACKAGE_MANAGER_DISABLED
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+using YUCP.Importer.Editor.PackageVerifier.Core;
+using YUCP.Importer.Editor.PackageVerifier.Data;
+
+namespace YUCP.Importer.Editor.PackageManager.Core
+{
+    [InitializeOnLoad]
+    internal static class ProtectedImportBootstrapCoordinator
+    {
+        private const string PendingProtectedImportStateKey = "YUCP.PendingProtectedImportBootstrap";
+        private static bool _scheduled;
+
+        [Serializable]
+        private sealed class PendingProtectedImportState
+        {
+            public string packageName;
+            public string shellRootAssetPath;
+            public string tempInstallAssetPath;
+            public string metadataAssetPath;
+            public string protectedPayloadAssetPath;
+            public string originalPackagePath;
+        }
+
+        static ProtectedImportBootstrapCoordinator()
+        {
+            ScheduleResume();
+        }
+
+        private static void ScheduleResume()
+        {
+            if (_scheduled)
+                return;
+
+            _scheduled = true;
+            EditorApplication.delayCall += TryResumePendingProtectedImport;
+        }
+
+        private static void TryResumePendingProtectedImport()
+        {
+            _scheduled = false;
+
+            if (!PackageManagerRuntimeSettings.IsEnabled())
+                return;
+
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            {
+                ScheduleResume();
+                return;
+            }
+
+            PendingProtectedImportState state = LoadState();
+            if (state == null)
+                return;
+
+            if (!string.IsNullOrWhiteSpace(state.originalPackagePath) && File.Exists(state.originalPackagePath))
+            {
+                string replayPath = state.originalPackagePath;
+                Debug.Log($"[YUCP ProtectedBootstrap] Reopening protected package in YUCP Importer: {replayPath}");
+                ClearState();
+                EditorApplication.delayCall += () => AssetDatabase.ImportPackage(replayPath, true);
+                return;
+            }
+
+            if (!TryResumeFromImportedShell(state, out string error))
+            {
+                Debug.LogError($"[YUCP ProtectedBootstrap] Failed to resume protected package setup: {error}");
+                EditorUtility.DisplayDialog(
+                    "Protected Package Setup Failed",
+                    $"The YUCP Importer was installed, but the protected package could not be resumed automatically.\n\n{error}",
+                    "OK");
+                ClearState();
+                return;
+            }
+
+            ClearState();
+        }
+
+        private static bool TryResumeFromImportedShell(PendingProtectedImportState state, out string error)
+        {
+            error = null;
+            if (state == null)
+            {
+                error = "Pending protected import state was missing.";
+                return false;
+            }
+
+            if (!TryReconstructInstalledPackageInfo(state, out InstalledPackageInfo packageInfo, out error))
+                return false;
+
+            if (!CouplingImportGuard.TryApplyCouplingOrRollback(packageInfo, out string couplingError))
+            {
+                error = $"Coupling could not be refreshed for '{packageInfo.packageId}': {couplingError}";
+                return false;
+            }
+
+            var registry = InstalledPackageRegistry.GetOrCreate();
+            registry.RegisterPackage(packageInfo);
+            PackageManagerWindow.ShowResumeProtectedPackage(packageInfo);
+            return true;
+        }
+
+        private static bool TryReconstructInstalledPackageInfo(
+            PendingProtectedImportState state,
+            out InstalledPackageInfo packageInfo,
+            out string error)
+        {
+            packageInfo = null;
+            error = null;
+
+            if (string.IsNullOrWhiteSpace(state.shellRootAssetPath))
+            {
+                error = "The imported protected package shell could not be located.";
+                return false;
+            }
+
+            var metadata = PackageMetadataExtractor.ExtractMetadataFromInstalledShell(
+                state.metadataAssetPath,
+                state.tempInstallAssetPath,
+                state.protectedPayloadAssetPath,
+                state.packageName);
+
+            if (!TryLoadManifest(state.shellRootAssetPath, out PackageManifest manifest, out error))
+                return false;
+
+            if (manifest == null || string.IsNullOrWhiteSpace(manifest.packageId))
+            {
+                error = "The imported protected package shell did not include a usable signed package manifest.";
+                return false;
+            }
+
+            List<string> installedFiles = CollectInstalledFiles(state.shellRootAssetPath);
+            packageInfo = InstalledPackageInfoFactory.Create(
+                metadata,
+                manifest.packageId,
+                manifest.archiveSha256,
+                manifest.publisherId,
+                isVerified: false,
+                installedFiles: installedFiles);
+
+            return true;
+        }
+
+        private static bool TryLoadManifest(string shellRootAssetPath, out PackageManifest manifest, out string error)
+        {
+            manifest = null;
+            error = null;
+
+            string shellRootDiskPath = AssetPathToDiskPath(shellRootAssetPath);
+            if (string.IsNullOrWhiteSpace(shellRootDiskPath) || !Directory.Exists(shellRootDiskPath))
+            {
+                error = $"Protected shell root '{shellRootAssetPath}' does not exist on disk.";
+                return false;
+            }
+
+            string manifestPath = Directory.GetFiles(shellRootDiskPath, "PackageManifest.json", SearchOption.AllDirectories)
+                .FirstOrDefault(path => path.Replace('\\', '/').EndsWith("/_Signing/PackageManifest.json", StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(manifestPath))
+            {
+                error = "Could not find _Signing/PackageManifest.json in the imported protected package shell.";
+                return false;
+            }
+
+            try
+            {
+                manifest = PackageManifestJson.ParseManifest(File.ReadAllText(manifestPath));
+                if (manifest == null)
+                {
+                    error = $"Manifest '{manifestPath}' could not be parsed.";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = $"Failed to read manifest '{manifestPath}': {ex.Message}";
+                return false;
+            }
+        }
+
+        private static List<string> CollectInstalledFiles(string shellRootAssetPath)
+        {
+            var result = new List<string>();
+            string shellRootDiskPath = AssetPathToDiskPath(shellRootAssetPath);
+            if (string.IsNullOrWhiteSpace(shellRootDiskPath) || !Directory.Exists(shellRootDiskPath))
+                return result;
+
+            foreach (string diskPath in Directory.GetFiles(shellRootDiskPath, "*", SearchOption.AllDirectories))
+            {
+                if (diskPath.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string assetPath = DiskPathToAssetPath(diskPath);
+                if (!string.IsNullOrWhiteSpace(assetPath))
+                    result.Add(assetPath);
+            }
+
+            return result;
+        }
+
+        private static string AssetPathToDiskPath(string assetPath)
+        {
+            if (string.IsNullOrWhiteSpace(assetPath))
+                return null;
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            return Path.Combine(projectRoot, assetPath.Replace('/', Path.DirectorySeparatorChar));
+        }
+
+        private static string DiskPathToAssetPath(string diskPath)
+        {
+            if (string.IsNullOrWhiteSpace(diskPath))
+                return null;
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."))
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string fullPath = Path.GetFullPath(diskPath);
+            if (!fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            return fullPath.Substring(projectRoot.Length).Replace('\\', '/');
+        }
+
+        private static PendingProtectedImportState LoadState()
+        {
+            string json = EditorPrefs.GetString(PendingProtectedImportStateKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+
+            try
+            {
+                return JsonUtility.FromJson<PendingProtectedImportState>(json);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP ProtectedBootstrap] Ignoring invalid pending bootstrap state: {ex.Message}");
+                ClearState();
+                return null;
+            }
+        }
+
+        private static void ClearState()
+        {
+            EditorPrefs.DeleteKey(PendingProtectedImportStateKey);
+        }
+    }
+}
+#endif

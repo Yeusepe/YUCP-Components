@@ -65,6 +65,32 @@ namespace YUCP.Importer.Editor.PackageManager
             };
         }
 
+        public static void ShowResumeProtectedPackage(InstalledPackageInfo packageInfo)
+        {
+            if (packageInfo == null)
+                return;
+
+            if (!PackageManagerRuntimeSettings.IsEnabled())
+            {
+                Debug.LogWarning("[YUCP PackageManager] Package Manager is disabled; cannot resume protected package setup.");
+                return;
+            }
+
+            var window = GetWindow<PackageManagerWindow>(true, "Unlock Protected Package");
+            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.importer/Resources/Icons/YUCPIcon.png");
+            window.titleContent = icon == null
+                ? new GUIContent("Unlock Protected Package")
+                : new GUIContent("Unlock Protected Package", icon);
+            window.minSize = new Vector2(500, 600);
+            window.Show();
+
+            EditorApplication.delayCall += () =>
+            {
+                if (window != null)
+                    window.InitializeForProtectedResume(packageInfo);
+            };
+        }
+
         // UI Elements
         private VisualElement _bannerContainer;
         private VisualElement _bannerImageContainer;
@@ -166,6 +192,8 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool _waitingForImportCompletion = false;
         private string _pendingPackageName;
         private bool _pendingImportAfterVerification = false;
+        private bool _isResumeVerificationMode = false;
+        private InstalledPackageInfo _resumeProtectedPackageInfo;
 
         // Gallery carousel state
         private int _selectedGalleryIndex = -1;
@@ -862,6 +890,11 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private string GetPrimaryImportButtonText()
         {
+            if (_isResumeVerificationMode)
+            {
+                return RequiresVerificationBeforeImport() ? "Verify and Unlock" : "Unlock protected content";
+            }
+
             bool isMultiStep = _packageImportWizardInstance != null &&
                 PackageUtilityReflection.IsMultiStepWizard(_packageImportWizardInstance);
             bool isProjectStep = _packageImportWizardInstance != null &&
@@ -883,7 +916,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             string btnText = GetPrimaryImportButtonText();
-            bool showBagIcon = btnText == "Verify and Import";
+            bool showBagIcon = btnText == "Verify and Import" || btnText == "Verify and Unlock";
 
             // Clear any previous content
             _importButton.text = string.Empty;
@@ -3007,7 +3040,9 @@ namespace YUCP.Importer.Editor.PackageManager
             if (_pendingImportAfterVerification)
             {
                 _importButton.SetEnabled(false);
-                _importButton.tooltip = "Complete purchase verification in your browser to continue importing.";
+                _importButton.tooltip = _isResumeVerificationMode
+                    ? "Complete purchase verification in your browser to continue unlocking the protected content."
+                    : "Complete purchase verification in your browser to continue importing.";
                 string statusText = _isCreatorIdentitySigningIn
                     ? "Signing in..."
                     : "Waiting for browser verification...";
@@ -3020,9 +3055,18 @@ namespace YUCP.Importer.Editor.PackageManager
 
             SetVerifyStatusLabel(null);
             _importButton.SetEnabled(true);
-            _importButton.tooltip = hasUnverifiedLicense
-                ? "Verify your purchase and then import the package in one step."
-                : string.Empty;
+            if (_isResumeVerificationMode)
+            {
+                _importButton.tooltip = hasUnverifiedLicense
+                    ? "Verify your purchase and then unlock the protected content in one step."
+                    : "Unlock the protected content for this package on this machine.";
+            }
+            else
+            {
+                _importButton.tooltip = hasUnverifiedLicense
+                    ? "Verify your purchase and then import the package in one step."
+                    : string.Empty;
+            }
             RefreshPrimaryImportButton();
         }
 
@@ -3653,6 +3697,30 @@ namespace YUCP.Importer.Editor.PackageManager
             Focus();
         }
 
+        private void InitializeForProtectedResume(InstalledPackageInfo packageInfo)
+        {
+            _isResumeVerificationMode = true;
+            _resumeProtectedPackageInfo = packageInfo;
+            _isImportMode = false;
+            _currentPackagePath = string.Empty;
+            _currentPackageIconPath = string.Empty;
+            _currentImportItems = null;
+            _allImportItems = null;
+            _packageImportWizardInstance = null;
+            _isProjectSettingsStep = false;
+            _pendingImportAfterVerification = false;
+            _pendingPackageName = null;
+            _waitingForImportCompletion = false;
+            _detailsExpanded = false;
+            _preferOverwriteExisting = true;
+
+            ShowInstallerView();
+            SetMetadata(packageInfo);
+            UpdateButtonStates();
+            UpdateImportButtonEnabled();
+            Focus();
+        }
+
         /// <summary>
         /// Fixed version of ShowModalUtility that preserves tooltip and cursor behavior.
         /// Based on Unity's implementation but skips the problematic EventDispatcher context push
@@ -3981,6 +4049,13 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             if (_importButton == null || _backButton == null) return;
 
+            if (_isResumeVerificationMode)
+            {
+                _backButton.style.display = DisplayStyle.None;
+                RefreshPrimaryImportButton();
+                return;
+            }
+
             bool isMultiStep = _packageImportWizardInstance != null && 
                 PackageUtilityReflection.IsMultiStepWizard(_packageImportWizardInstance);
             bool isProjectStep = _packageImportWizardInstance != null && 
@@ -4276,6 +4351,12 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             try
             {
+                if (_isResumeVerificationMode)
+                {
+                    HandleResumeProtectedImportClick();
+                    return;
+                }
+
                 if (_currentImportItems == null || _currentImportItems.Length == 0)
                 {
                     Debug.LogWarning("[YUCP PackageManager] No import items, closing window");
@@ -4388,6 +4469,63 @@ namespace YUCP.Importer.Editor.PackageManager
                 Debug.LogError($"[YUCP PackageManager] Failed to import package: {ex.Message}\n{ex.StackTrace}");
                 EditorUtility.DisplayDialog("Import Failed", $"Failed to import package: {ex.Message}", "OK");
             }
+        }
+
+        private void HandleResumeProtectedImportClick()
+        {
+            if (_resumeProtectedPackageInfo == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "Protected Package Unavailable",
+                    "The protected package could not be resumed because its installer metadata is missing.",
+                    "OK");
+                return;
+            }
+
+            bool requiresVerification = RequiresVerificationBeforeImport();
+            Debug.Log($"[YUCP PackageManager] ResumeProtectedImport requiresVerification={requiresVerification}, isSignedIn={CreatorIdentityOAuthService.IsSignedIn()}, pendingAfterVerification={_pendingImportAfterVerification}, signingIn={_isCreatorIdentitySigningIn}");
+            if (requiresVerification)
+            {
+                var req = GetNextUnverifiedLicenseRequirement();
+                if (req == null)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Verification Unavailable",
+                        "This package requires verification before unlocking, but no hosted verification method is available.",
+                        "OK");
+                    return;
+                }
+
+                var verificationRequirements = BuildVerificationRequirements(req);
+                if (verificationRequirements.Length == 0)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Verification Unavailable",
+                        "This package requires verification before unlocking, but it does not currently expose any hosted verification methods.",
+                        "OK");
+                    return;
+                }
+
+                if (_isCreatorIdentitySigningIn)
+                {
+                    Debug.Log("[YUCP PackageManager] Resetting stale _isCreatorIdentitySigningIn flag before retry");
+                    _isCreatorIdentitySigningIn = false;
+                }
+
+                _pendingImportAfterVerification = true;
+                if (!_licenseStates.TryGetValue(req.packageId, out var state) || state == null)
+                {
+                    state = new LicenseVerificationState();
+                    _licenseStates[req.packageId] = state;
+                }
+
+                OnVerifyInBrowserClicked(req, state, _importButton, verificationRequirements);
+                return;
+            }
+
+            _pendingImportAfterVerification = false;
+            ProtectedPayloadInstallService.QueuePendingApply(_resumeProtectedPackageInfo);
+            Close();
         }
 
         private void OnCancelClicked()
@@ -4770,25 +4908,13 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                 }
 
-                // Create InstalledPackageInfo
-                var installedInfo = new InstalledPackageInfo
-                {
-                    packageName = metadata.packageName,
-                    version = metadata.version,
-                    author = metadata.author,
-                    description = metadata.description,
-                    icon = metadata.icon,
-                    banner = metadata.banner,
-                    productLinks = metadata.productLinks,
-                    dependencies = metadata.dependencies,
-                    packageId = packageId ?? "",
-                    archiveSha256 = archiveSha256 ?? "",
-                    installedVersion = metadata.version,
-                    isVerified = isVerified,
-                    publisherId = publisherId ?? "",
-                    installedFiles = installedFiles,
-                    protectedPayload = metadata.protectedPayload?.Clone()
-                };
+                var installedInfo = InstalledPackageInfoFactory.Create(
+                    metadata,
+                    packageId ?? string.Empty,
+                    archiveSha256 ?? string.Empty,
+                    publisherId ?? string.Empty,
+                    isVerified,
+                    installedFiles);
                 installedInfo.SetInstalledDateTime(DateTime.Now);
 
                 if (string.IsNullOrEmpty(installedInfo.packageId))
@@ -4797,13 +4923,14 @@ namespace YUCP.Importer.Editor.PackageManager
                     return;
                 }
 
-                if (!CouplingRuntimeService.TryApplyCoupling(installedInfo.packageId, installedInfo.installedFiles, out string couplingError))
+                if (!CouplingImportGuard.TryApplyCouplingOrRollback(installedInfo, out string couplingError))
                 {
                     Debug.LogError($"[YUCP PackageManager] Coupling failed for PackageID '{installedInfo.packageId}': {couplingError}");
                     EditorUtility.DisplayDialog(
                         "Coupling Failed",
-                        $"The package imported, but the local coupling pass failed.\n\n{couplingError}",
+                        $"The package import was rolled back because the local coupling pass failed.\n\n{couplingError}",
                         "OK");
+                    return;
                 }
 
                 // Register in registry

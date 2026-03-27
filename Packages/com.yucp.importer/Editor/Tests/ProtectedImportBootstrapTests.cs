@@ -1,0 +1,335 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using NUnit.Framework;
+using UnityEditor;
+using UnityEngine;
+using YUCP.Importer.Editor.PackageManager;
+
+namespace YUCP.Importer.Editor.Tests
+{
+    public class ProtectedImportBootstrapTests
+    {
+        private string _testAssetRoot;
+        private string _tempPackagePath;
+        private object _packageImportWizardInstance;
+        private FieldInfo _packageImportWizardPathField;
+        private string _previousPackageImportWizardPath;
+
+        [TearDown]
+        public void TearDown()
+        {
+            RestorePackageImportWizardPath();
+            DeleteTestAssets();
+            TryDeleteFile(_tempPackagePath);
+            EditorPrefs.DeleteKey("YUCP.PendingProtectedImportBootstrap");
+        }
+
+        [Test]
+        public void DirectVpmInstaller_TryGetCurrentImportPackagePath_ReadsUnityImportWizardState()
+        {
+            _tempPackagePath = Path.Combine(Path.GetTempPath(), $"yucp-bootstrap-{Guid.NewGuid():N}.unitypackage");
+            File.WriteAllBytes(_tempPackagePath, new byte[] { 1, 2, 3, 4 });
+
+            CapturePackageImportWizardState();
+            Assert.That(_packageImportWizardInstance, Is.Not.Null);
+            Assert.That(_packageImportWizardPathField, Is.Not.Null);
+
+            _packageImportWizardPathField.SetValue(_packageImportWizardInstance, _tempPackagePath);
+
+            string observedPath = InvokeDirectInstallerTryGetCurrentImportPackagePath();
+            Assert.That(observedPath, Is.EqualTo(_tempPackagePath));
+        }
+
+        [Test]
+        public void ProtectedImportBootstrapCoordinator_ReconstructsInstalledPackageInfo_FromImportedShell()
+        {
+            string rootAssetPath = CreateImportedShell();
+            string metadataAssetPath = $"{rootAssetPath}/YUCP_PackageInfo.json";
+            string tempInstallAssetPath = $"{rootAssetPath}/_temp/YUCP_TempInstall_Test.json";
+            string protectedPayloadAssetPath = $"{rootAssetPath}/YUCP_ProtectedPayload.json";
+
+            object state = CreatePendingProtectedImportState(
+                packageName: "Protected Shell",
+                shellRootAssetPath: rootAssetPath,
+                tempInstallAssetPath: tempInstallAssetPath,
+                metadataAssetPath: metadataAssetPath,
+                protectedPayloadAssetPath: protectedPayloadAssetPath,
+                originalPackagePath: string.Empty);
+
+            MethodInfo reconstructMethod = GetEditorType("YUCP.Importer.Editor.PackageManager.Core.ProtectedImportBootstrapCoordinator")
+                .GetMethod(
+                    "TryReconstructInstalledPackageInfo",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(reconstructMethod, Is.Not.Null);
+
+            object[] args = { state, null, null };
+            bool success = (bool)reconstructMethod.Invoke(null, args);
+            string error = args[2] as string;
+
+            Assert.That(success, Is.True, error ?? "Expected shell reconstruction to succeed.");
+
+            var packageInfo = args[1] as InstalledPackageInfo;
+            Assert.That(packageInfo, Is.Not.Null);
+            Assert.That(packageInfo.packageId, Is.EqualTo("pkg-test-123"));
+            Assert.That(packageInfo.archiveSha256, Is.EqualTo("archive-sha-123"));
+            Assert.That(packageInfo.publisherId, Is.EqualTo("publisher-123"));
+            Assert.That(packageInfo.isVerified, Is.False);
+            Assert.That(packageInfo.packageName, Is.EqualTo("Protected Shell"));
+            Assert.That(packageInfo.version, Is.EqualTo("1.2.3"));
+            Assert.That(packageInfo.author, Is.EqualTo("YUCP"));
+            Assert.That(packageInfo.description, Is.EqualTo("Protected shell metadata."));
+            Assert.That(packageInfo.tagline, Is.EqualTo("Importer bootstrap test"));
+            Assert.That(packageInfo.category, Is.EqualTo("Avatar"));
+            Assert.That(packageInfo.minimumUnityVersion, Is.EqualTo("2022.3"));
+            Assert.That(packageInfo.creatorNote, Is.EqualTo("Creator note"));
+            Assert.That(packageInfo.releaseNotes, Is.EqualTo("Release notes"));
+            Assert.That(packageInfo.exportDate, Is.EqualTo("2026-03-25T00:00:00Z"));
+            Assert.That(packageInfo.icon, Is.Not.Null);
+            Assert.That(packageInfo.banner, Is.Not.Null);
+            Assert.That(packageInfo.galleryImages, Has.Count.EqualTo(1));
+            Assert.That(packageInfo.galleryImages[0], Is.Not.Null);
+            Assert.That(packageInfo.productLinks, Has.Count.EqualTo(1));
+            Assert.That(packageInfo.productLinks[0].label, Is.EqualTo("Store"));
+            Assert.That(packageInfo.productLinks[0].url, Is.EqualTo("https://example.invalid/product"));
+            Assert.That(packageInfo.productLinks[0].customIcon, Is.Not.Null);
+            Assert.That(packageInfo.licensePackages, Has.Count.EqualTo(1));
+            Assert.That(packageInfo.licensePackages[0].packageId, Is.EqualTo("license-package"));
+            Assert.That(packageInfo.licensePackages[0].productId, Is.EqualTo("gumroad-product"));
+            Assert.That(packageInfo.licensePackages[0].creatorAuthUserId, Is.EqualTo("creator-auth-user"));
+            Assert.That(packageInfo.dependencies["com.yucp.importer"], Is.EqualTo("1.0.0"));
+            Assert.That(packageInfo.dependencies["com.example.extra"], Is.EqualTo("2.0.0"));
+            Assert.That(packageInfo.protectedPayload, Is.Not.Null);
+            Assert.That(packageInfo.protectedPayload.protectedAssetId, Is.EqualTo("protected-asset-123"));
+            Assert.That(packageInfo.protectedPayload.blobAssetPath, Is.EqualTo($"{rootAssetPath}/Protected/payload.blob"));
+            Assert.That(packageInfo.installedFiles, Has.Some.EqualTo($"{rootAssetPath}/_Signing/PackageManifest.json"));
+            Assert.That(packageInfo.installedFiles, Has.Some.EqualTo($"{rootAssetPath}/Protected/payload.blob"));
+            Assert.That(packageInfo.installedFiles.Any(path => path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)), Is.False);
+        }
+
+        private void CapturePackageImportWizardState()
+        {
+            var unityEditorAssembly = typeof(UnityEditor.Editor).Assembly;
+            Type wizardType = unityEditorAssembly.GetType("UnityEditor.PackageImportWizard", false);
+            Assert.That(wizardType, Is.Not.Null);
+
+            Type singletonType = unityEditorAssembly.GetType("UnityEditor.ScriptableSingleton`1", false);
+            Assert.That(singletonType, Is.Not.Null);
+
+            Type genericSingletonType = singletonType.MakeGenericType(wizardType);
+            PropertyInfo instanceProperty = genericSingletonType.GetProperty("instance", BindingFlags.Public | BindingFlags.Static);
+            Assert.That(instanceProperty, Is.Not.Null);
+
+            _packageImportWizardInstance = instanceProperty.GetValue(null);
+            _packageImportWizardPathField = wizardType.GetField("m_PackagePath", BindingFlags.NonPublic | BindingFlags.Instance);
+            _previousPackageImportWizardPath = _packageImportWizardPathField?.GetValue(_packageImportWizardInstance) as string;
+        }
+
+        private void RestorePackageImportWizardPath()
+        {
+            if (_packageImportWizardInstance == null || _packageImportWizardPathField == null)
+                return;
+
+            _packageImportWizardPathField.SetValue(_packageImportWizardInstance, _previousPackageImportWizardPath);
+        }
+
+        private string InvokeDirectInstallerTryGetCurrentImportPackagePath()
+        {
+            MethodInfo method = GetLoadedType("YUCP.DirectVpmInstaller.DirectVpmInstaller")
+                .GetMethod("TryGetCurrentImportPackagePath", BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(method, Is.Not.Null);
+            return method.Invoke(null, null) as string;
+        }
+
+        private object CreatePendingProtectedImportState(
+            string packageName,
+            string shellRootAssetPath,
+            string tempInstallAssetPath,
+            string metadataAssetPath,
+            string protectedPayloadAssetPath,
+            string originalPackagePath)
+        {
+            Type coordinatorType = GetEditorType("YUCP.Importer.Editor.PackageManager.Core.ProtectedImportBootstrapCoordinator");
+            Type stateType = coordinatorType.GetNestedType("PendingProtectedImportState", BindingFlags.NonPublic);
+            Assert.That(stateType, Is.Not.Null);
+
+            object state = Activator.CreateInstance(stateType, true);
+            SetField(stateType, state, "packageName", packageName);
+            SetField(stateType, state, "shellRootAssetPath", shellRootAssetPath);
+            SetField(stateType, state, "tempInstallAssetPath", tempInstallAssetPath);
+            SetField(stateType, state, "metadataAssetPath", metadataAssetPath);
+            SetField(stateType, state, "protectedPayloadAssetPath", protectedPayloadAssetPath);
+            SetField(stateType, state, "originalPackagePath", originalPackagePath);
+            return state;
+        }
+
+        private static void SetField(Type type, object instance, string fieldName, object value)
+        {
+            FieldInfo field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.That(field, Is.Not.Null, $"Expected field '{fieldName}' on '{type.FullName}'.");
+            field.SetValue(instance, value);
+        }
+
+        private string CreateImportedShell()
+        {
+            _testAssetRoot = $"Assets/YUCP_TempTests/ProtectedBootstrap_{Guid.NewGuid():N}";
+            string rootDiskPath = GetAssetDiskPath(_testAssetRoot);
+
+            Directory.CreateDirectory(rootDiskPath);
+            Directory.CreateDirectory(Path.Combine(rootDiskPath, "_Signing"));
+            Directory.CreateDirectory(Path.Combine(rootDiskPath, "_temp"));
+            Directory.CreateDirectory(Path.Combine(rootDiskPath, "Protected"));
+
+            WritePng(Path.Combine(rootDiskPath, "icon.png"), Color.cyan);
+            WritePng(Path.Combine(rootDiskPath, "banner.png"), Color.magenta);
+            WritePng(Path.Combine(rootDiskPath, "gallery.png"), Color.yellow);
+            WritePng(Path.Combine(rootDiskPath, "link.png"), Color.green);
+            File.WriteAllBytes(Path.Combine(rootDiskPath, "Protected", "payload.blob"), new byte[] { 9, 8, 7, 6 });
+
+            File.WriteAllText(
+                Path.Combine(rootDiskPath, "YUCP_PackageInfo.json"),
+                "{"
+                + "\"packageName\":\"Protected Shell\","
+                + "\"version\":\"1.2.3\","
+                + "\"author\":\"YUCP\","
+                + "\"description\":\"Protected shell metadata.\","
+                + "\"icon\":\"icon.png\","
+                + "\"banner\":\"banner.png\","
+                + "\"productLinks\":[{\"label\":\"Store\",\"url\":\"https://example.invalid/product\",\"icon\":\"link.png\"}],"
+                + "\"versionRule\":\"semver\","
+                + "\"versionRuleName\":\"Semantic Versioning\","
+                + "\"licensePackages\":[{\"packageId\":\"license-package\",\"packageName\":\"License Package\",\"productId\":\"gumroad-product\",\"creatorAuthUserId\":\"creator-auth-user\"}],"
+                + "\"tagline\":\"Importer bootstrap test\","
+                + "\"category\":\"Avatar\","
+                + "\"supportedPlatforms\":[\"Standalone\"],"
+                + "\"minimumUnityVersion\":\"2022.3\","
+                + "\"creatorNote\":\"Creator note\","
+                + "\"releaseNotes\":\"Release notes\","
+                + "\"galleryImages\":[\"gallery.png\"],"
+                + "\"tags\":[\"one\",\"two\"],"
+                + "\"totalFileCount\":4,"
+                + "\"totalFileSize\":1234,"
+                + "\"assetBreakdown\":[{\"type\":\"Prefab\",\"count\":2}],"
+                + "\"exportDate\":\"2026-03-25T00:00:00Z\""
+                + "}");
+
+            File.WriteAllText(
+                Path.Combine(rootDiskPath, "_temp", "YUCP_TempInstall_Test.json"),
+                "{"
+                + "\"name\":\"com.example.protected-shell\","
+                + "\"vpmDependencies\":{"
+                + "\"com.yucp.importer\":\"1.0.0\","
+                + "\"com.example.extra\":\"2.0.0\""
+                + "}"
+                + "}");
+
+            File.WriteAllText(
+                Path.Combine(rootDiskPath, "YUCP_ProtectedPayload.json"),
+                "{"
+                + "\"formatVersion\":\"1\","
+                + "\"protectedAssetId\":\"protected-asset-123\","
+                + "\"blobAssetPath\":\"Protected/payload.blob\","
+                + "\"cipher\":\"aes-256-cbc+hmac-sha256\","
+                + "\"archiveFormat\":\"zip\","
+                + "\"ciphertextSha256\":\"ciphertext-sha\","
+                + "\"plaintextSha256\":\"plaintext-sha\""
+                + "}");
+
+            File.WriteAllText(
+                Path.Combine(rootDiskPath, "_Signing", "PackageManifest.json"),
+                "{"
+                + "\"publisherId\":\"publisher-123\","
+                + "\"packageId\":\"pkg-test-123\","
+                + "\"version\":\"1.2.3\","
+                + "\"archiveSha256\":\"archive-sha-123\","
+                + "\"fileHashes\":{}"
+                + "}");
+
+            AssetDatabase.Refresh();
+            return _testAssetRoot.Replace('\\', '/');
+        }
+
+        private void DeleteTestAssets()
+        {
+            if (string.IsNullOrWhiteSpace(_testAssetRoot))
+                return;
+
+            FileUtil.DeleteFileOrDirectory(_testAssetRoot);
+            FileUtil.DeleteFileOrDirectory(_testAssetRoot + ".meta");
+
+            string parent = Path.GetDirectoryName(_testAssetRoot)?.Replace('\\', '/');
+            if (!string.IsNullOrWhiteSpace(parent) && AssetDatabase.IsValidFolder(parent))
+            {
+                string parentDiskPath = GetAssetDiskPath(parent);
+                if (Directory.Exists(parentDiskPath) && !Directory.EnumerateFileSystemEntries(parentDiskPath).Any())
+                {
+                    FileUtil.DeleteFileOrDirectory(parent);
+                    FileUtil.DeleteFileOrDirectory(parent + ".meta");
+
+                    string grandParent = Path.GetDirectoryName(parent)?.Replace('\\', '/');
+                    if (!string.IsNullOrWhiteSpace(grandParent) && AssetDatabase.IsValidFolder(grandParent))
+                    {
+                        string grandParentDiskPath = GetAssetDiskPath(grandParent);
+                        if (Directory.Exists(grandParentDiskPath) && !Directory.EnumerateFileSystemEntries(grandParentDiskPath).Any())
+                        {
+                            FileUtil.DeleteFileOrDirectory(grandParent);
+                            FileUtil.DeleteFileOrDirectory(grandParent + ".meta");
+                        }
+                    }
+                }
+            }
+
+            AssetDatabase.Refresh();
+            _testAssetRoot = null;
+        }
+
+        private static string GetAssetDiskPath(string assetPath)
+        {
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            return Path.Combine(projectRoot, assetPath.Replace('/', Path.DirectorySeparatorChar));
+        }
+
+        private static void WritePng(string path, Color color)
+        {
+            var texture = new Texture2D(2, 2);
+            texture.SetPixels(new[] { color, color, color, color });
+            texture.Apply();
+            try
+            {
+                File.WriteAllBytes(path, texture.EncodeToPNG());
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(texture);
+            }
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return;
+
+            File.Delete(path);
+        }
+
+        private static Type GetEditorType(string fullName)
+        {
+            Type editorType = typeof(InstalledPackageInfo).Assembly.GetType(fullName, false);
+            Assert.That(editorType, Is.Not.Null, $"Expected to load type '{fullName}'.");
+            return editorType;
+        }
+
+        private static Type GetLoadedType(string fullName)
+        {
+            Type loadedType = AppDomain.CurrentDomain.GetAssemblies()
+                .Select(assembly => assembly.GetType(fullName, false))
+                .FirstOrDefault(type => type != null);
+
+            Assert.That(loadedType, Is.Not.Null, $"Expected to load type '{fullName}' from the current AppDomain.");
+            return loadedType;
+        }
+    }
+}

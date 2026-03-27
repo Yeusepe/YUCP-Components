@@ -629,6 +629,224 @@ namespace YUCP.Importer.Editor.PackageManager
             return metadata;
         }
 
+        internal static PackageMetadata ExtractMetadataFromInstalledShell(
+            string metadataAssetPath,
+            string tempInstallAssetPath = null,
+            string protectedPayloadAssetPath = null,
+            string fallbackPackageName = null)
+        {
+            if (string.IsNullOrWhiteSpace(metadataAssetPath))
+                return CreateInstalledShellFallbackMetadata(fallbackPackageName ?? "Protected Package", fallbackPackageName, tempInstallAssetPath, protectedPayloadAssetPath);
+
+            string metadataJsonText = LoadTextAssetContents(metadataAssetPath);
+            if (string.IsNullOrWhiteSpace(metadataJsonText))
+                return CreateInstalledShellFallbackMetadata(metadataAssetPath, fallbackPackageName, tempInstallAssetPath, protectedPayloadAssetPath);
+
+            string shellRootAssetPath = Path.GetDirectoryName(metadataAssetPath)?.Replace('\\', '/') ?? string.Empty;
+
+            try
+            {
+                var metadataJson = JsonUtility.FromJson<PackageMetadataJson>(metadataJsonText);
+                if (metadataJson == null)
+                    return CreateInstalledShellFallbackMetadata(metadataAssetPath, fallbackPackageName, tempInstallAssetPath, protectedPayloadAssetPath);
+
+                var metadata = new PackageMetadata
+                {
+                    packageName = metadataJson.packageName ?? fallbackPackageName ?? string.Empty,
+                    version = metadataJson.version ?? string.Empty,
+                    author = metadataJson.author ?? string.Empty,
+                    description = metadataJson.description ?? string.Empty,
+                    versionRule = metadataJson.versionRule ?? "semver",
+                    versionRuleName = metadataJson.versionRuleName ?? metadataJson.versionRule ?? "semver",
+                    tagline = metadataJson.tagline ?? string.Empty,
+                    category = metadataJson.category ?? string.Empty,
+                    minimumUnityVersion = metadataJson.minimumUnityVersion ?? string.Empty,
+                    creatorNote = metadataJson.creatorNote ?? string.Empty,
+                    releaseNotes = metadataJson.releaseNotes ?? string.Empty,
+                    exportDate = metadataJson.exportDate ?? string.Empty,
+                    totalFileCount = metadataJson.totalFileCount,
+                    totalFileSize = metadataJson.totalFileSize,
+                };
+
+                if (!string.IsNullOrEmpty(metadataJson.icon))
+                    metadata.icon = LoadInstalledTexture(metadataJson.icon, shellRootAssetPath);
+
+                if (!string.IsNullOrEmpty(metadataJson.banner))
+                    metadata.banner = LoadInstalledTexture(metadataJson.banner, shellRootAssetPath);
+
+                if (metadataJson.productLinks != null)
+                {
+                    foreach (var link in metadataJson.productLinks)
+                    {
+                        var productLink = new ProductLink(link?.url ?? string.Empty, link?.label ?? string.Empty);
+                        if (!string.IsNullOrEmpty(link?.icon))
+                            productLink.customIcon = LoadInstalledTexture(link.icon, shellRootAssetPath);
+                        metadata.productLinks.Add(productLink);
+                    }
+                }
+
+                if (metadataJson.licensePackages != null)
+                {
+                    foreach (var lp in metadataJson.licensePackages)
+                    {
+                        if (lp == null || string.IsNullOrEmpty(lp.packageId)) continue;
+                        metadata.licensePackages.Add(new LicensePackageRequirement
+                        {
+                            packageId = lp.packageId,
+                            packageName = lp.packageName ?? lp.packageId,
+                            productId = lp.productId ?? string.Empty,
+                            gumroadPermalink = lp.gumroadPermalink ?? string.Empty,
+                            jinxxyProductId = lp.jinxxyProductId ?? string.Empty,
+                            discordGuildId = lp.discordGuildId ?? string.Empty,
+                            discordRoleId = lp.discordRoleId ?? string.Empty,
+                            creatorAuthUserId = lp.creatorAuthUserId ?? string.Empty,
+                        });
+                    }
+                }
+
+                if (metadataJson.supportedPlatforms != null)
+                    metadata.supportedPlatforms = new List<string>(metadataJson.supportedPlatforms);
+                if (metadataJson.tags != null)
+                    metadata.tags = new List<string>(metadataJson.tags);
+
+                if (metadataJson.assetBreakdown != null)
+                {
+                    foreach (var ab in metadataJson.assetBreakdown)
+                    {
+                        if (ab != null && !string.IsNullOrEmpty(ab.type))
+                            metadata.assetBreakdown.Add(new AssetBreakdownEntry(ab.type, ab.count));
+                    }
+                }
+
+                if (metadataJson.galleryImages != null)
+                {
+                    foreach (var galleryPath in metadataJson.galleryImages)
+                    {
+                        if (string.IsNullOrEmpty(galleryPath)) continue;
+                        var tex = LoadInstalledTexture(galleryPath, shellRootAssetPath);
+                        if (tex != null)
+                            metadata.galleryImages.Add(tex);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(tempInstallAssetPath))
+                {
+                    string packageJsonText = LoadTextAssetContents(tempInstallAssetPath);
+                    if (!string.IsNullOrWhiteSpace(packageJsonText))
+                        ParsePackageJsonDependencies(metadata, packageJsonText);
+                }
+
+                metadata.protectedPayload = ExtractProtectedPayloadDescriptorFromAssetPath(protectedPayloadAssetPath);
+                return metadata;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse installed-shell metadata '{metadataAssetPath}': {ex.Message}");
+                return CreateInstalledShellFallbackMetadata(metadataAssetPath, fallbackPackageName, tempInstallAssetPath, protectedPayloadAssetPath);
+            }
+        }
+
+        private static PackageMetadata CreateInstalledShellFallbackMetadata(
+            string packagePathOrName,
+            string fallbackPackageName,
+            string tempInstallAssetPath,
+            string protectedPayloadAssetPath)
+        {
+            var fallback = CreateFallbackMetadata(packagePathOrName, fallbackPackageName);
+            if (!string.IsNullOrWhiteSpace(tempInstallAssetPath))
+            {
+                string packageJsonText = LoadTextAssetContents(tempInstallAssetPath);
+                if (!string.IsNullOrWhiteSpace(packageJsonText))
+                    ParsePackageJsonDependencies(fallback, packageJsonText);
+            }
+
+            fallback.protectedPayload = ExtractProtectedPayloadDescriptorFromAssetPath(protectedPayloadAssetPath);
+            return fallback;
+        }
+
+        internal static ProtectedPayloadDescriptor ExtractProtectedPayloadDescriptorFromAssetPath(string protectedPayloadAssetPath)
+        {
+            if (string.IsNullOrWhiteSpace(protectedPayloadAssetPath))
+                return null;
+
+            string json = LoadTextAssetContents(protectedPayloadAssetPath);
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+
+            string shellRootAssetPath = Path.GetDirectoryName(protectedPayloadAssetPath)?.Replace('\\', '/') ?? string.Empty;
+
+            try
+            {
+                var descriptor = JsonUtility.FromJson<ProtectedPayloadDescriptor>(json);
+                if (descriptor == null)
+                    return null;
+
+                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
+                descriptor.protectedAssetId ??= string.Empty;
+                descriptor.blobAssetPath ??= string.Empty;
+                descriptor.cipher ??= string.Empty;
+                descriptor.archiveFormat ??= string.Empty;
+                descriptor.ciphertextSha256 ??= string.Empty;
+                descriptor.plaintextSha256 ??= string.Empty;
+                descriptor.blobAssetPath = ResolveInstalledAssetPath(descriptor.blobAssetPath, shellRootAssetPath) ?? descriptor.blobAssetPath;
+                return descriptor;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse installed-shell protected payload descriptor '{protectedPayloadAssetPath}': {ex.Message}");
+                return null;
+            }
+        }
+
+        private static Texture2D LoadInstalledTexture(string textureAssetPath, string shellRootAssetPath)
+        {
+            string resolved = ResolveInstalledAssetPath(textureAssetPath, shellRootAssetPath);
+            if (string.IsNullOrWhiteSpace(resolved))
+                return null;
+
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(resolved);
+        }
+
+        private static string ResolveInstalledAssetPath(string assetPath, string shellRootAssetPath)
+        {
+            if (string.IsNullOrWhiteSpace(assetPath))
+                return null;
+
+            string normalized = assetPath.Replace('\\', '/').TrimStart('/');
+            if (normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                return normalized;
+            }
+
+            if (string.IsNullOrWhiteSpace(shellRootAssetPath))
+                return normalized;
+
+            return (shellRootAssetPath.TrimEnd('/') + "/" + normalized).Replace('\\', '/');
+        }
+
+        private static string LoadTextAssetContents(string assetPath)
+        {
+            if (string.IsNullOrWhiteSpace(assetPath))
+                return null;
+
+            string normalized = assetPath.Replace('\\', '/');
+            var textAsset = AssetDatabase.LoadAssetAtPath<TextAsset>(normalized);
+            if (textAsset != null)
+                return textAsset.text;
+
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string diskPath = Path.Combine(projectRoot, normalized.Replace('/', Path.DirectorySeparatorChar));
+                return File.Exists(diskPath) ? File.ReadAllText(diskPath) : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         internal static bool HasTempInstallDescriptor(System.Array importItems)
         {
             string destinationPath = GetPackageJsonDestinationPath(importItems);
