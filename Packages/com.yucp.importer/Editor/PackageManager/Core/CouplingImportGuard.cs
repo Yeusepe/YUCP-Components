@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using YUCP.Importer.Editor.PackageManager;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
@@ -12,12 +13,44 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         internal static TryApplyCouplingHandler s_tryApplyCouplingOverride;
 
+        internal static bool ShouldApplyDuringShellImport(InstalledPackageInfo packageInfo)
+        {
+            return packageInfo?.protectedPayload == null;
+        }
+
+        internal static IReadOnlyList<string> BuildProtectedPayloadCouplingFiles(
+            InstalledPackageInfo packageInfo,
+            IReadOnlyList<string> extractedAssetPaths)
+        {
+            return (packageInfo?.installedFiles ?? new List<string>())
+                .Concat(extractedAssetPaths ?? new List<string>())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Replace('\\', '/').Trim())
+                .Distinct(System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        internal static bool TryApplyDeferredProtectedPayloadCouplingOrRollback(
+            InstalledPackageInfo packageInfo,
+            IReadOnlyList<string> extractedAssetPaths,
+            out string error)
+        {
+            if (packageInfo == null)
+            {
+                error = "The package protection step could not be completed.";
+                return false;
+            }
+
+            packageInfo.installedFiles = BuildProtectedPayloadCouplingFiles(packageInfo, extractedAssetPaths).ToList();
+            return TryApplyCouplingOrRollback(packageInfo, out error);
+        }
+
         internal static bool TryApplyCouplingOrRollback(InstalledPackageInfo packageInfo, out string error)
         {
             error = null;
             if (packageInfo == null)
             {
-                error = "Installed package information was missing.";
+                error = "The package protection step could not be completed.";
                 return false;
             }
 
@@ -28,13 +61,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (!ImportedAssetRollbackService.TryRollbackPackage(packageInfo, out string rollbackError))
             {
-                error = string.IsNullOrWhiteSpace(rollbackError)
-                    ? couplingError
-                    : $"{couplingError}\n\nRollback also failed:\n{rollbackError}";
+                error = "The package protection step could not be completed and the import could not be rolled back cleanly.";
                 return false;
             }
 
-            error = couplingError;
+            error = "The package protection step could not be completed on this machine.";
             return false;
         }
 

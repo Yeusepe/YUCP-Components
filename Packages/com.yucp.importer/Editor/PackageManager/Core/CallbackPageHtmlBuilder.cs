@@ -207,15 +207,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 </body>
 </html>";
 
+            string redirectExtra = string.Empty;
+            if (redirectUrl != null)
+            {
+                string htmlUrl = WebUtility.HtmlEncode(redirectUrl);
+                string jsUrl   = redirectUrl.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                                            .Replace("\n", "\\n").Replace("\r", "\\r");
+                redirectExtra = $"<script>location.replace(\"{jsUrl}\");</script>" +
+                                $"<meta http-equiv=\"refresh\" content=\"0; url={htmlUrl}\">";
+            }
+
             return html
                 .Replace("__TITLE__",       escapedTitle)
                 .Replace("__MESSAGE__",     escapedMessage)
                 .Replace("__DETAIL_HTML__", detailHtml)
                 .Replace("__ACCENT_START__", accentStart)
                 .Replace("__ACCENT_END__",   accentEnd)
-                .Replace("__HEAD_EXTRA__",   redirectUrl != null
-                    ? $"<meta http-equiv=\"refresh\" content=\"1; url={WebUtility.HtmlEncode(redirectUrl)}\">"
-                    : string.Empty);
+                .Replace("__HEAD_EXTRA__",   redirectExtra);
         }
     }
 }

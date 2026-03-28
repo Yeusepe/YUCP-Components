@@ -25,19 +25,21 @@ namespace YUCP.Importer.Editor.PackageManager
             return new PackageManagerSettingsProvider("Project/YUCP Package Manager", SettingsScope.Project)
             {
                 keywords = new HashSet<string>
-                {
-                    "YUCP",
-                    "Package Manager",
+                 {
+                     "YUCP",
+                     "Package Manager",
                     "Importer",
                     "Import",
                     "Interception",
                     "License",
-                    "Creator Identity",
-                    "Trusted",
-                    "URL",
-                    "Authority"
-                }
-            };
+                     "Creator Identity",
+                     "Trusted",
+                     "URL",
+                     "Authority",
+                     "Coupling",
+                     "Runtime"
+                 }
+             };
         }
 
         public override void OnActivate(string searchContext, VisualElement rootElement)
@@ -185,6 +187,74 @@ namespace YUCP.Importer.Editor.PackageManager
             };
             useSigningSettingsButton.style.marginBottom = 16;
             rootElement.Add(useSigningSettingsButton);
+
+            var runtimeTitle = new Label("Package Protection Runtime");
+            runtimeTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            runtimeTitle.style.marginBottom = 4;
+            rootElement.Add(runtimeTitle);
+
+            var runtimeDescription = new Label("Protected payload materialization runs through the installed per-user runtime package. Override the install root only for local testing or repair workflows.");
+            runtimeDescription.style.whiteSpace = WhiteSpace.Normal;
+            runtimeDescription.style.marginBottom = 6;
+            rootElement.Add(runtimeDescription);
+
+            var runtimeRootField = new TextField("Runtime Root");
+            runtimeRootField.value = PackageManagerRuntimeSettings.GetRuntimeInstallRootOverride() ?? string.Empty;
+            runtimeRootField.style.marginBottom = 6;
+            rootElement.Add(runtimeRootField);
+
+            var runtimeStatus = new HelpBox(string.Empty, HelpBoxMessageType.Info);
+            runtimeStatus.style.marginBottom = 8;
+            rootElement.Add(runtimeStatus);
+
+            void RefreshRuntimeStatus()
+            {
+                string configuredRoot = runtimeRootField.value?.Trim();
+                string normalizedRoot = PackageManagerRuntimeSettings.NormalizeRuntimeInstallRoot(configuredRoot);
+                if (!string.IsNullOrWhiteSpace(configuredRoot) && string.IsNullOrWhiteSpace(normalizedRoot))
+                {
+                    runtimeStatus.text = "Runtime Root must be a valid Windows path.";
+                    runtimeStatus.messageType = HelpBoxMessageType.Error;
+                    return;
+                }
+
+                var status = CouplingRuntimeShimService.GetRuntimeStatus();
+                if (string.Equals(status.status, "healthy", StringComparison.OrdinalIgnoreCase))
+                {
+                    runtimeStatus.text =
+                        $"Runtime build {status.activeBuildId} ({status.activeVersion}) is active at {status.activePackageDir}. " +
+                        $"Shim: {status.shimPath}. Host: {status.hostProcessPath}.";
+                    runtimeStatus.messageType = HelpBoxMessageType.Info;
+                    return;
+                }
+
+                runtimeStatus.text =
+                    $"{status.error} Runtime root: {status.installRoot}. " +
+                    "Install or repair the YUCP runtime package before importing protected payloads.";
+                runtimeStatus.messageType = string.Equals(status.status, "degraded", StringComparison.OrdinalIgnoreCase)
+                    ? HelpBoxMessageType.Warning
+                    : HelpBoxMessageType.Error;
+            }
+
+            runtimeRootField.RegisterValueChangedCallback(evt =>
+            {
+                PackageManagerRuntimeSettings.SetRuntimeInstallRootOverride(evt.newValue);
+                RefreshRuntimeStatus();
+            });
+
+            var clearRuntimeOverrideButton = new Button(() =>
+            {
+                PackageManagerRuntimeSettings.SetRuntimeInstallRootOverride(string.Empty);
+                runtimeRootField.value = string.Empty;
+                RefreshRuntimeStatus();
+            })
+            {
+                text = "Clear Runtime Override"
+            };
+            clearRuntimeOverrideButton.style.marginBottom = 16;
+            rootElement.Add(clearRuntimeOverrideButton);
+
+            RefreshRuntimeStatus();
 
             var trustTitle = new Label("Trusted Servers");
             trustTitle.style.unityFontStyleAndWeight = FontStyle.Bold;

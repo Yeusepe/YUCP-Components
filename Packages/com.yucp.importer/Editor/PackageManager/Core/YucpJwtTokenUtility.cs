@@ -42,6 +42,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string expectedProtectedAssetId,
             out ProtectedUnlockTokenClaims claims)
         {
+            return TryValidateProtectedUnlockToken(
+                jwt,
+                expectedPackageId,
+                expectedProtectedAssetId,
+                null,
+                out claims);
+        }
+
+        internal static bool TryValidateProtectedUnlockToken(
+            string jwt,
+            string expectedPackageId,
+            string expectedProtectedAssetId,
+            string expectedContentHash,
+            out ProtectedUnlockTokenClaims claims)
+        {
             claims = null;
             if (!TryVerifyToken(jwt, out var payloadJson, out _))
                 return false;
@@ -66,6 +81,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (claims.unlock_mode == "wrapped_content_key" && string.IsNullOrEmpty(claims.wrapped_content_key))
                 return false;
             if (claims.unlock_mode == "content_key_b64" && string.IsNullOrEmpty(claims.content_key_b64))
+                return false;
+            if (string.IsNullOrEmpty(claims.content_hash))
+                return false;
+            if (!string.IsNullOrEmpty(expectedContentHash) &&
+                !string.Equals(claims.content_hash, expectedContentHash, StringComparison.OrdinalIgnoreCase))
                 return false;
 
             string fingerprint = MachineFingerprintService.GetFingerprint();
@@ -204,6 +224,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public string unlock_mode;
             public string wrapped_content_key;
             public string content_key_b64;
+            public string content_hash;
             public long iat;
             public long exp;
         }

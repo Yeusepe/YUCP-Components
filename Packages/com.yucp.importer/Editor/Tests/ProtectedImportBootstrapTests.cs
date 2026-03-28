@@ -6,6 +6,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 using YUCP.Importer.Editor.PackageManager;
+using YUCP.Importer.Editor.PackageVerifier.Data;
 
 namespace YUCP.Importer.Editor.Tests
 {
@@ -107,6 +108,51 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(packageInfo.installedFiles, Has.Some.EqualTo($"{rootAssetPath}/_Signing/PackageManifest.json"));
             Assert.That(packageInfo.installedFiles, Has.Some.EqualTo($"{rootAssetPath}/Protected/payload.blob"));
             Assert.That(packageInfo.installedFiles.Any(path => path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)), Is.False);
+        }
+
+        [Test]
+        public void ProtectedImportBootstrapCoordinator_FailsWhenProtectedPayloadDescriptorDoesNotMatchSignedManifest()
+        {
+            string rootAssetPath = CreateImportedShell();
+            WriteManifest(
+                rootAssetPath,
+                new ProtectedPayloadManifestEntry
+                {
+                    formatVersion = "1",
+                    protectedAssetId = "protected-asset-123",
+                    blobAssetPath = $"{rootAssetPath}/Protected/payload.blob",
+                    cipher = "aes-256-cbc+hmac-sha256",
+                    archiveFormat = "zip",
+                    ciphertextSha256 = "tampered-ciphertext-sha",
+                    plaintextSha256 = "plaintext-sha",
+                    payloadAssetPaths = new[] { "Assets/Protected/source.prefab" },
+                    requiresOnlineUnlock = true,
+                    requiresBrokeredMaterialization = true,
+                    brokerProtocolVersion = 1,
+                    manifestBindingSha256 = "tampered-binding",
+                });
+
+            object state = CreatePendingProtectedImportState(
+                packageName: "Protected Shell",
+                shellRootAssetPath: rootAssetPath,
+                tempInstallAssetPath: $"{rootAssetPath}/_temp/YUCP_TempInstall_Test.json",
+                metadataAssetPath: $"{rootAssetPath}/YUCP_PackageInfo.json",
+                protectedPayloadAssetPath: $"{rootAssetPath}/YUCP_ProtectedPayload.json",
+                originalPackagePath: string.Empty);
+
+            MethodInfo reconstructMethod = GetEditorType("YUCP.Importer.Editor.PackageManager.Core.ProtectedImportBootstrapCoordinator")
+                .GetMethod(
+                    "TryReconstructInstalledPackageInfo",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(reconstructMethod, Is.Not.Null);
+
+            object[] args = { state, null, null };
+            bool success = (bool)reconstructMethod.Invoke(null, args);
+            string error = args[2] as string;
+
+            Assert.That(success, Is.False);
+            StringAssert.Contains("signed payload descriptor", error ?? string.Empty);
         }
 
         private void CapturePackageImportWizardState()
@@ -226,30 +272,57 @@ namespace YUCP.Importer.Editor.Tests
                 + "}"
                 + "}");
 
-            File.WriteAllText(
-                Path.Combine(rootDiskPath, "YUCP_ProtectedPayload.json"),
-                "{"
-                + "\"formatVersion\":\"1\","
-                + "\"protectedAssetId\":\"protected-asset-123\","
-                + "\"blobAssetPath\":\"Protected/payload.blob\","
-                + "\"cipher\":\"aes-256-cbc+hmac-sha256\","
-                + "\"archiveFormat\":\"zip\","
-                + "\"ciphertextSha256\":\"ciphertext-sha\","
-                + "\"plaintextSha256\":\"plaintext-sha\""
-                + "}");
+            var protectedPayloadDescriptor = new ProtectedPayloadDescriptor
+            {
+                formatVersion = "1",
+                protectedAssetId = "protected-asset-123",
+                blobAssetPath = "Protected/payload.blob",
+                cipher = "aes-256-cbc+hmac-sha256",
+                archiveFormat = "zip",
+                ciphertextSha256 = "ciphertext-sha",
+                plaintextSha256 = "plaintext-sha",
+                payloadAssetPaths = new[] { "Assets/Protected/source.prefab" },
+                requiresOnlineUnlock = true,
+                requiresBrokeredMaterialization = true,
+                brokerProtocolVersion = 1,
+            };
+            protectedPayloadDescriptor.manifestBindingSha256 =
+                ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(protectedPayloadDescriptor);
 
             File.WriteAllText(
-                Path.Combine(rootDiskPath, "_Signing", "PackageManifest.json"),
-                "{"
+                Path.Combine(rootDiskPath, "YUCP_ProtectedPayload.json"),
+                JsonUtility.ToJson(protectedPayloadDescriptor, true));
+
+            WriteManifest(
+                _testAssetRoot,
+                ProtectedPayloadIntegrityUtility.CreateManifestEntry(protectedPayloadDescriptor));
+
+            AssetDatabase.Refresh();
+            return _testAssetRoot.Replace('\\', '/');
+        }
+
+        private static void WriteManifest(string rootAssetPath, ProtectedPayloadManifestEntry protectedPayloadEntry)
+        {
+            string rootDiskPath = GetAssetDiskPath(rootAssetPath);
+            string manifestJson = "{"
                 + "\"publisherId\":\"publisher-123\","
                 + "\"packageId\":\"pkg-test-123\","
                 + "\"version\":\"1.2.3\","
                 + "\"archiveSha256\":\"archive-sha-123\","
-                + "\"fileHashes\":{}"
-                + "}");
+                + "\"fileHashes\":{},"
+                + "\"protectedPayloads\":" + JsonUtility.ToJson(new ProtectedPayloadManifestWrapper
+                {
+                    protectedPayloads = protectedPayloadEntry != null ? new[] { protectedPayloadEntry } : Array.Empty<ProtectedPayloadManifestEntry>(),
+                }).Replace("{\"protectedPayloads\":", string.Empty).TrimEnd('}')
+                + "}";
 
-            AssetDatabase.Refresh();
-            return _testAssetRoot.Replace('\\', '/');
+            File.WriteAllText(Path.Combine(rootDiskPath, "_Signing", "PackageManifest.json"), manifestJson);
+        }
+
+        [Serializable]
+        private sealed class ProtectedPayloadManifestWrapper
+        {
+            public ProtectedPayloadManifestEntry[] protectedPayloads;
         }
 
         private void DeleteTestAssets()

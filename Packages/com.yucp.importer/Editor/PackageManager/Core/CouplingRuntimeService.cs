@@ -66,11 +66,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (jobResponse?.files == null || jobResponse.files.Count == 0)
             {
-                if (!string.IsNullOrEmpty(jobResponse?.skipReason))
-                {
-                    Debug.Log($"[YUCP Coupling] Skipping coupling for packageId='{packageId}': {DescribeSkipReason(jobResponse.skipReason)}");
-                }
-
                 return true;
             }
 
@@ -372,13 +367,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             return builder.ToString();
-        }
-
-        private static string DescribeSkipReason(string skipReason)
-        {
-            return string.Equals(skipReason, "capability_disabled", StringComparison.OrdinalIgnoreCase)
-                ? "creator plan does not include coupling traceability"
-                : skipReason;
         }
 
         private static string GetShortPathIfAvailable(string path)

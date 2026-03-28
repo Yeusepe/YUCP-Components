@@ -15,7 +15,11 @@ namespace YUCP.Importer.Editor.PackageManager
         public string plaintextSha256 = "";
         public long plaintextSize = 0;
         public int entryCount = 0;
+        public string[] payloadAssetPaths = Array.Empty<string>();
         public bool requiresOnlineUnlock = false;
+        public bool requiresBrokeredMaterialization = false;
+        public int brokerProtocolVersion = 0;
+        public string manifestBindingSha256 = "";
 
         public ProtectedPayloadDescriptor Clone()
         {
@@ -31,7 +35,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 plaintextSha256 = plaintextSha256 ?? "",
                 plaintextSize = plaintextSize,
                 entryCount = entryCount,
+                payloadAssetPaths = payloadAssetPaths != null ? (string[])payloadAssetPaths.Clone() : Array.Empty<string>(),
                 requiresOnlineUnlock = requiresOnlineUnlock,
+                requiresBrokeredMaterialization = requiresBrokeredMaterialization,
+                brokerProtocolVersion = brokerProtocolVersion,
+                manifestBindingSha256 = manifestBindingSha256 ?? "",
             };
         }
     }

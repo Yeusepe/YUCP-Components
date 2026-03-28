@@ -4923,12 +4923,13 @@ namespace YUCP.Importer.Editor.PackageManager
                     return;
                 }
 
-                if (!CouplingImportGuard.TryApplyCouplingOrRollback(installedInfo, out string couplingError))
+                if (CouplingImportGuard.ShouldApplyDuringShellImport(installedInfo) &&
+                    !CouplingImportGuard.TryApplyCouplingOrRollback(installedInfo, out string couplingError))
                 {
-                    Debug.LogError($"[YUCP PackageManager] Coupling failed for PackageID '{installedInfo.packageId}': {couplingError}");
+                    Debug.LogError("[YUCP PackageManager] A required package protection step failed and the import was rolled back.");
                     EditorUtility.DisplayDialog(
-                        "Coupling Failed",
-                        $"The package import was rolled back because the local coupling pass failed.\n\n{couplingError}",
+                        "Import Failed",
+                        couplingError,
                         "OK");
                     return;
                 }

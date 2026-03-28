@@ -17,6 +17,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Data
         public CertificateData[] certificateChain; // Certificate chain: [Publisher, Intermediate?, Root]
         public string gumroadProductId;
         public string jinxxyProductId;
+        public ProtectedPayloadManifestEntry[] protectedPayloads;
     }
 }
 

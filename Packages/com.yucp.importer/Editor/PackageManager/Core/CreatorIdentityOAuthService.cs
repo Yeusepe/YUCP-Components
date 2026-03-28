@@ -1269,8 +1269,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return CallbackPageHtmlBuilder.Build(
                     "Signed in!",
-                    "Opening purchase verification\u2026",
-                    "<div class=\"detail-card detail-card-success\"><span class=\"detail-label\">Please wait</span><div class=\"detail-body\">Preparing your verification page\u2014you'll be redirected in a moment.</div></div>",
+                    "Redirecting to purchase verification\u2026",
+                    string.Empty,
                     "#36bfb1",
                     "#2da89c",
                     redirectUrl: pendingVerifyRelayUrl);

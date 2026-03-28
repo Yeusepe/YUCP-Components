@@ -28,6 +28,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                 certificateChain = ParseCertificateChain(root["certificateChain"]),
                 gumroadProductId = GetString(root, "gumroadProductId"),
                 jinxxyProductId = GetString(root, "jinxxyProductId"),
+                protectedPayloads = ParseProtectedPayloads(root["protectedPayloads"]),
             };
         }
 
@@ -96,6 +97,43 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
             return certificates.ToArray();
         }
 
+        private static ProtectedPayloadManifestEntry[] ParseProtectedPayloads(JToken token)
+        {
+            var payloadArray = token as JArray;
+            if (payloadArray == null)
+                return null;
+
+            var payloads = new List<ProtectedPayloadManifestEntry>();
+            foreach (var payloadToken in payloadArray)
+            {
+                var payloadObject = payloadToken as JObject;
+                if (payloadObject == null)
+                    continue;
+
+                payloads.Add(new ProtectedPayloadManifestEntry
+                {
+                    formatVersion = GetString(payloadObject, "formatVersion"),
+                    protectedAssetId = GetString(payloadObject, "protectedAssetId"),
+                    blobAssetPath = GetString(payloadObject, "blobAssetPath"),
+                    cipher = GetString(payloadObject, "cipher"),
+                    archiveFormat = GetString(payloadObject, "archiveFormat"),
+                    ciphertextSha256 = GetString(payloadObject, "ciphertextSha256"),
+                    ciphertextSize = payloadObject.Value<long?>("ciphertextSize") ?? 0,
+                    plaintextSha256 = GetString(payloadObject, "plaintextSha256"),
+                    plaintextSize = payloadObject.Value<long?>("plaintextSize") ?? 0,
+                    entryCount = payloadObject.Value<int?>("entryCount") ?? 0,
+                    payloadAssetPaths = ParseStringArray(payloadObject["payloadAssetPaths"]),
+                    requiresOnlineUnlock = payloadObject.Value<bool?>("requiresOnlineUnlock") ?? false,
+                    requiresBrokeredMaterialization =
+                        payloadObject.Value<bool?>("requiresBrokeredMaterialization") ?? false,
+                    brokerProtocolVersion = payloadObject.Value<int?>("brokerProtocolVersion") ?? 0,
+                    manifestBindingSha256 = GetString(payloadObject, "manifestBindingSha256"),
+                });
+            }
+
+            return payloads.ToArray();
+        }
+
         private static CertificateData ParseCertificate(JObject certificateObject)
         {
             var certificate = new CertificateData
@@ -148,6 +186,22 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
             if (token == null || token.Type == JTokenType.Null)
                 return null;
             return token.Value<string>();
+        }
+
+        private static string[] ParseStringArray(JToken token)
+        {
+            var array = token as JArray;
+            if (array == null)
+                return Array.Empty<string>();
+
+            var values = new List<string>();
+            foreach (var item in array)
+            {
+                if (item?.Type == JTokenType.String)
+                    values.Add(item.Value<string>());
+            }
+
+            return values.ToArray();
         }
 
         private static string NullIfEmpty(string value)

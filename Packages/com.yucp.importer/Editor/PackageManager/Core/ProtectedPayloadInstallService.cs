@@ -87,15 +87,16 @@ namespace YUCP.Importer.Editor.PackageManager
             if (!ApplyProtectedPayload(packageInfo, out string error))
             {
                 ClearPendingApply();
-                Debug.LogError($"[YUCP PackageManager] Protected payload apply failed for '{packageInfo.packageName}': {error}");
+                RollbackRegisteredPackage(packageInfo);
+                Debug.LogError("[YUCP PackageManager] A required package protection step failed and the import was rolled back.");
                 EditorUtility.DisplayDialog(
-                    "Protected Payload Failed",
-                    $"The package shell imported, but the protected payload could not be applied.\n\n{error}",
+                    "Import Failed",
+                    error,
                     "OK");
                 return;
             }
 
-            Debug.Log($"[YUCP PackageManager] Applied protected payload for '{packageInfo.packageName}'.");
+            Debug.Log($"[YUCP PackageManager] Prepared protected payload for '{packageInfo.packageName}'. Finalizing install.");
             ClearPendingApply();
         }
 
@@ -130,13 +131,36 @@ namespace YUCP.Importer.Editor.PackageManager
                 return false;
             }
 
+            if (descriptor.requiresBrokeredMaterialization)
+            {
+                if (descriptor.brokerProtocolVersion <= 0)
+                {
+                    error = "The package protection step could not be completed on this machine.";
+                    return false;
+                }
+                ProtectedInstallFinalizationCoordinator.QueuePendingFinalization(packageInfo, Array.Empty<string>());
+                return true;
+            }
+
             ProtectedAssetUnlockService.ProtectedAssetUnlockGrant grant;
-            if (!ProtectedAssetUnlockService.TryAuthorizePackage(packageInfo.packageId, descriptor.protectedAssetId, out grant, out error))
+            if (!ProtectedAssetUnlockService.TryAuthorizePackage(
+                packageInfo.packageId,
+                descriptor.protectedAssetId,
+                descriptor.ciphertextSha256,
+                out grant,
+                out error))
                 return false;
 
             if (!string.Equals(grant?.unlockMode, "content_key_b64", StringComparison.OrdinalIgnoreCase))
             {
                 error = $"Protected payload requires content_key_b64 unlock mode, but received '{grant?.unlockMode ?? ""}'.";
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(descriptor.ciphertextSha256) &&
+                !string.Equals(grant?.contentHash, descriptor.ciphertextSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                error = "Protected payload unlock grant did not match the package payload.";
                 return false;
             }
 
@@ -165,16 +189,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
 
                 AssetDatabase.Refresh();
-
-                packageInfo.installedFiles ??= new List<string>();
-                packageInfo.installedFiles = packageInfo.installedFiles
-                    .Concat(extractedAssetPaths)
-                    .Where(path => !string.IsNullOrWhiteSpace(path))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                var registry = InstalledPackageRegistry.GetOrCreate();
-                registry.RegisterPackage(packageInfo);
+                ProtectedInstallFinalizationCoordinator.QueuePendingFinalization(packageInfo, extractedAssetPaths);
                 return true;
             }
             catch (Exception ex)
@@ -186,6 +201,20 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 TryDeleteDirectory(tempRoot);
             }
+        }
+
+        private static void RollbackRegisteredPackage(InstalledPackageInfo packageInfo)
+        {
+            if (packageInfo == null)
+                return;
+
+            if (!ImportedAssetRollbackService.TryRollbackPackage(packageInfo, out _))
+            {
+                Debug.LogError("[YUCP PackageManager] The failed protected package import could not be rolled back cleanly.");
+            }
+
+            var registry = InstalledPackageRegistry.Load() ?? InstalledPackageRegistry.GetOrCreate();
+            registry?.UnregisterPackage(packageInfo.packageId);
         }
 
         private static bool TryDecryptBlobToArchive(

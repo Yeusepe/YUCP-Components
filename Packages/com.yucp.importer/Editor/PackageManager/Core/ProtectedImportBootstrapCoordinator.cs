@@ -15,7 +15,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         private const string PendingProtectedImportStateKey = "YUCP.PendingProtectedImportBootstrap";
         private static bool _scheduled;
-
         [Serializable]
         private sealed class PendingProtectedImportState
         {
@@ -93,9 +92,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (!TryReconstructInstalledPackageInfo(state, out InstalledPackageInfo packageInfo, out error))
                 return false;
 
-            if (!CouplingImportGuard.TryApplyCouplingOrRollback(packageInfo, out string couplingError))
+            if (CouplingImportGuard.ShouldApplyDuringShellImport(packageInfo) &&
+                !CouplingImportGuard.TryApplyCouplingOrRollback(packageInfo, out string couplingError))
             {
-                error = $"Coupling could not be refreshed for '{packageInfo.packageId}': {couplingError}";
+                error = couplingError;
                 return false;
             }
 
@@ -127,12 +127,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (!TryLoadManifest(state.shellRootAssetPath, out PackageManifest manifest, out error))
                 return false;
-
             if (manifest == null || string.IsNullOrWhiteSpace(manifest.packageId))
             {
                 error = "The imported protected package shell did not include a usable signed package manifest.";
                 return false;
             }
+
+            if (!TryValidateProtectedPayloadManifest(manifest, metadata?.protectedPayload, out error))
+                return false;
 
             List<string> installedFiles = CollectInstalledFiles(state.shellRootAssetPath);
             packageInfo = InstalledPackageInfoFactory.Create(
@@ -143,6 +145,43 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 isVerified: false,
                 installedFiles: installedFiles);
 
+            return true;
+        }
+
+        private static bool TryValidateProtectedPayloadManifest(
+            PackageManifest manifest,
+            ProtectedPayloadDescriptor descriptor,
+            out string error)
+        {
+            error = null;
+
+            if (descriptor == null)
+                return true;
+            if (manifest?.protectedPayloads == null || manifest.protectedPayloads.Length == 0)
+            {
+                error = "The protected package shell is missing signed protected payload metadata.";
+                return false;
+            }
+
+            ProtectedPayloadManifestEntry matchingEntry = manifest.protectedPayloads.FirstOrDefault(
+                entry =>
+                    entry != null &&
+                    (
+                        string.Equals(entry.protectedAssetId ?? string.Empty, descriptor.protectedAssetId ?? string.Empty, StringComparison.Ordinal) ||
+                        string.Equals(entry.blobAssetPath ?? string.Empty, descriptor.blobAssetPath ?? string.Empty, StringComparison.OrdinalIgnoreCase)
+                    ));
+
+            if (matchingEntry == null)
+            {
+                error = "The protected package shell is missing the signed payload descriptor for this package.";
+                return false;
+            }
+
+            if (!ProtectedPayloadIntegrityUtility.DescriptorMatchesManifest(descriptor, matchingEntry))
+            {
+                error = "The protected package shell did not match its signed payload descriptor.";
+                return false;
+            }
             return true;
         }
 

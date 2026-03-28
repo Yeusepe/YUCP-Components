@@ -324,6 +324,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 descriptor.archiveFormat ??= "";
                 descriptor.ciphertextSha256 ??= "";
                 descriptor.plaintextSha256 ??= "";
+                descriptor.payloadAssetPaths =
+                    ProtectedPayloadIntegrityUtility.NormalizeUnityPaths(descriptor.payloadAssetPaths);
+                descriptor.manifestBindingSha256 = string.IsNullOrWhiteSpace(descriptor.manifestBindingSha256)
+                    ? ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)
+                    : descriptor.manifestBindingSha256;
                 return descriptor;
             }
             catch (Exception ex)
@@ -788,6 +793,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 descriptor.archiveFormat ??= string.Empty;
                 descriptor.ciphertextSha256 ??= string.Empty;
                 descriptor.plaintextSha256 ??= string.Empty;
+                descriptor.payloadAssetPaths =
+                    ProtectedPayloadIntegrityUtility.NormalizeUnityPaths(descriptor.payloadAssetPaths);
+                descriptor.manifestBindingSha256 = string.IsNullOrWhiteSpace(descriptor.manifestBindingSha256)
+                    ? ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)
+                    : descriptor.manifestBindingSha256;
                 descriptor.blobAssetPath = ResolveInstalledAssetPath(descriptor.blobAssetPath, shellRootAssetPath) ?? descriptor.blobAssetPath;
                 return descriptor;
             }
