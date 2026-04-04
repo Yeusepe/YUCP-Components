@@ -51,7 +51,7 @@ namespace YUCP.Components.Editor
 			object menuManager = TryCreateMenuManager(menu);
 			if (menuManager == null)
 			{
-				Debug.LogWarning("[YUCP Move All Under] Failed to create MenuManager (VRCFury-Editor).");
+				Debug.LogWarning("[YUCP Move All Under] Failed to create VRCFury MenuManager.");
 				return true;
 			}
 
@@ -117,7 +117,7 @@ namespace YUCP.Components.Editor
 
 		private static object TryCreateMenuManager(VRCExpressionsMenu menu)
 		{
-			_vrcfuryEditor = Assembly.Load("VRCFury-Editor");
+			_vrcfuryEditor = VRCFuryReflectionUtils.LoadEditorAvatarAssembly();
 			if (_vrcfuryEditor == null) return null;
 
 			Type menuManagerType = _vrcfuryEditor.GetType("VF.Utils.MenuManager");

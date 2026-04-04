@@ -17,7 +17,7 @@ namespace YUCP.Components
 	{
 		[Header("Collider")]
 		[Tooltip("Assign a GameObject (all VRC PhysBone Colliders on it and its children will be added to every PhysBone) or a single VRC PhysBone Collider component. Must be under this avatar.")]
-		public Object collider;
+		public new Object collider;
 
 		[Header("Exclusions")]
 		[Tooltip("PhysBones to exclude. Assign VRCPhysBone components, or GameObjects/Transforms (bones). Excludes any PhysBone that contains that bone: as root, as parent of root, or anywhere in the chain.")]

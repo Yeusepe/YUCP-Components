@@ -28,7 +28,7 @@ namespace YUCP.Components.Editor
 				_vrcfuryRuntime = Assembly.Load("VRCFury");
 				if (_vrcfuryRuntime == null) return;
 
-				Type menuChangesType = Assembly.Load("VRCFury-Editor")?.GetType("VF.Service.MenuChangesService");
+				Type menuChangesType = VRCFuryReflectionUtils.FindEditorAvatarType("VF.Service.MenuChangesService");
 				if (menuChangesType == null) return;
 
 				MethodInfo applyMethod = menuChangesType.GetMethod("Apply", BindingFlags.Public | BindingFlags.Instance);

@@ -607,7 +607,7 @@ namespace YUCP.Components.Editor
         {
             try
             {
-                var vfConditionType = Type.GetType("VF.Utils.Controller.VFCondition, VRCFury-Editor");
+                var vfConditionType = VRCFuryReflectionUtils.FindEditorCommonType("VF.Utils.Controller.VFCondition");
                 if (vfConditionType == null) return null;
 
                 var fx = GetFXController();
@@ -658,7 +658,7 @@ namespace YUCP.Components.Editor
         {
             try
             {
-                var vfConditionType = Type.GetType("VF.Utils.Controller.VFCondition, VRCFury-Editor");
+                var vfConditionType = VRCFuryReflectionUtils.FindEditorCommonType("VF.Utils.Controller.VFCondition");
                 if (vfConditionType == null) return null;
 
                 var conditions = new List<object>();
@@ -716,7 +716,7 @@ namespace YUCP.Components.Editor
 
                 if (param == null) return null;
 
-                var vfConditionType = Type.GetType("VF.Utils.Controller.VFCondition, VRCFury-Editor");
+                var vfConditionType = VRCFuryReflectionUtils.FindEditorCommonType("VF.Utils.Controller.VFCondition");
                 if (vfConditionType == null) return null;
 
                 switch (condition.conditionMode)
@@ -803,7 +803,7 @@ namespace YUCP.Components.Editor
                 if (vrcfuryComponent == null) return null;
 
                 var avatarRoot = data.transform.root;
-                var globalsServiceType = Type.GetType("VF.Service.GlobalsService, VRCFury-Editor");
+                var globalsServiceType = VRCFuryReflectionUtils.FindEditorAvatarType("VF.Service.GlobalsService");
                 if (globalsServiceType == null) return null;
 
                 var getInstanceMethod = globalsServiceType.GetMethod("GetInstance", BindingFlags.Public | BindingFlags.Static);
@@ -812,7 +812,7 @@ namespace YUCP.Components.Editor
                 var globalsService = getInstanceMethod.Invoke(null, new object[] { avatarRoot });
                 if (globalsService == null) return null;
 
-                var controllersServiceType = Type.GetType("VF.Service.ControllersService, VRCFury-Editor");
+                var controllersServiceType = VRCFuryReflectionUtils.FindEditorAvatarType("VF.Service.ControllersService");
                 if (controllersServiceType == null) return null;
 
                 var getControllersServiceMethod = globalsServiceType.GetMethod("Get", BindingFlags.Public | BindingFlags.Instance);
@@ -973,4 +973,3 @@ namespace YUCP.Components.Editor
         }
     }
 }
-

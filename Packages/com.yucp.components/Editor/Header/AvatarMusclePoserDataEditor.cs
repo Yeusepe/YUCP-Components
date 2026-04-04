@@ -6,7 +6,6 @@ using UnityEditor;
 using UnityEngine.UIElements;
 using UnityEditor.UIElements;
 using YUCP.Components;
-using VF.Utils;
 using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor

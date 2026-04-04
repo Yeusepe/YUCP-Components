@@ -370,12 +370,11 @@ namespace YUCP.Components.Editor
 
         private static void RenameControllerParameters(AnimatorController controller, GroupKey key)
         {
-            // Use VRCFury's RewriteParameters method via reflection
-            // Assembly name is "VRCFury-Editor" from the asmdef file
-            Assembly vrcfuryAssembly = Assembly.Load("VRCFury-Editor");
+            // Use VRCFury's RewriteParameters method via reflection.
+            Assembly vrcfuryAssembly = VRCFuryReflectionUtils.LoadEditorCommonAssembly();
             if (vrcfuryAssembly == null)
             {
-                Debug.LogError("[YUCP Rigidbody Throw] Failed to load VRCFury-Editor assembly.");
+                Debug.LogError("[YUCP Rigidbody Throw] Failed to load the VRCFury editor assembly.");
                 return;
             }
 
@@ -383,7 +382,7 @@ namespace YUCP.Components.Editor
             Type vfControllerType = vrcfuryAssembly.GetType("VF.Utils.Controller.VFController");
             if (vfControllerType == null)
             {
-                Debug.LogError("[YUCP Rigidbody Throw] Failed to find VF.Utils.Controller.VFController type in VRCFury-Editor assembly.");
+                Debug.LogError("[YUCP Rigidbody Throw] Failed to find VF.Utils.Controller.VFController in the VRCFury editor assembly.");
                 return;
             }
 

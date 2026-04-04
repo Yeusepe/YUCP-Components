@@ -19,7 +19,7 @@ namespace YUCP.Components.Editor
 
             try
             {
-                var vrcfuryAssembly = System.Reflection.Assembly.Load("VRCFury-Editor");
+                var vrcfuryAssembly = VRCFuryReflectionUtils.LoadEditorCommonAssembly();
                 if (vrcfuryAssembly == null)
                 {
                     return null;

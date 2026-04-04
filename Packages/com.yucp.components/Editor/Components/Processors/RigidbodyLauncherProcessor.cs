@@ -612,17 +612,17 @@ namespace YUCP.Components.Editor
 
         private static void RenameParameterUsingVRCFury(AnimatorController controller, string oldName, string newName)
         {
-            Assembly vrcfuryAssembly = Assembly.Load("VRCFury-Editor");
+            Assembly vrcfuryAssembly = VRCFuryReflectionUtils.LoadEditorCommonAssembly();
             if (vrcfuryAssembly == null)
             {
-                Debug.LogError("[YUCP Rigidbody Launcher] Failed to load VRCFury-Editor assembly.");
+                Debug.LogError("[YUCP Rigidbody Launcher] Failed to load the VRCFury editor assembly.");
                 return;
             }
 
             Type vfControllerType = vrcfuryAssembly.GetType("VF.Utils.Controller.VFController");
             if (vfControllerType == null)
             {
-                Debug.LogError("[YUCP Rigidbody Launcher] Failed to find VF.Utils.Controller.VFController type in VRCFury-Editor assembly.");
+                Debug.LogError("[YUCP Rigidbody Launcher] Failed to find VF.Utils.Controller.VFController in the VRCFury editor assembly.");
                 return;
             }
 

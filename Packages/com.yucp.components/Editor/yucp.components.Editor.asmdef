@@ -4,7 +4,8 @@
     "references": [
         "VRC.SDKBase.Editor.BuildPipeline",
         "com.yucp.components.Runtime",
-        "VRCFury-Editor",
+        "VRCFury-Editor-Common",
+        "VRCFury-Editor-Avatars",
         "VRCFury",
         "com.vrcfury.api"
     ],
