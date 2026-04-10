@@ -100,6 +100,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static bool _scheduled;
 
+        private static bool _isConsumingPendingFinalization;
+
 
 
         [Serializable]
@@ -284,151 +286,173 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
 
 
-            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
-
-            {
-
-                SchedulePendingFinalization();
+            if (_isConsumingPendingFinalization)
 
                 return;
 
-            }
 
 
+            _isConsumingPendingFinalization = true;
 
-            PendingFinalizationState state = LoadPendingFinalizationState();
-
-            if (state == null || string.IsNullOrWhiteSpace(state.packageId))
+            try
 
             {
 
-                ClearPendingFinalization();
-
-                return;
-
-            }
-
-
-
-            var registry = InstalledPackageRegistry.Load() ?? InstalledPackageRegistry.GetOrCreate();
-
-            var packageInfo = registry?.GetPackage(state.packageId);
-
-            if (IsTimedOut(state))
-
-            {
-
-                bool timedOutRollbackCleanly = true;
-
-                string rollbackError = null;
-
-                if (packageInfo != null)
+                if (EditorApplication.isCompiling || EditorApplication.isUpdating)
 
                 {
 
-                    timedOutRollbackCleanly = RollbackFailedInstall(
+                    SchedulePendingFinalization();
 
-                        packageInfo,
-
-                        FindInstalledShellRootAssetPath(packageInfo),
-
-                        state.extractedAssetPaths ?? Array.Empty<string>(),
-
-                        Array.Empty<string>(),
-
-                        out rollbackError);
+                    return;
 
                 }
 
 
 
+                PendingFinalizationState state = LoadPendingFinalizationState();
+
+                if (state == null || string.IsNullOrWhiteSpace(state.packageId))
+
+                {
+
+                    ClearPendingFinalization();
+
+                    return;
+
+                }
+
+
+
+                var registry = InstalledPackageRegistry.Load() ?? InstalledPackageRegistry.GetOrCreate();
+
+                var packageInfo = registry?.GetPackage(state.packageId);
+
+                if (IsTimedOut(state))
+
+                {
+
+                    bool timedOutRollbackCleanly = true;
+
+                    string rollbackError = null;
+
+                    if (packageInfo != null)
+
+                    {
+
+                        timedOutRollbackCleanly = RollbackFailedInstall(
+
+                            packageInfo,
+
+                            FindInstalledShellRootAssetPath(packageInfo),
+
+                            state.extractedAssetPaths ?? Array.Empty<string>(),
+
+                            Array.Empty<string>(),
+
+                            out rollbackError);
+
+                    }
+
+
+
+                    ClearPendingFinalization();
+
+                    Debug.LogError(timedOutRollbackCleanly
+
+                        ? "[YUCP PackageManager] A required package protection step timed out and the import was rolled back."
+
+                        : $"[YUCP PackageManager] A required package protection step timed out and the import could not be rolled back cleanly. {rollbackError}");
+
+                    return;
+
+                }
+
+
+
+                if (packageInfo == null)
+
+                {
+
+                    SchedulePendingFinalization();
+
+                    return;
+
+                }
+
+
+
+                FinalizationStatus status = TryFinalizeProtectedInstall(
+
+                    packageInfo,
+
+                    state.extractedAssetPaths ?? Array.Empty<string>(),
+
+                    out IReadOnlyList<string> committedFiles,
+
+                    out string error,
+
+                    out bool rolledBackCleanly);
+
+
+
+                if (status == FinalizationStatus.Pending)
+
+                {
+
+                    SchedulePendingFinalization();
+
+                    return;
+
+                }
+
+
+
+                if (status == FinalizationStatus.Failed)
+
+                {
+
+                    ClearPendingFinalization();
+
+                    Debug.LogError(rolledBackCleanly
+
+                        ? "[YUCP PackageManager] A required package protection step failed and the import was rolled back."
+
+                        : "[YUCP PackageManager] A required package protection step failed and the import could not be rolled back cleanly.");
+
+                    EditorUtility.DisplayDialog(
+
+                        "Import Failed",
+
+                        error,
+
+                        "OK");
+
+                    return;
+
+                }
+
+
+
+                packageInfo.installedFiles = committedFiles.ToList();
+
+                registry.RegisterPackage(packageInfo);
+
+                ClearLegacyPendingPatchPath();
+
                 ClearPendingFinalization();
 
-                Debug.LogError(timedOutRollbackCleanly
-
-                    ? "[YUCP PackageManager] A required package protection step timed out and the import was rolled back."
-
-                    : $"[YUCP PackageManager] A required package protection step timed out and the import could not be rolled back cleanly. {rollbackError}");
-
-                return;
+                Debug.Log($"[YUCP PackageManager] Finalized protected package install for '{packageInfo.packageName}'.");
 
             }
 
-
-
-            if (packageInfo == null)
+            finally
 
             {
 
-                SchedulePendingFinalization();
-
-                return;
+                _isConsumingPendingFinalization = false;
 
             }
-
-
-
-            FinalizationStatus status = TryFinalizeProtectedInstall(
-
-                packageInfo,
-
-                state.extractedAssetPaths ?? Array.Empty<string>(),
-
-                out IReadOnlyList<string> committedFiles,
-
-                out string error,
-
-                out bool rolledBackCleanly);
-
-
-
-            if (status == FinalizationStatus.Pending)
-
-            {
-
-                SchedulePendingFinalization();
-
-                return;
-
-            }
-
-
-
-            if (status == FinalizationStatus.Failed)
-
-            {
-
-                ClearPendingFinalization();
-
-                Debug.LogError(rolledBackCleanly
-
-                    ? "[YUCP PackageManager] A required package protection step failed and the import was rolled back."
-
-                    : "[YUCP PackageManager] A required package protection step failed and the import could not be rolled back cleanly.");
-
-                EditorUtility.DisplayDialog(
-
-                    "Import Failed",
-
-                    error,
-
-                    "OK");
-
-                return;
-
-            }
-
-
-
-            packageInfo.installedFiles = committedFiles.ToList();
-
-            registry.RegisterPackage(packageInfo);
-
-            ClearLegacyPendingPatchPath();
-
-            ClearPendingFinalization();
-
-            Debug.Log($"[YUCP PackageManager] Finalized protected package install for '{packageInfo.packageName}'.");
 
         }
 
@@ -536,10 +560,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                     createdAssetPaths.AddRange(brokerMaterializedAssetPaths ?? Array.Empty<string>());
 
-                    if (!string.IsNullOrWhiteSpace(brokerError))
-                        Debug.LogError($"[YUCP PackageManager] Protected install broker error: {brokerError}");
-
                     rolledBackCleanly = RollbackFailedInstall(packageInfo, shellRootAssetPath, extractedAssetPaths, createdAssetPaths, out string rollbackError);
+
+                    if (!string.IsNullOrWhiteSpace(brokerError))
+                    {
+                        UnityEngine.Debug.LogError($"[YUCP PackageManager] Protected install broker error: {brokerError}");
+                    }
 
                     error = BuildFailureError(
                         !string.IsNullOrWhiteSpace(brokerError)
@@ -555,6 +581,61 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
 
                 createdAssetPaths.AddRange(brokerMaterializedAssetPaths ?? Array.Empty<string>());
+
+                AssetDatabase.Refresh();
+
+                var brokerPatchAssetPaths = CollectPatchAssetPaths(brokerMaterializedAssetPaths);
+                if (brokerPatchAssetPaths.Count > 0)
+
+                {
+
+                    if (TryMaterializePatchAssets(
+
+                        brokerPatchAssetPaths,
+
+                        out IReadOnlyList<string> materializedAssetPaths,
+
+                        out error,
+
+                        out bool patchMaterializationPending))
+
+                    {
+
+                        createdAssetPaths.AddRange(materializedAssetPaths ?? Array.Empty<string>());
+
+                        AssetDatabase.Refresh();
+                    }
+
+                    else
+
+                    {
+
+                        if (patchMaterializationPending)
+
+                            return FinalizationStatus.Pending;
+
+
+
+                        createdAssetPaths.AddRange(materializedAssetPaths ?? Array.Empty<string>());
+
+                        rolledBackCleanly = RollbackFailedInstall(packageInfo, shellRootAssetPath, extractedAssetPaths, createdAssetPaths, out string rollbackError);
+
+                        error = BuildFailureError("The package protection step could not be completed on this machine.", rollbackError, rolledBackCleanly);
+
+                        return FinalizationStatus.Failed;
+                    }
+                }
+
+                if (!TryCleanupManagedArtifacts(packageInfo, shellRootAssetPath, brokerMaterializedAssetPaths, out _))
+
+                {
+
+                    rolledBackCleanly = RollbackFailedInstall(packageInfo, shellRootAssetPath, extractedAssetPaths, createdAssetPaths, out string rollbackError);
+
+                    error = BuildFailureError("The package protection step could not be completed on this machine.", rollbackError, rolledBackCleanly);
+
+                    return FinalizationStatus.Failed;
+                }
 
                 AssetDatabase.Refresh();
 
@@ -746,6 +827,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 {
 
+                    EnsurePatchRuntimeCompilationRequested();
+
                     pending = true;
 
                     return false;
@@ -775,6 +858,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 if (HasTempPackageFolder() || HasLegacyPendingPatchPath())
 
                 {
+
+                    EnsurePatchRuntimeCompilationRequested();
 
                     pending = true;
 
@@ -825,6 +910,30 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 error = "The package protection step could not be completed on this machine.";
 
                 return false;
+
+            }
+
+        }
+
+
+
+        private static void EnsurePatchRuntimeCompilationRequested()
+
+        {
+
+            try
+
+            {
+
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
+                UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+
+            }
+
+            catch
+
+            {
 
             }
 

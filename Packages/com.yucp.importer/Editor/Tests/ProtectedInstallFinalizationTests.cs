@@ -6,14 +6,17 @@ using System.Reflection;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 using YUCP.Importer.Editor.PackageManager;
 
 namespace YUCP.Importer.Editor.Tests
 {
     public class ProtectedInstallFinalizationTests
     {
+        private const string RealProtectedPackagePath = @"C:\Users\svalp\Downloads\Novaspil Kitbash Test License Verification_1.0.0.unitypackage";
         private readonly List<string> _createdRoots = new List<string>();
         private readonly List<string> _createdWorkspaceRoots = new List<string>();
+        private readonly List<string> _registeredPackageIds = new List<string>();
         private static bool s_releaseRuntimeResourcesCalled;
         private static IReadOnlyList<string> s_lastRollbackPaths;
 
@@ -25,6 +28,8 @@ namespace YUCP.Importer.Editor.Tests
             SetProtectedPayloadBrokerBridgeOverride(null);
             s_releaseRuntimeResourcesCalled = false;
             s_lastRollbackPaths = null;
+            ClearPendingFinalizationState();
+            UnregisterTrackedPackages();
             DeleteCreatedRoots();
             DeleteCreatedWorkspaceRoots();
         }
@@ -254,6 +259,62 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void TryConsumePendingFinalization_WithRealProtectedPackageShell_CompletesProtectedMaterialization()
+        {
+            RealProtectedShellContext context = CreateRealProtectedShellContext(RealProtectedPackagePath);
+            AssertProtectedMaterializationRuntimeReady(context.PackageInfo);
+
+            RegisterTrackedPackage(context.PackageInfo);
+            InvokeQueuePendingFinalization(context.PackageInfo, Array.Empty<string>());
+            InvokeTryConsumePendingFinalization();
+
+            AssetDatabase.Refresh();
+
+            InstalledPackageInfo registeredPackage = InstalledPackageRegistry.Load()?.GetPackage(context.PackageInfo.packageId);
+            Assert.That(registeredPackage, Is.Not.Null);
+            Assert.That(registeredPackage.installedFiles, Is.Not.Null);
+            Assert.That(registeredPackage.installedFiles, Has.Some.EqualTo("Assets/Novaspil_Kitbash/Novaspil.fbx"));
+            Assert.That(File.Exists(GetProjectDiskPath("Assets/Novaspil_Kitbash/Novaspil.fbx")), Is.True);
+            Assert.That(HasPendingFinalizationState(), Is.False);
+
+            TrackCreatedPaths(registeredPackage.installedFiles);
+        }
+
+        [Test]
+        public void TryFinalizeProtectedInstall_WithRealProtectedPackageShell_CompletesProtectedMaterialization_WhenInvokedDirectly()
+        {
+            RealProtectedShellContext context = CreateRealProtectedShellContext(RealProtectedPackagePath);
+            AssertProtectedMaterializationRuntimeReady(context.PackageInfo);
+
+            MethodInfo method = GetCoordinatorType().GetMethod(
+                "TryFinalizeProtectedInstall",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+
+            object[] args =
+            {
+                context.PackageInfo,
+                Array.Empty<string>(),
+                null,
+                null,
+                null,
+            };
+
+            object status = method.Invoke(null, args);
+            var committedFiles = args[2] as IReadOnlyList<string>;
+            string error = args[3] as string;
+            bool rolledBackCleanly = args[4] is bool value && value;
+
+            TrackCreatedPaths(committedFiles);
+            TrackCreatedPaths(context.PackageInfo.installedFiles);
+
+            Assert.That(status?.ToString(), Is.EqualTo("Completed"), error);
+            Assert.That(error, Is.Null.Or.Empty);
+            Assert.That(rolledBackCleanly, Is.True);
+            Assert.That(committedFiles ?? Array.Empty<string>(), Is.Not.Empty);
+        }
+
+        [Test]
         public void NestedProtectedDerivedAssetValidation_RejectsLegacyLocalRecoveryPatchAsset()
         {
             string patchAsset = CreateAssetFile(
@@ -375,6 +436,408 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
+        private sealed class RealProtectedShellContext
+        {
+            public InstalledPackageInfo PackageInfo { get; set; }
+            public IReadOnlyList<string> ImportedPaths { get; set; }
+        }
+
+        private RealProtectedShellContext CreateRealProtectedShellContext(string unityPackagePath)
+        {
+            IReadOnlyList<string> importedPaths = ExpandUnityPackageShellIntoProject(unityPackagePath);
+
+            string metadataAssetPath = importedPaths.FirstOrDefault(
+                path => path.EndsWith("/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase));
+            string protectedPayloadAssetPath = importedPaths.FirstOrDefault(
+                path => path.EndsWith("/YUCP_ProtectedPayload.json", StringComparison.OrdinalIgnoreCase));
+            string tempInstallAssetPath = importedPaths.FirstOrDefault(
+                path => path.Contains("/_temp/YUCP_TempInstall_", StringComparison.OrdinalIgnoreCase));
+            string manifestAssetPath = importedPaths.FirstOrDefault(
+                path => path.Equals("Assets/_Signing/PackageManifest.json", StringComparison.OrdinalIgnoreCase));
+
+            Assert.That(metadataAssetPath, Is.Not.Null.And.Not.Empty);
+            Assert.That(protectedPayloadAssetPath, Is.Not.Null.And.Not.Empty);
+            Assert.That(tempInstallAssetPath, Is.Not.Null.And.Not.Empty);
+            Assert.That(manifestAssetPath, Is.Not.Null.And.Not.Empty);
+
+            PackageMetadata metadata = InvokeExtractMetadataFromInstalledShell(
+                metadataAssetPath,
+                tempInstallAssetPath,
+                protectedPayloadAssetPath,
+                Path.GetFileNameWithoutExtension(unityPackagePath));
+            Assert.That(metadata, Is.Not.Null);
+
+            string manifestJson = File.ReadAllText(GetProjectDiskPath(manifestAssetPath));
+            var manifest = YUCP.Importer.Editor.PackageVerifier.Core.PackageManifestJson.ParseManifest(manifestJson);
+            Assert.That(manifest, Is.Not.Null);
+            Assert.That(manifest.packageId, Is.Not.Null.And.Not.Empty);
+
+            InstalledPackageInfo packageInfo = InvokeInstalledPackageInfoFactoryCreate(
+                metadata,
+                manifest.packageId,
+                manifest.archiveSha256,
+                manifest.publisherId,
+                importedPaths);
+            Assert.That(packageInfo, Is.Not.Null);
+
+            TrackCreatedPaths(importedPaths);
+
+            return new RealProtectedShellContext
+            {
+                PackageInfo = packageInfo,
+                ImportedPaths = importedPaths,
+            };
+        }
+
+        private void AssertProtectedMaterializationRuntimeReady(InstalledPackageInfo packageInfo)
+        {
+            Assert.That(packageInfo, Is.Not.Null);
+
+            string cachedLicenseToken = InvokeLicenseTokenCacheGetValidToken(packageInfo.packageId);
+            if (string.IsNullOrWhiteSpace(cachedLicenseToken))
+            {
+                Assert.Inconclusive($"No cached YUCP license token was available for package '{packageInfo.packageId}'.");
+            }
+
+            if (!InvokeTryValidateProtectedMaterializationRuntime(out string runtimeError))
+            {
+                Assert.Inconclusive(runtimeError);
+            }
+        }
+
+        private IReadOnlyList<string> ExpandUnityPackageShellIntoProject(string unityPackagePath)
+        {
+            string extractRoot = Path.Combine(
+                Path.GetTempPath(),
+                "YUCP-ProtectedFinalizationTests",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(extractRoot);
+
+            try
+            {
+                ExtractUnityPackage(unityPackagePath, extractRoot);
+
+                var importedPaths = new List<string>();
+                foreach (string entryDirectory in Directory.GetDirectories(extractRoot))
+                {
+                    string pathnameFile = Path.Combine(entryDirectory, "pathname");
+                    if (!File.Exists(pathnameFile))
+                    {
+                        continue;
+                    }
+
+                    string logicalPath = NormalizeUnityPath(File.ReadAllText(pathnameFile));
+                    if (string.IsNullOrWhiteSpace(logicalPath) || !ShouldImportProtectedShellPath(logicalPath))
+                    {
+                        continue;
+                    }
+
+                    string assetFile = Path.Combine(entryDirectory, "asset");
+                    string assetMetaFile = Path.Combine(entryDirectory, "asset.meta");
+                    bool hasAssetFile = File.Exists(assetFile);
+                    bool hasAssetMetaFile = File.Exists(assetMetaFile);
+                    if (!hasAssetFile && !hasAssetMetaFile)
+                    {
+                        continue;
+                    }
+
+                    string destinationDiskPath = GetProjectDiskPath(logicalPath);
+                    string destinationDirectory = Path.GetDirectoryName(destinationDiskPath);
+                    if (!string.IsNullOrWhiteSpace(destinationDirectory))
+                    {
+                        Directory.CreateDirectory(destinationDirectory);
+                    }
+
+                    if (hasAssetFile)
+                    {
+                        File.Copy(assetFile, destinationDiskPath, true);
+                    }
+
+                    if (hasAssetMetaFile)
+                    {
+                        File.Copy(assetMetaFile, destinationDiskPath + ".meta", true);
+                    }
+
+                    importedPaths.Add(logicalPath);
+                    TrackCreatedRoot(logicalPath);
+                }
+
+                AssetDatabase.Refresh();
+                return importedPaths
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+            finally
+            {
+                if (Directory.Exists(extractRoot))
+                {
+                    Directory.Delete(extractRoot, true);
+                }
+            }
+        }
+
+        private static bool ShouldImportProtectedShellPath(string logicalPath)
+        {
+            string normalizedPath = NormalizeUnityPath(logicalPath);
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return false;
+            }
+
+            if (normalizedPath.StartsWith("Packages/yucp.installed-packages/Editor/", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (normalizedPath.Equals("Packages/yucp.installed-packages/package.json", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (normalizedPath.StartsWith("Packages/yucp.packageguardian/", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static string NormalizeUnityPath(string path)
+        {
+            return path?.Replace('\\', '/').Trim();
+        }
+
+        private static void ExtractUnityPackage(string unityPackagePath, string extractRoot)
+        {
+            Type tarArchiveType = Type.GetType("ICSharpCode.SharpZipLib.Tar.TarArchive, ICSharpCode.SharpZipLib", false);
+            Type gzipInputStreamType = Type.GetType("ICSharpCode.SharpZipLib.GZip.GZipInputStream, ICSharpCode.SharpZipLib", false);
+
+            Assert.That(tarArchiveType, Is.Not.Null, "Expected SharpZipLib TarArchive to be available.");
+            Assert.That(gzipInputStreamType, Is.Not.Null, "Expected SharpZipLib GZipInputStream to be available.");
+
+            ConstructorInfo gzipConstructor = gzipInputStreamType.GetConstructor(new[] { typeof(Stream) });
+            MethodInfo createInputMethod = tarArchiveType
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .FirstOrDefault(method =>
+                {
+                    if (!string.Equals(method.Name, "CreateInputTarArchive", StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    ParameterInfo[] parameters = method.GetParameters();
+                    if (parameters.Length == 1)
+                    {
+                        return typeof(Stream).IsAssignableFrom(parameters[0].ParameterType);
+                    }
+
+                    if (parameters.Length == 2)
+                    {
+                        return typeof(Stream).IsAssignableFrom(parameters[0].ParameterType);
+                    }
+
+                    return false;
+                });
+            MethodInfo extractContentsMethod = tarArchiveType
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .FirstOrDefault(method =>
+                {
+                    if (!string.Equals(method.Name, "ExtractContents", StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    ParameterInfo[] parameters = method.GetParameters();
+                    return parameters.Length == 1 && parameters[0].ParameterType == typeof(string);
+                });
+
+            Assert.That(gzipConstructor, Is.Not.Null);
+            Assert.That(createInputMethod, Is.Not.Null);
+            Assert.That(extractContentsMethod, Is.Not.Null);
+
+            using var fileStream = File.OpenRead(unityPackagePath);
+            object gzipStream = gzipConstructor.Invoke(new object[] { fileStream });
+            Assert.That(gzipStream, Is.Not.Null);
+
+            ParameterInfo[] createInputParameters = createInputMethod.GetParameters();
+            object[] createInputArgs = createInputParameters.Length == 1
+                ? new object[] { gzipStream }
+                : new object[] { gzipStream, System.Text.Encoding.UTF8 };
+
+            object tarArchive = createInputMethod.Invoke(null, createInputArgs);
+            Assert.That(tarArchive, Is.Not.Null);
+
+            try
+            {
+                extractContentsMethod.Invoke(tarArchive, new object[] { extractRoot });
+            }
+            finally
+            {
+                (tarArchive as IDisposable)?.Dispose();
+                (gzipStream as IDisposable)?.Dispose();
+            }
+        }
+
+        private static PackageMetadata InvokeExtractMetadataFromInstalledShell(
+            string metadataAssetPath,
+            string tempInstallAssetPath,
+            string protectedPayloadAssetPath,
+            string fallbackPackageName)
+        {
+            Type extractorType = typeof(InstalledPackageInfo).Assembly.GetType(
+                "YUCP.Importer.Editor.PackageManager.PackageMetadataExtractor",
+                false);
+            Assert.That(extractorType, Is.Not.Null);
+
+            MethodInfo method = extractorType.GetMethod(
+                "ExtractMetadataFromInstalledShell",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+
+            return method.Invoke(
+                null,
+                new object[]
+                {
+                    metadataAssetPath,
+                    tempInstallAssetPath,
+                    protectedPayloadAssetPath,
+                    fallbackPackageName,
+                }) as PackageMetadata;
+        }
+
+        private static InstalledPackageInfo InvokeInstalledPackageInfoFactoryCreate(
+            PackageMetadata metadata,
+            string packageId,
+            string archiveSha256,
+            string publisherId,
+            IEnumerable<string> installedFiles)
+        {
+            Type factoryType = typeof(InstalledPackageInfo).Assembly.GetType(
+                "YUCP.Importer.Editor.PackageManager.InstalledPackageInfoFactory",
+                false);
+            Assert.That(factoryType, Is.Not.Null);
+
+            MethodInfo method = factoryType.GetMethod(
+                "Create",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+
+            return method.Invoke(
+                null,
+                new object[]
+                {
+                    metadata,
+                    packageId,
+                    archiveSha256,
+                    publisherId,
+                    true,
+                    installedFiles?.ToArray() ?? Array.Empty<string>(),
+                }) as InstalledPackageInfo;
+        }
+
+        private static string InvokeLicenseTokenCacheGetValidToken(string packageId)
+        {
+            Type cacheType = typeof(InstalledPackageInfo).Assembly.GetType(
+                "YUCP.Importer.Editor.PackageManager.Core.LicenseTokenCache",
+                false);
+            Assert.That(cacheType, Is.Not.Null);
+
+            MethodInfo method = cacheType.GetMethod(
+                "GetValidToken",
+                BindingFlags.Public | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+
+            return method.Invoke(null, new object[] { packageId }) as string;
+        }
+
+        private static bool InvokeTryValidateProtectedMaterializationRuntime(out string error)
+        {
+            Type shimType = typeof(InstalledPackageInfo).Assembly.GetType(
+                "YUCP.Importer.Editor.PackageManager.Core.CouplingRuntimeShimService",
+                false);
+            Assert.That(shimType, Is.Not.Null);
+
+            MethodInfo method = shimType.GetMethod(
+                "TryValidateProtectedMaterializationRuntime",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+
+            object[] args = { null };
+            bool success = method.Invoke(null, args) is bool result && result;
+            error = args[0] as string;
+            return success;
+        }
+
+        private void TrackCreatedPaths(IEnumerable<string> assetPaths)
+        {
+            if (assetPaths == null)
+            {
+                return;
+            }
+
+            foreach (string assetPath in assetPaths)
+            {
+                if (!string.IsNullOrWhiteSpace(assetPath))
+                {
+                    TrackCreatedRoot(assetPath);
+                }
+            }
+        }
+
+        private void RegisterTrackedPackage(InstalledPackageInfo packageInfo)
+        {
+            Assert.That(packageInfo, Is.Not.Null);
+
+            var registry = InstalledPackageRegistry.GetOrCreate();
+            registry.RegisterPackage(packageInfo);
+            _registeredPackageIds.Add(packageInfo.packageId);
+        }
+
+        private void UnregisterTrackedPackages()
+        {
+            if (_registeredPackageIds.Count == 0)
+            {
+                return;
+            }
+
+            var registry = InstalledPackageRegistry.Load() ?? InstalledPackageRegistry.GetOrCreate();
+            foreach (string packageId in _registeredPackageIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
+            {
+                registry.UnregisterPackage(packageId);
+            }
+
+            _registeredPackageIds.Clear();
+            AssetDatabase.Refresh();
+        }
+
+        private static void InvokeQueuePendingFinalization(InstalledPackageInfo packageInfo, IReadOnlyList<string> extractedAssetPaths)
+        {
+            MethodInfo method = GetCoordinatorType().GetMethod(
+                "QueuePendingFinalization",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+            method.Invoke(null, new object[] { packageInfo, extractedAssetPaths ?? Array.Empty<string>() });
+        }
+
+        private static void InvokeTryConsumePendingFinalization()
+        {
+            MethodInfo method = GetCoordinatorType().GetMethod(
+                "TryConsumePendingFinalization",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+            method.Invoke(null, null);
+        }
+
+        private static bool HasPendingFinalizationState()
+        {
+            return !string.IsNullOrWhiteSpace(EditorPrefs.GetString("YUCP.PackageManager.ProtectedPayload.PendingFinalization", string.Empty));
+        }
+
+        private static void ClearPendingFinalizationState()
+        {
+            EditorPrefs.DeleteKey("YUCP.PackageManager.ProtectedPayload.PendingFinalization");
+        }
+
         private string CreatePackageShell(string packageId, string packageName)
         {
             string shellRoot = $"Packages/yucp.installed-packages/finalization-{Guid.NewGuid():N}";
@@ -460,18 +923,22 @@ namespace YUCP.Importer.Editor.Tests
         {
             string normalizedPath = assetPath.Replace('\\', '/');
             string[] segments = normalizedPath.Split('/');
-            string root = normalizedPath.StartsWith("Packages/yucp.installed-packages/finalization-", StringComparison.OrdinalIgnoreCase)
-                ? segments.Length >= 3
-                    ? string.Join("/", segments.Take(3))
-                    : null
+            string root = normalizedPath.StartsWith("Packages/yucp.installed-packages/", StringComparison.OrdinalIgnoreCase)
+                ? normalizedPath.Equals("Packages/yucp.installed-packages/package.json", StringComparison.OrdinalIgnoreCase)
+                    ? normalizedPath
+                    : normalizedPath.StartsWith("Packages/yucp.installed-packages/Editor/", StringComparison.OrdinalIgnoreCase)
+                        ? "Packages/yucp.installed-packages/Editor"
+                        : segments.Length >= 3
+                            ? string.Join("/", segments.Take(3))
+                            : null
                 : normalizedPath.StartsWith("Packages/com.yucp.temp/", StringComparison.OrdinalIgnoreCase)
                     ? "Packages/com.yucp.temp"
-                    : normalizedPath.StartsWith("Assets/Novaspil_Kitbash/", StringComparison.OrdinalIgnoreCase)
+                : normalizedPath.StartsWith("Assets/Novaspil_Kitbash/", StringComparison.OrdinalIgnoreCase)
                         ? "Assets/Novaspil_Kitbash"
                         : normalizedPath.StartsWith("Assets/_Signing/", StringComparison.OrdinalIgnoreCase)
                             ? "Assets/_Signing"
-                            : normalizedPath.StartsWith("Packages/yucp.installed-packages/Editor/", StringComparison.OrdinalIgnoreCase)
-                                ? "Packages/yucp.installed-packages/Editor"
+                            : normalizedPath.StartsWith("Packages/yucp.packageguardian/", StringComparison.OrdinalIgnoreCase)
+                                ? "Packages/yucp.packageguardian"
                                 : null;
 
             if (!string.IsNullOrWhiteSpace(root) && !_createdRoots.Contains(root))
