@@ -19,6 +19,8 @@ namespace YUCP.Importer.Editor.Tests
         private readonly List<string> _registeredPackageIds = new List<string>();
         private static bool s_releaseRuntimeResourcesCalled;
         private static IReadOnlyList<string> s_lastRollbackPaths;
+        private static IReadOnlyList<string> s_lastCouplingPaths;
+        private static string s_lastCouplingPackageId;
 
         [TearDown]
         public void TearDown()
@@ -26,8 +28,12 @@ namespace YUCP.Importer.Editor.Tests
             SetReleaseRuntimeResourcesOverride(null);
             SetRollbackImportedAssetsOverride(null);
             SetProtectedPayloadBrokerBridgeOverride(null);
+            SetTryMaterializePatchAssetsOverride(null);
+            SetTryApplyCouplingOverride(null);
             s_releaseRuntimeResourcesCalled = false;
             s_lastRollbackPaths = null;
+            s_lastCouplingPaths = null;
+            s_lastCouplingPackageId = null;
             ClearPendingFinalizationState();
             UnregisterTrackedPackages();
             DeleteCreatedRoots();
@@ -246,6 +252,7 @@ namespace YUCP.Importer.Editor.Tests
                 null,
             };
 
+            LogAssert.Expect(LogType.Error, "[YUCP PackageManager] Protected install broker error.");
             object status = method.Invoke(null, args);
             string error = args[3] as string;
             bool rolledBackCleanly = args[4] is bool value && value;
@@ -255,6 +262,8 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(error, Is.EqualTo("The package protection step could not be completed on this machine."));
             Assert.That(error, Does.Not.Contain("runtime is not installed"));
             Assert.That(error, Does.Not.Contain("Runtime root:"));
+            Assert.That(error, Does.Not.Contain("Novaspil.fbx"));
+            Assert.That(error, Does.Not.Contain("exit code"));
             Assert.That(Directory.Exists(GetAssetDiskPath(shellRoot)), Is.False);
         }
 
@@ -312,6 +321,83 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(error, Is.Null.Or.Empty);
             Assert.That(rolledBackCleanly, Is.True);
             Assert.That(committedFiles ?? Array.Empty<string>(), Is.Not.Empty);
+        }
+
+        [Test]
+        public void TryFinalizeProtectedInstall_WithBrokeredMaterialization_AppliesCouplingToCommittedDerivedOutputs()
+        {
+            const string packageId = "pkg-finalization-broker-coupling";
+            const string packageName = "Broker Coupling Package";
+            const string brokerPayloadPng = "Assets/Novabeast_V1_2/Materials/eyes1Tex.png";
+            const string brokerPatchAsset = "Packages/com.yucp.temp/Patches/DerivedFbxAsset_Test.asset";
+            const string finalFbx = "Assets/Novaspil_Kitbash/Novaspil.fbx";
+
+            string shellRoot = CreatePackageShell(packageId, packageName);
+            string shellIcon = CreatePngAssetFile($"{shellRoot}/Embedded/icon.png", Color.cyan);
+
+            var packageInfo = new InstalledPackageInfo
+            {
+                packageId = packageId,
+                packageName = packageName,
+                installedFiles = new List<string>
+                {
+                    $"{shellRoot}/YUCP_PackageInfo.json",
+                },
+                protectedPayload = new ProtectedPayloadDescriptor
+                {
+                    protectedAssetId = "brokered-coupling-payload",
+                    payloadAssetPaths = new[] { brokerPayloadPng, finalFbx },
+                    requiresBrokeredMaterialization = true,
+                    brokerProtocolVersion = 1,
+                },
+            };
+
+            SetProtectedPayloadBrokerBridgeOverride(new SuccessfulBrokerBridge(
+                (brokerPayloadPng, new byte[] { 1, 2, 3, 4 }),
+                (brokerPatchAsset, System.Text.Encoding.UTF8.GetBytes("patch"))));
+            SetTryMaterializePatchAssetsOverride(typeof(ProtectedInstallFinalizationTests).GetMethod(
+                nameof(MaterializePatchAssetToFinalFbx),
+                BindingFlags.NonPublic | BindingFlags.Static));
+            SetTryApplyCouplingOverride(typeof(ProtectedInstallFinalizationTests).GetMethod(
+                nameof(CaptureCoupling),
+                BindingFlags.NonPublic | BindingFlags.Static));
+
+            MethodInfo method = GetCoordinatorType().GetMethod(
+                "TryFinalizeProtectedInstall",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+
+            object[] args =
+            {
+                packageInfo,
+                Array.Empty<string>(),
+                null,
+                null,
+                null,
+            };
+
+            string expectedImportError =
+                $"ImportFBX Errors:\nCouldn't read file {GetProjectDiskPath(finalFbx).Replace('\\', '/')}.\nUnexpected file type\n\n";
+            LogAssert.Expect(LogType.Error, expectedImportError);
+            object status = method.Invoke(null, args);
+            var committedFiles = args[2] as IReadOnlyList<string>;
+            string error = args[3] as string;
+            bool rolledBackCleanly = args[4] is bool value && value;
+
+            TrackCreatedPaths(committedFiles);
+            TrackCreatedPaths(packageInfo.installedFiles);
+
+            Assert.That(status?.ToString(), Is.EqualTo("Completed"), error);
+            Assert.That(error, Is.Null.Or.Empty);
+            Assert.That(rolledBackCleanly, Is.True);
+            Assert.That(committedFiles, Has.Member(finalFbx));
+            Assert.That(packageInfo.installedFiles, Has.Member(finalFbx));
+            Assert.That(File.Exists(GetProjectDiskPath(finalFbx)), Is.True);
+            Assert.That(s_lastCouplingPackageId, Is.EqualTo(packageId));
+            Assert.That(s_lastCouplingPaths, Is.Not.Null);
+            Assert.That(s_lastCouplingPaths, Has.Member(finalFbx));
+            Assert.That(s_lastCouplingPaths, Has.No.Member(brokerPayloadPng));
+            Assert.That(s_lastCouplingPaths, Has.No.Member(shellIcon));
         }
 
         [Test]
@@ -414,6 +500,32 @@ namespace YUCP.Importer.Editor.Tests
             return true;
         }
 
+        private static bool CaptureCoupling(string packageId, IReadOnlyList<string> installedFiles, out string error)
+        {
+            s_lastCouplingPackageId = packageId;
+            s_lastCouplingPaths = installedFiles?.ToArray() ?? Array.Empty<string>();
+            error = null;
+            return true;
+        }
+
+        private static bool MaterializePatchAssetToFinalFbx(
+            IReadOnlyList<string> patchAssetPaths,
+            out IReadOnlyList<string> createdAssetPaths,
+            out string error)
+        {
+            Assert.That(patchAssetPaths, Has.Member("Packages/com.yucp.temp/Patches/DerivedFbxAsset_Test.asset"));
+
+            const string finalFbx = "Assets/Novaspil_Kitbash/Novaspil.fbx";
+            string diskPath = GetProjectDiskPath(finalFbx);
+            Directory.CreateDirectory(Path.GetDirectoryName(diskPath) ?? string.Empty);
+            File.WriteAllBytes(diskPath, new byte[] { 5, 6, 7, 8 });
+            AssetDatabase.Refresh();
+
+            createdAssetPaths = new[] { finalFbx };
+            error = null;
+            return true;
+        }
+
         private sealed class FailingBrokerBridge : YUCP.Importer.Editor.PackageManager.Core.IProtectedPayloadBrokerBridge
         {
             private readonly string _error;
@@ -433,6 +545,37 @@ namespace YUCP.Importer.Editor.Tests
                 error = _error;
                 pending = false;
                 return false;
+            }
+        }
+
+        private sealed class SuccessfulBrokerBridge : YUCP.Importer.Editor.PackageManager.Core.IProtectedPayloadBrokerBridge
+        {
+            private readonly (string assetPath, byte[] contents)[] _assets;
+
+            public SuccessfulBrokerBridge(params (string assetPath, byte[] contents)[] assets)
+            {
+                _assets = assets ?? Array.Empty<(string assetPath, byte[] contents)>();
+            }
+
+            public bool TryFinalizeProtectedInstall(
+                InstalledPackageInfo packageInfo,
+                out IReadOnlyList<string> materializedAssetPaths,
+                out string error,
+                out bool pending)
+            {
+                error = null;
+                pending = false;
+                var materializedPaths = new List<string>();
+                foreach ((string assetPath, byte[] contents) in _assets)
+                {
+                    string diskPath = GetProjectDiskPath(assetPath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(diskPath) ?? string.Empty);
+                    File.WriteAllBytes(diskPath, contents ?? Array.Empty<byte>());
+                    materializedPaths.Add(assetPath);
+                }
+                AssetDatabase.Refresh();
+                materializedAssetPaths = materializedPaths;
+                return true;
             }
         }
 
@@ -1026,6 +1169,26 @@ namespace YUCP.Importer.Editor.Tests
             field.SetValue(null, callback);
         }
 
+        private static void SetTryApplyCouplingOverride(MethodInfo method)
+        {
+            Type guardType = typeof(InstalledPackageInfo).Assembly.GetType(
+                "YUCP.Importer.Editor.PackageManager.Core.CouplingImportGuard",
+                false);
+            Assert.That(guardType, Is.Not.Null);
+
+            FieldInfo field = guardType.GetField("s_tryApplyCouplingOverride", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(field, Is.Not.Null);
+
+            if (method == null)
+            {
+                field.SetValue(null, null);
+                return;
+            }
+
+            Delegate callback = Delegate.CreateDelegate(field.FieldType, method);
+            field.SetValue(null, callback);
+        }
+
         private static void SetProtectedPayloadBrokerBridgeOverride(object bridge)
         {
             Type brokerServiceType = GetCoordinatorType().GetNestedType(
@@ -1041,6 +1204,22 @@ namespace YUCP.Importer.Editor.Tests
 
             cachedBridgeField.SetValue(null, bridge);
             resolvedBridgeField.SetValue(null, bridge != null);
+        }
+
+        private static void SetTryMaterializePatchAssetsOverride(MethodInfo method)
+        {
+            Type coordinatorType = GetCoordinatorType();
+            FieldInfo field = coordinatorType.GetField("s_tryMaterializePatchAssetsOverride", BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(field, Is.Not.Null);
+            if (method == null)
+            {
+                field.SetValue(null, null);
+                return;
+            }
+
+            Delegate callback = Delegate.CreateDelegate(field.FieldType, method);
+            field.SetValue(null, callback);
         }
 
         private static Type GetCoordinatorType()

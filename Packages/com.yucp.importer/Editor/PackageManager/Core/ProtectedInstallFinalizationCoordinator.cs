@@ -564,13 +564,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                     if (!string.IsNullOrWhiteSpace(brokerError))
                     {
-                        UnityEngine.Debug.LogError($"[YUCP PackageManager] Protected install broker error: {brokerError}");
+                        UnityEngine.Debug.LogError("[YUCP PackageManager] Protected install broker error.");
                     }
 
                     error = BuildFailureError(
-                        !string.IsNullOrWhiteSpace(brokerError)
-                            ? brokerError.Trim()
-                            : "The package protection step could not be completed on this machine.",
+                        "The package protection step could not be completed on this machine.",
                         rollbackError,
                         rolledBackCleanly);
 
@@ -630,6 +628,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 {
 
+                    Debug.LogError("[YUCP PackageManager] Protected install cleanup failed.");
+
                     rolledBackCleanly = RollbackFailedInstall(packageInfo, shellRootAssetPath, extractedAssetPaths, createdAssetPaths, out string rollbackError);
 
                     error = BuildFailureError("The package protection step could not be completed on this machine.", rollbackError, rolledBackCleanly);
@@ -652,6 +652,22 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     shellRootAssetPath);
 
                 packageInfo.installedFiles = committedFiles.ToList();
+
+                IReadOnlyList<string> brokerCouplingFiles = BuildBrokeredPostCommitCouplingFiles(
+                    brokerMaterializedAssetPaths,
+                    createdAssetPaths);
+                if (!TryApplyCoupling(packageInfo.packageId, brokerCouplingFiles, out _))
+
+                {
+
+                    Debug.LogError("[YUCP PackageManager] Protected install post-commit coupling failed.");
+
+                    rolledBackCleanly = RollbackFailedInstall(packageInfo, shellRootAssetPath, committedFiles, createdAssetPaths, out string rollbackError);
+
+                    error = BuildFailureError("The package protection step could not be completed on this machine.", rollbackError, rolledBackCleanly);
+
+                    return FinalizationStatus.Failed;
+                }
 
                 rolledBackCleanly = true;
 
@@ -713,6 +729,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             {
 
+                Debug.LogError("[YUCP PackageManager] Protected install cleanup failed.");
+
                 rolledBackCleanly = RollbackFailedInstall(packageInfo, shellRootAssetPath, extractedAssetPaths, createdAssetPaths, out string rollbackError);
 
                 error = BuildFailureError("The package protection step could not be completed on this machine.", rollbackError, rolledBackCleanly);
@@ -731,11 +749,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             packageInfo.installedFiles = committedFiles.ToList();
 
-
-
-            if (!TryApplyCoupling(packageInfo.packageId, committedFiles, out _))
+            IReadOnlyList<string> committedCouplingFiles = BuildCouplingFiles(packageInfo, extractedAssetPaths, createdAssetPaths);
+            if (!TryApplyCoupling(packageInfo.packageId, committedCouplingFiles, out _))
 
             {
+
+                Debug.LogError("[YUCP PackageManager] Protected install post-commit coupling failed.");
 
                 rolledBackCleanly = RollbackFailedInstall(packageInfo, shellRootAssetPath, committedFiles, createdAssetPaths, out string rollbackError);
 
@@ -1800,6 +1819,104 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
 
                 .ToList();
+
+        }
+
+
+
+        private static IReadOnlyList<string> BuildCouplingFiles(
+
+            InstalledPackageInfo packageInfo,
+
+            IReadOnlyList<string> extractedAssetPaths,
+
+            IReadOnlyList<string> createdAssetPaths)
+
+        {
+
+            var couplingFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+
+
+            foreach (string assetPath in packageInfo?.protectedPayload?.payloadAssetPaths ?? Array.Empty<string>())
+
+            {
+
+                AddDurableInstalledFile(couplingFiles, assetPath);
+
+            }
+
+
+
+            foreach (string assetPath in extractedAssetPaths ?? Array.Empty<string>())
+
+            {
+
+                AddDurableInstalledFile(couplingFiles, assetPath);
+
+            }
+
+
+
+            foreach (string assetPath in createdAssetPaths ?? Array.Empty<string>())
+
+            {
+
+                AddDurableInstalledFile(couplingFiles, assetPath);
+
+            }
+
+
+
+            return couplingFiles
+
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+
+                .ToList();
+
+        }
+
+
+
+        private static IReadOnlyList<string> BuildBrokeredPostCommitCouplingFiles(
+
+            IReadOnlyList<string> brokerMaterializedAssetPaths,
+
+            IReadOnlyList<string> createdAssetPaths)
+
+        {
+
+            var brokerMaterializedSet = new HashSet<string>(
+
+                (brokerMaterializedAssetPaths ?? Array.Empty<string>())
+
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+
+                    .Select(NormalizeAssetPath),
+
+                StringComparer.OrdinalIgnoreCase);
+
+
+
+            var postBrokerCreatedAssetPaths = (createdAssetPaths ?? Array.Empty<string>())
+
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+
+                .Select(NormalizeAssetPath)
+
+                .Where(path => !brokerMaterializedSet.Contains(path))
+
+                .ToList();
+
+
+
+            return BuildCouplingFiles(
+
+                packageInfo: null,
+
+                extractedAssetPaths: Array.Empty<string>(),
+
+                createdAssetPaths: postBrokerCreatedAssetPaths);
 
         }
 

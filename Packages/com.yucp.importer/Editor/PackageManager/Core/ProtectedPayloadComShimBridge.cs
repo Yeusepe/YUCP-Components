@@ -50,6 +50,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     out var grant,
                     out error))
             {
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    Debug.LogError("[YUCP PackageManager] Protected materialization grant failed.");
+                }
                 return false;
             }
 
@@ -74,6 +78,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (!CouplingRuntimeShimService.TryMaterialize(requestJson, out var response, out error))
             {
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    Debug.LogError("[YUCP PackageManager] Protected materialization runtime failed.");
+                }
                 return false;
             }
 
@@ -91,6 +99,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (!TryValidateNestedProtectedDerivedAssets(packageInfo.packageId, projectRoot, materializedAssetPaths, out string nestedAssetError))
             {
+                if (!string.IsNullOrWhiteSpace(nestedAssetError))
+                {
+                    Debug.LogError("[YUCP PackageManager] Nested protected derived asset validation failed.");
+                }
                 error = "The package protection step could not be completed on this machine.";
                 return false;
             }
