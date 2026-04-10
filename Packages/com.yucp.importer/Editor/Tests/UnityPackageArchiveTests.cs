@@ -59,6 +59,51 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ExtractSigningData_ReadsManifestAndSignature_FromProtectedShellSigningFolder()
+        {
+            string packagePath = null;
+            try
+            {
+                const string manifestJson = "{"
+                    + "\"authorityId\":\"unitysign.yucp\","
+                    + "\"keyId\":\"authority-key\","
+                    + "\"publisherId\":\"publisher-123\","
+                    + "\"packageId\":\"package-123\","
+                    + "\"version\":\"1.0.0\","
+                    + "\"archiveSha256\":\"deadbeef\","
+                    + "\"fileHashes\":{},"
+                    + "\"certificateChain\":[]"
+                    + "}";
+                const string signatureJson = "{"
+                    + "\"algorithm\":\"ed25519\","
+                    + "\"keyId\":\"authority-key\","
+                    + "\"signature\":\"c2lnbmF0dXJl\","
+                    + "\"certificateIndex\":0"
+                    + "}";
+
+                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
+                {
+                    ["asset-manifest/pathname"] = Encoding.UTF8.GetBytes("Packages/yucp.installed-packages/Wasbeer/_Signing/PackageManifest.json"),
+                    ["asset-manifest/asset"] = Encoding.UTF8.GetBytes(manifestJson),
+                    ["asset-signature/pathname"] = Encoding.UTF8.GetBytes("Packages/yucp.installed-packages/Wasbeer/_Signing/PackageManifest.sig"),
+                    ["asset-signature/asset"] = Encoding.UTF8.GetBytes(signatureJson),
+                });
+
+                var result = ManifestExtractor.ExtractSigningData(packagePath);
+
+                Assert.That(result.success, Is.True, result.error);
+                Assert.That(result.manifest, Is.Not.Null);
+                Assert.That(result.signature, Is.Not.Null);
+                Assert.That(result.manifest.packageId, Is.EqualTo("package-123"));
+                Assert.That(result.signature.keyId, Is.EqualTo("authority-key"));
+            }
+            finally
+            {
+                DeleteIfPresent(packagePath);
+            }
+        }
+
+        [Test]
         public void ComputePackageHashExcludingSigningData_IgnoresSigningFiles()
         {
             string packagePath = null;
@@ -85,6 +130,42 @@ namespace YUCP.Importer.Editor.Tests
                 string expectedHash = ComputeExpectedCanonicalHash(
                     ("Assets/Alpha.bytes", bytesAsset),
                     ("Assets/Zeta.txt", helloBytes));
+
+                Assert.That(actualHash, Is.EqualTo(expectedHash));
+            }
+            finally
+            {
+                DeleteIfPresent(packagePath);
+            }
+        }
+
+        [Test]
+        public void ComputePackageHashExcludingSigningData_IgnoresProtectedShellSigningFiles()
+        {
+            string packagePath = null;
+            try
+            {
+                byte[] helloBytes = Encoding.UTF8.GetBytes("hello world");
+                byte[] bytesAsset = { 1, 2, 3, 4, 5 };
+                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
+                {
+                    ["asset-a/pathname"] = Encoding.UTF8.GetBytes("Packages/yucp.installed-packages/Wasbeer/Zeta.txt"),
+                    ["asset-a/asset"] = helloBytes,
+                    ["asset-b/pathname"] = Encoding.UTF8.GetBytes("Packages/yucp.installed-packages/Wasbeer/_Signing/PackageManifest.json"),
+                    ["asset-b/asset"] = Encoding.UTF8.GetBytes("{\"ignored\":true}"),
+                    ["asset-c/pathname"] = Encoding.UTF8.GetBytes("Packages/yucp.installed-packages/Wasbeer/Alpha.bytes"),
+                    ["asset-c/asset"] = bytesAsset,
+                });
+
+                MethodInfo method = typeof(PackageVerifierCore).GetMethod(
+                    "ComputePackageHashExcludingSigningData",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(method, Is.Not.Null);
+
+                string actualHash = method.Invoke(null, new object[] { packagePath }) as string;
+                string expectedHash = ComputeExpectedCanonicalHash(
+                    ("Packages/yucp.installed-packages/Wasbeer/Alpha.bytes", bytesAsset),
+                    ("Packages/yucp.installed-packages/Wasbeer/Zeta.txt", helloBytes));
 
                 Assert.That(actualHash, Is.EqualTo(expectedHash));
             }

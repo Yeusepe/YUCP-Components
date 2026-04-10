@@ -15,6 +15,18 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
     /// </summary>
     public static class PackageVerifier
     {
+        private static bool IsSigningPathname(string pathname)
+        {
+            if (string.IsNullOrWhiteSpace(pathname))
+            {
+                return false;
+            }
+
+            string normalized = pathname.Replace('\\', '/');
+            return normalized.EndsWith("/_Signing/PackageManifest.json", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.EndsWith("/_Signing/PackageManifest.sig", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// Verify a signed package
         /// </summary>
@@ -389,7 +401,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
         /// Mirrors the exporter:
         /// - Decompress .unitypackage
         /// - Enumerate all assets
-        /// - Ignore Assets/_Signing/*
+        /// - Ignore any */_Signing/*
         /// - Hash UTF8(pathname) + 0x00 + asset-bytes in sorted pathname order
         /// </summary>
         private static string ComputePackageHashExcludingSigningData(string packagePath)
@@ -451,7 +463,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                             string pathname = File.ReadAllText(pathnameFile).Trim().Replace('\\', '/');
 
                             // Skip signing data
-                            if (pathname.StartsWith("Assets/_Signing/", StringComparison.OrdinalIgnoreCase))
+                            if (IsSigningPathname(pathname))
                                 continue;
 
                             entries.Add((pathname, assetFile));
@@ -522,7 +534,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                     }
 
                     string pathname = File.ReadAllText(pathnameFile).Trim().Replace('\\', '/');
-                    if (pathname.StartsWith("Assets/_Signing/", StringComparison.OrdinalIgnoreCase))
+                    if (IsSigningPathname(pathname))
                     {
                         continue;
                     }

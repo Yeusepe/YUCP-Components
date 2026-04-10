@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -17,6 +18,7 @@ namespace YUCP.Importer.Editor.Tests
         private object _packageImportWizardInstance;
         private FieldInfo _packageImportWizardPathField;
         private string _previousPackageImportWizardPath;
+        private readonly List<string> _additionalCleanupAssetPaths = new List<string>();
 
         [TearDown]
         public void TearDown()
@@ -108,6 +110,42 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(packageInfo.installedFiles, Has.Some.EqualTo($"{rootAssetPath}/_Signing/PackageManifest.json"));
             Assert.That(packageInfo.installedFiles, Has.Some.EqualTo($"{rootAssetPath}/Protected/payload.blob"));
             Assert.That(packageInfo.installedFiles.Any(path => path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)), Is.False);
+        }
+
+        [Test]
+        public void ProtectedImportBootstrapCoordinator_ReconstructsInstalledPackageInfo_WhenSignedManifestLivesInGlobalSigningFolder()
+        {
+            string rootAssetPath = CreateImportedShell(useGlobalSigningManifest: true);
+            string metadataAssetPath = $"{rootAssetPath}/YUCP_PackageInfo.json";
+            string tempInstallAssetPath = $"{rootAssetPath}/_temp/YUCP_TempInstall_Test.json";
+            string protectedPayloadAssetPath = $"{rootAssetPath}/YUCP_ProtectedPayload.json";
+
+            object state = CreatePendingProtectedImportState(
+                packageName: "Protected Shell",
+                shellRootAssetPath: rootAssetPath,
+                tempInstallAssetPath: tempInstallAssetPath,
+                metadataAssetPath: metadataAssetPath,
+                protectedPayloadAssetPath: protectedPayloadAssetPath,
+                originalPackagePath: string.Empty);
+
+            MethodInfo reconstructMethod = GetEditorType("YUCP.Importer.Editor.PackageManager.Core.ProtectedImportBootstrapCoordinator")
+                .GetMethod(
+                    "TryReconstructInstalledPackageInfo",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(reconstructMethod, Is.Not.Null);
+
+            object[] args = { state, null, null };
+            bool success = (bool)reconstructMethod.Invoke(null, args);
+            string error = args[2] as string;
+
+            Assert.That(success, Is.True, error ?? "Expected shell reconstruction to succeed with a global signing manifest.");
+
+            var packageInfo = args[1] as InstalledPackageInfo;
+            Assert.That(packageInfo, Is.Not.Null);
+            Assert.That(packageInfo.installedFiles, Has.Some.EqualTo("Assets/_Signing/PackageManifest.json"));
+            Assert.That(packageInfo.installedFiles, Has.Some.EqualTo("Assets/_Signing/PackageManifest.sig"));
+            Assert.That(packageInfo.installedFiles, Has.Some.EqualTo($"{rootAssetPath}/YUCP_ProtectedPayload.json"));
         }
 
         [Test]
@@ -219,13 +257,12 @@ namespace YUCP.Importer.Editor.Tests
             field.SetValue(instance, value);
         }
 
-        private string CreateImportedShell()
+        private string CreateImportedShell(bool useGlobalSigningManifest = false)
         {
             _testAssetRoot = $"Assets/YUCP_TempTests/ProtectedBootstrap_{Guid.NewGuid():N}";
             string rootDiskPath = GetAssetDiskPath(_testAssetRoot);
 
             Directory.CreateDirectory(rootDiskPath);
-            Directory.CreateDirectory(Path.Combine(rootDiskPath, "_Signing"));
             Directory.CreateDirectory(Path.Combine(rootDiskPath, "_temp"));
             Directory.CreateDirectory(Path.Combine(rootDiskPath, "Protected"));
 
@@ -293,17 +330,31 @@ namespace YUCP.Importer.Editor.Tests
                 Path.Combine(rootDiskPath, "YUCP_ProtectedPayload.json"),
                 JsonUtility.ToJson(protectedPayloadDescriptor, true));
 
+            string manifestRootAssetPath = useGlobalSigningManifest ? "Assets" : _testAssetRoot;
+            if (useGlobalSigningManifest)
+            {
+                RegisterAdditionalCleanupAssetPath("Assets/_Signing/PackageManifest.json");
+                RegisterAdditionalCleanupAssetPath("Assets/_Signing/PackageManifest.sig");
+                RegisterAdditionalCleanupAssetPath("Assets/_Signing");
+            }
+
             WriteManifest(
-                _testAssetRoot,
-                ProtectedPayloadIntegrityUtility.CreateManifestEntry(protectedPayloadDescriptor));
+                manifestRootAssetPath,
+                ProtectedPayloadIntegrityUtility.CreateManifestEntry(protectedPayloadDescriptor),
+                includeSignatureFile: useGlobalSigningManifest);
 
             AssetDatabase.Refresh();
             return _testAssetRoot.Replace('\\', '/');
         }
 
-        private static void WriteManifest(string rootAssetPath, ProtectedPayloadManifestEntry protectedPayloadEntry)
+        private static void WriteManifest(
+            string rootAssetPath,
+            ProtectedPayloadManifestEntry protectedPayloadEntry,
+            bool includeSignatureFile = false)
         {
             string rootDiskPath = GetAssetDiskPath(rootAssetPath);
+            string signingDiskPath = Path.Combine(rootDiskPath, "_Signing");
+            Directory.CreateDirectory(signingDiskPath);
             string manifestJson = "{"
                 + "\"publisherId\":\"publisher-123\","
                 + "\"packageId\":\"pkg-test-123\","
@@ -316,7 +367,11 @@ namespace YUCP.Importer.Editor.Tests
                 }).Replace("{\"protectedPayloads\":", string.Empty).TrimEnd('}')
                 + "}";
 
-            File.WriteAllText(Path.Combine(rootDiskPath, "_Signing", "PackageManifest.json"), manifestJson);
+            File.WriteAllText(Path.Combine(signingDiskPath, "PackageManifest.json"), manifestJson);
+            if (includeSignatureFile)
+            {
+                File.WriteAllText(Path.Combine(signingDiskPath, "PackageManifest.sig"), "{\"signature\":\"test-signature\"}");
+            }
         }
 
         [Serializable]
@@ -327,6 +382,8 @@ namespace YUCP.Importer.Editor.Tests
 
         private void DeleteTestAssets()
         {
+            DeleteAdditionalCleanupAssets();
+
             if (string.IsNullOrWhiteSpace(_testAssetRoot))
                 return;
 
@@ -357,6 +414,41 @@ namespace YUCP.Importer.Editor.Tests
 
             AssetDatabase.Refresh();
             _testAssetRoot = null;
+        }
+
+        private void RegisterAdditionalCleanupAssetPath(string assetPath)
+        {
+            if (string.IsNullOrWhiteSpace(assetPath) || _additionalCleanupAssetPaths.Contains(assetPath))
+                return;
+
+            _additionalCleanupAssetPaths.Add(assetPath);
+        }
+
+        private void DeleteAdditionalCleanupAssets()
+        {
+            if (_additionalCleanupAssetPaths.Count == 0)
+                return;
+
+            foreach (string assetPath in _additionalCleanupAssetPaths
+                         .OrderByDescending(path => path.Count(c => c == '/' || c == '\\')))
+            {
+                string diskPath = GetAssetDiskPath(assetPath);
+                if (File.Exists(diskPath))
+                {
+                    FileUtil.DeleteFileOrDirectory(assetPath);
+                    FileUtil.DeleteFileOrDirectory(assetPath + ".meta");
+                    continue;
+                }
+
+                if (Directory.Exists(diskPath) && !Directory.EnumerateFileSystemEntries(diskPath).Any())
+                {
+                    FileUtil.DeleteFileOrDirectory(assetPath);
+                    FileUtil.DeleteFileOrDirectory(assetPath + ".meta");
+                }
+            }
+
+            _additionalCleanupAssetPaths.Clear();
+            AssetDatabase.Refresh();
         }
 
         private static string GetAssetDiskPath(string assetPath)

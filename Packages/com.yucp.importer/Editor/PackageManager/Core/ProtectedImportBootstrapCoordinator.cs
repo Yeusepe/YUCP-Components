@@ -125,7 +125,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 state.protectedPayloadAssetPath,
                 state.packageName);
 
-            if (!TryLoadManifest(state.shellRootAssetPath, out PackageManifest manifest, out error))
+            if (!TryLoadManifest(
+                    state.shellRootAssetPath,
+                    out PackageManifest manifest,
+                    out string manifestAssetPath,
+                    out string signatureAssetPath,
+                    out error))
                 return false;
             if (manifest == null || string.IsNullOrWhiteSpace(manifest.packageId))
             {
@@ -136,7 +141,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (!TryValidateProtectedPayloadManifest(manifest, metadata?.protectedPayload, out error))
                 return false;
 
-            List<string> installedFiles = CollectInstalledFiles(state.shellRootAssetPath);
+            List<string> installedFiles = CollectInstalledFiles(
+                state.shellRootAssetPath,
+                manifestAssetPath,
+                signatureAssetPath);
             packageInfo = InstalledPackageInfoFactory.Create(
                 metadata,
                 manifest.packageId,
@@ -185,9 +193,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return true;
         }
 
-        private static bool TryLoadManifest(string shellRootAssetPath, out PackageManifest manifest, out string error)
+        private static bool TryLoadManifest(
+            string shellRootAssetPath,
+            out PackageManifest manifest,
+            out string manifestAssetPath,
+            out string signatureAssetPath,
+            out string error)
         {
             manifest = null;
+            manifestAssetPath = null;
+            signatureAssetPath = null;
             error = null;
 
             string shellRootDiskPath = AssetPathToDiskPath(shellRootAssetPath);
@@ -202,8 +217,30 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (string.IsNullOrWhiteSpace(manifestPath))
             {
+                string fallbackManifestAssetPath = "Assets/_Signing/PackageManifest.json";
+                string fallbackManifestDiskPath = AssetPathToDiskPath(fallbackManifestAssetPath);
+                if (!string.IsNullOrWhiteSpace(fallbackManifestDiskPath) && File.Exists(fallbackManifestDiskPath))
+                {
+                    manifestPath = fallbackManifestDiskPath;
+                    manifestAssetPath = fallbackManifestAssetPath;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(manifestPath))
+            {
                 error = "Could not find _Signing/PackageManifest.json in the imported protected package shell.";
                 return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(manifestAssetPath))
+            {
+                manifestAssetPath = DiskPathToAssetPath(manifestPath);
+            }
+
+            string signaturePath = Path.Combine(Path.GetDirectoryName(manifestPath) ?? string.Empty, "PackageManifest.sig");
+            if (!string.IsNullOrWhiteSpace(signaturePath) && File.Exists(signaturePath))
+            {
+                signatureAssetPath = DiskPathToAssetPath(signaturePath);
             }
 
             try
@@ -224,9 +261,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        private static List<string> CollectInstalledFiles(string shellRootAssetPath)
+        private static List<string> CollectInstalledFiles(string shellRootAssetPath, params string[] additionalAssetPaths)
         {
             var result = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             string shellRootDiskPath = AssetPathToDiskPath(shellRootAssetPath);
             if (string.IsNullOrWhiteSpace(shellRootDiskPath) || !Directory.Exists(shellRootDiskPath))
                 return result;
@@ -237,8 +275,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     continue;
 
                 string assetPath = DiskPathToAssetPath(diskPath);
-                if (!string.IsNullOrWhiteSpace(assetPath))
+                if (!string.IsNullOrWhiteSpace(assetPath) && seen.Add(assetPath))
                     result.Add(assetPath);
+            }
+
+            foreach (string assetPath in additionalAssetPaths ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(assetPath) ||
+                    assetPath.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) ||
+                    !seen.Add(assetPath))
+                {
+                    continue;
+                }
+
+                result.Add(assetPath);
             }
 
             return result;

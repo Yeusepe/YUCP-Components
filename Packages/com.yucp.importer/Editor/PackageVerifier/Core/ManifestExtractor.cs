@@ -14,8 +14,8 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
     /// </summary>
     public static class ManifestExtractor
     {
-        private const string ManifestPath = "Assets/_Signing/PackageManifest.json";
-        private const string SignaturePath = "Assets/_Signing/PackageManifest.sig";
+        private const string ManifestFileName = "PackageManifest.json";
+        private const string SignatureFileName = "PackageManifest.sig";
 
         // Reflection cache for ImportPackageItem
         private static Type _importPackageItemType;
@@ -33,6 +33,18 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                 _sourceFolderField = _importPackageItemType.GetField("sourceFolder");
                 _exportedAssetPathField = _importPackageItemType.GetField("exportedAssetPath");
             }
+        }
+
+        private static bool IsManifestPath(string path)
+        {
+            return !string.IsNullOrWhiteSpace(path) &&
+                   path.Replace('\\', '/').EndsWith("/_Signing/" + ManifestFileName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsSignaturePath(string path)
+        {
+            return !string.IsNullOrWhiteSpace(path) &&
+                   path.Replace('\\', '/').EndsWith("/_Signing/" + SignatureFileName, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -165,11 +177,11 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                         continue;
                     }
 
-                    if (destinationPath.Equals(ManifestPath, StringComparison.OrdinalIgnoreCase))
+                    if (IsManifestPath(destinationPath))
                     {
                         manifestItem = item;
                     }
-                    else if (destinationPath.Equals(SignaturePath, StringComparison.OrdinalIgnoreCase))
+                    else if (IsSignaturePath(destinationPath))
                     {
                         signatureItem = item;
                     }
@@ -206,7 +218,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                         else
                         {
                             // Try alternative path
-                            string altPath = Path.Combine(sourceFolder, "PackageManifest.json");
+                            string altPath = Path.Combine(sourceFolder, ManifestFileName);
                             if (File.Exists(altPath))
                             {
                                 string manifestJson = File.ReadAllText(altPath);
@@ -252,7 +264,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                         else
                         {
                             // Try alternative path
-                            string altPath = Path.Combine(sourceFolder, "PackageManifest.sig");
+                            string altPath = Path.Combine(sourceFolder, SignatureFileName);
                             if (File.Exists(altPath))
                             {
                                 string signatureJson = File.ReadAllText(altPath);
@@ -350,12 +362,12 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                             if (!File.Exists(assetFile))
                                 continue;
 
-                            if (pathname == ManifestPath)
+                            if (IsManifestPath(pathname))
                             {
                                 string manifestJson = File.ReadAllText(assetFile);
                                 manifest = PackageManifestJson.ParseManifest(manifestJson);
                             }
-                            else if (pathname == SignaturePath)
+                            else if (IsSignaturePath(pathname))
                             {
                                 string signatureJson = File.ReadAllText(assetFile);
                                 signature = PackageManifestJson.ParseSignature(signatureJson);
@@ -403,11 +415,11 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                     if (!File.Exists(assetFile))
                         continue;
 
-                    if (pathname == ManifestPath)
+                    if (IsManifestPath(pathname))
                     {
                         manifest = PackageManifestJson.ParseManifest(File.ReadAllText(assetFile));
                     }
-                    else if (pathname == SignaturePath)
+                    else if (IsSignaturePath(pathname))
                     {
                         signature = PackageManifestJson.ParseSignature(File.ReadAllText(assetFile));
                     }
