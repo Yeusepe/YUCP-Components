@@ -96,6 +96,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
 
             using (UnityWebRequest request = UnityWebRequest.Get(fetchUrl))
             {
+                request.SetRequestHeader("Accept-Encoding", "identity");
                 yield return request.SendWebRequest();
 
                 if (request.result != UnityWebRequest.Result.Success)
@@ -275,6 +276,8 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
             {
                 using (UnityWebRequest request = UnityWebRequest.Get(fetchUrl))
                 {
+                    request.timeout = 15;
+                    request.SetRequestHeader("Accept-Encoding", "identity");
                     request.SendWebRequest();
 
                     while (!request.isDone)

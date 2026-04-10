@@ -146,10 +146,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (string.IsNullOrEmpty(keyId))
                 return false;
 
-            if (TrustedAuthority.IsBuiltInKeyId(keyId))
-                return true;
-
-            return TrustedAuthoritiesSettings.GetCachedKeys().ContainsKey(keyId);
+            return TrustedAuthoritiesSettings.GetCachedKeys().ContainsKey(keyId)
+                || TrustedAuthority.IsTrustedKey(keyId);
         }
 
         private static bool TryFetchAuthorityKeys(string serverUrl)

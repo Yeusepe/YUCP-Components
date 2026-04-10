@@ -37,7 +37,7 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
 
         /// <summary>
         /// Extract manifest and signature from .unitypackage
-        /// Prefers ImportPackageItem array if available (during import), otherwise uses SharpZipLib
+        /// Prefers ImportPackageItem array if available (during import), otherwise reads the unitypackage archive directly.
         /// </summary>
         public static ExtractionResult ExtractSigningData(string packagePath, System.Array importItems = null)
         {
@@ -81,17 +81,15 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                     }
                 }
 
-                // Method 2: Try to use SharpZipLib if available
-                bool useSharpZipLib = TryExtractWithSharpZipLib(packagePath, out manifest, out signature);
-                
-                if (!useSharpZipLib)
+                // Method 2: Read the archive directly without relying on external tar libraries
+                bool extractedFromArchive = TryExtractWithBuiltinArchive(packagePath, out manifest, out signature);
+                 
+                if (!extractedFromArchive)
                 {
-                    // Fallback: Return error suggesting SharpZipLib
                     return new ExtractionResult
                     {
                         success = false,
-                        error = "SharpZipLib not found. Please install ICSharpCode.SharpZipLib to enable package verification. " +
-                                "It's available in many Unity projects (VRChat SDK includes it)."
+                        error = "Could not read the package signing data from the unitypackage archive."
                     };
                 }
 
@@ -375,6 +373,65 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
             catch
             {
                 return false;
+            }
+        }
+
+        private static bool TryExtractWithBuiltinArchive(string packagePath, out PackageManifest manifest, out SignatureData signature)
+        {
+            manifest = null;
+            signature = null;
+
+            string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            try
+            {
+                if (!UnityPackageArchiveUtility.TryExtractToDirectory(packagePath, tempDir, out string error))
+                {
+                    Debug.LogWarning($"[ManifestExtractor] Built-in package extractor failed: {error}");
+                    return false;
+                }
+
+                string[] folders = Directory.GetDirectories(tempDir);
+                foreach (string folder in folders)
+                {
+                    string pathnameFile = Path.Combine(folder, "pathname");
+                    if (!File.Exists(pathnameFile))
+                        continue;
+
+                    string pathname = File.ReadAllText(pathnameFile).Trim();
+                    string assetFile = Path.Combine(folder, "asset");
+
+                    if (!File.Exists(assetFile))
+                        continue;
+
+                    if (pathname == ManifestPath)
+                    {
+                        manifest = PackageManifestJson.ParseManifest(File.ReadAllText(assetFile));
+                    }
+                    else if (pathname == SignaturePath)
+                    {
+                        signature = PackageManifestJson.ParseSignature(File.ReadAllText(assetFile));
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ManifestExtractor] Built-in archive extraction failed: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+                catch
+                {
+                }
             }
         }
 

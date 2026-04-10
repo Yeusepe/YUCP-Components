@@ -119,6 +119,262 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ProtectedImportFastPath_RemovesTransientInstallerArtifacts_WhenDependenciesAreAlreadySatisfied()
+        {
+            const string packageId = "pkg-fast-path-ready";
+            const string packageName = "Fast Path Ready";
+
+            string shellRoot = CreatePackageShell(packageId, packageName);
+            string tempInstall = CreateAssetFile(
+                $"{shellRoot}/_temp/YUCP_TempInstall_test.json",
+                System.Text.Encoding.UTF8.GetBytes("{}"));
+            string installerScript = CreateAssetFile(
+                "Packages/yucp.installed-packages/Editor/YUCP_Installer_test.cs.yucp_disabled",
+                System.Text.Encoding.UTF8.GetBytes("// installer"));
+            string installerAsmdef = CreateAssetFile(
+                "Packages/yucp.installed-packages/Editor/YUCP_Installer_test.asmdef.yucp_disabled",
+                System.Text.Encoding.UTF8.GetBytes("{}"));
+            string guardianScript = CreateAssetFile(
+                "Packages/yucp.packageguardian/Editor/PackageGuardianMini.cs",
+                System.Text.Encoding.UTF8.GetBytes("// guardian"));
+
+            var packageInfo = new InstalledPackageInfo
+            {
+                packageId = packageId,
+                packageName = packageName,
+                dependencies = new Dictionary<string, string>
+                {
+                    ["com.yucp.importer"] = ">=0.0.0",
+                },
+                protectedPayload = new ProtectedPayloadDescriptor
+                {
+                    protectedAssetId = "protected-fast-path",
+                },
+                installedFiles = new List<string>
+                {
+                    tempInstall,
+                    installerScript,
+                    installerAsmdef,
+                    guardianScript,
+                },
+            };
+
+            bool success = ProtectedImportFastPath.TryPrepareForDirectApply(
+                packageInfo,
+                out ProtectedImportFastPath.PreparedDirectApplyState preparedState,
+                out bool requiresAssetRefresh,
+                out string message);
+
+            Assert.That(success, Is.True, message ?? "Expected the direct protected-import fast path to activate.");
+            Assert.That(requiresAssetRefresh, Is.True);
+            Assert.That(preparedState, Is.Not.Null);
+            ProtectedImportFastPath.CommitPreparedDirectApply(preparedState);
+            Assert.That(message, Does.Contain("skipped the generated installer compile handoff"));
+            Assert.That(File.Exists(GetAssetDiskPath(installerScript)), Is.False);
+            Assert.That(File.Exists(GetAssetDiskPath(installerAsmdef)), Is.False);
+            Assert.That(File.Exists(GetAssetDiskPath(guardianScript)), Is.False);
+            Assert.That(packageInfo.installedFiles, Has.Member(tempInstall));
+            Assert.That(packageInfo.installedFiles, Has.No.Member(installerScript));
+            Assert.That(packageInfo.installedFiles, Has.No.Member(installerAsmdef));
+            Assert.That(packageInfo.installedFiles, Has.No.Member(guardianScript));
+        }
+
+        [Test]
+        public void ProtectedImportFastPath_DoesNotActivate_WhenDependenciesAreMissing()
+        {
+            const string packageId = "pkg-fast-path-missing-dep";
+            const string packageName = "Fast Path Missing Dependency";
+
+            string shellRoot = CreatePackageShell(packageId, packageName);
+            string tempInstall = CreateAssetFile(
+                $"{shellRoot}/_temp/YUCP_TempInstall_test.json",
+                System.Text.Encoding.UTF8.GetBytes("{}"));
+            string installerScript = CreateAssetFile(
+                "Packages/yucp.installed-packages/Editor/YUCP_Installer_missing_dep.cs.yucp_disabled",
+                System.Text.Encoding.UTF8.GetBytes("// installer"));
+
+            var packageInfo = new InstalledPackageInfo
+            {
+                packageId = packageId,
+                packageName = packageName,
+                dependencies = new Dictionary<string, string>
+                {
+                    ["com.example.missing"] = "1.0.0",
+                },
+                protectedPayload = new ProtectedPayloadDescriptor
+                {
+                    protectedAssetId = "protected-missing-dependency",
+                },
+                installedFiles = new List<string>
+                {
+                    tempInstall,
+                    installerScript,
+                },
+            };
+
+            bool success = ProtectedImportFastPath.TryPrepareForDirectApply(
+                packageInfo,
+                out ProtectedImportFastPath.PreparedDirectApplyState preparedState,
+                out bool requiresAssetRefresh,
+                out string message);
+
+            Assert.That(success, Is.False);
+            Assert.That(requiresAssetRefresh, Is.False);
+            Assert.That(message, Does.Contain("missing required dependency"));
+            Assert.That(File.Exists(GetAssetDiskPath(installerScript)), Is.True);
+            Assert.That(packageInfo.installedFiles, Has.Member(installerScript));
+            Assert.That(preparedState, Is.Null);
+        }
+
+        [Test]
+        public void ProtectedImportFastPath_DoesNotActivate_WhenUnexpectedDisabledAssetsRemain()
+        {
+            const string packageId = "pkg-fast-path-extra-disabled";
+            const string packageName = "Fast Path Extra Disabled";
+
+            string shellRoot = CreatePackageShell(packageId, packageName);
+            string tempInstall = CreateAssetFile(
+                $"{shellRoot}/_temp/YUCP_TempInstall_test.json",
+                System.Text.Encoding.UTF8.GetBytes("{}"));
+            string supportedInstallerScript = CreateAssetFile(
+                "Packages/yucp.installed-packages/Editor/YUCP_Installer_extra_disabled.cs.yucp_disabled",
+                System.Text.Encoding.UTF8.GetBytes("// installer"));
+            string unexpectedDisabledAsset = CreateAssetFile(
+                "Packages/yucp.packageguardian/Editor/PackageGuardianMini.cs.yucp_disabled",
+                System.Text.Encoding.UTF8.GetBytes("// unexpected"));
+            var packageInfo = new InstalledPackageInfo
+            {
+                packageId = packageId,
+                packageName = packageName,
+                dependencies = new Dictionary<string, string>
+                {
+                    ["com.yucp.importer"] = ">=0.0.0",
+                },
+                protectedPayload = new ProtectedPayloadDescriptor
+                {
+                    protectedAssetId = "protected-extra-disabled",
+                },
+                installedFiles = new List<string>
+                {
+                    tempInstall,
+                    supportedInstallerScript,
+                    unexpectedDisabledAsset,
+                },
+            };
+
+            bool success = ProtectedImportFastPath.TryPrepareForDirectApply(
+                packageInfo,
+                out ProtectedImportFastPath.PreparedDirectApplyState preparedState,
+                out bool requiresAssetRefresh,
+                out string message);
+
+            Assert.That(success, Is.False);
+            Assert.That(requiresAssetRefresh, Is.False);
+            Assert.That(message, Does.Contain("non-installer disabled assets"));
+            Assert.That(File.Exists(GetAssetDiskPath(supportedInstallerScript)), Is.True);
+            Assert.That(File.Exists(GetAssetDiskPath(unexpectedDisabledAsset)), Is.True);
+            Assert.That(preparedState, Is.Null);
+        }
+
+        [Test]
+        public void ProtectedImportFastPath_DoesNotActivate_ForCaretZeroMinorRangeMismatch()
+        {
+            const string packageId = "pkg-fast-path-caret-zero";
+            const string packageName = "Fast Path Caret Zero";
+
+            string shellRoot = CreatePackageShell(packageId, packageName);
+            string tempInstall = CreateAssetFile(
+                $"{shellRoot}/_temp/YUCP_TempInstall_test.json",
+                System.Text.Encoding.UTF8.GetBytes("{}"));
+            string installerScript = CreateAssetFile(
+                "Packages/yucp.installed-packages/Editor/YUCP_Installer_caret_zero.cs.yucp_disabled",
+                System.Text.Encoding.UTF8.GetBytes("// installer"));
+            CreateAssetFile(
+                "Packages/com.yucp.temp/package.json",
+                System.Text.Encoding.UTF8.GetBytes("{\"name\":\"com.yucp.temp\",\"version\":\"0.9.0\"}"));
+
+            var packageInfo = new InstalledPackageInfo
+            {
+                packageId = packageId,
+                packageName = packageName,
+                dependencies = new Dictionary<string, string>
+                {
+                    ["com.yucp.temp"] = "^0.1.3",
+                },
+                protectedPayload = new ProtectedPayloadDescriptor
+                {
+                    protectedAssetId = "protected-caret-zero",
+                },
+                installedFiles = new List<string>
+                {
+                    tempInstall,
+                    installerScript,
+                },
+            };
+
+            bool success = ProtectedImportFastPath.TryPrepareForDirectApply(
+                packageInfo,
+                out ProtectedImportFastPath.PreparedDirectApplyState preparedState,
+                out bool requiresAssetRefresh,
+                out string message);
+
+            Assert.That(success, Is.False);
+            Assert.That(requiresAssetRefresh, Is.False);
+            Assert.That(message, Does.Contain("requires ^0.1.3"));
+            Assert.That(File.Exists(GetAssetDiskPath(installerScript)), Is.True);
+            Assert.That(preparedState, Is.Null);
+        }
+
+        [Test]
+        public void ProtectedImportFastPath_DoesNotActivate_ForPrereleaseDependencyMismatch()
+        {
+            const string packageId = "pkg-fast-path-prerelease";
+            const string packageName = "Fast Path Prerelease";
+
+            string shellRoot = CreatePackageShell(packageId, packageName);
+            string tempInstall = CreateAssetFile(
+                $"{shellRoot}/_temp/YUCP_TempInstall_test.json",
+                System.Text.Encoding.UTF8.GetBytes("{}"));
+            string installerScript = CreateAssetFile(
+                "Packages/yucp.installed-packages/Editor/YUCP_Installer_prerelease.cs.yucp_disabled",
+                System.Text.Encoding.UTF8.GetBytes("// installer"));
+            CreateAssetFile(
+                "Packages/com.yucp.temp/package.json",
+                System.Text.Encoding.UTF8.GetBytes("{\"name\":\"com.yucp.temp\",\"version\":\"1.0.0-preview.1\"}"));
+
+            var packageInfo = new InstalledPackageInfo
+            {
+                packageId = packageId,
+                packageName = packageName,
+                dependencies = new Dictionary<string, string>
+                {
+                    ["com.yucp.temp"] = "1.0.0-preview.2",
+                },
+                protectedPayload = new ProtectedPayloadDescriptor
+                {
+                    protectedAssetId = "protected-prerelease",
+                },
+                installedFiles = new List<string>
+                {
+                    tempInstall,
+                    installerScript,
+                },
+            };
+
+            bool success = ProtectedImportFastPath.TryPrepareForDirectApply(
+                packageInfo,
+                out ProtectedImportFastPath.PreparedDirectApplyState preparedState,
+                out bool requiresAssetRefresh,
+                out string message);
+
+            Assert.That(success, Is.False);
+            Assert.That(requiresAssetRefresh, Is.False);
+            Assert.That(message, Does.Contain("prerelease version metadata"));
+            Assert.That(File.Exists(GetAssetDiskPath(installerScript)), Is.True);
+            Assert.That(preparedState, Is.Null);
+        }
+
+        [Test]
         public void TryFinalizeProtectedInstall_RollsBackWhenProtectedPayloadIsMissingPaths()
         {
             const string packageId = "pkg-finalization-broker";
@@ -485,6 +741,33 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(File.Exists(GetProjectDiskPath(workspaceDll)), Is.False);
             Assert.That(File.Exists(GetProjectDiskPath(workspacePatch)), Is.False);
             Assert.That(File.Exists(GetProjectDiskPath(workspaceSwap)), Is.False);
+        }
+
+        [Test]
+        public void InstallerCoordinationState_DetectsActiveInstallerMarkers_WhenTempInstallDescriptorExists()
+        {
+            CreateAssetFile(
+                "Packages/yucp.installed-packages/TestPackage/_temp/YUCP_TempInstall_test.json",
+                System.Text.Encoding.UTF8.GetBytes("{}"));
+            CreateWorkspaceFile("Library/YUCP/install.scheduled", Array.Empty<byte>());
+
+            Assert.That(InstallerCoordinationState.HasPendingInstallerHandoff(), Is.True);
+        }
+
+        [Test]
+        public void InstallerCoordinationState_IgnoresCompleteMarkerWithoutActiveHandoff()
+        {
+            CreateWorkspaceFile("Library/YUCP/install.complete", Array.Empty<byte>());
+
+            Assert.That(InstallerCoordinationState.HasPendingInstallerHandoff(), Is.False);
+        }
+
+        [Test]
+        public void InstallerCoordinationState_IgnoresMarkers_WhenNoTempInstallDescriptorExists()
+        {
+            CreateWorkspaceFile("Library/YUCP/install.scheduled", Array.Empty<byte>());
+
+            Assert.That(InstallerCoordinationState.HasPendingInstallerHandoff(), Is.False);
         }
 
         private static bool FailRollbackImportedAssets(IReadOnlyList<string> assetPaths, out string error)

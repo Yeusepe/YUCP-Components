@@ -1542,6 +1542,11 @@ namespace YUCP.Importer.Editor.PackageManager
                     continue;
                 }
 
+                if (IsPrecompiledInstallerRuntimePath(path))
+                {
+                    return true;
+                }
+
                 if (path.IndexOf("YUCP_Installer_", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     path.IndexOf("YUCP_FullDomainReload_", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     path.IndexOf("YUCP_InstallerTxn_", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -1554,6 +1559,37 @@ namespace YUCP.Importer.Editor.PackageManager
             return IsInstallerPayloadPresentOnDisk();
         }
 
+        private static bool ImportItemsContainPrecompiledInstallerPayload(System.Array items)
+        {
+            if (items == null || items.Length == 0)
+            {
+                return IsPrecompiledInstallerPayloadPresentOnDisk();
+            }
+
+            var itemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
+            var destinationPathField = itemType?.GetField("destinationAssetPath");
+            if (destinationPathField == null)
+            {
+                return false;
+            }
+
+            foreach (var item in items)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                string path = destinationPathField.GetValue(item) as string;
+                if (IsPrecompiledInstallerRuntimePath(path))
+                {
+                    return true;
+                }
+            }
+
+            return IsPrecompiledInstallerPayloadPresentOnDisk();
+        }
+
         private static bool IsInstallerPayloadPresentOnDisk()
         {
             try
@@ -1563,6 +1599,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (!Directory.Exists(installerRoot))
                 {
                     return false;
+                }
+
+                if (IsPrecompiledInstallerPayloadPresentOnDisk())
+                {
+                    return true;
                 }
 
                 foreach (string path in Directory.GetFiles(installerRoot, "*.cs", SearchOption.TopDirectoryOnly))
@@ -1590,6 +1631,38 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             return false;
+        }
+
+        private static bool IsPrecompiledInstallerPayloadPresentOnDisk()
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string runtimePath = Path.Combine(
+                    projectRoot,
+                    "Packages",
+                    "yucp.installed-packages",
+                    "Editor",
+                    "YUCP.DirectVpmInstaller.Template.dll");
+                return File.Exists(runtimePath);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsPrecompiledInstallerRuntimePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                path.Replace('\\', '/'),
+                "Packages/yucp.installed-packages/Editor/YUCP.DirectVpmInstaller.Template.dll",
+                StringComparison.OrdinalIgnoreCase);
         }
 
         private void LogTempInstallStatus()
@@ -4295,13 +4368,22 @@ namespace YUCP.Importer.Editor.PackageManager
                 try
                 {
                     // Register package in registry (also moves assets into installed-packages container)
-                    RegisterPackageAfterImport();
+                    bool refreshAssetsAfterUnlock;
+                    InstalledPackageInfo pendingProtectedApplyPackageInfo;
+                    string protectedApplyLogMessage;
+                    bool requestCompilationAfterUnlock = RegisterPackageAfterImport(
+                        out refreshAssetsAfterUnlock,
+                        out pendingProtectedApplyPackageInfo,
+                        out protectedApplyLogMessage);
 
-                    // Critical: many installs trigger an immediate domain reload right after we unlock reload assemblies.
-                    // Any delayCall/update callbacks can be wiped. Persist a "pending resolve" so we can finish enabling
-                    // *.yucp_disabled files after the reload.
-                    Debug.Log("[YUCP PackageManager] Marking pending .yucp_disabled resolve (pre-unlock)...");
-                    YucpDisabledFileResolver.SetPendingResolve(timeoutSeconds: 60.0);
+                    if (requestCompilationAfterUnlock)
+                    {
+                        // Critical: many installs trigger an immediate domain reload right after we unlock reload assemblies.
+                        // Any delayCall/update callbacks can be wiped. Persist a "pending resolve" so we can finish enabling
+                        // *.yucp_disabled files after the reload.
+                        Debug.Log("[YUCP PackageManager] Marking pending .yucp_disabled resolve (pre-unlock)...");
+                        YucpDisabledFileResolver.SetPendingResolve(timeoutSeconds: 60.0);
+                    }
 
                     // Unlock assembly reload (import is complete)
                     if (_isImportMode)
@@ -4311,23 +4393,49 @@ namespace YUCP.Importer.Editor.PackageManager
                         Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import complete)");
                     }
 
-                    // If the install pipeline moved/created files using System.IO (e.g. writing into Packages/),
-                    // Unity may not automatically pick up new scripts and trigger compilation.
-                    // Force a refresh and request script compilation after unlocking assemblies.
-                    EditorApplication.delayCall += () =>
+                    if (requestCompilationAfterUnlock || refreshAssetsAfterUnlock)
                     {
-                        try
+                        EditorApplication.delayCall += () =>
                         {
-                            Debug.Log("[YUCP PackageManager] Post-import: forcing AssetDatabase.Refresh + requesting script compilation...");
-                            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-                            // Request compilation; if this triggers a domain reload, the pending resolver will resume.
-                            CompilationPipeline.RequestScriptCompilation();
-                        }
-                        catch (Exception refreshEx)
+                            try
+                            {
+                                if (requestCompilationAfterUnlock)
+                                {
+                                    Debug.Log("[YUCP PackageManager] Post-import: forcing AssetDatabase.Refresh + requesting script compilation...");
+                                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                                    // Request compilation; if this triggers a domain reload, the pending resolver will resume.
+                                    CompilationPipeline.RequestScriptCompilation();
+                                    if (pendingProtectedApplyPackageInfo != null)
+                                    {
+                                        ProtectedPayloadInstallService.QueuePendingApply(pendingProtectedApplyPackageInfo);
+                                        Debug.Log(protectedApplyLogMessage);
+                                    }
+                                }
+                                else
+                                {
+                                    Debug.Log("[YUCP PackageManager] Post-import: refreshing AssetDatabase after direct protected apply cleanup.");
+                                    if (pendingProtectedApplyPackageInfo != null)
+                                    {
+                                        ProtectedPayloadInstallService.QueuePendingApply(pendingProtectedApplyPackageInfo);
+                                        Debug.Log(protectedApplyLogMessage);
+                                    }
+                                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                                }
+                            }
+                            catch (Exception refreshEx)
+                            {
+                                Debug.LogWarning($"[YUCP PackageManager] Post-import refresh/compile request failed: {refreshEx.Message}");
+                            }
+                        };
+                    }
+                    else if (pendingProtectedApplyPackageInfo != null)
+                    {
+                        EditorApplication.delayCall += () =>
                         {
-                            Debug.LogWarning($"[YUCP PackageManager] Post-import refresh/compile request failed: {refreshEx.Message}");
-                        }
-                    };
+                            ProtectedPayloadInstallService.QueuePendingApply(pendingProtectedApplyPackageInfo);
+                            Debug.Log(protectedApplyLogMessage);
+                        };
+                    }
 
                     // Close the import window after successful import
                     try
@@ -4776,12 +4884,20 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
-        private void RegisterPackageAfterImport()
+        private bool RegisterPackageAfterImport(
+            out bool refreshAssetsAfterUnlock,
+            out InstalledPackageInfo pendingProtectedApplyPackageInfo,
+            out string protectedApplyLogMessage)
         {
+            refreshAssetsAfterUnlock = false;
+            pendingProtectedApplyPackageInfo = null;
+            protectedApplyLogMessage = null;
+            ProtectedImportFastPath.PreparedDirectApplyState preparedDirectApplyState = null;
+
             try
             {
                 if (string.IsNullOrEmpty(_currentPackagePath))
-                    return;
+                    return false;
 
                 Debug.Log($"[YUCP PackageManager] RegisterPackageAfterImport starting. packagePath='{_currentPackagePath}', allItems={GetImportItemCount(_allImportItems)}, cachedManifestPresent={_cachedManifest != null}, cachedSignaturePresent={_cachedSignature != null}");
 
@@ -4894,18 +5010,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 bool hasTempInstallDescriptor = PackageMetadataExtractor.HasTempInstallDescriptor(_allImportItems ?? _currentImportItems);
                 if (hasTempInstallDescriptor)
                 {
-                    if (HasDirectVpmInstallerLoaded())
-                    {
-                        Debug.Log("[YUCP PackageManager] Temp-install descriptor detected. Waiting for DirectVpmInstaller/YUCP disabled-file resolution to complete the derived-content handoff.");
-                    }
-                    else if (ImportItemsContainInstallerPayload(_allImportItems ?? _currentImportItems))
-                    {
-                        Debug.Log("[YUCP PackageManager] Temp-install descriptor detected and installer payload was imported. Waiting for Unity script compilation/domain reload before the derived-content handoff runs.");
-                    }
-                    else
-                    {
-                        Debug.LogError("[YUCP PackageManager] Temp-install descriptor detected, but the imported package did not include a DirectVpmInstaller payload. The Unity import completed, but derived-content/VPM installation cannot run.");
-                    }
+                    Debug.Log("[YUCP PackageManager] Temp-install descriptor detected. Evaluating whether the importer can complete the protected handoff directly or whether the generated installer flow is still required.");
                 }
 
                 var installedInfo = InstalledPackageInfoFactory.Create(
@@ -4920,7 +5025,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (string.IsNullOrEmpty(installedInfo.packageId))
                 {
                     Debug.LogWarning($"[YUCP PackageManager] Imported assets but skipped registry registration because packageId is unavailable. packageName='{installedInfo.packageName}', signed={_isPackageSigned}, verificationValid={isVerified}, cachedExtractionError='{_cachedSigningExtractionError ?? ""}'");
-                    return;
+                    return false;
                 }
 
                 if (CouplingImportGuard.ShouldApplyDuringShellImport(installedInfo) &&
@@ -4931,25 +5036,85 @@ namespace YUCP.Importer.Editor.PackageManager
                         "Import Failed",
                         couplingError,
                         "OK");
-                    return;
+                    return false;
+                }
+
+                bool requestCompilationAfterUnlock = false;
+                bool usedProtectedFastPath = false;
+                bool usePrecompiledInstallerRuntimeHandoff = false;
+                string fastPathMessage = null;
+                if (hasTempInstallDescriptor)
+                {
+                    if (installedInfo.protectedPayload != null &&
+                        ProtectedImportFastPath.TryPrepareForDirectApply(
+                            installedInfo,
+                            out preparedDirectApplyState,
+                            out refreshAssetsAfterUnlock,
+                            out fastPathMessage))
+                    {
+                        usedProtectedFastPath = true;
+                        Debug.Log($"[YUCP PackageManager] Protected import fast path active for '{installedInfo.packageName}'. {fastPathMessage}");
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrWhiteSpace(fastPathMessage))
+                        {
+                            Debug.Log($"[YUCP PackageManager] Protected import fast path not used for '{installedInfo.packageName}': {fastPathMessage}");
+                        }
+
+                        bool hasPrecompiledInstallerRuntime =
+                            ImportItemsContainPrecompiledInstallerPayload(_allImportItems ?? _currentImportItems);
+                        bool hasInstallerPayload =
+                            hasPrecompiledInstallerRuntime ||
+                            ImportItemsContainInstallerPayload(_allImportItems ?? _currentImportItems);
+
+                        usePrecompiledInstallerRuntimeHandoff = hasPrecompiledInstallerRuntime;
+                        refreshAssetsAfterUnlock = refreshAssetsAfterUnlock || usePrecompiledInstallerRuntimeHandoff;
+                        requestCompilationAfterUnlock =
+                            !usePrecompiledInstallerRuntimeHandoff &&
+                            (HasDirectVpmInstallerLoaded() || hasInstallerPayload);
+                        if (!requestCompilationAfterUnlock && !usePrecompiledInstallerRuntimeHandoff)
+                        {
+                            Debug.LogError("[YUCP PackageManager] Temp-install descriptor detected, but the imported package did not include a DirectVpmInstaller payload. The Unity import completed, but derived-content/VPM installation cannot run.");
+                        }
+                    }
                 }
 
                 // Register in registry
                 var registry = InstalledPackageRegistry.GetOrCreate();
                 registry.RegisterPackage(installedInfo);
+                if (preparedDirectApplyState != null)
+                {
+                    ProtectedImportFastPath.CommitPreparedDirectApply(preparedDirectApplyState);
+                    preparedDirectApplyState = null;
+                }
 
                 Debug.Log($"[YUCP PackageManager] Registered package: {installedInfo.packageName} (ID: {packageId}, verified={installedInfo.isVerified}, installedFiles={installedInfo.installedFiles?.Count ?? 0})");
 
                 if (hasTempInstallDescriptor && installedInfo.protectedPayload != null)
                 {
-                    ProtectedPayloadInstallService.QueuePendingApply(installedInfo);
-                    Debug.Log($"[YUCP PackageManager] Queued protected payload apply for '{installedInfo.packageName}'. Waiting for installer/domain reload handoff to complete.");
+                    if (usedProtectedFastPath || requestCompilationAfterUnlock || usePrecompiledInstallerRuntimeHandoff)
+                    {
+                        pendingProtectedApplyPackageInfo = installedInfo;
+                        protectedApplyLogMessage = usedProtectedFastPath
+                            ? $"[YUCP PackageManager] Queued protected payload apply for '{installedInfo.packageName}' via the direct importer fast path."
+                            : usePrecompiledInstallerRuntimeHandoff
+                                ? $"[YUCP PackageManager] Queued protected payload apply for '{installedInfo.packageName}'. Waiting for the precompiled installer runtime handoff to complete."
+                                : $"[YUCP PackageManager] Queued protected payload apply for '{installedInfo.packageName}'. Waiting for installer/domain reload handoff to complete.";
+                    }
                 }
+
+                return requestCompilationAfterUnlock;
             }
             catch (Exception ex)
             {
+                ProtectedImportFastPath.RollbackPreparedDirectApply(preparedDirectApplyState);
                 Debug.LogError($"[YUCP PackageManager] Failed to register package after import: {ex.Message}");
                 Debug.LogException(ex);
+                refreshAssetsAfterUnlock = false;
+                pendingProtectedApplyPackageInfo = null;
+                protectedApplyLogMessage = null;
+                return false;
             }
         }
     }

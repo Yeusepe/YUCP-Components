@@ -62,6 +62,12 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
+            if (InstallerCoordinationState.HasPendingInstallerHandoff())
+            {
+                SchedulePendingApply();
+                return;
+            }
+
             if (IsTimedOut())
             {
                 Debug.LogWarning("[YUCP PackageManager] Timed out waiting to apply the protected payload after import.");
