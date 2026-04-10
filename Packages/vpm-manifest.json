@@ -9,9 +9,6 @@
     "com.furality.somnashader": {
       "version": ">=1.0.0"
     },
-    "com.vrcfury.vrcfury": {
-      "version": "1.1262.0"
-    },
     "d4rkpl4y3r.d4rkavataroptimizer": {
       "version": "3.12.5"
     },
@@ -32,6 +29,9 @@
     },
     "com.poiyomi.toon": {
       "version": "9.2.79"
+    },
+    "com.vrcfury.vrcfury": {
+      "version": "1.1298.0"
     }
   },
   "locked": {
@@ -45,10 +45,6 @@
         "com.vrchat.avatars": ">=3.7.4",
         "nadena.dev.ndmf": ">=1.9.2 <2.0.0-a"
       }
-    },
-    "com.vrcfury.vrcfury": {
-      "version": "1.1282.0",
-      "dependencies": {}
     },
     "d4rkpl4y3r.d4rkavataroptimizer": {
       "version": "3.12.5",
@@ -73,17 +69,17 @@
     "vrchat.blackstartx.gesture-manager": {
       "version": "3.9.6",
       "dependencies": {
-        "com.vrchat.avatars": ">=3.5.2 < 3.10.X"
+        "com.vrchat.avatars": ">=3.5.2 <3.10.X"
       }
     },
     "com.vrchat.avatars": {
-      "version": "3.9.0",
+      "version": "3.10.2",
       "dependencies": {
-        "com.vrchat.base": "3.9.0"
+        "com.vrchat.base": "3.10.2"
       }
     },
     "com.vrchat.base": {
-      "version": "3.9.0",
+      "version": "3.10.2",
       "dependencies": {}
     },
     "lyuma.av3emulator": {
@@ -94,6 +90,10 @@
     },
     "com.poiyomi.toon": {
       "version": "9.2.79",
+      "dependencies": {}
+    },
+    "com.vrcfury.vrcfury": {
+      "version": "1.1298.0",
       "dependencies": {}
     }
   }
