@@ -192,6 +192,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool _waitingForImportCompletion = false;
         private string _pendingPackageName;
         private bool _pendingImportAfterVerification = false;
+        private string _lastHostedVerifiedPackageId;
         private bool _isResumeVerificationMode = false;
         private InstalledPackageInfo _resumeProtectedPackageInfo;
 
@@ -886,6 +887,78 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool RequiresVerificationBeforeImport()
         {
             return GetNextUnverifiedLicenseRequirement() != null;
+        }
+
+        private bool HasHostedVerificationForPackage(string packageId)
+        {
+            if (string.IsNullOrEmpty(packageId))
+            {
+                return false;
+            }
+
+            if (_verifiedLicensePackageIds.Contains(packageId))
+            {
+                return true;
+            }
+
+            if (_licenseStates.TryGetValue(packageId, out var state) &&
+                state != null &&
+                state.isVerified)
+            {
+                return true;
+            }
+
+            return LicenseVerificationService.GetCachedToken(packageId) != null;
+        }
+
+        private string ResolveHostedVerifiedPackageId(PackageMetadata metadata)
+        {
+            if (!string.IsNullOrEmpty(_lastHostedVerifiedPackageId) &&
+                HasHostedVerificationForPackage(_lastHostedVerifiedPackageId))
+            {
+                if (metadata?.licensePackages == null || metadata.licensePackages.Count == 0)
+                {
+                    return _lastHostedVerifiedPackageId;
+                }
+
+                bool matchesMetadata = metadata.licensePackages.Any(req =>
+                    req != null &&
+                    string.Equals(req.packageId, _lastHostedVerifiedPackageId, StringComparison.OrdinalIgnoreCase));
+                if (matchesMetadata)
+                {
+                    return _lastHostedVerifiedPackageId;
+                }
+            }
+
+            if (metadata?.licensePackages == null)
+            {
+                return null;
+            }
+
+            foreach (var req in metadata.licensePackages)
+            {
+                if (req == null || string.IsNullOrEmpty(req.packageId))
+                {
+                    continue;
+                }
+
+                if (HasHostedVerificationForPackage(req.packageId))
+                {
+                    return req.packageId;
+                }
+            }
+
+            return null;
+        }
+
+        private bool IsHostedImportVerified(string packageId, PackageMetadata metadata)
+        {
+            string resolvedPackageId = string.IsNullOrEmpty(packageId)
+                ? ResolveHostedVerifiedPackageId(metadata)
+                : packageId;
+
+            return !string.IsNullOrEmpty(resolvedPackageId) &&
+                   HasHostedVerificationForPackage(resolvedPackageId);
         }
 
         private string GetPrimaryImportButtonText()
@@ -1700,6 +1773,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private void VerifyPackage(string packagePath)
         {
             ResetCachedSigningData();
+            _lastHostedVerifiedPackageId = null;
 
             if (string.IsNullOrEmpty(packagePath) || !File.Exists(packagePath))
             {
@@ -3000,6 +3074,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     Debug.Log($"[YUCP PackageManager] Browser verification succeeded for packageId='{packageIdForVerify}'");
                     state.isVerified = true;
                     _verifiedLicensePackageIds.Add(packageIdForVerify);
+                    _lastHostedVerifiedPackageId = packageIdForVerify;
                     EditorApplication.delayCall += () =>
                     {
                         BuildLicenseSection();
@@ -3064,6 +3139,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     Debug.Log($"[YUCP PackageManager] Browser verification succeeded for packageId='{req.packageId}'");
                     state.isVerified = true;
                     _verifiedLicensePackageIds.Add(req.packageId);
+                    _lastHostedVerifiedPackageId = req.packageId;
                     EditorApplication.delayCall += () =>
                     {
                         BuildLicenseSection();
@@ -4561,7 +4637,8 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                 }
 
-                Debug.Log($"[YUCP PackageManager] Import initiated, waiting for completion. packagePath='{_currentPackagePath}', packageSigned={_isPackageSigned}, verificationValid={_verificationResult != null && _verificationResult.valid}");
+                bool hostedImportVerified = IsHostedImportVerified(null, _currentMetadata ?? _cachedMetadata);
+                Debug.Log($"[YUCP PackageManager] Import initiated, waiting for completion. packagePath='{_currentPackagePath}', packageSigned={_isPackageSigned}, verificationValid={(_verificationResult != null && _verificationResult.valid) || hostedImportVerified}, hostedVerificationValid={hostedImportVerified}");
 
                 // Remember which package we're expecting completion for
                 _waitingForImportCompletion = true;
@@ -4988,10 +5065,21 @@ namespace YUCP.Importer.Editor.PackageManager
                         }
                     }
 
+                    string hostedVerifiedPackageId = ResolveHostedVerifiedPackageId(metadata);
+                    if (string.IsNullOrEmpty(packageId) && !string.IsNullOrEmpty(hostedVerifiedPackageId))
+                    {
+                        packageId = hostedVerifiedPackageId;
+                        Debug.Log($"[YUCP PackageManager] Falling back to hosted verified packageId during registration. packageId='{packageId}'");
+                    }
+
                     // Check verification
                     if (_verificationResult != null)
                     {
                         isVerified = _verificationResult.valid;
+                    }
+                    if (!isVerified && IsHostedImportVerified(packageId, metadata))
+                    {
+                        isVerified = true;
                     }
                 }
                 catch (Exception ex)
