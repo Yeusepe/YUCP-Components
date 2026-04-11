@@ -4640,6 +4640,31 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             try
             {
+                if (_isResumeVerificationMode && _resumeProtectedPackageInfo != null)
+                {
+                    Debug.Log($"[YUCP PackageManager] Cancelling protected package setup for package: {_resumeProtectedPackageInfo.packageName}");
+                    if (!TryCleanupCancelledProtectedResume(_resumeProtectedPackageInfo, out string cleanupError))
+                    {
+                        Debug.LogError($"[YUCP PackageManager] Failed to clean up cancelled protected package setup: {cleanupError}");
+                        EditorUtility.DisplayDialog(
+                            "Cleanup Incomplete",
+                            "The protected package setup was cancelled, but the importer could not fully clean up the staged files.\n\n"
+                            + cleanupError,
+                            "OK");
+                    }
+
+                    try
+                    {
+                        Close();
+                        GUIUtility.ExitGUI();
+                    }
+                    catch (ExitGUIException)
+                    {
+                        // Expected
+                    }
+                    return;
+                }
+
                 if (_currentImportItems == null || _currentImportItems.Length == 0)
                 {
                     Debug.LogWarning("[YUCP PackageManager] No import items, closing window");
@@ -4708,6 +4733,22 @@ namespace YUCP.Importer.Editor.PackageManager
                     // Expected
                 }
             }
+        }
+
+        private static bool TryCleanupCancelledProtectedResume(InstalledPackageInfo packageInfo, out string error)
+        {
+            error = null;
+            if (packageInfo == null)
+                return true;
+
+            ProtectedPayloadInstallService.CancelPendingApply(packageInfo.packageId);
+
+            if (!ImportedAssetRollbackService.TryRollbackPackage(packageInfo, out error))
+                return false;
+
+            var registry = InstalledPackageRegistry.Load() ?? InstalledPackageRegistry.GetOrCreate();
+            registry?.UnregisterPackage(packageInfo.packageId);
+            return true;
         }
 
         private void UpdateImportItemSelections()

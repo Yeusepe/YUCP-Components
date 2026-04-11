@@ -40,6 +40,18 @@ namespace YUCP.Importer.Editor.PackageManager
             SchedulePendingApply();
         }
 
+        internal static void CancelPendingApply(string packageId = null)
+        {
+            string pendingPackageId = EditorPrefs.GetString(PendingPackageIdKey, "");
+            if (!string.IsNullOrWhiteSpace(packageId) &&
+                !string.Equals(pendingPackageId, packageId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            ClearPendingApply();
+        }
+
         private static void SchedulePendingApply()
         {
             if (_scheduled || !HasPendingApply())

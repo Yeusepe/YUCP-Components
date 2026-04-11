@@ -193,6 +193,36 @@ namespace YUCP.Importer.Editor.Tests
             StringAssert.Contains("signed payload descriptor", error ?? string.Empty);
         }
 
+        [Test]
+        public void PackageManagerWindow_CancelProtectedResume_CleansImportedShellAndPendingApplyState()
+        {
+            string rootAssetPath = CreateImportedShell();
+            InstalledPackageInfo packageInfo = ReconstructInstalledPackageInfo(rootAssetPath);
+            Assert.That(packageInfo, Is.Not.Null);
+
+            var registry = InstalledPackageRegistry.GetOrCreate();
+            registry.RegisterPackage(packageInfo);
+
+            EditorPrefs.SetString("YUCP.PackageManager.ProtectedPayload.PackageId", packageInfo.packageId);
+            EditorPrefs.SetString("YUCP.PackageManager.ProtectedPayload.StartTicksUtc", DateTime.UtcNow.Ticks.ToString());
+
+            MethodInfo cleanupMethod = typeof(PackageManagerWindow).GetMethod(
+                "TryCleanupCancelledProtectedResume",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(cleanupMethod, Is.Not.Null);
+
+            object[] args = { packageInfo, null };
+            bool success = (bool)cleanupMethod.Invoke(null, args);
+            string error = args[1] as string;
+
+            Assert.That(success, Is.True, error ?? "Expected protected resume cancel cleanup to succeed.");
+            Assert.That(EditorPrefs.GetString("YUCP.PackageManager.ProtectedPayload.PackageId", string.Empty), Is.Empty);
+            Assert.That(EditorPrefs.GetString("YUCP.PackageManager.ProtectedPayload.StartTicksUtc", string.Empty), Is.Empty);
+            Assert.That(registry.GetPackage(packageInfo.packageId), Is.Null);
+            Assert.That(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(rootAssetPath), Is.Null);
+        }
+
         private void CapturePackageImportWizardState()
         {
             var unityEditorAssembly = typeof(UnityEditor.Editor).Assembly;
@@ -255,6 +285,31 @@ namespace YUCP.Importer.Editor.Tests
             FieldInfo field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.That(field, Is.Not.Null, $"Expected field '{fieldName}' on '{type.FullName}'.");
             field.SetValue(instance, value);
+        }
+
+        private InstalledPackageInfo ReconstructInstalledPackageInfo(string rootAssetPath)
+        {
+            object state = CreatePendingProtectedImportState(
+                packageName: "Protected Shell",
+                shellRootAssetPath: rootAssetPath,
+                tempInstallAssetPath: $"{rootAssetPath}/_temp/YUCP_TempInstall_Test.json",
+                metadataAssetPath: $"{rootAssetPath}/YUCP_PackageInfo.json",
+                protectedPayloadAssetPath: $"{rootAssetPath}/YUCP_ProtectedPayload.json",
+                originalPackagePath: string.Empty);
+
+            MethodInfo reconstructMethod = GetEditorType("YUCP.Importer.Editor.PackageManager.Core.ProtectedImportBootstrapCoordinator")
+                .GetMethod(
+                    "TryReconstructInstalledPackageInfo",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(reconstructMethod, Is.Not.Null);
+
+            object[] args = { state, null, null };
+            bool success = (bool)reconstructMethod.Invoke(null, args);
+            string error = args[2] as string;
+
+            Assert.That(success, Is.True, error ?? "Expected shell reconstruction to succeed.");
+            return args[1] as InstalledPackageInfo;
         }
 
         private string CreateImportedShell(bool useGlobalSigningManifest = false)
