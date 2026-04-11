@@ -4452,6 +4452,14 @@ namespace YUCP.Importer.Editor.PackageManager
                         out pendingProtectedApplyPackageInfo,
                         out protectedApplyLogMessage);
 
+                    if (pendingProtectedApplyPackageInfo != null)
+                    {
+                        ProtectedPayloadInstallService.QueuePendingApply(pendingProtectedApplyPackageInfo);
+                        Debug.Log(protectedApplyLogMessage);
+                        pendingProtectedApplyPackageInfo = null;
+                        protectedApplyLogMessage = null;
+                    }
+
                     if (requestCompilationAfterUnlock)
                     {
                         // Critical: many installs trigger an immediate domain reload right after we unlock reload assemblies.
@@ -4481,20 +4489,10 @@ namespace YUCP.Importer.Editor.PackageManager
                                     AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
                                     // Request compilation; if this triggers a domain reload, the pending resolver will resume.
                                     CompilationPipeline.RequestScriptCompilation();
-                                    if (pendingProtectedApplyPackageInfo != null)
-                                    {
-                                        ProtectedPayloadInstallService.QueuePendingApply(pendingProtectedApplyPackageInfo);
-                                        Debug.Log(protectedApplyLogMessage);
-                                    }
                                 }
                                 else
                                 {
                                     Debug.Log("[YUCP PackageManager] Post-import: refreshing AssetDatabase after direct protected apply cleanup.");
-                                    if (pendingProtectedApplyPackageInfo != null)
-                                    {
-                                        ProtectedPayloadInstallService.QueuePendingApply(pendingProtectedApplyPackageInfo);
-                                        Debug.Log(protectedApplyLogMessage);
-                                    }
                                     AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
                                 }
                             }
@@ -4504,15 +4502,6 @@ namespace YUCP.Importer.Editor.PackageManager
                             }
                         };
                     }
-                    else if (pendingProtectedApplyPackageInfo != null)
-                    {
-                        EditorApplication.delayCall += () =>
-                        {
-                            ProtectedPayloadInstallService.QueuePendingApply(pendingProtectedApplyPackageInfo);
-                            Debug.Log(protectedApplyLogMessage);
-                        };
-                    }
-
                     // Close the import window after successful import
                     try
                     {
@@ -5136,12 +5125,6 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 Debug.Log($"[YUCP PackageManager] Post-import file tracking collected {installedFiles.Count} paths. FirstPath='{installedFiles.FirstOrDefault() ?? ""}'");
 
-                bool hasTempInstallDescriptor = PackageMetadataExtractor.HasTempInstallDescriptor(_allImportItems ?? _currentImportItems);
-                if (hasTempInstallDescriptor)
-                {
-                    Debug.Log("[YUCP PackageManager] Temp-install descriptor detected. Evaluating whether the importer can complete the protected handoff directly or whether the generated installer flow is still required.");
-                }
-
                 var installedInfo = InstalledPackageInfoFactory.Create(
                     metadata,
                     packageId ?? string.Empty,
@@ -5154,6 +5137,69 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (string.IsNullOrEmpty(installedInfo.packageId))
                 {
                     Debug.LogWarning($"[YUCP PackageManager] Imported assets but skipped registry registration because packageId is unavailable. packageName='{installedInfo.packageName}', signed={_isPackageSigned}, verificationValid={isVerified}, cachedExtractionError='{_cachedSigningExtractionError ?? ""}'");
+                    return false;
+                }
+
+                if (installedInfo.protectedPayload != null &&
+                    !ProtectedImportStateTracker.TryAdvance(
+                        installedInfo,
+                        ProtectedImportStateTracker.ProtectedImportPhase.shell_imported,
+                        out string protectedImportStateError))
+                {
+                    Debug.LogError($"[YUCP PackageManager] {protectedImportStateError}");
+                    EditorUtility.DisplayDialog(
+                        "Import Failed",
+                        protectedImportStateError,
+                        "OK");
+                    return false;
+                }
+
+                ProtectedImportIntentDescriptor protectedImportIntent =
+                    PackageMetadataExtractor.ExtractProtectedImportIntentDescriptor(
+                        _allImportItems ?? _currentImportItems,
+                        installedFiles);
+                bool hasProtectedImportIntent = protectedImportIntent != null;
+                if (hasProtectedImportIntent)
+                {
+                    Debug.Log("[YUCP PackageManager] Protected import intent detected. Evaluating whether the importer can complete the protected handoff directly or whether the generated installer flow is still required.");
+                }
+
+                if (!TryValidateProtectedImportIntent(installedInfo, protectedImportIntent, installedFiles, out string protectedImportIntentError))
+                {
+                    Debug.LogError($"[YUCP PackageManager] {protectedImportIntentError}");
+                    EditorUtility.DisplayDialog(
+                        "Import Failed",
+                        protectedImportIntentError,
+                        "OK");
+                    return false;
+                }
+
+                if (installedInfo.protectedPayload != null &&
+                    !ProtectedInstallIntentService.TryAuthorizeInstall(
+                        installedInfo.packageId,
+                        installedInfo.protectedPayload.protectedAssetId,
+                        installedInfo.protectedPayload.manifestBindingSha256,
+                        out string protectedInstallIntentError))
+                {
+                    Debug.LogError($"[YUCP PackageManager] {protectedInstallIntentError}");
+                    EditorUtility.DisplayDialog(
+                        "Import Failed",
+                        protectedInstallIntentError,
+                        "OK");
+                    return false;
+                }
+
+                if (installedInfo.protectedPayload != null &&
+                    !ProtectedImportStateTracker.TryAdvance(
+                        installedInfo,
+                        ProtectedImportStateTracker.ProtectedImportPhase.intent_verified,
+                        out string protectedImportStateIntentError))
+                {
+                    Debug.LogError($"[YUCP PackageManager] {protectedImportStateIntentError}");
+                    EditorUtility.DisplayDialog(
+                        "Import Failed",
+                        protectedImportStateIntentError,
+                        "OK");
                     return false;
                 }
 
@@ -5172,7 +5218,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 bool usedProtectedFastPath = false;
                 bool usePrecompiledInstallerRuntimeHandoff = false;
                 string fastPathMessage = null;
-                if (hasTempInstallDescriptor)
+                if (hasProtectedImportIntent)
                 {
                     if (installedInfo.protectedPayload != null &&
                         ProtectedImportFastPath.TryPrepareForDirectApply(
@@ -5220,7 +5266,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 Debug.Log($"[YUCP PackageManager] Registered package: {installedInfo.packageName} (ID: {packageId}, verified={installedInfo.isVerified}, installedFiles={installedInfo.installedFiles?.Count ?? 0})");
 
-                if (hasTempInstallDescriptor && installedInfo.protectedPayload != null)
+                if (hasProtectedImportIntent && installedInfo.protectedPayload != null)
                 {
                     if (usedProtectedFastPath || requestCompilationAfterUnlock || usePrecompiledInstallerRuntimeHandoff)
                     {
@@ -5245,6 +5291,73 @@ namespace YUCP.Importer.Editor.PackageManager
                 protectedApplyLogMessage = null;
                 return false;
             }
+        }
+
+        private static bool TryValidateProtectedImportIntent(
+            InstalledPackageInfo installedInfo,
+            ProtectedImportIntentDescriptor intent,
+            IReadOnlyList<string> installedFiles,
+            out string error)
+        {
+            error = null;
+            bool hasProtectedPayload = installedInfo?.protectedPayload != null;
+
+            if (!hasProtectedPayload)
+            {
+                if (intent != null && intent.requiresProtectedPayload)
+                {
+                    error = "The package included a protected import intent, but no protected payload descriptor was present.";
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (intent == null)
+            {
+                error = "The package includes protected content, but no signed protected import intent was present. The import was blocked before artifact materialization could be skipped silently.";
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(intent.packageId) &&
+                !string.Equals(intent.packageId, installedInfo.packageId, StringComparison.Ordinal))
+            {
+                error = "The protected import intent did not match the signed package identity.";
+                return false;
+            }
+
+            if (!string.Equals(intent.protectedAssetId ?? string.Empty, installedInfo.protectedPayload.protectedAssetId ?? string.Empty, StringComparison.Ordinal))
+            {
+                error = "The protected import intent did not match the protected payload descriptor.";
+                return false;
+            }
+
+            if (!string.Equals(
+                    intent.manifestBindingSha256 ?? string.Empty,
+                    installedInfo.protectedPayload.manifestBindingSha256 ?? string.Empty,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                error = "The protected import intent did not match the manifest-bound protected payload descriptor.";
+                return false;
+            }
+
+            string normalizedIntentPayloadPath = NormalizeImportPath(intent.protectedPayloadAssetPath);
+            if (string.IsNullOrWhiteSpace(normalizedIntentPayloadPath) ||
+                !installedFiles.Any(path => string.Equals(NormalizeImportPath(path), normalizedIntentPayloadPath, StringComparison.OrdinalIgnoreCase)))
+            {
+                error = "The protected import intent referenced a protected payload file that was not installed.";
+                return false;
+            }
+
+            string normalizedTempInstallPath = NormalizeImportPath(intent.tempInstallAssetPath);
+            if (string.IsNullOrWhiteSpace(normalizedTempInstallPath) ||
+                !installedFiles.Any(path => string.Equals(NormalizeImportPath(path), normalizedTempInstallPath, StringComparison.OrdinalIgnoreCase)))
+            {
+                error = "The protected import intent referenced a temp-install descriptor that was not installed.";
+                return false;
+            }
+
+            return true;
         }
     }
 }

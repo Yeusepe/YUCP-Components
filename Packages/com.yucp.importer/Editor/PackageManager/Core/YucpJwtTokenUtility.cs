@@ -93,6 +93,45 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return claims.machine_fingerprint == fingerprint && claims.project_id == projectId;
         }
 
+        internal static bool TryValidateProtectedInstallIntentToken(
+            string jwt,
+            string expectedPackageId,
+            string expectedProtectedAssetId,
+            string expectedManifestBindingSha256,
+            out ProtectedInstallIntentTokenClaims claims)
+        {
+            claims = null;
+            if (!TryVerifyToken(jwt, out var payloadJson, out _))
+                return false;
+
+            claims = JsonUtility.FromJson<ProtectedInstallIntentTokenClaims>(payloadJson);
+            if (claims == null)
+                return false;
+
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            if (claims.exp <= now || claims.iat > now + 300)
+                return false;
+            if (claims.aud != "yucp-protected-install-intent")
+                return false;
+            if (claims.iss != LicenseServerResolver.GetExpectedIssuer())
+                return false;
+            if (claims.package_id != expectedPackageId)
+                return false;
+            if (claims.protected_asset_id != expectedProtectedAssetId)
+                return false;
+            if (string.IsNullOrWhiteSpace(claims.manifest_binding_sha256))
+                return false;
+            if (!string.Equals(
+                    claims.manifest_binding_sha256,
+                    expectedManifestBindingSha256 ?? string.Empty,
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            string fingerprint = MachineFingerprintService.GetFingerprint();
+            string projectId = ProjectIdentityService.GetOrCreateProjectId();
+            return claims.machine_fingerprint == fingerprint && claims.project_id == projectId;
+        }
+
         private static bool TryVerifyToken(string jwt, out string payloadJson, out JwtHeader header)
         {
             payloadJson = null;
@@ -223,6 +262,22 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public string wrapped_content_key;
             public string content_key_b64;
             public string content_hash;
+            public long iat;
+            public long exp;
+        }
+
+        [Serializable]
+        internal class ProtectedInstallIntentTokenClaims
+        {
+            public string iss;
+            public string aud;
+            public string sub;
+            public string jti;
+            public string package_id;
+            public string protected_asset_id;
+            public string machine_fingerprint;
+            public string project_id;
+            public string manifest_binding_sha256;
             public long iat;
             public long exp;
         }

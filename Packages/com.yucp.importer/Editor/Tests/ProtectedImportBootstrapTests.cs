@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Serialization;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -221,6 +222,90 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(EditorPrefs.GetString("YUCP.PackageManager.ProtectedPayload.StartTicksUtc", string.Empty), Is.Empty);
             Assert.That(registry.GetPackage(packageInfo.packageId), Is.Null);
             Assert.That(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(rootAssetPath), Is.Null);
+        }
+
+        [Test]
+        public void PackageMetadataExtractor_GetPackageJsonDestinationPath_PrefersTempInstallDescriptorOverContainerPackageJson()
+        {
+            Type importPackageItemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
+            Assert.That(importPackageItemType, Is.Not.Null);
+
+            FieldInfo destinationAssetPathField = importPackageItemType.GetField("destinationAssetPath");
+            Assert.That(destinationAssetPathField, Is.Not.Null);
+
+            Array importItems = Array.CreateInstance(importPackageItemType, 2);
+            object containerPackageJson = FormatterServices.GetUninitializedObject(importPackageItemType);
+            object tempInstallPackageJson = FormatterServices.GetUninitializedObject(importPackageItemType);
+
+            destinationAssetPathField.SetValue(containerPackageJson, "Packages/yucp.installed-packages/package.json");
+            destinationAssetPathField.SetValue(tempInstallPackageJson, "Packages/yucp.installed-packages/Wasbeer/_temp/YUCP_TempInstall_Test.json");
+
+            importItems.SetValue(containerPackageJson, 0);
+            importItems.SetValue(tempInstallPackageJson, 1);
+
+            MethodInfo getPackageJsonDestinationPath = typeof(PackageMetadataExtractor).GetMethod(
+                "GetPackageJsonDestinationPath",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(getPackageJsonDestinationPath, Is.Not.Null);
+
+            string destinationPath = getPackageJsonDestinationPath.Invoke(null, new object[] { importItems }) as string;
+            Assert.That(destinationPath, Is.EqualTo("Packages/yucp.installed-packages/Wasbeer/_temp/YUCP_TempInstall_Test.json"));
+        }
+
+        [Test]
+        public void ExtractProtectedImportIntentDescriptor_PrefersInstalledShellAsset_WhenAvailable()
+        {
+            string rootAssetPath = CreateImportedShell();
+            string intentAssetPath = $"{rootAssetPath}/YUCP_ProtectedImportIntent.json";
+            string protectedPayloadAssetPath = $"{rootAssetPath}/YUCP_ProtectedPayload.json";
+            string tempInstallAssetPath = $"{rootAssetPath}/_temp/YUCP_TempInstall_Test.json";
+
+            var protectedPayload = PackageMetadataExtractor.ExtractProtectedPayloadDescriptorFromAssetPath(protectedPayloadAssetPath);
+            Assert.That(protectedPayload, Is.Not.Null);
+
+            File.WriteAllText(
+                GetAssetDiskPath(intentAssetPath),
+                JsonUtility.ToJson(new ProtectedImportIntentDescriptor
+                {
+                    formatVersion = "1",
+                    packageId = "pkg-test-123",
+                    protectedAssetId = protectedPayload.protectedAssetId,
+                    protectedPayloadAssetPath = protectedPayloadAssetPath,
+                    tempInstallAssetPath = tempInstallAssetPath,
+                    manifestBindingSha256 = protectedPayload.manifestBindingSha256,
+                    requiresProtectedPayload = true,
+                }, true));
+
+            AssetDatabase.Refresh();
+
+            Type importPackageItemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
+            Assert.That(importPackageItemType, Is.Not.Null);
+
+            FieldInfo destinationAssetPathField = importPackageItemType.GetField("destinationAssetPath");
+            FieldInfo sourceFolderField = importPackageItemType.GetField("sourceFolder");
+            FieldInfo exportedAssetPathField = importPackageItemType.GetField("exportedAssetPath");
+            Assert.That(destinationAssetPathField, Is.Not.Null);
+            Assert.That(sourceFolderField, Is.Not.Null);
+            Assert.That(exportedAssetPathField, Is.Not.Null);
+
+            Array importItems = Array.CreateInstance(importPackageItemType, 1);
+            object intentItem = FormatterServices.GetUninitializedObject(importPackageItemType);
+            destinationAssetPathField.SetValue(intentItem, intentAssetPath);
+            sourceFolderField.SetValue(intentItem, "Temp/Export Package/missing/intent");
+            exportedAssetPathField.SetValue(intentItem, "asset");
+            importItems.SetValue(intentItem, 0);
+
+            ProtectedImportIntentDescriptor descriptor =
+                PackageMetadataExtractor.ExtractProtectedImportIntentDescriptor(
+                    importItems,
+                    new[] { intentAssetPath, protectedPayloadAssetPath, tempInstallAssetPath });
+
+            Assert.That(descriptor, Is.Not.Null);
+            Assert.That(descriptor.packageId, Is.EqualTo("pkg-test-123"));
+            Assert.That(descriptor.protectedAssetId, Is.EqualTo(protectedPayload.protectedAssetId));
+            Assert.That(descriptor.protectedPayloadAssetPath, Is.EqualTo(protectedPayloadAssetPath));
+            Assert.That(descriptor.tempInstallAssetPath, Is.EqualTo(tempInstallAssetPath));
+            Assert.That(descriptor.manifestBindingSha256, Is.EqualTo(protectedPayload.manifestBindingSha256));
         }
 
         private void CapturePackageImportWizardState()

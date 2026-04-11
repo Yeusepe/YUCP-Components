@@ -35,6 +35,15 @@ namespace YUCP.Importer.Editor.PackageManager
             if (packageInfo == null || string.IsNullOrWhiteSpace(packageInfo.packageId) || packageInfo.protectedPayload == null)
                 return;
 
+            if (!ProtectedImportStateTracker.TryAdvance(
+                    packageInfo,
+                    ProtectedImportStateTracker.ProtectedImportPhase.apply_queued,
+                    out string stateError))
+            {
+                Debug.LogError($"[YUCP PackageManager] {stateError}");
+                return;
+            }
+
             EditorPrefs.SetString(PendingPackageIdKey, packageInfo.packageId ?? "");
             EditorPrefs.SetString(PendingStartTicksKey, DateTime.UtcNow.Ticks.ToString());
             SchedulePendingApply();
@@ -83,6 +92,7 @@ namespace YUCP.Importer.Editor.PackageManager
             if (IsTimedOut())
             {
                 Debug.LogWarning("[YUCP PackageManager] Timed out waiting to apply the protected payload after import.");
+                ProtectedInstallIntentService.Clear(EditorPrefs.GetString(PendingPackageIdKey, ""));
                 ClearPendingApply();
                 return;
             }
@@ -98,7 +108,24 @@ namespace YUCP.Importer.Editor.PackageManager
 
             if (packageInfo.protectedPayload == null)
             {
+                ProtectedInstallIntentService.Clear(packageId);
                 ClearPendingApply();
+                return;
+            }
+
+            if (!ProtectedImportStateTracker.TryValidateResume(
+                    packageInfo,
+                    ProtectedImportStateTracker.ProtectedImportPhase.apply_queued,
+                    out _,
+                    out string stateError))
+            {
+                ClearPendingApply();
+                RollbackRegisteredPackage(packageInfo);
+                Debug.LogError("[YUCP PackageManager] A required package protection step failed and the import was rolled back.");
+                EditorUtility.DisplayDialog(
+                    "Import Failed",
+                    stateError,
+                    "OK");
                 return;
             }
 
@@ -141,6 +168,23 @@ namespace YUCP.Importer.Editor.PackageManager
                 return false;
             }
 
+            if (!ProtectedInstallIntentService.TryAuthorizeInstall(
+                    packageInfo.packageId,
+                    descriptor.protectedAssetId,
+                    descriptor.manifestBindingSha256,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!ProtectedImportStateTracker.TryAdvance(
+                    packageInfo,
+                    ProtectedImportStateTracker.ProtectedImportPhase.unlock_verified,
+                    out error))
+            {
+                return false;
+            }
+
             string blobAssetPath = descriptor.blobAssetPath.Replace('\\', '/');
             string blobDiskPath = ResolveAssetPathToDisk(blobAssetPath);
             if (string.IsNullOrEmpty(blobDiskPath) || !File.Exists(blobDiskPath))
@@ -156,7 +200,15 @@ namespace YUCP.Importer.Editor.PackageManager
                     error = "The package protection step could not be completed on this machine.";
                     return false;
                 }
+                if (!ProtectedImportStateTracker.TryAdvance(
+                        packageInfo,
+                        ProtectedImportStateTracker.ProtectedImportPhase.payload_extracted,
+                        out error))
+                {
+                    return false;
+                }
                 ProtectedInstallFinalizationCoordinator.QueuePendingFinalization(packageInfo, Array.Empty<string>());
+                ProtectedInstallIntentService.Clear(packageInfo.packageId);
                 return true;
             }
 
@@ -206,8 +258,18 @@ namespace YUCP.Importer.Editor.PackageManager
                     return false;
                 }
 
+                if (!ProtectedImportStateTracker.TryAdvance(
+                        packageInfo,
+                        ProtectedImportStateTracker.ProtectedImportPhase.payload_extracted,
+                        out error,
+                        extractedAssetPaths))
+                {
+                    return false;
+                }
+
                 AssetDatabase.Refresh();
                 ProtectedInstallFinalizationCoordinator.QueuePendingFinalization(packageInfo, extractedAssetPaths);
+                ProtectedInstallIntentService.Clear(packageInfo.packageId);
                 return true;
             }
             catch (Exception ex)
@@ -231,6 +293,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 Debug.LogError("[YUCP PackageManager] The failed protected package import could not be rolled back cleanly.");
             }
 
+            ProtectedInstallIntentService.Clear(packageInfo.packageId);
+            ProtectedImportStateTracker.TryAdvance(
+                packageInfo,
+                ProtectedImportStateTracker.ProtectedImportPhase.rolled_back,
+                out _);
             var registry = InstalledPackageRegistry.Load() ?? InstalledPackageRegistry.GetOrCreate();
             registry?.UnregisterPackage(packageInfo.packageId);
         }
@@ -403,6 +470,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private static void ClearPendingApply()
         {
+            ProtectedInstallIntentService.Clear(EditorPrefs.GetString(PendingPackageIdKey, ""));
             EditorPrefs.DeleteKey(PendingPackageIdKey);
             EditorPrefs.DeleteKey(PendingStartTicksKey);
         }

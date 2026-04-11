@@ -192,6 +192,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             };
 
+            ProtectedImportStateTracker.TryAdvance(
+                packageInfo,
+                ProtectedImportStateTracker.ProtectedImportPhase.payload_extracted,
+                out _,
+                state.extractedAssetPaths);
+
 
 
             EditorPrefs.SetString(PendingFinalizationStateKey, JsonUtility.ToJson(state));
@@ -380,6 +386,46 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 }
 
+                if (!ProtectedImportStateTracker.TryValidateResume(
+                        packageInfo,
+                        ProtectedImportStateTracker.ProtectedImportPhase.payload_extracted,
+                        out _,
+                        out string stateError))
+
+                {
+
+                    bool resumeRollbackCleanly = RollbackFailedInstall(
+
+                        packageInfo,
+
+                        FindInstalledShellRootAssetPath(packageInfo),
+
+                        state.extractedAssetPaths ?? Array.Empty<string>(),
+
+                        Array.Empty<string>(),
+
+                        out string rollbackError);
+
+                    ClearPendingFinalization();
+
+                    Debug.LogError(resumeRollbackCleanly
+
+                        ? "[YUCP PackageManager] A required package protection step failed and the import was rolled back."
+
+                        : $"[YUCP PackageManager] A required package protection step failed and the import could not be rolled back cleanly. {rollbackError}");
+
+                    EditorUtility.DisplayDialog(
+
+                        "Import Failed",
+
+                        stateError,
+
+                        "OK");
+
+                    return;
+
+                }
+
 
 
                 FinalizationStatus status = TryFinalizeProtectedInstall(
@@ -437,6 +483,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 packageInfo.installedFiles = committedFiles.ToList();
 
                 registry.RegisterPackage(packageInfo);
+
+                ProtectedImportStateTracker.TryAdvance(
+                    packageInfo,
+                    ProtectedImportStateTracker.ProtectedImportPhase.materialization_finalized,
+                    out _,
+                    committedFiles);
 
                 ClearLegacyPendingPatchPath();
 
@@ -1445,6 +1497,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         : $"{rollbackError} The importer workspace could not be cleaned up.";
 
                 }
+
+
+                ProtectedImportStateTracker.TryAdvance(
+                    packageInfo,
+                    ProtectedImportStateTracker.ProtectedImportPhase.rolled_back,
+                    out _,
+                    createdAssetPaths);
 
 
 
