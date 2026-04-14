@@ -150,6 +150,55 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ProtectedImportBootstrapCoordinator_ReconstructsInstalledPackageInfo_WhenMetadataAssetPathPointsOutsideShellRoot()
+        {
+            string rootAssetPath = CreateImportedShell();
+            string externalRootAssetPath = $"Assets/YUCP_TempTests/ProtectedBootstrapBorrowedMetadata_{Guid.NewGuid():N}";
+            string externalMetadataAssetPath = $"{externalRootAssetPath}/YUCP_PackageInfo.json";
+
+            Directory.CreateDirectory(GetAssetDiskPath(externalRootAssetPath));
+            File.WriteAllText(
+                GetAssetDiskPath(externalMetadataAssetPath),
+                "{"
+                + "\"packageName\":\"Borrowed Metadata\","
+                + "\"version\":\"9.9.9\","
+                + "\"description\":\"Metadata came from outside the imported shell.\""
+                + "}");
+
+            RegisterAdditionalCleanupAssetPath(externalMetadataAssetPath);
+            RegisterAdditionalCleanupAssetPath(externalRootAssetPath);
+            AssetDatabase.Refresh();
+
+            object state = CreatePendingProtectedImportState(
+                packageName: "Protected Shell",
+                shellRootAssetPath: rootAssetPath,
+                tempInstallAssetPath: $"{rootAssetPath}/_temp/YUCP_TempInstall_Test.json",
+                metadataAssetPath: externalMetadataAssetPath,
+                protectedPayloadAssetPath: $"{rootAssetPath}/YUCP_ProtectedPayload.json",
+                originalPackagePath: string.Empty);
+
+            MethodInfo reconstructMethod = GetEditorType("YUCP.Importer.Editor.PackageManager.Core.ProtectedImportBootstrapCoordinator")
+                .GetMethod(
+                    "TryReconstructInstalledPackageInfo",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(reconstructMethod, Is.Not.Null);
+
+            object[] args = { state, null, null };
+            bool success = (bool)reconstructMethod.Invoke(null, args);
+            string error = args[2] as string;
+
+            Assert.That(success, Is.True, error ?? "Expected shell reconstruction to succeed with metadata outside the imported shell.");
+
+            var packageInfo = args[1] as InstalledPackageInfo;
+            Assert.That(packageInfo, Is.Not.Null);
+            Assert.That(packageInfo.packageName, Is.EqualTo("Borrowed Metadata"));
+            Assert.That(packageInfo.version, Is.EqualTo("9.9.9"));
+            Assert.That(packageInfo.description, Is.EqualTo("Metadata came from outside the imported shell."));
+            Assert.That(packageInfo.installedFiles, Has.Some.EqualTo($"{rootAssetPath}/Protected/payload.blob"));
+        }
+
+        [Test]
         public void ProtectedImportBootstrapCoordinator_FailsWhenProtectedPayloadDescriptorDoesNotMatchSignedManifest()
         {
             string rootAssetPath = CreateImportedShell();

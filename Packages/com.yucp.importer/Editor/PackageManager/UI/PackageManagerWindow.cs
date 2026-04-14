@@ -3106,10 +3106,9 @@ namespace YUCP.Importer.Editor.PackageManager
                 // the verification URL before the delayed UI refresh runs.
                 BeginCreatorIdentitySignIn(backgroundOnSuccess: () =>
                 {
-                    VerificationIntentService.s_openUrlOverride = url => PendingVerifyRelay.SetVerifyUrl(url);
                     VerificationIntentService.VerifyInBrowserAsync(
                         serverUrlForVerify, packageIdForVerify, packageNameForVerify,
-                        requirementsForVerify, jwtCallback, errCallback);
+                        requirementsForVerify, jwtCallback, errCallback, PendingVerifyRelay.SetVerifyUrl);
                 });
                 return;
             }
@@ -3294,11 +3293,6 @@ namespace YUCP.Importer.Editor.PackageManager
                         }
                         else if (onSuccess != null)
                         {
-                            // Wire the relay to receive the intent URL once it's created,
-                            // so the browser tab redirects instead of a new tab opening.
-                            VerificationIntentService.s_openUrlOverride =
-                                url => PendingVerifyRelay.SetVerifyUrl(url);
-
                             // Proceed directly into the chained action (e.g. verification) while
                             // the original verifyBtn/state refs are still valid. The chained
                             // callback's own success/failure paths call BuildLicenseSection().
@@ -3317,7 +3311,6 @@ namespace YUCP.Importer.Editor.PackageManager
                 {
                     Debug.LogWarning($"[YUCP PackageManager] Creator Identity sign-in failed: {err}");
                     PendingVerifyRelay.Cancel();
-                    VerificationIntentService.s_openUrlOverride = null;
                     EditorApplication.delayCall += () =>
                     {
                         _isCreatorIdentitySigningIn = false;

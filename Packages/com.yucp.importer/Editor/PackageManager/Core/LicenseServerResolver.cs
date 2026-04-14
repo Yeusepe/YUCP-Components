@@ -20,10 +20,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (trustedUrls.Count == 0)
             {
-                return preferredUrl
-                    ?? signingUrl
-                    ?? legacyUrl
-                    ?? TrustedAuthoritiesSettings.DefaultTrustedUrl;
+                return TrustedAuthoritiesSettings.DefaultTrustedUrl;
             }
 
             if (!string.IsNullOrEmpty(preferredUrl) && TrustedAuthoritiesSettings.IsTrustedUrl(preferredUrl))
@@ -50,34 +47,27 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             try
             {
-                string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-                if (guids.Length == 0)
-                    return null;
-
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                Type signingSettingsType = null;
+                Type packageSigningServiceType = null;
 
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    signingSettingsType = assembly.GetType("YUCP.DevTools.Editor.PackageSigning.Data.SigningSettings");
-                    if (signingSettingsType != null)
+                    packageSigningServiceType = assembly.GetType("YUCP.DevTools.Editor.PackageSigning.Core.PackageSigningService");
+                    if (packageSigningServiceType != null)
                         break;
                 }
 
-                if (signingSettingsType == null)
+                if (packageSigningServiceType == null)
                 {
-                    signingSettingsType = Type.GetType("YUCP.DevTools.Editor.PackageSigning.Data.SigningSettings, Assembly-CSharp-Editor");
+                    packageSigningServiceType = Type.GetType("YUCP.DevTools.Editor.PackageSigning.Core.PackageSigningService, Assembly-CSharp-Editor");
                 }
 
-                if (signingSettingsType == null)
+                if (packageSigningServiceType == null)
                     return null;
 
-                var settings = AssetDatabase.LoadAssetAtPath(path, signingSettingsType);
-                if (settings == null)
-                    return null;
-
-                var field = signingSettingsType.GetField("serverUrl", BindingFlags.Public | BindingFlags.Instance);
-                return field?.GetValue(settings) as string;
+                MethodInfo getServerUrlMethod = packageSigningServiceType.GetMethod(
+                    "GetServerUrl",
+                    BindingFlags.Public | BindingFlags.Static);
+                return getServerUrlMethod?.Invoke(null, null) as string;
             }
             catch
             {

@@ -1,8 +1,10 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
 using NUnit.Framework;
 using YUCP.Importer.Editor.PackageManager;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.Tests
 {
@@ -22,7 +24,7 @@ namespace YUCP.Importer.Editor.Tests
         public void TearDown()
         {
             PackageManagerRuntimeSettings.SetRuntimeInstallRootOverride(string.Empty);
-            ResetOverrides();
+            CouplingRuntimeBootstrapServiceTestHooks.Reset();
             if (Directory.Exists(_tempRoot))
             {
                 Directory.Delete(_tempRoot, true);
@@ -32,7 +34,6 @@ namespace YUCP.Importer.Editor.Tests
         [Test]
         public void TryEnsureProtectedMaterializationRuntimeReady_InstallsRuntimeWhenInitialValidationFails()
         {
-            Type serviceType = GetBootstrapServiceType();
             int validateCalls = 0;
             string requestedPackageId = null;
             string requestedProjectId = null;
@@ -41,55 +42,46 @@ namespace YUCP.Importer.Editor.Tests
             string downloadedServerUrl = null;
             string downloadedToken = null;
             string downloadedSha = null;
-            string downloadedTempRoot = null;
-            string installedZipPath = null;
+            byte[] installedArchive = null;
+            string installedWorkingRoot = null;
             string installedRoot = null;
 
-            SetOverride(serviceType, "s_validateRuntimeOverride", (Func<(bool success, string error)>)(() =>
+            CouplingRuntimeBootstrapServiceTestHooks.ValidateRuntime = () =>
             {
                 validateCalls++;
                 return validateCalls == 1
                     ? (false, "The package protection runtime is not installed for this Windows user.")
                     : (true, null);
-            }));
-            SetOverride(serviceType, "s_getLicenseTokenOverride", (Func<string, string>)(packageId =>
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.GetLicenseToken = packageId =>
             {
                 requestedPackageId = packageId;
                 return "license-token";
-            }));
-            SetOverride(serviceType, "s_getProjectIdOverride", (Func<string>)(() => "0123456789abcdef0123456789abcdef"));
-            SetOverride(serviceType, "s_getMachineFingerprintOverride", (Func<string>)(() => "machine-fingerprint"));
-            SetOverride(serviceType, "s_getServerUrlOverride", (Func<string>)(() => "https://example.invalid"));
-            SetOverride(
-                serviceType,
-                "s_requestRuntimePackageTokenOverride",
-                (Func<string, string, string, string, (bool success, string runtimePackageToken, string runtimePackageSha256, long expiresAt, string error)>)((packageId, projectId, machineFingerprint, licenseToken) =>
-                {
-                    requestedProjectId = projectId;
-                    requestedMachineFingerprint = machineFingerprint;
-                    requestedLicenseToken = licenseToken;
-                    return (true, "runtime-package-token", "runtime-package-sha", 1234, null);
-                }));
-            SetOverride(
-                serviceType,
-                "s_downloadRuntimePackageOverride",
-                (Func<string, string, string, string, (bool success, string packageZipPath, string error)>)((serverUrl, runtimePackageToken, expectedSha256, tempRoot) =>
-                {
-                    downloadedServerUrl = serverUrl;
-                    downloadedToken = runtimePackageToken;
-                    downloadedSha = expectedSha256;
-                    downloadedTempRoot = tempRoot;
-                    return (true, Path.Combine(tempRoot, "runtime-package.zip"), null);
-                }));
-            SetOverride(
-                serviceType,
-                "s_installRuntimePackageOverride",
-                (Func<string, string, (bool success, string error)>)((packageZipPath, installRoot) =>
-                {
-                    installedZipPath = packageZipPath;
-                    installedRoot = installRoot;
-                    return (true, null);
-                }));
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.GetProjectId = () => "0123456789abcdef0123456789abcdef";
+            CouplingRuntimeBootstrapServiceTestHooks.GetMachineFingerprint = () => "machine-fingerprint";
+            CouplingRuntimeBootstrapServiceTestHooks.GetServerUrl = () => "https://example.invalid";
+            CouplingRuntimeBootstrapServiceTestHooks.RequestRuntimePackageToken = (packageId, projectId, machineFingerprint, licenseToken) =>
+            {
+                requestedProjectId = projectId;
+                requestedMachineFingerprint = machineFingerprint;
+                requestedLicenseToken = licenseToken;
+                return (true, "runtime-package-token", "runtime-package-sha", 1234, null);
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.DownloadRuntimePackage = (serverUrl, runtimePackageToken, expectedSha256) =>
+            {
+                downloadedServerUrl = serverUrl;
+                downloadedToken = runtimePackageToken;
+                downloadedSha = expectedSha256;
+                return (true, new byte[] { 1, 2, 3, 4 }, null);
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.InstallRuntimePackage = (packageZipBytes, workingRoot, installRoot) =>
+            {
+                installedArchive = packageZipBytes;
+                installedWorkingRoot = workingRoot;
+                installedRoot = installRoot;
+                return (true, null);
+            };
 
             bool success = InvokeEnsureReady("pkg-bootstrap", out string error);
 
@@ -103,54 +95,44 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(downloadedServerUrl, Is.EqualTo("https://example.invalid"));
             Assert.That(downloadedToken, Is.EqualTo("runtime-package-token"));
             Assert.That(downloadedSha, Is.EqualTo("runtime-package-sha"));
-            Assert.That(downloadedTempRoot, Does.Contain("yucp-runtime-bootstrap-"));
-            Assert.That(installedZipPath, Does.EndWith("runtime-package.zip"));
+            CollectionAssert.AreEqual(new byte[] { 1, 2, 3, 4 }, installedArchive);
+            Assert.That(installedWorkingRoot, Does.Contain("yucp-runtime-bootstrap-"));
             Assert.That(installedRoot, Is.EqualTo(_tempRoot));
         }
 
         [Test]
         public void TryEnsureProtectedMaterializationRuntimeReady_RepairsRuntimeBeforeDownloadingPackage()
         {
-            Type serviceType = GetBootstrapServiceType();
             int validateCalls = 0;
             int repairCalls = 0;
 
-            SetOverride(serviceType, "s_validateRuntimeOverride", (Func<(bool success, string error)>)(() =>
+            CouplingRuntimeBootstrapServiceTestHooks.ValidateRuntime = () =>
             {
                 validateCalls++;
                 return validateCalls == 1
                     ? (false, "The package protection runtime is not installed for this Windows user.")
                     : (true, null);
-            }));
-            SetOverride(serviceType, "s_repairRuntimeRegistrationOverride", (Func<(bool success, string error)>)(() =>
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.RepairRuntimeRegistration = () =>
             {
                 repairCalls++;
                 return (true, null);
-            }));
-            SetOverride(
-                serviceType,
-                "s_requestRuntimePackageTokenOverride",
-                (Func<string, string, string, string, (bool success, string runtimePackageToken, string runtimePackageSha256, long expiresAt, string error)>)((_, __, ___, ____) =>
-                {
-                    Assert.Fail("Repair should avoid requesting a runtime package token.");
-                    return default;
-                }));
-            SetOverride(
-                serviceType,
-                "s_downloadRuntimePackageOverride",
-                (Func<string, string, string, string, (bool success, string packageZipPath, string error)>)((_, __, ___, ____) =>
-                {
-                    Assert.Fail("Repair should avoid downloading the runtime package.");
-                    return default;
-                }));
-            SetOverride(
-                serviceType,
-                "s_installRuntimePackageOverride",
-                (Func<string, string, (bool success, string error)>)((_, __) =>
-                {
-                    Assert.Fail("Repair should avoid reinstalling the runtime package.");
-                    return default;
-                }));
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.RequestRuntimePackageToken = (_, _, _, _) =>
+            {
+                Assert.Fail("Repair should avoid requesting a runtime package token.");
+                return default;
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.DownloadRuntimePackage = (_, _, _) =>
+            {
+                Assert.Fail("Repair should avoid downloading the runtime package.");
+                return default;
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.InstallRuntimePackage = (_, _, _) =>
+            {
+                Assert.Fail("Repair should avoid reinstalling the runtime package.");
+                return default;
+            };
 
             bool success = InvokeEnsureReady("pkg-bootstrap", out string error);
 
@@ -163,53 +145,43 @@ namespace YUCP.Importer.Editor.Tests
         [Test]
         public void TryEnsureProtectedMaterializationRuntimeReady_FallsBackToInstallWhenRepairDoesNotRestoreProbe()
         {
-            Type serviceType = GetBootstrapServiceType();
             int validateCalls = 0;
             int repairCalls = 0;
             bool tokenRequested = false;
             bool downloaded = false;
             bool installed = false;
 
-            SetOverride(serviceType, "s_validateRuntimeOverride", (Func<(bool success, string error)>)(() =>
+            CouplingRuntimeBootstrapServiceTestHooks.ValidateRuntime = () =>
             {
                 validateCalls++;
                 return validateCalls < 3
                     ? (false, "The package protection runtime is not installed for this Windows user.")
                     : (true, null);
-            }));
-            SetOverride(serviceType, "s_repairRuntimeRegistrationOverride", (Func<(bool success, string error)>)(() =>
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.RepairRuntimeRegistration = () =>
             {
                 repairCalls++;
                 return (true, null);
-            }));
-            SetOverride(serviceType, "s_getLicenseTokenOverride", (Func<string, string>)(_ => "license-token"));
-            SetOverride(serviceType, "s_getProjectIdOverride", (Func<string>)(() => "0123456789abcdef0123456789abcdef"));
-            SetOverride(serviceType, "s_getMachineFingerprintOverride", (Func<string>)(() => "machine-fingerprint"));
-            SetOverride(serviceType, "s_getServerUrlOverride", (Func<string>)(() => "https://example.invalid"));
-            SetOverride(
-                serviceType,
-                "s_requestRuntimePackageTokenOverride",
-                (Func<string, string, string, string, (bool success, string runtimePackageToken, string runtimePackageSha256, long expiresAt, string error)>)((_, __, ___, ____) =>
-                {
-                    tokenRequested = true;
-                    return (true, "runtime-package-token", "runtime-package-sha", 1234, null);
-                }));
-            SetOverride(
-                serviceType,
-                "s_downloadRuntimePackageOverride",
-                (Func<string, string, string, string, (bool success, string packageZipPath, string error)>)((_, __, ___, tempRoot) =>
-                {
-                    downloaded = true;
-                    return (true, Path.Combine(tempRoot, "runtime-package.zip"), null);
-                }));
-            SetOverride(
-                serviceType,
-                "s_installRuntimePackageOverride",
-                (Func<string, string, (bool success, string error)>)((_, __) =>
-                {
-                    installed = true;
-                    return (true, null);
-                }));
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.GetLicenseToken = _ => "license-token";
+            CouplingRuntimeBootstrapServiceTestHooks.GetProjectId = () => "0123456789abcdef0123456789abcdef";
+            CouplingRuntimeBootstrapServiceTestHooks.GetMachineFingerprint = () => "machine-fingerprint";
+            CouplingRuntimeBootstrapServiceTestHooks.GetServerUrl = () => "https://example.invalid";
+            CouplingRuntimeBootstrapServiceTestHooks.RequestRuntimePackageToken = (_, _, _, _) =>
+            {
+                tokenRequested = true;
+                return (true, "runtime-package-token", "runtime-package-sha", 1234, null);
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.DownloadRuntimePackage = (_, _, _) =>
+            {
+                downloaded = true;
+                return (true, new byte[] { 5, 6, 7 }, null);
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.InstallRuntimePackage = (_, _, _) =>
+            {
+                installed = true;
+                return (true, null);
+            };
 
             bool success = InvokeEnsureReady("pkg-bootstrap", out string error);
 
@@ -225,34 +197,24 @@ namespace YUCP.Importer.Editor.Tests
         [Test]
         public void TryEnsureProtectedMaterializationRuntimeReady_FailsWhenRuntimeStillDoesNotSupportProtectedImportsAfterInstall()
         {
-            Type serviceType = GetBootstrapServiceType();
             int validateCalls = 0;
 
-            SetOverride(serviceType, "s_validateRuntimeOverride", (Func<(bool success, string error)>)(() =>
+            CouplingRuntimeBootstrapServiceTestHooks.ValidateRuntime = () =>
             {
                 validateCalls++;
                 return (false, validateCalls == 1
                     ? "The package protection runtime is not installed for this Windows user."
                     : "The installed package protection runtime does not support the protected materialization required by this package.");
-            }));
-            SetOverride(serviceType, "s_getLicenseTokenOverride", (Func<string, string>)(_ => "license-token"));
-            SetOverride(serviceType, "s_getProjectIdOverride", (Func<string>)(() => "0123456789abcdef0123456789abcdef"));
-            SetOverride(serviceType, "s_getMachineFingerprintOverride", (Func<string>)(() => "machine-fingerprint"));
-            SetOverride(serviceType, "s_getServerUrlOverride", (Func<string>)(() => "https://example.invalid"));
-            SetOverride(
-                serviceType,
-                "s_requestRuntimePackageTokenOverride",
-                (Func<string, string, string, string, (bool success, string runtimePackageToken, string runtimePackageSha256, long expiresAt, string error)>)((_, __, ___, ____) =>
-                    (true, "runtime-package-token", "runtime-package-sha", 1234, null)));
-            SetOverride(
-                serviceType,
-                "s_downloadRuntimePackageOverride",
-                (Func<string, string, string, string, (bool success, string packageZipPath, string error)>)((_, __, ___, tempRoot) =>
-                    (true, Path.Combine(tempRoot, "runtime-package.zip"), null)));
-            SetOverride(
-                serviceType,
-                "s_installRuntimePackageOverride",
-                (Func<string, string, (bool success, string error)>)((_, __) => (true, null)));
+            };
+            CouplingRuntimeBootstrapServiceTestHooks.GetLicenseToken = _ => "license-token";
+            CouplingRuntimeBootstrapServiceTestHooks.GetProjectId = () => "0123456789abcdef0123456789abcdef";
+            CouplingRuntimeBootstrapServiceTestHooks.GetMachineFingerprint = () => "machine-fingerprint";
+            CouplingRuntimeBootstrapServiceTestHooks.GetServerUrl = () => "https://example.invalid";
+            CouplingRuntimeBootstrapServiceTestHooks.RequestRuntimePackageToken = (_, _, _, _) =>
+                (true, "runtime-package-token", "runtime-package-sha", 1234, null);
+            CouplingRuntimeBootstrapServiceTestHooks.DownloadRuntimePackage = (_, _, _) =>
+                (true, new byte[] { 1, 2, 3 }, null);
+            CouplingRuntimeBootstrapServiceTestHooks.InstallRuntimePackage = (_, _, _) => (true, null);
 
             bool success = InvokeEnsureReady("pkg-bootstrap", out string error);
 
@@ -261,6 +223,62 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(
                 error,
                 Is.EqualTo("The installed package protection runtime does not support the protected materialization required by this package."));
+        }
+
+        [Test]
+        public void InstallRuntimePackage_RejectsNestedInstallScriptPaths()
+        {
+            byte[] archiveBytes = CreateRuntimePackageArchive(
+                ("runtime-package-manifest.json", "{ \"buildDir\": \"build\", \"installScriptPath\": \"Scripts/install-runtime.ps1\" }"),
+                ("build/payload.txt", "payload"),
+                ("Scripts/install-runtime.ps1", "Write-Host 'install'"));
+
+            string workingRoot = Path.Combine(_tempRoot, "working");
+            Directory.CreateDirectory(workingRoot);
+
+            bool success = InvokeInstallRuntimePackage(archiveBytes, workingRoot, _tempRoot, out string error);
+
+            Assert.That(success, Is.False);
+            Assert.That(error, Does.Contain("must not contain nested path segments"));
+        }
+
+        [Test]
+        public void TryRepairRuntimeRegistration_RejectsStateDllPathOutsideVerifiedPackageRoot()
+        {
+            string packageDir = Path.Combine(_tempRoot, "packages", "build-a");
+            string rogueDir = Path.Combine(_tempRoot, "rogue");
+            string stateDir = Path.Combine(_tempRoot, "state");
+            Directory.CreateDirectory(packageDir);
+            Directory.CreateDirectory(rogueDir);
+            Directory.CreateDirectory(stateDir);
+
+            byte[] runtimeBytes = { 9, 8, 7, 6 };
+            string verifiedDllPath = Path.Combine(packageDir, "CouplingRuntimeCom.dll");
+            string rogueDllPath = Path.Combine(rogueDir, "CouplingRuntimeCom.dll");
+            File.WriteAllBytes(verifiedDllPath, runtimeBytes);
+            File.WriteAllBytes(rogueDllPath, runtimeBytes);
+
+            string metadataJson =
+                "{\n" +
+                "  \"dllName\": \"CouplingRuntimeCom.dll\",\n" +
+                $"  \"sha256\": \"{ComputeSha256Hex(runtimeBytes)}\"\n" +
+                "}";
+            File.WriteAllText(Path.Combine(packageDir, "CouplingRuntimeCom.metadata.json"), metadataJson);
+
+            string activeStateJson =
+                "{\n" +
+                "  \"activeBuildId\": \"build-a\",\n" +
+                "  \"activeVersion\": \"0.0.1-dev\",\n" +
+                $"  \"activePackageDir\": \"{EscapeJson(packageDir)}\",\n" +
+                $"  \"activeDllPath\": \"{EscapeJson(rogueDllPath)}\"\n" +
+                "}";
+            File.WriteAllText(Path.Combine(stateDir, "active.json"), activeStateJson);
+
+            InvokeTryRepairRuntimeRegistration(out bool attempted, out bool success, out string error);
+
+            Assert.That(attempted, Is.True);
+            Assert.That(success, Is.False);
+            Assert.That(error, Does.Contain("did not match the verified runtime DLL location"));
         }
 
         private static Type GetBootstrapServiceType()
@@ -285,32 +303,65 @@ namespace YUCP.Importer.Editor.Tests
             return success;
         }
 
-        private static void SetOverride(Type serviceType, string fieldName, object value)
+        private static bool InvokeInstallRuntimePackage(byte[] packageZipBytes, string workingRoot, string installRoot, out string error)
         {
-            FieldInfo field = serviceType.GetField(fieldName, BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
-            Assert.That(field, Is.Not.Null, $"Expected override field '{fieldName}'.");
-            field.SetValue(null, value);
+            MethodInfo method = GetBootstrapServiceType().GetMethod(
+                "InstallRuntimePackage",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+
+            object result = method.Invoke(null, new object[] { packageZipBytes, workingRoot, installRoot });
+            bool success = GetTupleField<bool>(result, 1);
+            error = GetTupleField<string>(result, 2);
+            return success;
         }
 
-        private static void ResetOverrides()
+        private static void InvokeTryRepairRuntimeRegistration(out bool attempted, out bool success, out string error)
         {
-            Type serviceType = GetBootstrapServiceType();
-            foreach (string fieldName in new[]
-                     {
-                         "s_validateRuntimeOverride",
-                         "s_getLicenseTokenOverride",
-                         "s_getProjectIdOverride",
-                         "s_getMachineFingerprintOverride",
-                         "s_getServerUrlOverride",
-                         "s_repairRuntimeRegistrationOverride",
-                         "s_requestRuntimePackageTokenOverride",
-                         "s_downloadRuntimePackageOverride",
-                         "s_installRuntimePackageOverride",
-                      })
+            MethodInfo method = GetBootstrapServiceType().GetMethod(
+                "TryRepairRuntimeRegistration",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+
+            object result = method.Invoke(null, null);
+            attempted = GetTupleField<bool>(result, 1);
+            success = GetTupleField<bool>(result, 2);
+            error = GetTupleField<string>(result, 3);
+        }
+
+        private static T GetTupleField<T>(object tuple, int itemIndex)
+        {
+            FieldInfo field = tuple.GetType().GetField($"Item{itemIndex}");
+            Assert.That(field, Is.Not.Null, $"Expected tuple field Item{itemIndex}.");
+            return (T)field.GetValue(tuple);
+        }
+
+        private static byte[] CreateRuntimePackageArchive(params (string path, string contents)[] entries)
+        {
+            using var memory = new MemoryStream();
+            using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
             {
-                FieldInfo field = serviceType.GetField(fieldName, BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
-                field?.SetValue(null, null);
+                foreach (var entry in entries)
+                {
+                    ZipArchiveEntry archiveEntry = archive.CreateEntry(entry.path);
+                    using var writer = new StreamWriter(archiveEntry.Open());
+                    writer.Write(entry.contents);
+                }
             }
+
+            return memory.ToArray();
+        }
+
+        private static string EscapeJson(string value)
+        {
+            return value.Replace("\\", "\\\\");
+        }
+
+        private static string ComputeSha256Hex(byte[] data)
+        {
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            byte[] hash = sha256.ComputeHash(data);
+            return BitConverter.ToString(hash).Replace("-", string.Empty).ToLowerInvariant();
         }
     }
 }

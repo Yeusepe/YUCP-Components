@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using UnityEngine;
@@ -280,22 +280,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             try
             {
-                File.WriteAllBytes(runtimePath, runtimeBytes);
                 manifestLines.Insert(0, $"RESULT|{resultPath}");
-                File.WriteAllLines(manifestPath, manifestLines, new UTF8Encoding(false));
+
+                using var runtimeLock = RuntimeExecutionSecurityUtility.CreateLockedArtifactFile(runtimePath, runtimeBytes);
+                using var manifestLock = RuntimeExecutionSecurityUtility.CreateLockedTextFile(
+                    manifestPath,
+                    string.Join(Environment.NewLine, manifestLines),
+                    new UTF8Encoding(false));
 
                 string launchRuntimePath = GetShortPathIfAvailable(runtimePath);
                 string launchManifestPath = GetShortPathIfAvailable(manifestPath);
-                string rundll32Path = Path.Combine(Environment.SystemDirectory, "rundll32.exe");
-
-                var startInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = rundll32Path,
-                    Arguments = $"\"{launchRuntimePath}\",EntryPoint \"{launchManifestPath}\"",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
-                };
+                var startInfo = CreateRuntimeHostProcessStartInfo(launchRuntimePath, launchManifestPath);
 
                 using var process = System.Diagnostics.Process.Start(startInfo);
                 if (process == null)
@@ -333,6 +328,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 return true;
             }
+            catch (InvalidOperationException ex)
+            {
+                error = $"Could not prepare the coupling runtime launch: {ex.Message}";
+                return false;
+            }
+            catch (Win32Exception ex)
+            {
+                error = $"Could not start the coupling runtime process: {ex.Message}";
+                return false;
+            }
             finally
             {
                 try
@@ -358,15 +363,25 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static string ComputeSha256(byte[] data)
         {
-            using var sha256 = SHA256.Create();
-            byte[] hash = sha256.ComputeHash(data);
-            var builder = new StringBuilder(hash.Length * 2);
-            foreach (byte b in hash)
+            return RuntimeExecutionSecurityUtility.ComputeSha256Hex(data);
+        }
+
+        private static System.Diagnostics.ProcessStartInfo CreateRuntimeHostProcessStartInfo(string runtimePath, string manifestPath)
+        {
+            string rundll32Path = RuntimeExecutionSecurityUtility.ResolveWindowsSystemExecutablePath("rundll32.exe");
+            if (string.IsNullOrWhiteSpace(rundll32Path))
             {
-                builder.Append(b.ToString("x2"));
+                throw new InvalidOperationException("Could not locate rundll32.exe in the Windows system directory.");
             }
 
-            return builder.ToString();
+            return new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = rundll32Path,
+                Arguments = $"\"{runtimePath}\",EntryPoint \"{manifestPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            };
         }
 
         private static string GetShortPathIfAvailable(string path)

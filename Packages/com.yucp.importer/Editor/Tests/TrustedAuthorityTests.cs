@@ -26,8 +26,8 @@ namespace YUCP.Importer.Editor.Tests
         [Test]
         public void GetPublicKey_ReturnsCachedTrustedUrlKey()
         {
-            const string keyId = "CREATOR-TOOLING-2026";
-            const string publicKey = "SQF9r3TkKGwwQ6jGLBOABnq3UeOcHayQS3WbEJeUhnc=";
+            const string keyId = TrustedAuthority.PrimaryRootKeyId;
+            const string publicKey = TrustedAuthority.PinnedRootPublicKeyBase64;
 
             TrustedAuthoritiesSettings.CacheKeys(
                 TrustedAuthoritiesSettings.DefaultTrustedUrl,
@@ -48,6 +48,32 @@ namespace YUCP.Importer.Editor.Tests
 
             Assert.That(trustedKey, Is.Not.Null);
             CollectionAssert.AreEqual(Convert.FromBase64String(publicKey), trustedKey);
+        }
+
+        [Test]
+        public void GetPublicKey_IgnoresCachedKeyThatDoesNotMatchPinnedRoots()
+        {
+            const string keyId = "CREATOR-TOOLING-2026";
+            const string publicKey = "SQF9r3TkKGwwQ6jGLBOABnq3UeOcHayQS3WbEJeUhnc=";
+
+            TrustedAuthoritiesSettings.CacheKeys(
+                TrustedAuthoritiesSettings.DefaultTrustedUrl,
+                new List<AuthorityKeyFetcher.AuthorityKey>
+                {
+                    new AuthorityKeyFetcher.AuthorityKey
+                    {
+                        keyId = keyId,
+                        publicKey = publicKey,
+                        displayName = keyId,
+                    }
+                },
+                DateTime.UtcNow);
+
+            TrustedAuthority.ReloadAllKeys();
+
+            byte[] trustedKey = TrustedAuthority.GetPublicKey(keyId);
+
+            Assert.That(trustedKey, Is.Null);
         }
     }
 }

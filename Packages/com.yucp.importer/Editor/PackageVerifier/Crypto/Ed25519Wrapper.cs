@@ -1,8 +1,8 @@
 using System;
 using System.IO;
 using System.Reflection;
-using System.Security.Cryptography;
 using UnityEngine;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.PackageVerifier.Crypto
 {
@@ -13,9 +13,14 @@ namespace YUCP.Importer.Editor.PackageVerifier.Crypto
     {
         private const int PublicKeySize = 32;
         private const int SignatureSize = 64;
+        private const string ChaosNaClAssemblyName = "Chaos.NaCl";
+        private const string ChaosNaClTypeName = "Chaos.NaCl.Ed25519";
+        private const string ExpectedChaosNaClSha256 = "f442b14191f55536e7b72ec83a056f5ed1c55aaa2f44a0f95f00a4a24a286311";
 
         private static bool _useChaosNaCl = false;
         private static bool _initialized = false;
+        private static Assembly _chaosNaClAssembly;
+        private static Type _ed25519Type;
 
         static Ed25519Wrapper()
         {
@@ -25,69 +30,27 @@ namespace YUCP.Importer.Editor.PackageVerifier.Crypto
         private static void Initialize()
         {
             if (_initialized) return;
+            _initialized = true;
 
-            // Try to detect Chaos.NaCl by checking loaded assemblies (similar to Harmony pattern)
             try
             {
-                bool chaosNaClAvailable = false;
-                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+                if (!TryResolveEd25519Type(out _ed25519Type, out string error))
                 {
-                    if (assembly.FullName.StartsWith("Chaos.NaCl"))
-                    {
-                        chaosNaClAvailable = true;
-                        break;
-                    }
+                    Debug.LogError($"[Ed25519Wrapper] {error}");
+                    return;
                 }
 
-                if (!chaosNaClAvailable)
-                {
-                    string projectRoot = Path.GetDirectoryName(Application.dataPath);
-                    
-                    string[] possiblePaths = new[]
-                    {
-                        Path.Combine(projectRoot, "Plugins", "Chaos.NaCl.dll"),
-                        // Main project Plugins
-                        Path.Combine(Application.dataPath, "Plugins", "Chaos.NaCl.dll"),
-                        Path.Combine(Application.dataPath, "Plugins", "x86_64", "Chaos.NaCl.dll"),
-                        Path.Combine(Application.dataPath, "Plugins", "x86", "Chaos.NaCl.dll"),
-                    };
-
-                    foreach (var dllPath in possiblePaths)
-                    {
-                        if (File.Exists(dllPath))
-                        {
-                            try
-                            {
-                                Assembly.LoadFrom(dllPath);
-                                chaosNaClAvailable = true;
-                                break;
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.LogWarning($"[Ed25519Wrapper] Failed to load Chaos.NaCl from {dllPath}: {ex.Message}");
-                            }
-                        }
-                    }
-                }
-
-                if (chaosNaClAvailable)
-                {
-                    var ed25519Type = Type.GetType("Chaos.NaCl.Ed25519, Chaos.NaCl");
-                    if (ed25519Type != null)
-                    {
-                        _useChaosNaCl = true;
-                        _initialized = true;
-                        return;
-                    }
-                }
+                _useChaosNaCl = true;
             }
             catch (Exception ex)
             {
                 UnityEngine.Debug.LogWarning($"[Ed25519Wrapper] Error detecting Chaos.NaCl: {ex.Message}");
             }
 
-            UnityEngine.Debug.LogError("[Ed25519Wrapper] Chaos.NaCl.Standard not found. Ed25519 verification requires Chaos.NaCl.dll to be installed in the Plugins folder.");
-            _initialized = true;
+            if (!_useChaosNaCl)
+            {
+                UnityEngine.Debug.LogError("[Ed25519Wrapper] Chaos.NaCl.Standard not found. Ed25519 verification requires Chaos.NaCl.dll to be installed in the Plugins folder.");
+            }
         }
 
         /// <summary>
@@ -121,14 +84,12 @@ namespace YUCP.Importer.Editor.PackageVerifier.Crypto
         {
             try
             {
-                // Get Ed25519 type via reflection
-                var ed25519Type = Type.GetType("Chaos.NaCl.Ed25519, Chaos.NaCl");
-                if (ed25519Type == null)
+                if (_ed25519Type == null)
                 {
                     return false;
                 }
 
-                var verifyMethod = ed25519Type.GetMethod("Verify", new[] { typeof(byte[]), typeof(byte[]), typeof(byte[]) });
+                var verifyMethod = _ed25519Type.GetMethod("Verify", new[] { typeof(byte[]), typeof(byte[]), typeof(byte[]) });
                 if (verifyMethod == null)
                 {
                     return false;
@@ -142,6 +103,131 @@ namespace YUCP.Importer.Editor.PackageVerifier.Crypto
                 UnityEngine.Debug.LogError($"[Ed25519Wrapper] Verification error: {ex.Message}");
                 return false;
             }
+        }
+
+        private static bool TryResolveEd25519Type(out Type ed25519Type, out string error)
+        {
+            ed25519Type = null;
+            error = null;
+
+            string chaosNaClPath = ResolveChaosNaClAssemblyPath();
+            if (string.IsNullOrWhiteSpace(chaosNaClPath))
+            {
+                error = "Chaos.NaCl.Standard not found. Ed25519 verification requires Plugins\\Chaos.NaCl.dll.";
+                return false;
+            }
+
+            if (!TryLoadVerifiedChaosNaClAssembly(chaosNaClPath, ExpectedChaosNaClSha256, out _chaosNaClAssembly, out error))
+            {
+                return false;
+            }
+
+            ed25519Type = _chaosNaClAssembly?.GetType(ChaosNaClTypeName, throwOnError: false);
+            if (ed25519Type == null)
+            {
+                error = "The verified Chaos.NaCl assembly does not expose Chaos.NaCl.Ed25519.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static string ResolveChaosNaClAssemblyPath()
+        {
+            string projectRoot = Path.GetDirectoryName(Application.dataPath);
+            if (string.IsNullOrWhiteSpace(projectRoot))
+            {
+                return null;
+            }
+
+            string candidatePath = Path.Combine(projectRoot, "Plugins", "Chaos.NaCl.dll");
+            return File.Exists(candidatePath)
+                ? Path.GetFullPath(candidatePath)
+                : null;
+        }
+
+        private static bool TryLoadVerifiedChaosNaClAssembly(
+            string assemblyPath,
+            string expectedSha256,
+            out Assembly assembly,
+            out string error)
+        {
+            assembly = null;
+            error = null;
+
+            if (string.IsNullOrWhiteSpace(assemblyPath) || !File.Exists(assemblyPath))
+            {
+                error = "The pinned Chaos.NaCl assembly is missing from the project Plugins folder.";
+                return false;
+            }
+
+            if (!RuntimeExecutionSecurityUtility.TryOpenLockedRead(assemblyPath, out var stream, out byte[] bytes, out error))
+            {
+                return false;
+            }
+
+            using (stream)
+            {
+                string actualSha256 = RuntimeExecutionSecurityUtility.ComputeSha256Hex(bytes);
+                if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "The pinned Chaos.NaCl assembly failed integrity verification.";
+                    return false;
+                }
+
+                assembly = FindLoadedChaosNaClAssembly(assemblyPath) ?? Assembly.Load(bytes);
+            }
+
+            AssemblyName assemblyName;
+            try
+            {
+                assemblyName = assembly.GetName();
+            }
+            catch (Exception ex)
+            {
+                error = $"The pinned Chaos.NaCl assembly could not be inspected: {ex.Message}";
+                return false;
+            }
+
+            if (!string.Equals(assemblyName.Name, ChaosNaClAssemblyName, StringComparison.Ordinal))
+            {
+                error = $"The pinned Chaos.NaCl assembly exposed an unexpected identity: {assemblyName.FullName}";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static Assembly FindLoadedChaosNaClAssembly(string expectedPath)
+        {
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly == null || assembly.IsDynamic)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    AssemblyName name = assembly.GetName();
+                    if (!string.Equals(name.Name, ChaosNaClAssemblyName, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    string assemblyLocation = assembly.Location;
+                    if (!string.IsNullOrWhiteSpace(assemblyLocation) &&
+                        string.Equals(Path.GetFullPath(assemblyLocation), expectedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return assembly;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
         }
 
         #endregion

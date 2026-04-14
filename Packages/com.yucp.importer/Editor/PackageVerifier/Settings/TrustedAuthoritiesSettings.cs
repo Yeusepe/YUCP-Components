@@ -154,8 +154,13 @@ namespace YUCP.Importer.Editor.PackageVerifier.Settings
         public static void CacheKeys(string url, List<Core.AuthorityKeyFetcher.AuthorityKey> keys, DateTime fetchTime)
         {
             var cachedKeys = GetCachedKeys();
-            
-            foreach (var key in keys)
+            var pinnedKeys = YUCP.Importer.Editor.PackageVerifier.TrustedAuthority.FilterToPinnedKeys(keys);
+            if (pinnedKeys.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var key in pinnedKeys)
             {
                 var cachedKey = new CachedKey
                 {
@@ -287,7 +292,13 @@ namespace YUCP.Importer.Editor.PackageVerifier.Settings
             foreach (string url in urls)
             {
                 string normalized = NormalizeUrl(url);
-                if (!string.IsNullOrEmpty(normalized) && !result.Contains(normalized))
+                if (string.IsNullOrEmpty(normalized))
+                {
+                    continue;
+                }
+
+                bool allowPinnedDefault = string.Equals(normalized, DefaultTrustedUrl, StringComparison.OrdinalIgnoreCase);
+                if ((allowPinnedDefault || GetFetchTime(normalized).HasValue) && !result.Contains(normalized))
                 {
                     result.Add(normalized);
                 }

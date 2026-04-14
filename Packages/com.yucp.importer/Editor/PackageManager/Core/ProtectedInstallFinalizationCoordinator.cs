@@ -90,14 +90,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
 
 
-        internal static TryMaterializePatchAssetsHandler s_tryMaterializePatchAssetsOverride;
-
-        internal static TryReleaseRuntimeResourcesHandler s_tryReleaseRuntimeResourcesOverride;
-
-        internal static TryRollbackImportedAssetsHandler s_tryRollbackImportedAssetsOverride;
-
-
-
         private static bool _scheduled;
 
         private static bool _isConsumingPendingFinalization;
@@ -880,11 +872,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
 
 
-            var overrideHandler = s_tryMaterializePatchAssetsOverride;
+            #if UNITY_INCLUDE_TESTS
+            var overrideHandler = ProtectedInstallFinalizationCoordinatorTestHooks.TryMaterializePatchAssets;
 
             if (overrideHandler != null)
-
-                return overrideHandler(patchAssetPaths, out createdAssetPaths, out error);
+            {
+                var result = overrideHandler(patchAssetPaths);
+                createdAssetPaths = result.createdAssetPaths ?? Array.Empty<string>();
+                error = result.error;
+                return result.success;
+            }
+            #endif
 
 
 
@@ -1015,34 +1013,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         private static Type FindPatchImporterType()
 
         {
-
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-
-            {
-
-                try
-
-                {
-
-                    Type runtimeType = assembly.GetType("YUCP.PatchCleanup.YUCPPatchImporter", false);
-
-                    if (runtimeType != null)
-
-                        return runtimeType;
-
-                }
-
-                catch
-
-                {
-
-                }
-
-            }
-
-
-
-            return null;
+            return Type.GetType("YUCP.PatchCleanup.YUCPPatchImporter, YUCP.PatchRuntime", false);
 
         }
 
@@ -1318,11 +1289,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         {
 
-            var overrideHandler = s_tryReleaseRuntimeResourcesOverride;
+            #if UNITY_INCLUDE_TESTS
+            var overrideHandler = ProtectedInstallFinalizationCoordinatorTestHooks.TryReleaseRuntimeResources;
 
             if (overrideHandler != null)
 
                 return overrideHandler();
+            #endif
 
 
 
@@ -1432,11 +1405,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         {
 
-            var overrideHandler = CouplingImportGuard.s_tryApplyCouplingOverride;
+#if UNITY_INCLUDE_TESTS
+            var overrideHandler = CouplingImportGuardTestHooks.TryApplyCoupling;
 
             if (overrideHandler != null)
-
-                return overrideHandler(packageId, installedFiles, out error);
+            {
+                var result = overrideHandler(packageId, installedFiles);
+                error = result.error;
+                return result.success;
+            }
+#endif
 
 
 
@@ -1531,11 +1509,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         {
 
-            var overrideHandler = s_tryRollbackImportedAssetsOverride;
+            #if UNITY_INCLUDE_TESTS
+            var overrideHandler = ProtectedInstallFinalizationCoordinatorTestHooks.TryRollbackImportedAssets;
 
             if (overrideHandler != null)
-
-                return overrideHandler(assetPaths, out error);
+            {
+                var result = overrideHandler(assetPaths);
+                error = result.error;
+                return result.success;
+            }
+            #endif
 
 
 
@@ -2121,9 +2104,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         {
 
-            private static IProtectedPayloadBrokerBridge _cachedBridge;
-
-            private static bool _resolvedBridge;
+            private static readonly IProtectedPayloadBrokerBridge BuiltInBridge = new ProtectedPayloadComShimBridge();
 
 
 
@@ -2206,104 +2187,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             private static IProtectedPayloadBrokerBridge ResolveBridge()
 
             {
-
-                if (_resolvedBridge)
-
-                    return _cachedBridge;
-
-
-
-                _resolvedBridge = true;
-
-
-
-                foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
-
+#if UNITY_INCLUDE_TESTS
+                if (ProtectedInstallFinalizationCoordinatorTestHooks.BrokerBridgeOverride != null)
                 {
-
-                    if (assembly == null || assembly.IsDynamic)
-
-                        continue;
-
-
-
-                    Type[] types;
-
-                    try
-
-                    {
-
-                        types = assembly.GetTypes();
-
-                    }
-
-                    catch (ReflectionTypeLoadException ex)
-
-                    {
-
-                        types = ex.Types?.Where(type => type != null).ToArray() ?? Array.Empty<Type>();
-
-                    }
-
-                    catch
-
-                    {
-
-                        continue;
-
-                    }
-
-
-
-                    foreach (Type type in types)
-
-                    {
-
-                        if (type == null ||
-
-                            type.IsAbstract ||
-
-                            type.IsInterface ||
-
-                            !typeof(IProtectedPayloadBrokerBridge).IsAssignableFrom(type))
-
-                        {
-
-                            continue;
-
-                        }
-
-
-
-                        try
-
-                        {
-
-                            _cachedBridge = Activator.CreateInstance(type) as IProtectedPayloadBrokerBridge;
-
-                        }
-
-                        catch
-
-                        {
-
-                            _cachedBridge = null;
-
-                        }
-
-
-
-                        if (_cachedBridge != null)
-
-                            return _cachedBridge;
-
-                    }
-
+                    return ProtectedInstallFinalizationCoordinatorTestHooks.BrokerBridgeOverride;
                 }
+#endif
 
-
-
-                return null;
+                return BuiltInBridge;
 
             }
 
@@ -2313,33 +2204,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static Type FindLoadedType(string fullName)        {
 
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            return fullName switch
 
             {
 
-                try
+                "YUCP.PatchRuntime.HDiffPatchWrapper" => Type.GetType("YUCP.PatchRuntime.HDiffPatchWrapper, YUCP.PatchRuntime", false),
 
-                {
+                "YUCP.DevTools.Editor.PackageExporter.HDiffPatchWrapper" => Type.GetType("YUCP.DevTools.Editor.PackageExporter.HDiffPatchWrapper, com.yucp.devtools.Editor", false),
 
-                    Type type = assembly.GetType(fullName, false);
+                _ => null,
 
-                    if (type != null)
-
-                        return type;
-
-                }
-
-                catch
-
-                {
-
-                }
-
-            }
-
-
-
-            return null;
+            };
 
         }
 

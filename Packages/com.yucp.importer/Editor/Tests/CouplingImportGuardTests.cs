@@ -7,6 +7,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 using YUCP.Importer.Editor.PackageManager;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.Tests
 {
@@ -17,7 +18,7 @@ namespace YUCP.Importer.Editor.Tests
         [TearDown]
         public void TearDown()
         {
-            SetTryApplyCouplingOverride(null);
+            CouplingImportGuardTestHooks.Reset();
             DeleteTestAssets();
         }
 
@@ -157,18 +158,18 @@ namespace YUCP.Importer.Editor.Tests
 
         private static void SetTryApplyCouplingOverride(MethodInfo method)
         {
-            Type guardType = GetCoreType("YUCP.Importer.Editor.PackageManager.Core.CouplingImportGuard");
-            FieldInfo field = guardType.GetField("s_tryApplyCouplingOverride", BindingFlags.NonPublic | BindingFlags.Static);
-
-            Assert.That(field, Is.Not.Null);
             if (method == null)
             {
-                field.SetValue(null, null);
+                CouplingImportGuardTestHooks.Reset();
                 return;
             }
 
-            Delegate callback = Delegate.CreateDelegate(field.FieldType, method);
-            field.SetValue(null, callback);
+            CouplingImportGuardTestHooks.TryApplyCoupling = (packageId, installedFiles) =>
+            {
+                object[] args = { packageId, installedFiles, null };
+                bool success = (bool)method.Invoke(null, args);
+                return (success, args[2] as string);
+            };
         }
 
         private string CreateImportedAsset()

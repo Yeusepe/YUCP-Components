@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using NUnit.Framework;
@@ -9,6 +10,7 @@ namespace YUCP.Importer.Editor.Tests
     public sealed class CouplingRuntimeShimServiceTests
     {
         private string _tempRoot;
+        private readonly List<string> _extraRoots = new List<string>();
 
         [SetUp]
         public void SetUp()
@@ -26,6 +28,16 @@ namespace YUCP.Importer.Editor.Tests
             {
                 Directory.Delete(_tempRoot, true);
             }
+
+            foreach (string extraRoot in _extraRoots)
+            {
+                if (Directory.Exists(extraRoot))
+                {
+                    Directory.Delete(extraRoot, true);
+                }
+            }
+
+            _extraRoots.Clear();
         }
 
         [Test]
@@ -78,6 +90,64 @@ namespace YUCP.Importer.Editor.Tests
                 GetField(status, "error"),
                 Is.EqualTo("The package protection runtime activation shim is missing from the active installation."));
             Assert.That(GetField(status, "activeBuildId"), Is.Empty);
+        }
+
+        [Test]
+        public void GetRuntimeStatus_ReturnsMissingWhenActivePackageDirEscapesInstallRoot()
+        {
+            string packageDir = Path.Combine(Path.GetDirectoryName(_tempRoot) ?? _tempRoot, $"escaped-runtime-{Guid.NewGuid():N}");
+            string stateDir = Path.Combine(_tempRoot, "state");
+            Directory.CreateDirectory(packageDir);
+            Directory.CreateDirectory(stateDir);
+            _extraRoots.Add(packageDir);
+
+            File.WriteAllText(
+                Path.Combine(stateDir, "active.json"),
+                "{\n" +
+                "  \"activeBuildId\": \"build-a\",\n" +
+                "  \"activeVersion\": \"0.0.1-dev\",\n" +
+                $"  \"activePackageDir\": \"{EscapeJson(packageDir)}\"\n" +
+                "}");
+            File.WriteAllText(
+                Path.Combine(packageDir, "CouplingRuntimeCom.metadata.json"),
+                "{\n" +
+                "  \"clientName\": \"CouplingRuntimeProbeClient.exe\"\n" +
+                "}");
+            File.WriteAllBytes(Path.Combine(packageDir, "CouplingRuntimeProbeClient.exe"), new byte[] { 1, 2, 3 });
+
+            object status = InvokeGetRuntimeStatus();
+
+            Assert.That(GetField(status, "status"), Is.EqualTo("missing"));
+            Assert.That(GetField(status, "error"), Does.Contain("escaped the configured runtime install root"));
+        }
+
+        [Test]
+        public void GetRuntimeStatus_ReturnsMissingWhenShimPathContainsNestedSegments()
+        {
+            string packageDir = Path.Combine(_tempRoot, "packages", "build-b");
+            string stateDir = Path.Combine(_tempRoot, "state");
+            Directory.CreateDirectory(packageDir);
+            Directory.CreateDirectory(stateDir);
+            Directory.CreateDirectory(Path.Combine(packageDir, "nested"));
+
+            File.WriteAllText(
+                Path.Combine(stateDir, "active.json"),
+                "{\n" +
+                "  \"activeBuildId\": \"build-b\",\n" +
+                "  \"activeVersion\": \"0.0.1-dev\",\n" +
+                $"  \"activePackageDir\": \"{EscapeJson(packageDir)}\"\n" +
+                "}");
+            File.WriteAllText(
+                Path.Combine(packageDir, "CouplingRuntimeCom.metadata.json"),
+                "{\n" +
+                "  \"clientName\": \"nested\\\\CouplingRuntimeProbeClient.exe\"\n" +
+                "}");
+            File.WriteAllBytes(Path.Combine(packageDir, "nested", "CouplingRuntimeProbeClient.exe"), new byte[] { 1, 2, 3 });
+
+            object status = InvokeGetRuntimeStatus();
+
+            Assert.That(GetField(status, "status"), Is.EqualTo("missing"));
+            Assert.That(GetField(status, "error"), Does.Contain("must not contain nested path segments"));
         }
 
         private static bool InvokeTryValidateProtectedMaterializationRuntime(out string error)

@@ -13,7 +13,10 @@ namespace YUCP.Importer.Editor.PackageVerifier
     {
         public const string AuthorityId = "unitysign.yucp";
         public const string DisplayName = "YUCP Signing Authority";
-        public const string ApiBaseUrl = "https://signing.yucp.club"; // configurable
+        public const string ApiBaseUrl = TrustedAuthoritiesSettings.DefaultTrustedUrl;
+        public const string PrimaryRootKeyId = "yucp-root";
+        public const string LegacyRootKeyId = "yucp-root-2025";
+        public const string PinnedRootPublicKeyBase64 = "y+8Zs9/mS1MFZFeF4CFjwqe0nsLW8lCcwmyvBx6H0Zo=";
 
         private static Dictionary<string, byte[]> _publicKeysByKeyId;
         private static bool _initialized = false;
@@ -32,10 +35,17 @@ namespace YUCP.Importer.Editor.PackageVerifier
 
             _publicKeysByKeyId = new Dictionary<string, byte[]>();
 
-            // Load keys from the trusted-URL cache only.
+            LoadBuiltInAuthorityKeys();
             LoadCachedAuthorityKeys();
 
             _initialized = true;
+        }
+
+        private static void LoadBuiltInAuthorityKeys()
+        {
+            byte[] pinnedRootKey = Convert.FromBase64String(PinnedRootPublicKeyBase64);
+            _publicKeysByKeyId[PrimaryRootKeyId] = pinnedRootKey;
+            _publicKeysByKeyId[LegacyRootKeyId] = pinnedRootKey;
         }
 
         /// <summary>
@@ -51,6 +61,12 @@ namespace YUCP.Importer.Editor.PackageVerifier
                 foreach (var kvp in cachedKeys)
                 {
                     if (string.IsNullOrEmpty(kvp.Value?.publicKey))
+                        continue;
+
+                    if (!TryGetBuiltInPublicKeyBase64(kvp.Key, out string pinnedPublicKeyBase64))
+                        continue;
+
+                    if (!string.Equals(kvp.Value.publicKey.Trim(), pinnedPublicKeyBase64, StringComparison.Ordinal))
                         continue;
 
                     try
@@ -118,7 +134,48 @@ namespace YUCP.Importer.Editor.PackageVerifier
 
         internal static bool IsBuiltInKeyId(string keyId)
         {
-            return false;
+            return !string.IsNullOrWhiteSpace(keyId) &&
+                (string.Equals(keyId.Trim(), PrimaryRootKeyId, StringComparison.Ordinal) ||
+                 string.Equals(keyId.Trim(), LegacyRootKeyId, StringComparison.Ordinal));
+        }
+
+        internal static bool TryGetBuiltInPublicKeyBase64(string keyId, out string publicKeyBase64)
+        {
+            publicKeyBase64 = null;
+            if (!IsBuiltInKeyId(keyId))
+                return false;
+
+            publicKeyBase64 = PinnedRootPublicKeyBase64;
+            return true;
+        }
+
+        internal static List<YUCP.Importer.Editor.PackageVerifier.Core.AuthorityKeyFetcher.AuthorityKey> FilterToPinnedKeys(
+            IEnumerable<YUCP.Importer.Editor.PackageVerifier.Core.AuthorityKeyFetcher.AuthorityKey> keys)
+        {
+            var filtered = new List<YUCP.Importer.Editor.PackageVerifier.Core.AuthorityKeyFetcher.AuthorityKey>();
+            if (keys == null)
+                return filtered;
+
+            foreach (var key in keys)
+            {
+                if (key == null || string.IsNullOrWhiteSpace(key.publicKey))
+                    continue;
+
+                if (!TryGetBuiltInPublicKeyBase64(key.keyId, out string pinnedPublicKeyBase64))
+                    continue;
+
+                if (!string.Equals(key.publicKey.Trim(), pinnedPublicKeyBase64, StringComparison.Ordinal))
+                    continue;
+
+                filtered.Add(new YUCP.Importer.Editor.PackageVerifier.Core.AuthorityKeyFetcher.AuthorityKey
+                {
+                    keyId = key.keyId.Trim(),
+                    publicKey = pinnedPublicKeyBase64,
+                    displayName = string.IsNullOrWhiteSpace(key.displayName) ? key.keyId.Trim() : key.displayName.Trim(),
+                });
+            }
+
+            return filtered;
         }
 
         /// <summary>

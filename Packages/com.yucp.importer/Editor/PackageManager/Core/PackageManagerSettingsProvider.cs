@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -261,7 +262,7 @@ namespace YUCP.Importer.Editor.PackageManager
             trustTitle.style.marginBottom = 4;
             rootElement.Add(trustTitle);
 
-            var trustDescription = new Label("Add the base server origin only. Unity will fetch authority keys from /v1/keys automatically and use the same trusted origin for Creator Identity sign-in.");
+            var trustDescription = new Label("Add the base server origin only. Unity now keeps its Ed25519 trust anchor pinned in code and only accepts servers that advertise that pinned root set.");
             trustDescription.style.whiteSpace = WhiteSpace.Normal;
             trustDescription.style.marginBottom = 6;
             rootElement.Add(trustDescription);
@@ -286,7 +287,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
             rootElement.Add(addRow);
 
-            var fetchHelp = new HelpBox("When you add or refresh a trusted server, Unity fetches authority keys from /v1/keys, caches them locally, and reloads package verification trust immediately.", HelpBoxMessageType.Info);
+            var fetchHelp = new HelpBox("Refresh validates that /v1/keys serves the pinned YUCP root key IDs. Remote responses can no longer replace local trust anchors.", HelpBoxMessageType.Info);
             fetchHelp.style.marginBottom = 8;
             rootElement.Add(fetchHelp);
 
@@ -328,7 +329,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
                     var refreshButton = new Button(() => RefreshTrustedUrl(url))
                     {
-                        text = "Refresh Keys"
+                        text = "Validate Roots"
                     };
                     refreshButton.style.marginRight = 6;
                     row.Add(refreshButton);
@@ -360,6 +361,11 @@ namespace YUCP.Importer.Editor.PackageManager
                     return;
                 }
 
+                if (!RefreshTrustedUrl(normalized))
+                {
+                    return;
+                }
+
                 TrustedAuthoritiesSettings.AddUrl(normalized);
                 if (string.IsNullOrWhiteSpace(preferredServerField.value))
                 {
@@ -368,91 +374,67 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
 
                 newUrlField.value = string.Empty;
-                RefreshTrustedUrl(normalized);
                 RefreshTrustedUrlsList();
             };
 
             RefreshTrustedUrlsList();
         }
 
-        private static void RefreshTrustedUrl(string url)
+        private static bool RefreshTrustedUrl(string url)
         {
             var result = AuthorityKeyFetcher.FetchKeysFromUrlSync(url);
-            if (result.success)
+            var pinnedKeys = result.success
+                ? TrustedAuthority.FilterToPinnedKeys(result.keys)
+                : new List<AuthorityKeyFetcher.AuthorityKey>();
+            if (result.success && pinnedKeys.Count > 0)
             {
-                TrustedAuthoritiesSettings.CacheKeys(url, result.keys, result.fetchTime);
+                TrustedAuthoritiesSettings.CacheKeys(url, pinnedKeys, result.fetchTime);
                 TrustedAuthority.ReloadAllKeys();
+                return true;
             }
-            else
-            {
-                string fetchUrl = AuthorityKeyFetcher.GetAuthorityDocumentUrl(url);
-                EditorUtility.DisplayDialog("Failed to Refresh Trusted URL", $"Could not fetch authority keys from server '{url}'.\nUnity tried '{fetchUrl}'.\n\n{result.error}", "OK");
-            }
+
+            string fetchUrl = AuthorityKeyFetcher.GetAuthorityDocumentUrl(url);
+            string failure = result.success
+                ? "The server did not advertise any pinned YUCP Ed25519 root keys."
+                : result.error;
+            EditorUtility.DisplayDialog("Failed to Refresh Trusted URL", $"Could not validate authority keys from server '{url}'.\nUnity tried '{fetchUrl}'.\n\n{failure}", "OK");
+            return false;
         }
 
         private static string GetPreferredServerUrl()
         {
-            string preferred = EditorPrefs.GetString(PreferredServerUrlKey, string.Empty);
-            if (!string.IsNullOrWhiteSpace(preferred))
-            {
-                return preferred;
-            }
-
-            string signingUrl = GetSigningSettingsServerUrl();
-            if (!string.IsNullOrWhiteSpace(signingUrl))
-            {
-                return signingUrl;
-            }
-
-            var trustedUrls = TrustedAuthoritiesSettings.GetUrls();
-            if (trustedUrls.Count > 0)
-            {
-                return trustedUrls[0];
-            }
-
-            return TrustedAuthoritiesSettings.DefaultTrustedUrl;
+            return LicenseServerResolver.GetLicenseServerUrl();
         }
 
         private static string GetSigningSettingsServerUrl()
         {
             try
             {
-                string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-                if (guids.Length == 0)
-                {
-                    return null;
-                }
-
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                Type signingSettingsType = null;
+                Type packageSigningServiceType = null;
 
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    signingSettingsType = assembly.GetType("YUCP.DevTools.Editor.PackageSigning.Data.SigningSettings");
-                    if (signingSettingsType != null)
+                    packageSigningServiceType = assembly.GetType("YUCP.DevTools.Editor.PackageSigning.Core.PackageSigningService");
+                    if (packageSigningServiceType != null)
                     {
                         break;
                     }
                 }
 
-                if (signingSettingsType == null)
+                if (packageSigningServiceType == null)
                 {
-                    signingSettingsType = Type.GetType("YUCP.DevTools.Editor.PackageSigning.Data.SigningSettings, Assembly-CSharp-Editor");
+                    packageSigningServiceType = Type.GetType("YUCP.DevTools.Editor.PackageSigning.Core.PackageSigningService, Assembly-CSharp-Editor");
                 }
 
-                if (signingSettingsType == null)
-                {
-                    return null;
-                }
-
-                var settings = AssetDatabase.LoadAssetAtPath(path, signingSettingsType);
-                if (settings == null)
+                if (packageSigningServiceType == null)
                 {
                     return null;
                 }
 
-                var field = signingSettingsType.GetField("serverUrl", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                return field?.GetValue(settings) as string;
+                MethodInfo getServerUrlMethod = packageSigningServiceType.GetMethod(
+                    "GetServerUrl",
+                    BindingFlags.Public | BindingFlags.Static);
+                return getServerUrlMethod?.Invoke(null, null) as string;
             }
             catch
             {

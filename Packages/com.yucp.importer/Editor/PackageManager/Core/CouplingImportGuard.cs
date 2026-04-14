@@ -11,8 +11,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
     internal static class CouplingImportGuard
     {
-        internal static TryApplyCouplingHandler s_tryApplyCouplingOverride;
-
         internal static bool ShouldApplyDuringShellImport(InstalledPackageInfo packageInfo)
         {
             return packageInfo?.protectedPayload == null;
@@ -74,11 +72,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             IReadOnlyList<string> installedFiles,
             out string error)
         {
-            var overrideHandler = s_tryApplyCouplingOverride;
-            if (overrideHandler != null)
+            error = null;
+
+#if UNITY_INCLUDE_TESTS
+            var testHandler = CouplingImportGuardTestHooks.TryApplyCoupling;
+            if (testHandler != null)
             {
-                return overrideHandler(packageId, installedFiles, out error);
+                var result = testHandler(packageId, installedFiles);
+                error = result.error;
+                return result.success;
             }
+#endif
 
             return CouplingRuntimeService.TryApplyCoupling(packageId, installedFiles, out error);
         }

@@ -7,6 +7,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine.TestTools;
 using YUCP.Importer.Editor.PackageManager;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.Tests
 {
@@ -144,16 +145,12 @@ namespace YUCP.Importer.Editor.Tests
                 .GetMethod("OpenVerificationUrl", BindingFlags.NonPublic | BindingFlags.Static);
 
             Assert.That(openVerificationUrl, Is.Not.Null);
-            openVerificationUrl.Invoke(null, new object[] { verificationUrl });
+            openVerificationUrl.Invoke(null, new object[] { verificationUrl, null });
         }
 
         private static void SetVerificationOpenUrlOverride(Action<string> openUrlOverride)
         {
-            FieldInfo openUrlOverrideField = GetEditorType("YUCP.Importer.Editor.PackageManager.Core.VerificationIntentService")
-                .GetField("s_openUrlOverride", BindingFlags.NonPublic | BindingFlags.Static);
-
-            Assert.That(openUrlOverrideField, Is.Not.Null);
-            openUrlOverrideField.SetValue(null, openUrlOverride);
+            VerificationIntentServiceTestHooks.OpenUrlHandler = openUrlOverride;
         }
 
         private static string GetUnlockCachePath()

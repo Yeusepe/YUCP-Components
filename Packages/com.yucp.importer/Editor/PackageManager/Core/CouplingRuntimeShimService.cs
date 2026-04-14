@@ -74,7 +74,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string tempPath = Path.Combine(Path.GetTempPath(), $"yucp-runtime-request-{Guid.NewGuid():N}.json");
             try
             {
-                File.WriteAllText(tempPath, requestJson ?? string.Empty, new UTF8Encoding(false));
+                using var requestLock = RuntimeExecutionSecurityUtility.CreateLockedTextFile(tempPath, requestJson ?? string.Empty, new UTF8Encoding(false));
                 if (!TryInvokeShim(runtime.shimPath, $"materialize-json \"{tempPath}\"", out string stdout, out string stderr, out int exitCode, out error))
                     return false;
 
@@ -102,6 +102,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
 
                 return true;
+            }
+            catch (InvalidOperationException ex)
+            {
+                error = $"The package protection runtime request could not be written: {ex.Message}";
+                return false;
             }
             catch (IOException ex)
             {
@@ -190,7 +195,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             if (activeState == null ||
-                string.IsNullOrWhiteSpace(activeState.activePackageDir) ||
                 string.IsNullOrWhiteSpace(activeState.activeBuildId) ||
                 string.IsNullOrWhiteSpace(activeState.activeVersion))
             {
@@ -198,7 +202,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return false;
             }
 
-            string metadataPath = Path.Combine(activeState.activePackageDir, "CouplingRuntimeCom.metadata.json");
+            if (!RuntimeExecutionSecurityUtility.TryResolveRuntimePackageDirectory(
+                    installRoot,
+                    activeState.activePackageDir,
+                    "The package protection runtime active package directory",
+                    out string activePackageDir,
+                    out error))
+            {
+                return false;
+            }
+
+            string metadataPath = Path.Combine(activePackageDir, "CouplingRuntimeCom.metadata.json");
             if (!File.Exists(metadataPath))
             {
                 error = "The package protection runtime metadata is missing from the active installation.";
@@ -227,7 +241,18 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return false;
             }
 
-            string shimPath = Path.Combine(activeState.activePackageDir, metadata.clientName);
+            if (!RuntimeExecutionSecurityUtility.TryResolveContainedFilePath(
+                    activePackageDir,
+                    metadata.clientName,
+                    ".exe",
+                    "The package protection runtime activation shim",
+                    allowSubdirectories: false,
+                    out string shimPath,
+                    out error))
+            {
+                return false;
+            }
+
             if (!File.Exists(shimPath))
             {
                 error = "The package protection runtime activation shim is missing from the active installation.";
@@ -238,7 +263,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 activeBuildId = activeState.activeBuildId,
                 activeVersion = activeState.activeVersion,
-                activePackageDir = activeState.activePackageDir,
+                activePackageDir = activePackageDir,
                 shimPath = shimPath,
             };
             return true;

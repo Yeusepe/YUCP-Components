@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.TestTools;
 using YUCP.Importer.Editor.PackageManager;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.Tests
 {
@@ -25,11 +26,8 @@ namespace YUCP.Importer.Editor.Tests
         [TearDown]
         public void TearDown()
         {
-            SetReleaseRuntimeResourcesOverride(null);
-            SetRollbackImportedAssetsOverride(null);
-            SetProtectedPayloadBrokerBridgeOverride(null);
-            SetTryMaterializePatchAssetsOverride(null);
-            SetTryApplyCouplingOverride(null);
+            ProtectedInstallFinalizationCoordinatorTestHooks.Reset();
+            CouplingImportGuardTestHooks.Reset();
             s_releaseRuntimeResourcesCalled = false;
             s_lastRollbackPaths = null;
             s_lastCouplingPaths = null;
@@ -1422,87 +1420,67 @@ namespace YUCP.Importer.Editor.Tests
 
         private static void SetRollbackImportedAssetsOverride(MethodInfo method)
         {
-            Type coordinatorType = GetCoordinatorType();
-            FieldInfo field = coordinatorType.GetField("s_tryRollbackImportedAssetsOverride", BindingFlags.NonPublic | BindingFlags.Static);
-
-            Assert.That(field, Is.Not.Null);
             if (method == null)
             {
-                field.SetValue(null, null);
+                ProtectedInstallFinalizationCoordinatorTestHooks.TryRollbackImportedAssets = null;
                 return;
             }
 
-            Delegate callback = Delegate.CreateDelegate(field.FieldType, method);
-            field.SetValue(null, callback);
+            ProtectedInstallFinalizationCoordinatorTestHooks.TryRollbackImportedAssets = assetPaths =>
+            {
+                object[] args = { assetPaths, null };
+                bool success = (bool)method.Invoke(null, args);
+                return (success, args[1] as string);
+            };
         }
 
         private static void SetReleaseRuntimeResourcesOverride(MethodInfo method)
         {
-            Type coordinatorType = GetCoordinatorType();
-            FieldInfo field = coordinatorType.GetField("s_tryReleaseRuntimeResourcesOverride", BindingFlags.NonPublic | BindingFlags.Static);
-
-            Assert.That(field, Is.Not.Null);
             if (method == null)
             {
-                field.SetValue(null, null);
+                ProtectedInstallFinalizationCoordinatorTestHooks.TryReleaseRuntimeResources = null;
                 return;
             }
 
-            Delegate callback = Delegate.CreateDelegate(field.FieldType, method);
-            field.SetValue(null, callback);
+            ProtectedInstallFinalizationCoordinatorTestHooks.TryReleaseRuntimeResources = () => (bool)method.Invoke(null, null);
         }
 
         private static void SetTryApplyCouplingOverride(MethodInfo method)
         {
-            Type guardType = typeof(InstalledPackageInfo).Assembly.GetType(
-                "YUCP.Importer.Editor.PackageManager.Core.CouplingImportGuard",
-                false);
-            Assert.That(guardType, Is.Not.Null);
-
-            FieldInfo field = guardType.GetField("s_tryApplyCouplingOverride", BindingFlags.NonPublic | BindingFlags.Static);
-            Assert.That(field, Is.Not.Null);
-
             if (method == null)
             {
-                field.SetValue(null, null);
+                CouplingImportGuardTestHooks.TryApplyCoupling = null;
                 return;
             }
 
-            Delegate callback = Delegate.CreateDelegate(field.FieldType, method);
-            field.SetValue(null, callback);
+            CouplingImportGuardTestHooks.TryApplyCoupling = (packageId, installedFiles) =>
+            {
+                object[] args = { packageId, installedFiles, null };
+                bool success = (bool)method.Invoke(null, args);
+                return (success, args[2] as string);
+            };
         }
 
         private static void SetProtectedPayloadBrokerBridgeOverride(object bridge)
         {
-            Type brokerServiceType = GetCoordinatorType().GetNestedType(
-                "ProtectedPayloadBrokerService",
-                BindingFlags.NonPublic);
-            Assert.That(brokerServiceType, Is.Not.Null, "Expected to load ProtectedPayloadBrokerService.");
-
-            FieldInfo cachedBridgeField = brokerServiceType.GetField("_cachedBridge", BindingFlags.NonPublic | BindingFlags.Static);
-            FieldInfo resolvedBridgeField = brokerServiceType.GetField("_resolvedBridge", BindingFlags.NonPublic | BindingFlags.Static);
-
-            Assert.That(cachedBridgeField, Is.Not.Null);
-            Assert.That(resolvedBridgeField, Is.Not.Null);
-
-            cachedBridgeField.SetValue(null, bridge);
-            resolvedBridgeField.SetValue(null, bridge != null);
+            ProtectedInstallFinalizationCoordinatorTestHooks.BrokerBridgeOverride =
+                bridge as YUCP.Importer.Editor.PackageManager.Core.IProtectedPayloadBrokerBridge;
         }
 
         private static void SetTryMaterializePatchAssetsOverride(MethodInfo method)
         {
-            Type coordinatorType = GetCoordinatorType();
-            FieldInfo field = coordinatorType.GetField("s_tryMaterializePatchAssetsOverride", BindingFlags.NonPublic | BindingFlags.Static);
-
-            Assert.That(field, Is.Not.Null);
             if (method == null)
             {
-                field.SetValue(null, null);
+                ProtectedInstallFinalizationCoordinatorTestHooks.TryMaterializePatchAssets = null;
                 return;
             }
 
-            Delegate callback = Delegate.CreateDelegate(field.FieldType, method);
-            field.SetValue(null, callback);
+            ProtectedInstallFinalizationCoordinatorTestHooks.TryMaterializePatchAssets = patchAssetPaths =>
+            {
+                object[] args = { patchAssetPaths, null, null };
+                bool success = (bool)method.Invoke(null, args);
+                return (success, args[1] as IReadOnlyList<string>, args[2] as string);
+            };
         }
 
         private static Type GetCoordinatorType()

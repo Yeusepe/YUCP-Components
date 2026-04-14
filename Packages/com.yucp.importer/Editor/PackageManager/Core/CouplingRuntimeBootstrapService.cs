@@ -3,7 +3,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -12,16 +11,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 {
     internal static class CouplingRuntimeBootstrapService
     {
-        internal static Func<(bool success, string error)> s_validateRuntimeOverride;
-        internal static Func<string, string> s_getLicenseTokenOverride;
-        internal static Func<string> s_getProjectIdOverride;
-        internal static Func<string> s_getMachineFingerprintOverride;
-        internal static Func<string> s_getServerUrlOverride;
-        internal static Func<(bool success, string error)> s_repairRuntimeRegistrationOverride;
-        internal static Func<string, string, string, string, (bool success, string runtimePackageToken, string runtimePackageSha256, long expiresAt, string error)> s_requestRuntimePackageTokenOverride;
-        internal static Func<string, string, string, string, (bool success, string packageZipPath, string error)> s_downloadRuntimePackageOverride;
-        internal static Func<string, string, (bool success, string error)> s_installRuntimePackageOverride;
-
         internal static bool TryEnsureProtectedMaterializationRuntimeReady(string packageId, out string error)
         {
             error = null;
@@ -52,28 +41,48 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return false;
             }
 
-            string licenseToken = (s_getLicenseTokenOverride ?? LicenseTokenCache.GetValidToken)?.Invoke(packageId);
+            string licenseToken =
+#if UNITY_INCLUDE_TESTS
+                (CouplingRuntimeBootstrapServiceTestHooks.GetLicenseToken ?? LicenseTokenCache.GetValidToken)?.Invoke(packageId);
+#else
+                LicenseTokenCache.GetValidToken(packageId);
+#endif
             if (string.IsNullOrWhiteSpace(licenseToken))
             {
                 error = "Please import the package through the YUCP Package Manager and verify your purchase first.";
                 return false;
             }
 
-            string projectId = (s_getProjectIdOverride ?? ProjectIdentityService.GetOrCreateProjectId)?.Invoke();
+            string projectId =
+#if UNITY_INCLUDE_TESTS
+                (CouplingRuntimeBootstrapServiceTestHooks.GetProjectId ?? ProjectIdentityService.GetOrCreateProjectId)?.Invoke();
+#else
+                ProjectIdentityService.GetOrCreateProjectId();
+#endif
             if (string.IsNullOrWhiteSpace(projectId))
             {
                 error = "Could not create the Unity project identity required for runtime bootstrap.";
                 return false;
             }
 
-            string machineFingerprint = (s_getMachineFingerprintOverride ?? MachineFingerprintService.GetFingerprint)?.Invoke();
+            string machineFingerprint =
+#if UNITY_INCLUDE_TESTS
+                (CouplingRuntimeBootstrapServiceTestHooks.GetMachineFingerprint ?? MachineFingerprintService.GetFingerprint)?.Invoke();
+#else
+                MachineFingerprintService.GetFingerprint();
+#endif
             if (string.IsNullOrWhiteSpace(machineFingerprint))
             {
                 error = "Could not resolve the machine fingerprint required for runtime bootstrap.";
                 return false;
             }
 
-            string serverUrl = (s_getServerUrlOverride ?? LicenseServerResolver.GetLicenseServerUrl)?.Invoke();
+            string serverUrl =
+#if UNITY_INCLUDE_TESTS
+                (CouplingRuntimeBootstrapServiceTestHooks.GetServerUrl ?? LicenseServerResolver.GetLicenseServerUrl)?.Invoke();
+#else
+                LicenseServerResolver.GetLicenseServerUrl();
+#endif
             if (string.IsNullOrWhiteSpace(serverUrl))
             {
                 error = "Could not resolve the YUCP server URL required for runtime bootstrap.";
@@ -94,8 +103,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 var downloadResult = DownloadRuntimePackage(
                     serverUrl,
                     tokenResult.runtimePackageToken,
-                    tokenResult.runtimePackageSha256,
-                    tempRoot);
+                    tokenResult.runtimePackageSha256);
                 if (!downloadResult.success)
                 {
                     error = downloadResult.error;
@@ -103,7 +111,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
 
                 string installRoot = PackageManagerRuntimeSettings.ResolveRuntimeInstallRoot();
-                var installResult = InstallRuntimePackage(downloadResult.packageZipPath, installRoot);
+                var installResult = InstallRuntimePackage(downloadResult.packageZipBytes, tempRoot, installRoot);
                 if (!installResult.success)
                 {
                     error = installResult.error;
@@ -129,8 +137,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static (bool success, string error) ValidateRuntime()
         {
-            if (s_validateRuntimeOverride != null)
-                return s_validateRuntimeOverride();
+#if UNITY_INCLUDE_TESTS
+            if (CouplingRuntimeBootstrapServiceTestHooks.ValidateRuntime != null)
+                return CouplingRuntimeBootstrapServiceTestHooks.ValidateRuntime();
+#endif
 
             bool success = CouplingRuntimeShimService.TryValidateProtectedMaterializationRuntime(out string error);
             return (success, error);
@@ -138,11 +148,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static (bool attempted, bool success, string error) TryRepairRuntimeRegistration()
         {
-            if (s_repairRuntimeRegistrationOverride != null)
+#if UNITY_INCLUDE_TESTS
+            if (CouplingRuntimeBootstrapServiceTestHooks.RepairRuntimeRegistration != null)
             {
-                var result = s_repairRuntimeRegistrationOverride();
+                var result = CouplingRuntimeBootstrapServiceTestHooks.RepairRuntimeRegistration();
                 return (true, result.success, result.error);
             }
+#endif
 
             string installRoot = PackageManagerRuntimeSettings.ResolveRuntimeInstallRoot();
             string activeStatePath = Path.Combine(installRoot, "state", "active.json");
@@ -163,15 +175,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return (true, false, $"The package protection runtime state could not be read during repair: {ex.Message}");
             }
 
-            if (activeState == null ||
-                string.IsNullOrWhiteSpace(activeState.activeDllPath) ||
-                string.IsNullOrWhiteSpace(activeState.activePackageDir))
+            if (activeState == null || string.IsNullOrWhiteSpace(activeState.activePackageDir))
             {
                 return (false, false, null);
             }
 
-            string metadataPath = Path.Combine(activeState.activePackageDir, "CouplingRuntimeCom.metadata.json");
-            if (!File.Exists(activeState.activeDllPath) || !File.Exists(metadataPath))
+            if (!RuntimeExecutionSecurityUtility.TryResolveRuntimePackageDirectory(
+                    installRoot,
+                    activeState.activePackageDir,
+                    "The package protection runtime active package directory",
+                    out string activePackageDir,
+                    out string packageDirError))
+            {
+                return (true, false, packageDirError);
+            }
+
+            string metadataPath = Path.Combine(activePackageDir, "CouplingRuntimeCom.metadata.json");
+            if (!File.Exists(metadataPath))
                 return (false, false, null);
 
             RuntimeMetadata metadata;
@@ -188,74 +208,132 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return (true, false, $"The package protection runtime metadata could not be read during repair: {ex.Message}");
             }
 
-            if (metadata == null || string.IsNullOrWhiteSpace(metadata.sha256))
+            if (metadata == null ||
+                string.IsNullOrWhiteSpace(metadata.sha256) ||
+                string.IsNullOrWhiteSpace(metadata.dllName))
+            {
                 return (false, false, null);
-
-            string actualSha256;
-            try
-            {
-                actualSha256 = ComputeSha256Hex(File.ReadAllBytes(activeState.activeDllPath));
-            }
-            catch (IOException ex)
-            {
-                return (true, false, $"The package protection runtime DLL could not be read during repair: {ex.Message}");
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return (true, false, $"The package protection runtime DLL could not be read during repair: {ex.Message}");
             }
 
-            if (!string.Equals(actualSha256, metadata.sha256.Trim(), StringComparison.OrdinalIgnoreCase))
+            if (!TryResolveActiveRuntimeDllPath(
+                    activePackageDir,
+                    activeState.activeDllPath,
+                    metadata,
+                    out string activeDllPath,
+                    out string dllPathError))
             {
-                return (true, false, "The installed package protection runtime failed integrity verification during repair.");
+                return (true, false, dllPathError);
             }
 
-            try
+            if (!RuntimeExecutionSecurityUtility.TryOpenLockedRead(activeDllPath, out var dllLock, out byte[] dllBytes, out string readError))
             {
-                using var process = new Process
+                return (true, false, readError);
+            }
+
+            using (dllLock)
+            {
+                string actualSha256 = ComputeSha256Hex(dllBytes);
+                if (!string.Equals(actualSha256, metadata.sha256.Trim(), StringComparison.OrdinalIgnoreCase))
                 {
-                    StartInfo = new ProcessStartInfo
+                    return (true, false, "The installed package protection runtime failed integrity verification during repair.");
+                }
+
+                if (!TryCreateRuntimeRepairStartInfo(activeDllPath, out var startInfo, out string startInfoError))
+                {
+                    return (true, false, startInfoError);
+                }
+
+                try
+                {
+                    using var process = new Process
                     {
-                        FileName = "regsvr32.exe",
-                        Arguments = $"/s \"{activeState.activeDllPath}\"",
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true,
+                        StartInfo = startInfo,
+                    };
+
+                    if (!process.Start())
+                    {
+                        return (true, false, "The package protection runtime repair could not start COM registration.");
                     }
-                };
 
-                if (!process.Start())
+                    string stdout = process.StandardOutput.ReadToEnd();
+                    string stderr = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+
+                    if (process.ExitCode != 0)
+                    {
+                        string details = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : stdout.Trim();
+                        return (
+                            true,
+                            false,
+                            string.IsNullOrWhiteSpace(details)
+                                ? $"The package protection runtime repair failed with exit code {process.ExitCode}."
+                                : details
+                        );
+                    }
+
+                    return (true, true, null);
+                }
+                catch (InvalidOperationException ex)
                 {
-                    return (true, false, "The package protection runtime repair could not start COM registration.");
+                    return (true, false, $"The package protection runtime repair could not start COM registration: {ex.Message}");
+                }
+                catch (Win32Exception ex)
+                {
+                    return (true, false, $"The package protection runtime repair could not start COM registration: {ex.Message}");
+                }
+            }
+        }
+
+        private static bool TryResolveActiveRuntimeDllPath(
+            string activePackageDir,
+            string activeDllPathFromState,
+            RuntimeMetadata metadata,
+            out string activeDllPath,
+            out string error)
+        {
+            activeDllPath = null;
+            error = null;
+
+            if (!RuntimeExecutionSecurityUtility.TryResolveContainedFilePath(
+                    activePackageDir,
+                    metadata.dllName,
+                    ".dll",
+                    "The package protection runtime DLL",
+                    allowSubdirectories: false,
+                    out string resolvedDllPath,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!File.Exists(resolvedDllPath))
+            {
+                error = "The package protection runtime DLL is missing from the active installation.";
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(activeDllPathFromState))
+            {
+                string normalizedStatePath;
+                try
+                {
+                    normalizedStatePath = Path.GetFullPath(activeDllPathFromState);
+                }
+                catch (Exception ex)
+                {
+                    error = $"The package protection runtime state contained an invalid runtime DLL path: {ex.Message}";
+                    return false;
                 }
 
-                string stdout = process.StandardOutput.ReadToEnd();
-                string stderr = process.StandardError.ReadToEnd();
-                process.WaitForExit();
-
-                if (process.ExitCode != 0)
+                if (!string.Equals(normalizedStatePath, resolvedDllPath, StringComparison.OrdinalIgnoreCase))
                 {
-                    string details = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : stdout.Trim();
-                    return (
-                        true,
-                        false,
-                        string.IsNullOrWhiteSpace(details)
-                            ? $"The package protection runtime repair failed with exit code {process.ExitCode}."
-                            : details
-                    );
+                    error = "The package protection runtime state did not match the verified runtime DLL location.";
+                    return false;
                 }
+            }
 
-                return (true, true, null);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return (true, false, $"The package protection runtime repair could not start COM registration: {ex.Message}");
-            }
-            catch (Win32Exception ex)
-            {
-                return (true, false, $"The package protection runtime repair could not start COM registration: {ex.Message}");
-            }
+            activeDllPath = resolvedDllPath;
+            return true;
         }
 
         private static (bool success, string runtimePackageToken, string runtimePackageSha256, long expiresAt, string error) RequestRuntimePackageToken(
@@ -264,10 +342,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string machineFingerprint,
             string licenseToken)
         {
-            if (s_requestRuntimePackageTokenOverride != null)
+#if UNITY_INCLUDE_TESTS
+            if (CouplingRuntimeBootstrapServiceTestHooks.RequestRuntimePackageToken != null)
             {
-                return s_requestRuntimePackageTokenOverride(packageId, projectId, machineFingerprint, licenseToken);
+                return CouplingRuntimeBootstrapServiceTestHooks.RequestRuntimePackageToken(packageId, projectId, machineFingerprint, licenseToken);
             }
+#endif
 
             string serverUrl = LicenseServerResolver.GetLicenseServerUrl();
             string bodyJson = JsonUtility.ToJson(new RuntimePackageTokenRequest
@@ -321,14 +401,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             );
         }
 
-        private static (bool success, string packageZipPath, string error) DownloadRuntimePackage(
+        private static (bool success, byte[] packageZipBytes, string error) DownloadRuntimePackage(
             string serverUrl,
             string runtimePackageToken,
-            string expectedSha256,
-            string tempRoot)
+            string expectedSha256)
         {
-            if (s_downloadRuntimePackageOverride != null)
-                return s_downloadRuntimePackageOverride(serverUrl, runtimePackageToken, expectedSha256, tempRoot);
+#if UNITY_INCLUDE_TESTS
+            if (CouplingRuntimeBootstrapServiceTestHooks.DownloadRuntimePackage != null)
+                return CouplingRuntimeBootstrapServiceTestHooks.DownloadRuntimePackage(serverUrl, runtimePackageToken, expectedSha256);
+#endif
 
             using var request = UnityWebRequest.Get($"{serverUrl.TrimEnd('/')}/v1/licenses/runtime-package?token={Uri.EscapeDataString(runtimePackageToken)}");
             request.downloadHandler = new DownloadHandlerBuffer();
@@ -369,24 +450,28 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return (false, null, "Runtime package download failed integrity verification.");
             }
 
-            string zipPath = Path.Combine(tempRoot, "runtime-package.zip");
-            File.WriteAllBytes(zipPath, bytes);
-            return (true, zipPath, null);
+            return (true, bytes, null);
         }
 
-        private static (bool success, string error) InstallRuntimePackage(string packageZipPath, string installRoot)
+        private static (bool success, string error) InstallRuntimePackage(byte[] packageZipBytes, string workingRoot, string installRoot)
         {
-            if (s_installRuntimePackageOverride != null)
-                return s_installRuntimePackageOverride(packageZipPath, installRoot);
+#if UNITY_INCLUDE_TESTS
+            if (CouplingRuntimeBootstrapServiceTestHooks.InstallRuntimePackage != null)
+                return CouplingRuntimeBootstrapServiceTestHooks.InstallRuntimePackage(packageZipBytes, workingRoot, installRoot);
+#endif
 
-            if (string.IsNullOrWhiteSpace(packageZipPath) || !File.Exists(packageZipPath))
+            if (packageZipBytes == null || packageZipBytes.Length == 0)
             {
                 return (false, "Runtime package bootstrap could not locate the downloaded package archive.");
             }
 
-            string extractRoot = Path.Combine(Path.GetDirectoryName(packageZipPath) ?? Path.GetTempPath(), "extract");
+            string extractRoot = Path.Combine(workingRoot, "extract");
             Directory.CreateDirectory(extractRoot);
-            ZipFile.ExtractToDirectory(packageZipPath, extractRoot);
+
+            if (!ExtractArchiveToDirectory(packageZipBytes, extractRoot, out string extractError))
+            {
+                return (false, extractError);
+            }
 
             string manifestPath = Path.Combine(extractRoot, "runtime-package-manifest.json");
             if (!File.Exists(manifestPath))
@@ -408,40 +493,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return (false, $"Runtime package manifest could not be read: {ex.Message}");
             }
 
-            if (manifest == null ||
-                string.IsNullOrWhiteSpace(manifest.buildDir) ||
-                string.IsNullOrWhiteSpace(manifest.installScriptPath))
+            if (!TryCreateRuntimeInstallStartInfo(extractRoot, manifest, installRoot, out var startInfo, out string startInfoError))
             {
-                return (false, "Runtime package manifest is incomplete.");
-            }
-
-            string sourceDir = ResolvePackagePath(extractRoot, manifest.buildDir);
-            string installScriptPath = ResolvePackagePath(extractRoot, manifest.installScriptPath);
-            if (!Directory.Exists(sourceDir))
-            {
-                return (false, "Runtime package bootstrap is missing the staged build payload.");
-            }
-
-            if (!File.Exists(installScriptPath))
-            {
-                return (false, "Runtime package bootstrap is missing the install script.");
+                return (false, startInfoError);
             }
 
             try
             {
                 using var process = new Process
                 {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "powershell.exe",
-                        Arguments =
-                            $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{installScriptPath}\" -SourceDir \"{sourceDir}\" -InstallRoot \"{installRoot}\"",
-                        WorkingDirectory = Path.GetDirectoryName(installScriptPath) ?? extractRoot,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true,
-                    }
+                    StartInfo = startInfo,
                 };
 
                 if (!process.Start())
@@ -476,31 +537,160 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        private static string ResolvePackagePath(string packageRoot, string relativePath)
+        private static bool TryCreateRuntimeRepairStartInfo(
+            string activeDllPath,
+            out ProcessStartInfo startInfo,
+            out string error)
         {
-            string normalized = (relativePath ?? string.Empty)
-                .Replace('/', Path.DirectorySeparatorChar)
-                .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            string resolved = Path.GetFullPath(Path.Combine(packageRoot, normalized));
-            string rootWithSeparator = Path.GetFullPath(packageRoot)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                + Path.DirectorySeparatorChar;
-            if (!resolved.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+            startInfo = null;
+            error = null;
+
+            string regsvr32Path = RuntimeExecutionSecurityUtility.ResolveWindowsSystemExecutablePath("regsvr32.exe");
+            if (string.IsNullOrWhiteSpace(regsvr32Path))
             {
-                throw new InvalidOperationException($"Runtime package path escaped the package root: {relativePath}");
+                error = "The package protection runtime repair could not locate regsvr32.exe in the Windows system directory.";
+                return false;
             }
 
-            return resolved;
+            startInfo = new ProcessStartInfo
+            {
+                FileName = regsvr32Path,
+                Arguments = $"/s \"{activeDllPath}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            return true;
+        }
+
+        private static bool TryCreateRuntimeInstallStartInfo(
+            string extractRoot,
+            RuntimePackageManifest manifest,
+            string installRoot,
+            out ProcessStartInfo startInfo,
+            out string error)
+        {
+            startInfo = null;
+            error = null;
+
+            if (manifest == null ||
+                string.IsNullOrWhiteSpace(manifest.buildDir) ||
+                string.IsNullOrWhiteSpace(manifest.installScriptPath))
+            {
+                error = "Runtime package manifest is incomplete.";
+                return false;
+            }
+
+            if (!RuntimeExecutionSecurityUtility.TryResolveContainedDirectoryPath(
+                    extractRoot,
+                    manifest.buildDir,
+                    "The staged runtime build payload",
+                    out string sourceDir,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!Directory.Exists(sourceDir))
+            {
+                error = "Runtime package bootstrap is missing the staged build payload.";
+                return false;
+            }
+
+            if (!RuntimeExecutionSecurityUtility.TryResolveContainedFilePath(
+                    extractRoot,
+                    manifest.installScriptPath,
+                    ".ps1",
+                    "The runtime install script",
+                    allowSubdirectories: false,
+                    out string installScriptPath,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!File.Exists(installScriptPath))
+            {
+                error = "Runtime package bootstrap is missing the install script.";
+                return false;
+            }
+
+            string powershellPath = RuntimeExecutionSecurityUtility.ResolveWindowsSystemExecutablePath(Path.Combine("WindowsPowerShell", "v1.0", "powershell.exe"));
+            if (string.IsNullOrWhiteSpace(powershellPath))
+            {
+                error = "Runtime package bootstrap could not locate powershell.exe in the Windows system directory.";
+                return false;
+            }
+
+            startInfo = new ProcessStartInfo
+            {
+                FileName = powershellPath,
+                Arguments =
+                    $"-NoProfile -NonInteractive -ExecutionPolicy AllSigned -File \"{installScriptPath}\" -SourceDir \"{sourceDir}\" -InstallRoot \"{installRoot}\"",
+                WorkingDirectory = Path.GetDirectoryName(installScriptPath) ?? extractRoot,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            return true;
+        }
+
+        private static bool ExtractArchiveToDirectory(byte[] packageZipBytes, string extractRoot, out string error)
+        {
+            error = null;
+
+            try
+            {
+                using var memory = new MemoryStream(packageZipBytes, writable: false);
+                using var archive = new ZipArchive(memory, ZipArchiveMode.Read);
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                {
+                    if (!RuntimeExecutionSecurityUtility.TryResolveContainedDirectoryPath(
+                            extractRoot,
+                            entry.FullName,
+                            "Runtime package entry",
+                            out string destinationPath,
+                            out error))
+                    {
+                        return false;
+                    }
+
+                    if (string.IsNullOrEmpty(entry.Name))
+                    {
+                        Directory.CreateDirectory(destinationPath);
+                        continue;
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? extractRoot);
+                    using Stream entryStream = entry.Open();
+                    using FileStream outputStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    entryStream.CopyTo(outputStream);
+                }
+
+                return true;
+            }
+            catch (InvalidDataException ex)
+            {
+                error = $"Runtime package bootstrap archive could not be extracted: {ex.Message}";
+                return false;
+            }
+            catch (IOException ex)
+            {
+                error = $"Runtime package bootstrap archive could not be extracted: {ex.Message}";
+                return false;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                error = $"Runtime package bootstrap archive could not be extracted: {ex.Message}";
+                return false;
+            }
         }
 
         private static string ComputeSha256Hex(byte[] data)
         {
-            using var sha256 = SHA256.Create();
-            byte[] hash = sha256.ComputeHash(data ?? Array.Empty<byte>());
-            var builder = new StringBuilder(hash.Length * 2);
-            foreach (byte b in hash)
-                builder.Append(b.ToString("x2"));
-            return builder.ToString();
+            return RuntimeExecutionSecurityUtility.ComputeSha256Hex(data);
         }
 
         private static void TryDeleteDirectory(string directoryPath)

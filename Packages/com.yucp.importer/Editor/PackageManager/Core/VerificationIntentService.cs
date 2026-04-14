@@ -18,10 +18,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             "Your YUCP Creator Identity session is no longer valid.\n" +
             "Please sign in again and then retry Verify Purchase.";
 
-        // When set, called with the intent verification URL instead of Application.OpenURL.
-        // Consumed atomically (once) by VerifyInBrowserInternalAsync.
-        internal static Action<string> s_openUrlOverride;
-
         private static readonly HttpClient s_http = new HttpClient();
 
         [Serializable]
@@ -102,10 +98,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string packageName,
             VerificationRequirement[] requirements,
             Action<string> onSuccess,
-            Action<string> onError)
+            Action<string> onError,
+            Action<string> openUrlHandler = null)
         {
 #pragma warning disable CS4014
-            VerifyInBrowserInternalAsync(serverUrl, packageId, packageName, requirements, onSuccess, onError);
+            VerifyInBrowserInternalAsync(serverUrl, packageId, packageName, requirements, onSuccess, onError, openUrlHandler);
 #pragma warning restore CS4014
         }
 
@@ -115,7 +112,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string packageName,
             VerificationRequirement[] requirements,
             Action<string> onSuccess,
-            Action<string> onError)
+            Action<string> onError,
+            Action<string> openUrlHandler)
         {
             try
             {
@@ -157,7 +155,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     requirements);
 
                 Debug.Log($"[YUCP VerificationIntent] Intent created (id='{intent.id}'), opening: {intent.verificationUrl}");
-                OpenVerificationUrl(intent.verificationUrl);
+                OpenVerificationUrl(intent.verificationUrl, openUrlHandler);
 
                 string completedIntentId = intent.id;
                 string grantToken = null;
@@ -414,16 +412,24 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             };
         }
 
-        private static void OpenVerificationUrl(string verificationUrl)
+        private static void OpenVerificationUrl(string verificationUrl, Action<string> openUrlHandler = null)
         {
             void Open()
             {
-                var openOverride = Interlocked.Exchange(ref s_openUrlOverride, null);
+                if (openUrlHandler != null)
+                {
+                    openUrlHandler(verificationUrl);
+                    return;
+                }
+
+#if UNITY_INCLUDE_TESTS
+                var openOverride = Interlocked.Exchange(ref VerificationIntentServiceTestHooks.OpenUrlHandler, null);
                 if (openOverride != null)
                 {
                     openOverride(verificationUrl);
                     return;
                 }
+#endif
 
                 Application.OpenURL(verificationUrl);
             }

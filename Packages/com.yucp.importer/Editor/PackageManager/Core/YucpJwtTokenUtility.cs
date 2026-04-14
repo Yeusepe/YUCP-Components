@@ -169,13 +169,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static byte[] ResolvePublicKey(string keyId)
         {
-            if (!IsKnownKeyId(keyId))
-            {
-                string serverUrl = LicenseServerResolver.GetLicenseServerUrl();
-                if (!TryFetchAuthorityKeys(serverUrl) || !IsKnownKeyId(keyId))
-                    return null;
-            }
-
             byte[] publicKey = TrustedAuthority.GetPublicKey(keyId);
             return publicKey != null && publicKey.Length == 32 ? publicKey : null;
         }
@@ -210,7 +203,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (!result.success || result.keys == null || result.keys.Count == 0)
                 return false;
 
-            TrustedAuthoritiesSettings.CacheKeys(normalizedUrl, result.keys, result.fetchTime == default ? DateTime.UtcNow : result.fetchTime);
+            var pinnedKeys = TrustedAuthority.FilterToPinnedKeys(result.keys);
+            if (pinnedKeys.Count == 0)
+                return false;
+
+            TrustedAuthoritiesSettings.CacheKeys(normalizedUrl, pinnedKeys, result.fetchTime == default ? DateTime.UtcNow : result.fetchTime);
             TrustedAuthority.ReloadAllKeys();
             return true;
         }
