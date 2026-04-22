@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YUCP Club — VPM Packages</title>
+  <title>YUCP Components</title>
   <link rel="icon" href="./favicon.ico">
   <style>
     @font-face {
@@ -1093,20 +1093,133 @@
     }
     .footer-links a:hover { color: rgba(255, 255, 255, 0.9); }
 
+    .mobile-only {
+      display: none;
+    }
+
+    .mobile-message {
+      gap: 16px;
+      flex-direction: column;
+      align-items: flex-start;
+      text-align: left;
+    }
+
+    .mobile-message h2 {
+      margin: 0;
+      font-size: 1.12rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: white;
+    }
+
+    .mobile-message p {
+      margin: 0;
+      font-size: 0.9rem;
+      line-height: 1.65;
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .mobile-message strong {
+      color: white;
+    }
+
+    .mobile-message__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      width: 100%;
+      justify-content: center;
+    }
+
     /* ════════════════════════════════════════
        RESPONSIVE
     ════════════════════════════════════════ */
     @media (max-width: 600px) {
-      .page { padding: 32px 16px 76px; }
-      .site-logo {
-        top: 10px;
-        margin-bottom: 24px;
-        padding: 6px 12px;
-        border-radius: 1.25rem;
+      .page {
+        max-width: 100%;
+        padding: 20px 16px 104px;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
       }
-      .site-logo-img { width: min(100%, 360px); }
+      .site-logo {
+        position: relative;
+        top: 0;
+        width: min(100%, 360px);
+        align-self: center;
+        margin-top: auto;
+        margin-bottom: 18px;
+        padding: 0;
+        border-radius: 0;
+      }
+      .site-logo::before,
+      .site-logo::after,
+      .site-logo-progressive-blur {
+        display: none;
+      }
+      .site-logo-inner {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+      }
+      .site-logo-img {
+        width: min(100%, 300px);
+      }
       .vcc-row { flex-direction: column; }
       .url-field { min-width: unset; }
+      .desktop-only { display: none !important; }
+      .mobile-only { display: block; }
+      .bottom-bar {
+        display: flex;
+        justify-content: center;
+        padding: 0 16px;
+        bottom: 14px;
+      }
+      .world-name-container {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+      }
+      .world-name {
+        max-width: calc(100vw - 32px);
+        text-align: center;
+      }
+      .mobile-message {
+        display: flex;
+        padding: 1.25rem 1.15rem;
+        border-radius: 1.25rem;
+        gap: 14px;
+        width: min(100%, 360px);
+        margin: 0 auto;
+      }
+      .mobile-message h2 {
+        font-size: 1.42rem;
+        line-height: 1.08;
+        max-width: 14ch;
+      }
+      .mobile-message p {
+        font-size: 0.92rem;
+        line-height: 1.58;
+      }
+      .mobile-message__actions .btn {
+        width: min(100%, 240px);
+      }
+      .footer {
+        display: flex;
+        margin-top: 16px;
+        justify-content: center;
+        text-align: center;
+        width: 100%;
+      }
+      .footer-copy {
+        width: 100%;
+        text-align: center;
+      }
+      .footer-links {
+        width: 100%;
+        justify-content: center;
+      }
     }
   </style>
 </head>
@@ -1151,7 +1264,7 @@
     </header>
 
     <!-- ── VCC Card ── -->
-    <section class="card vcc-card" aria-label="Add to VCC">
+    <section class="card vcc-card desktop-only" aria-label="Add to VCC">
       <div>
         <h2>Add to VRChat Creator Companion</h2>
         <p class="vcc-subtitle">
@@ -1187,8 +1300,24 @@
       </div>
     </section>
 
+    <section class="card mobile-message mobile-only" aria-label="Mobile information">
+      <h2>Desktop is the best way to browse and install our packages.</h2>
+      <p><strong>YUCP Club</strong> builds VRChat tooling, avatar utilities, importer workflows, and creator-focused packages for the Creator Companion ecosystem.</p>
+      <p>For the full package browser and downloads, open this page on a desktop device. If you want updates, support, or help getting started right now, join our Discord.</p>
+      <div class="mobile-message__actions">
+        <a class="btn btn-primary" href="https://discord.gg/JGNJFgAGj" target="_blank" rel="noopener">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20.317 4.369A19.791 19.791 0 0 0 15.885 3c-.191.329-.41.775-.564 1.124a18.27 18.27 0 0 0-5.642 0A11.96 11.96 0 0 0 9.114 3a19.736 19.736 0 0 0-4.433 1.369C1.88 8.58 1.12 12.682 1.5 16.73a19.904 19.904 0 0 0 5.993 3.03c.485-.666.918-1.37 1.294-2.11-.712-.27-1.39-.607-2.03-.998.17-.125.336-.255.497-.389 3.916 1.84 8.168 1.84 12.038 0 .163.134.329.264.498.389-.64.391-1.32.728-2.032.998.376.74.81 1.444 1.295 2.11A19.86 19.86 0 0 0 22.5 16.73c.446-4.693-.762-8.757-2.183-12.361ZM8.51 14.247c-1.182 0-2.15-1.085-2.15-2.419 0-1.333.95-2.418 2.15-2.418 1.21 0 2.168 1.095 2.15 2.418 0 1.334-.95 2.419-2.15 2.419Zm6.98 0c-1.182 0-2.15-1.085-2.15-2.419 0-1.333.95-2.418 2.15-2.418 1.21 0 2.168 1.095 2.15 2.418 0 1.334-.94 2.419-2.15 2.419Z"/>
+            </svg>
+          </span>
+          <span class="btn-label">Join Discord</span>
+        </a>
+      </div>
+    </section>
+
     <!-- ── Packages ── -->
-    <section aria-label="Package listing">
+    <section class="desktop-only" aria-label="Package listing">
       <div class="section-header">
         <span class="section-title">Packages</span>
         <span class="pkg-count" id="pkg-count">Loading…</span>
@@ -1527,15 +1656,30 @@
     }
 
     function positionVersionMenu(trigger) {
-      if (!versionMenuPopup || !trigger) return;
+      if (!versionMenuPopup || !versionMenuList || !trigger) return;
       const rect = trigger.getBoundingClientRect();
       const popupWidth = 200;
       const gap = 8;
-      const left = Math.min(window.innerWidth - popupWidth - 12, Math.max(12, rect.right - popupWidth));
-      const top = Math.min(window.innerHeight - 24, rect.bottom + gap);
+      const viewportPadding = 12;
+      const popupChrome = 14;
+      const left = Math.min(window.innerWidth - popupWidth - viewportPadding, Math.max(viewportPadding, rect.right - popupWidth));
+
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding - gap;
+      const spaceAbove = rect.top - viewportPadding - gap;
+      const openUpward = spaceBelow < 220 && spaceAbove > spaceBelow;
+      const availableHeight = Math.max(120, (openUpward ? spaceAbove : spaceBelow) - popupChrome);
+
+      versionMenuList.style.maxHeight = `${availableHeight}px`;
+      versionMenuPopup.style.width = `${popupWidth}px`;
+      versionMenuPopup.style.transformOrigin = openUpward ? 'bottom right' : 'top right';
+
+      const popupHeight = versionMenuPopup.offsetHeight;
+      const top = openUpward
+        ? Math.max(viewportPadding, rect.top - popupHeight - gap)
+        : Math.min(window.innerHeight - popupHeight - viewportPadding, rect.bottom + gap);
+
       versionMenuPopup.style.left = `${left}px`;
       versionMenuPopup.style.top = `${top}px`;
-      versionMenuPopup.style.width = `${popupWidth}px`;
     }
 
     function openVersionMenu(trigger) {
@@ -1743,15 +1887,16 @@
       const menuItem = target.closest('.version-menu-item');
       if (menuItem && activeVersionTrigger) {
         const version = menuItem.getAttribute('data-version') || '';
-        const row = activeVersionTrigger.closest('.pkg-row');
+        const trigger = activeVersionTrigger;
+        const row = trigger.closest('.pkg-row');
         const hidden = row?.querySelector('.js-version-select');
         if (hidden) hidden.value = version;
-        activeVersionTrigger.textContent = version;
-        activeVersionTrigger.classList.remove('is-updating');
-        void activeVersionTrigger.offsetWidth;
-        activeVersionTrigger.classList.add('is-updating');
+        trigger.textContent = version;
+        trigger.classList.remove('is-updating');
+        void trigger.offsetWidth;
+        trigger.classList.add('is-updating');
         window.setTimeout(() => {
-          activeVersionTrigger?.classList?.remove('is-updating');
+          trigger.classList.remove('is-updating');
         }, 260);
         closeVersionMenu();
         return;
