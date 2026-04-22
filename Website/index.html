@@ -315,104 +315,107 @@
     }
 
     /* ════════════════════════════════════════
-       PACKAGE GRID
+       PACKAGE LIST
     ════════════════════════════════════════ */
-    .grid {
+    .pkg-list {
+      background: rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 1.5rem;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+
+    .pkg-row {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 12px;
+      grid-template-columns: 48px 1fr auto auto;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      transition: background 0.15s;
     }
 
-    /* ── Package card ── */
-    .pkg-card {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      transition: border-color 0.18s, background 0.18s;
-    }
+    .pkg-row:last-child { border-bottom: none; }
 
-    .pkg-card:hover {
-      border-color: rgba(255, 255, 255, 0.28);
-      background: rgba(0, 0, 0, 0.32);
-    }
+    .pkg-row:hover { background: rgba(255, 255, 255, 0.04); }
 
-    .pkg-top {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    }
-
+    /* Icon */
     .pkg-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255, 255, 255, 0.18);
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.1rem;
       flex-shrink: 0;
     }
 
-    .pkg-info {
-      flex: 1;
-      min-width: 0;
-    }
+    .pkg-icon svg { display: block; }
+
+    /* Name + id + desc */
+    .pkg-body { min-width: 0; }
 
     .pkg-name {
       font-size: 0.9375rem;
       font-weight: 800;
       letter-spacing: -0.02em;
       color: white;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
 
     .pkg-id {
       font-family: 'Courier New', monospace;
-      font-size: 0.68rem;
-      color: rgba(255, 255, 255, 0.5);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-size: 0.67rem;
+      color: rgba(255, 255, 255, 0.45);
       margin-top: 1px;
     }
 
-    .pkg-version {
+    .pkg-desc {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.65);
+      line-height: 1.55;
+      margin-top: 5px;
+    }
+
+    /* Tags column */
+    .pkg-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
       flex-shrink: 0;
+    }
+
+    .pkg-version {
       font-size: 0.7rem;
       font-weight: 700;
       color: rgba(255, 255, 255, 0.7);
       background: rgba(255, 255, 255, 0.1);
       border: 1px solid rgba(255, 255, 255, 0.15);
-      padding: 2px 8px;
+      padding: 2px 9px;
       border-radius: 99px;
-      margin-top: 3px;
       white-space: nowrap;
-    }
-
-    .pkg-desc {
-      font-size: 0.82rem;
-      color: rgba(255, 255, 255, 0.75);
-      line-height: 1.6;
     }
 
     .pkg-tags {
       display: flex;
-      flex-wrap: wrap;
       gap: 5px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .tag {
-      font-size: 0.68rem;
+      font-size: 0.65rem;
       font-weight: 600;
       padding: 2px 8px;
       border-radius: 99px;
       border: 1px solid rgba(255, 255, 255, 0.15);
       background: rgba(255, 255, 255, 0.08);
-      color: rgba(255, 255, 255, 0.75);
+      color: rgba(255, 255, 255, 0.7);
+      white-space: nowrap;
     }
 
     .tag-accent {
@@ -421,35 +424,47 @@
       color: rgba(120, 190, 255, 0.95);
     }
 
-    .pkg-sep {
-      height: 1px;
-      background: rgba(255, 255, 255, 0.1);
-      margin: 0 -1.5rem;
-    }
-
-    .pkg-footer {
-      display: flex;
-      justify-content: flex-end;
-    }
+    /* Download button column — always same width */
+    .pkg-action { flex-shrink: 0; }
 
     .btn-sm {
-      height: 34px;
-      padding: 0 14px;
-      font-size: 0.78rem;
-      border-radius: 0.4rem;
+      height: 36px;
+      padding: 0 16px;
+      font-size: 0.8rem;
+      border-radius: 0.45rem;
+    }
+
+    /* Mobile: stack */
+    @media (max-width: 640px) {
+      .pkg-row {
+        grid-template-columns: 40px 1fr;
+        grid-template-rows: auto auto auto;
+        gap: 10px;
+        padding: 16px;
+      }
+      .pkg-icon { width: 40px; height: 40px; border-radius: 10px; }
+      .pkg-meta { flex-direction: row; align-items: center; justify-content: flex-start; grid-column: 2; }
+      .pkg-action { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
     }
 
     /* ════════════════════════════════════════
        SKELETON
     ════════════════════════════════════════ */
     @keyframes shimmer {
-      0%, 100% { opacity: 0.3; }
-      50%       { opacity: 0.55; }
+      0%, 100% { opacity: 0.25; }
+      50%       { opacity: 0.45; }
     }
 
-    .skeleton {
+    .skeleton-row {
       animation: shimmer 1.8s ease-in-out infinite;
-      min-height: 190px;
+      min-height: 72px;
+    }
+
+    .skeleton-line {
+      height: 14px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 6px;
+      grid-column: 1 / -1;
     }
 
     /* ════════════════════════════════════════
@@ -599,11 +614,11 @@
         <span class="pkg-count" id="pkg-count">Loading…</span>
       </div>
 
-      <div class="grid" id="grid">
-        <div class="card skeleton"></div>
-        <div class="card skeleton"></div>
-        <div class="card skeleton"></div>
-        <div class="card skeleton"></div>
+      <div class="pkg-list" id="pkg-list">
+        <div class="pkg-row skeleton-row"><div class="skeleton-line" style="width:70%"></div></div>
+        <div class="pkg-row skeleton-row"><div class="skeleton-line" style="width:55%"></div></div>
+        <div class="pkg-row skeleton-row"><div class="skeleton-line" style="width:65%"></div></div>
+        <div class="pkg-row skeleton-row"><div class="skeleton-line" style="width:50%"></div></div>
       </div>
     </section>
 
@@ -647,18 +662,46 @@
     })();
 
     /* ── Icon map ────────────────────────────────────────── */
-    const ICONS = [
-      ['motion',     '✦'],
-      ['importer',   '⬇'],
-      ['exporter',   '⬆'],
-      ['devtools',   '⚙'],
-      ['components', '◈'],
-    ];
+    const PKG_ICONS = {
+      motion: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="24" height="24" rx="6" fill="rgba(168,85,247,0.25)"/>
+        <path d="M7 12l3 3 7-7" stroke="#c084fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="17" cy="7" r="2.5" fill="#c084fc" opacity="0.6"/>
+        <circle cx="7" cy="17" r="2.5" fill="#c084fc" opacity="0.6"/>
+      </svg>`,
+      importer: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="24" height="24" rx="6" fill="rgba(34,211,238,0.2)"/>
+        <path d="M12 4v10m0 0l-3-3m3 3l3-3" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M5 17h14" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+        <path d="M5 20h14" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+      </svg>`,
+      devtools: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="24" height="24" rx="6" fill="rgba(251,191,36,0.18)"/>
+        <path d="M12 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z" stroke="#fbbf24" stroke-width="1.8" fill="none" opacity="0.5"/>
+        <path d="M12 7v2.5l1.5 1.5" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+        <path d="M5 19c0-2.76 3.13-5 7-5s7 2.24 7 5" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+      </svg>`,
+      components: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="24" height="24" rx="6" fill="rgba(99,102,241,0.2)"/>
+        <rect x="4" y="4" width="7" height="7" rx="2" fill="#818cf8" opacity="0.7"/>
+        <rect x="13" y="4" width="7" height="7" rx="2" fill="#818cf8" opacity="0.45"/>
+        <rect x="4" y="13" width="7" height="7" rx="2" fill="#818cf8" opacity="0.45"/>
+        <rect x="13" y="13" width="7" height="7" rx="2" fill="#818cf8" opacity="0.7"/>
+      </svg>`,
+      default: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="24" height="24" rx="6" fill="rgba(156,163,175,0.2)"/>
+        <path d="M12 3L3 8.5v7L12 21l9-5.5v-7L12 3z" stroke="#9ca3af" stroke-width="1.8" fill="none"/>
+        <path d="M3 8.5L12 14l9-5.5" stroke="#9ca3af" stroke-width="1.8" opacity="0.6"/>
+        <line x1="12" y1="14" x2="12" y2="21" stroke="#9ca3af" stroke-width="1.8" opacity="0.6"/>
+      </svg>`
+    };
 
     function iconFor(id) {
       const s = id.toLowerCase();
-      for (const [k, v] of ICONS) if (s.includes(k)) return v;
-      return '◇';
+      for (const key of Object.keys(PKG_ICONS)) {
+        if (s.includes(key)) return PKG_ICONS[key];
+      }
+      return PKG_ICONS.default;
     }
 
     /* ── Semver ──────────────────────────────────────────── */
@@ -692,28 +735,27 @@
       document.getElementById('pkg-count').textContent =
         `${entries.length} package${entries.length !== 1 ? 's' : ''}`;
 
-      const grid = document.getElementById('grid');
-      grid.innerHTML = '';
+      const list = document.getElementById('pkg-list');
+      list.innerHTML = '';
 
       for (const { id, ver, d } of entries) {
-        const el = document.createElement('div');
-        el.className = 'card pkg-card';
-        el.innerHTML = `
-          <div class="pkg-top">
-            <div class="pkg-icon">${iconFor(id)}</div>
-            <div class="pkg-info">
-              <div class="pkg-name">${esc(d.displayName || id)}</div>
-              <div class="pkg-id">${esc(id)}</div>
-            </div>
+        const row = document.createElement('div');
+        row.className = 'pkg-row';
+        row.innerHTML = `
+          <div class="pkg-icon">${iconFor(id)}</div>
+          <div class="pkg-body">
+            <div class="pkg-name">${esc(d.displayName || id)}</div>
+            <div class="pkg-id">${esc(id)}</div>
+            <p class="pkg-desc">${esc(d.description || 'No description provided.')}</p>
+          </div>
+          <div class="pkg-meta">
             <span class="pkg-version">${esc(ver)}</span>
+            <div class="pkg-tags">
+              <span class="tag">Unity ${esc(d.unity || '2019.4')}+</span>
+              <span class="tag tag-accent">${esc(d.type || 'package')}</span>
+            </div>
           </div>
-          <p class="pkg-desc">${esc(d.description || 'No description provided.')}</p>
-          <div class="pkg-tags">
-            <span class="tag">Unity ${esc(d.unity || '2019.4')}+</span>
-            <span class="tag tag-accent">${esc(d.type || 'package')}</span>
-          </div>
-          <div class="pkg-sep"></div>
-          <div class="pkg-footer">
+          <div class="pkg-action">
             <a class="btn btn-primary btn-sm"
                href="${esc(d.url || '#')}" target="_blank" rel="noopener" download>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -725,7 +767,7 @@
             </a>
           </div>
         `;
-        grid.appendChild(el);
+        list.appendChild(row);
       }
     }
 
@@ -737,8 +779,8 @@
         const data = await res.json();
         render(data.packages || {});
       } catch (e) {
-        document.getElementById('grid').innerHTML = `
-          <div class="card" style="grid-column:1/-1;text-align:center;color:#f87171;font-size:.875rem">
+        document.getElementById('pkg-list').innerHTML = `
+          <div class="pkg-row" style="justify-content:center;color:#f87171;font-size:.875rem">
             Could not load packages — ${esc(e.message)}
           </div>`;
         document.getElementById('pkg-count').textContent = 'Error';
