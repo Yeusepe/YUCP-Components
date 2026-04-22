@@ -7,6 +7,8 @@ env:
   
 on: 
   workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
   workflow_run:
     workflows: [Build Release]
     types:
@@ -66,6 +68,17 @@ jobs:
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge DevTools Listing
+        shell: pwsh
+        run: |
+          ./.github/scripts/Merge-VpmListings.ps1 `
+            -PrimaryIndexPath "$env:GITHUB_WORKSPACE/${{ env.listPublishDirectory }}/index.json" `
+            -SecondaryIndexUrl "https://dev.vpm.yucp.club/index.json" `
+            -ListingName "YUCP Club Packages" `
+            -ListingId "com.yucp.importer.listing" `
+            -ListingUrl "https://vpm.yucp.club/index.json" `
+            -ListingAuthor "YUCP Club"
 
       # Prepare for GitHub Pages deployment
       - name: Setup Pages

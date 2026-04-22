@@ -1,5 +1,5 @@
 {
-  "Name": "YUCP Components",
+  "Name": "YUCP Club Packages",
   "Id": "com.yucp.components.listing",
   "Url": "https://vpm.yucp.club/index.json",
   "Author": {
@@ -7,7 +7,7 @@
     "Url": "https://vpm.yucp.club/",
     "Email": "conact@yucp.club"
   },
-  "Description": "Advanced VRChat avatar components. Auto-link armatures, hide body parts, generate grips, and manage UDIM textures with GPU-accelerated detection.",
+  "Description": "Official YUCP Club VCC listing for Components, Importer, DevTools, and Motion.",
   "InfoLink": {
     "Text": "Documentation",
     "Url": "https://github.com/Yeusepe/YUCP-Components"
