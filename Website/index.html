@@ -5,15 +5,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>YUCP Club — VPM Packages</title>
   <link rel="icon" href="./favicon.ico">
-  <link href="https://cdn.jsdelivr.net/npm/airbnbcereal@1.1.0/stylesheet.min.css" rel="stylesheet">
   <style>
+    @font-face {
+      font-family: 'Airbnb Cereal App';
+      src: url('https://cdn.jsdelivr.net/npm/airbnbcereal@1.1.0/AirbnbCerealApp-Light.woff2') format('woff2');
+      font-weight: 300;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: 'Airbnb Cereal App';
+      src: url('https://cdn.jsdelivr.net/npm/airbnbcereal@1.1.0/AirbnbCerealApp-Book.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: 'Airbnb Cereal App';
+      src: url('https://cdn.jsdelivr.net/npm/airbnbcereal@1.1.0/AirbnbCerealApp-Medium.woff2') format('woff2');
+      font-weight: 500;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: 'Airbnb Cereal App';
+      src: url('https://cdn.jsdelivr.net/npm/airbnbcereal@1.1.0/AirbnbCerealApp-Bold.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: 'Airbnb Cereal App';
+      src: url('https://cdn.jsdelivr.net/npm/airbnbcereal@1.1.0/AirbnbCerealApp-ExtraBold.woff2') format('woff2');
+      font-weight: 800;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: 'Airbnb Cereal App';
+      src: url('https://cdn.jsdelivr.net/npm/airbnbcereal@1.1.0/AirbnbCerealApp-Black.woff2') format('woff2');
+      font-weight: 900;
+      font-style: normal;
+    }
+
     /* ── Reset ── */
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     html { height: 100%; }
 
     body {
-      font-family: 'AirbnbCereal', sans-serif;
+      font-family: 'Airbnb Cereal App', sans-serif;
       background: linear-gradient(to bottom, #0a3d9e, #0ea5e9);
       color: white;
       min-height: 100dvh;
@@ -65,7 +106,7 @@
     .bg-overlay {
       position: fixed;
       inset: 0;
-      background: linear-gradient(to bottom, rgba(10, 61, 158, 0.65), rgba(14, 165, 233, 0.55));
+      background: linear-gradient(to bottom, rgba(10, 61, 158, 0.76), rgba(14, 165, 233, 0.64));
       z-index: 1;
     }
 
@@ -96,7 +137,7 @@
       top: 50%;
       left: 0;
       transform: translateY(-50%);
-      font-family: 'AirbnbCereal', sans-serif;
+      font-family: 'Airbnb Cereal App', sans-serif;
       font-size: 0.78rem;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.95);
@@ -134,65 +175,163 @@
       100%  { opacity: 0; }
     }
 
-    .bottom-bar-right {
-      font-family: 'AirbnbCereal', sans-serif;
-      font-size: 0.7rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.5);
-      padding: 0.35rem 0.75rem;
-      background: rgba(0, 0, 0, 0.25);
-      border-radius: 0.5rem;
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-    }
-
     /* ════════════════════════════════════════
        PAGE CONTENT
     ════════════════════════════════════════ */
     .page {
       position: relative;
       z-index: 10;
-      max-width: 960px;
+      max-width: 1040px;
       margin: 0 auto;
-      padding: 56px 24px 100px;
+      padding: 48px 24px 64px;
     }
 
     /* ════════════════════════════════════════
        LOGO / WORDMARK
     ════════════════════════════════════════ */
     .site-logo {
-      text-align: center;
-      margin-bottom: 40px;
+      --logo-scroll-progress: 0;
+      position: sticky;
+      top: 18px;
+      z-index: 60;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 0 auto 28px;
+      /* Tight vertical padding so the bar hugs the logo; horizontal keeps full-width bar */
+      padding: clamp(6px, 0.85vw, 10px) clamp(16px, 3vw, 26px);
+      border-radius: 1.5rem;
+      overflow: hidden;
+      isolation: isolate;
+      box-sizing: border-box;
+    }
+
+    .site-logo::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: linear-gradient(180deg, rgba(7, 12, 20, 0.42), rgba(7, 12, 20, 0.14));
+      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
+      /* No glass bar at scroll 0 */
+      opacity: calc(var(--logo-scroll-progress) * 0.54);
+      transition: opacity 0.22s ease, box-shadow 0.22s ease;
+    }
+
+    .site-logo::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 52%);
+      opacity: calc(var(--logo-scroll-progress) * 0.22);
+      pointer-events: none;
+    }
+
+    .site-logo-progressive-blur {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      border-radius: inherit;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .site-logo-blur-layer {
+      position: absolute;
+      inset: -6px;
+      border-radius: inherit;
+      opacity: var(--logo-scroll-progress);
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    /* Full-width frosted layer: blur only while scrolled (0 at top) */
+    .site-logo-blur-layer--frost {
+      inset: 0;
+      border-radius: inherit;
+      opacity: 1;
+      background: rgba(6, 10, 18, calc(var(--logo-scroll-progress) * 0.47));
+      backdrop-filter: blur(calc(var(--logo-scroll-progress) * 30px));
+      -webkit-backdrop-filter: blur(calc(var(--logo-scroll-progress) * 30px));
+    }
+
+    .site-logo-blur-layer--1 {
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 1) 12%, rgba(0, 0, 0, 1) 34%, transparent 56%);
+      -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 1) 12%, rgba(0, 0, 0, 1) 34%, transparent 56%);
+    }
+
+    .site-logo-blur-layer--2 {
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      mask-image: linear-gradient(180deg, transparent 16%, rgba(0, 0, 0, 1) 36%, rgba(0, 0, 0, 1) 58%, transparent 76%);
+      -webkit-mask-image: linear-gradient(180deg, transparent 16%, rgba(0, 0, 0, 1) 36%, rgba(0, 0, 0, 1) 58%, transparent 76%);
+    }
+
+    .site-logo-blur-layer--3 {
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      mask-image: linear-gradient(180deg, transparent 34%, rgba(0, 0, 0, 1) 54%, rgba(0, 0, 0, 1) 78%, transparent 94%);
+      -webkit-mask-image: linear-gradient(180deg, transparent 34%, rgba(0, 0, 0, 1) 54%, rgba(0, 0, 0, 1) 78%, transparent 94%);
+    }
+
+    .site-logo-blur-layer--4 {
+      backdrop-filter: blur(44px);
+      -webkit-backdrop-filter: blur(44px);
+      mask-image: linear-gradient(180deg, transparent 52%, rgba(0, 0, 0, 1) 74%, rgba(0, 0, 0, 1) 100%);
+      -webkit-mask-image: linear-gradient(180deg, transparent 52%, rgba(0, 0, 0, 1) 74%, rgba(0, 0, 0, 1) 100%);
+    }
+
+    .site-logo-inner {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+
+    .site-logo-mark {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      min-width: 0;
     }
 
     .site-logo-img {
-      height: 52px;
-      width: auto;
-      max-width: 100%;
-      display: inline-block;
-      filter: drop-shadow(0 2px 12px rgba(0,0,0,0.35));
+      width: min(100%, 560px);
+      max-width: 560px;
+      min-width: min(200px, 100%);
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      /* Scale down when scrolled, but not past ~50% (keeps mark readable & centered) */
+      transform-origin: center center;
+      transform: scale(clamp(0.5, calc(1 - (var(--logo-scroll-progress) * 0.5)), 1));
+      transition: transform 0.24s ease;
     }
 
     /* ════════════════════════════════════════
        GLASS CARD  (exact VRChat card spec)
     ════════════════════════════════════════ */
     .card {
-      background: rgba(0, 0, 0, 0.25);
+      background: rgba(7, 12, 20, 0.54);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.22);
       border-radius: 1.5rem;
       padding: 1.5rem;
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+      box-shadow: 0 18px 48px 0 rgba(0, 0, 0, 0.34);
     }
 
     /* ════════════════════════════════════════
        VCC SECTION
     ════════════════════════════════════════ */
     .vcc-card {
-      margin-bottom: 40px;
+      margin-bottom: 26px;
       display: flex;
       flex-direction: column;
       gap: 16px;
@@ -208,7 +347,7 @@
 
     .vcc-subtitle {
       font-size: 0.875rem;
-      color: rgba(255, 255, 255, 0.8);
+      color: rgba(255, 255, 255, 0.92);
     }
 
     .vcc-subtitle a {
@@ -242,11 +381,13 @@
       padding: 0 14px;
       height: 44px;
       border-radius: 0.5rem;
-      border: 1px solid rgba(0, 136, 255, 0.5);
-      background: rgba(255, 255, 255, 0.1);
-      color: rgba(255, 255, 255, 0.8);
-      font-family: 'Courier New', monospace;
+      border: 1px solid rgba(255, 255, 255, 0.26);
+      background: rgba(255, 255, 255, 0.12);
+      color: rgba(255, 255, 255, 0.96);
+      font-family: 'Airbnb Cereal App', sans-serif;
       font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
       display: flex;
       align-items: center;
       white-space: nowrap;
@@ -263,16 +404,84 @@
       padding: 0 18px;
       border-radius: 0.5rem;
       border: none;
-      font-family: 'AirbnbCereal', sans-serif;
+      font-family: 'Airbnb Cereal App', sans-serif;
       font-size: 0.875rem;
       font-weight: 700;
       cursor: pointer;
       white-space: nowrap;
       text-decoration: none;
-      transition: background 0.2s, opacity 0.2s;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+      --mx: 0px;
+      --my: 0px;
+      transform: translate(var(--mx), var(--my));
+      transition: background 0.24s, opacity 0.2s, transform 0.18s ease, box-shadow 0.24s, border-color 0.24s;
+      will-change: transform;
     }
 
-    .btn svg { flex-shrink: 0; }
+    .btn:hover { box-shadow: 0 12px 26px rgba(0, 0, 0, 0.2); }
+
+    .btn:active { transform: translate(calc(var(--mx) * 0.7), calc(var(--my) * 0.7)) scale(0.985); }
+
+    .btn-icon {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transform-origin: center;
+      transition: transform 0.28s ease, opacity 0.22s ease, filter 0.28s ease;
+    }
+
+    .btn-icon svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    .btn-label {
+      transition: transform 0.28s ease, opacity 0.22s ease;
+    }
+
+    .btn:hover .btn-icon { filter: drop-shadow(0 0 10px rgba(255,255,255,0.16)); }
+
+    .btn.is-busy .btn-icon { animation: btn-icon-spin 0.55s ease; }
+    .btn.is-success .btn-icon { animation: btn-icon-pop 0.38s ease; }
+    .btn.is-success .btn-label { animation: btn-label-bump 0.32s ease; }
+    .btn.is-restoring .btn-icon { animation: btn-icon-settle 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+    .btn.is-restoring .btn-label { animation: btn-label-settle 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+
+    @keyframes btn-icon-spin {
+      0% { transform: scale(1) rotate(0deg); }
+      50% { transform: scale(1.16) rotate(22deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+
+    @keyframes btn-icon-pop {
+      0% { transform: scale(0.7) rotate(-10deg); opacity: 0.3; }
+      65% { transform: scale(1.18) rotate(4deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+
+    @keyframes btn-label-bump {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(-1px); }
+      100% { transform: translateY(0); }
+    }
+
+    @keyframes btn-icon-settle {
+      0% { transform: scale(1.08) rotate(-4deg); opacity: 0.92; }
+      60% { transform: scale(0.98) rotate(1deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+
+    @keyframes btn-label-settle {
+      0% { transform: translateY(-1px); opacity: 0.94; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
 
     .btn-primary {
       background: #064b5c;
@@ -287,6 +496,104 @@
     }
     .btn-ghost:hover { background: rgba(255, 255, 255, 0.17); color: white; }
 
+    .btn.is-success {
+      background: #0b6b52;
+      border-color: rgba(255,255,255,0.22);
+      color: white;
+    }
+
+    .download-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(4, 9, 17, 0.56);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 9997;
+    }
+
+    .download-modal-backdrop.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .download-modal {
+      width: min(100%, 560px);
+      background: rgba(7, 12, 20, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 1.25rem;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      padding: 1.35rem;
+      transform: translateY(8px) scale(0.985);
+      transition: transform 0.22s ease;
+    }
+
+    .download-modal-backdrop.visible .download-modal {
+      transform: translateY(0) scale(1);
+    }
+
+    .download-modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .download-modal-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: white;
+    }
+
+    .download-modal-subtitle {
+      margin-top: 4px;
+      font-size: 0.82rem;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .download-modal-close {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border-radius: 999px;
+    }
+
+    .download-modal-copy {
+      font-size: 0.9rem;
+      line-height: 1.65;
+      color: rgba(255, 255, 255, 0.92);
+      margin-bottom: 16px;
+    }
+
+    .download-modal-note {
+      background: rgba(0, 136, 255, 0.12);
+      border: 1px solid rgba(0, 136, 255, 0.28);
+      border-radius: 0.85rem;
+      padding: 0.9rem 1rem;
+      font-size: 0.82rem;
+      line-height: 1.55;
+      color: rgba(255, 255, 255, 0.88);
+      margin-bottom: 16px;
+    }
+
+    .download-modal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .download-modal-actions .btn {
+      min-width: 148px;
+    }
+
     /* ════════════════════════════════════════
        SECTION HEADER
     ════════════════════════════════════════ */
@@ -294,141 +601,387 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
+      padding: 0 6px;
+      box-sizing: border-box;
     }
 
     .section-title {
-      font-size: 0.75rem;
-      font-weight: 700;
+      font-size: 0.78rem;
+      font-weight: 800;
       letter-spacing: 0.07em;
       text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.6);
+      color: rgba(255, 255, 255, 0.92);
     }
 
     .pkg-count {
       font-size: 0.75rem;
-      color: rgba(255, 255, 255, 0.5);
-      background: rgba(0, 0, 0, 0.2);
+      color: rgba(255, 255, 255, 0.95);
+      background: rgba(8, 14, 24, 0.5);
       padding: 2px 10px;
       border-radius: 99px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.22);
     }
 
     /* ════════════════════════════════════════
        PACKAGE LIST
     ════════════════════════════════════════ */
     .pkg-list {
-      background: rgba(0, 0, 0, 0.25);
+      background: rgba(7, 12, 20, 0.58);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.22);
       border-radius: 1.5rem;
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+      box-shadow: 0 18px 48px 0 rgba(0, 0, 0, 0.34);
       overflow: hidden;
     }
 
     .pkg-row {
       display: grid;
-      grid-template-columns: 48px 1fr auto auto;
+      grid-template-columns: 52px minmax(0, 1fr) auto 132px;
       align-items: center;
-      gap: 16px;
-      padding: 18px 24px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      transition: background 0.15s;
+      gap: 14px 16px;
+      padding: 12px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      transition: background 0.15s, border-color 0.15s;
+      animation: row-fade-in 0.55s ease both;
+      position: relative;
     }
 
     .pkg-row:last-child { border-bottom: none; }
 
-    .pkg-row:hover { background: rgba(255, 255, 255, 0.04); }
+    .pkg-row:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-bottom-color: rgba(255, 255, 255, 0.18);
+    }
+
+    .pkg-row-error {
+      display: block;
+      padding: 22px 24px;
+      color: #ffd0d0;
+      font-size: 0.92rem;
+      font-weight: 600;
+      line-height: 1.5;
+    }
 
     /* Icon */
     .pkg-icon {
-      width: 48px;
-      height: 48px;
+      width: 52px;
+      height: 52px;
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(0, 0, 0, 0.32);
+      border: 1px solid rgba(255, 255, 255, 0.2);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      color: rgba(255, 255, 255, 0.98);
+      transform: translateY(0) scale(1);
+      transition: transform 0.24s ease, background 0.24s ease, border-color 0.24s ease;
     }
 
-    .pkg-icon svg { display: block; }
+    .pkg-row:hover .pkg-icon {
+      transform: translateY(-2px) scale(1.04);
+      background: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
 
-    /* Name + id + desc */
-    .pkg-body { min-width: 0; }
+    .pkg-icon svg,
+    .pkg-icon img {
+      display: block;
+      width: 26px;
+      height: 26px;
+    }
+
+    .pkg-icon img {
+      object-fit: contain;
+      filter: saturate(1.02) brightness(1.02);
+    }
+
+    @keyframes row-fade-in {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Name + id + desc (compact: title + id on one row) */
+    .pkg-body {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .pkg-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 6px 10px;
+      min-width: 0;
+    }
 
     .pkg-name {
-      font-size: 0.9375rem;
+      font-size: 0.95rem;
       font-weight: 800;
       letter-spacing: -0.02em;
       color: white;
+      line-height: 1.2;
     }
 
     .pkg-id {
-      font-family: 'Courier New', monospace;
-      font-size: 0.67rem;
-      color: rgba(255, 255, 255, 0.45);
-      margin-top: 1px;
+      font-family: 'Airbnb Cereal App', sans-serif;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: rgba(255, 255, 255, 0.62);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Engine + type: one quiet line (not competing with the version control) */
+    .pkg-facts {
+      margin: 0;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: rgba(255, 255, 255, 0.52);
     }
 
     .pkg-desc {
-      font-size: 0.8rem;
-      color: rgba(255, 255, 255, 0.65);
-      line-height: 1.55;
-      margin-top: 5px;
+      font-size: 0.78rem;
+      color: rgba(255, 255, 255, 0.84);
+      line-height: 1.35;
+      margin: 0;
+      max-width: 62ch;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
     }
 
-    /* Tags column */
+    /* Version only: single compact control (separate from static Unity/type copy) */
     .pkg-meta {
       display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 6px;
-      flex-shrink: 0;
-    }
-
-    .pkg-version {
-      font-size: 0.7rem;
-      font-weight: 700;
-      color: rgba(255, 255, 255, 0.7);
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      padding: 2px 9px;
-      border-radius: 99px;
-      white-space: nowrap;
-    }
-
-    .pkg-tags {
-      display: flex;
-      gap: 5px;
-      flex-wrap: wrap;
+      align-items: center;
       justify-content: flex-end;
+      flex-shrink: 0;
+      min-width: 0;
     }
 
-    .tag {
-      font-size: 0.65rem;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 99px;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      background: rgba(255, 255, 255, 0.08);
-      color: rgba(255, 255, 255, 0.7);
+    .version-select-wrap {
+      position: relative;
+      width: 5.9rem;
+      flex: 0 0 5.9rem;
+      border-radius: 0.7rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(8, 14, 24, 0.44);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.028);
+      transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+      overflow: hidden;
+    }
+
+    .version-select-wrap::after {
+      content: '';
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      width: 11px;
+      height: 11px;
+      transform: translateY(-50%);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.62)' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: 11px 11px;
+      pointer-events: none;
+      transition: transform 0.2s ease, opacity 0.18s ease;
+    }
+
+    .version-select {
+      display: block;
+      width: 100%;
+      height: 31px;
+      min-height: 31px;
+      margin: 0;
+      padding: 0 26px 0 10px;
+      box-sizing: border-box;
+      font-family: 'Airbnb Cereal App', sans-serif;
+      font-size: 0.71rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
+      color: rgba(255, 255, 255, 0.92);
       white-space: nowrap;
+      text-overflow: ellipsis;
+      border-radius: 0.7rem;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      cursor: pointer;
+      transition: color 0.16s ease;
+      overflow: hidden;
+      text-align: left;
     }
 
-    .tag-accent {
-      background: rgba(0, 136, 255, 0.15);
-      border-color: rgba(0, 136, 255, 0.35);
-      color: rgba(120, 190, 255, 0.95);
+    .version-select-wrap:hover {
+      background: rgba(10, 18, 30, 0.56);
+      border-color: rgba(255, 255, 255, 0.16);
+    }
+
+    .version-select:focus {
+      outline: none;
+    }
+
+    .version-select-wrap:focus-within {
+      border-color: rgba(121, 198, 255, 0.62);
+      background: rgba(12, 22, 36, 0.64);
+      box-shadow: 0 0 0 3px rgba(86, 163, 255, 0.12);
+    }
+
+    .version-select-wrap:focus-within .version-select {
+      color: white;
+    }
+
+    .version-select:hover {
+      color: white;
+    }
+
+    .version-select:focus-visible {
+      outline: none;
+    }
+
+    .version-select-wrap.is-open {
+      border-color: rgba(121, 198, 255, 0.42);
+      background: rgba(13, 24, 38, 0.74);
+      box-shadow: 0 0 0 3px rgba(86, 163, 255, 0.1);
+    }
+
+    .version-select-wrap.is-open::after {
+      transform: translateY(-50%) rotate(180deg);
+      opacity: 0.9;
+    }
+
+    .version-select.is-updating {
+      animation: version-trigger-settle 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .version-menu-popup {
+      position: fixed;
+      z-index: 10060;
+      width: 12.5rem;
+      padding: 0.35rem;
+      border-radius: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(7, 12, 20, 0.94);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 22px 48px rgba(0, 0, 0, 0.42);
+      opacity: 0;
+      transform: translateY(10px) scale(0.96);
+      transform-origin: top right;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .version-menu-popup[hidden] {
+      display: none;
+    }
+
+    .version-menu-popup.is-visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .version-menu-popup.is-closing {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+      pointer-events: none;
+    }
+
+    .version-menu-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-height: min(18.5rem, calc(100vh - 4rem));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding-right: 2px;
+    }
+
+    .version-menu-list::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .version-menu-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+    }
+
+    .version-menu-item {
+      width: 100%;
+      min-height: 2.15rem;
+      padding: 0.55rem 0.7rem;
+      border: none;
+      border-radius: 0.75rem;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.88);
+      font-family: 'Airbnb Cereal App', sans-serif;
+      font-size: 0.78rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.01em;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color 0.14s ease, color 0.14s ease, transform 0.14s ease;
+      opacity: 0;
+      transform: translateY(8px);
+      animation: version-menu-item-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation-delay: calc(min(var(--item-index, 0), 8) * 18ms);
+    }
+
+    .version-menu-item:hover,
+    .version-menu-item:focus-visible {
+      background: rgba(255, 255, 255, 0.08);
+      color: white;
+      outline: none;
+      transform: translateX(1px);
+    }
+
+    .version-menu-item.is-selected {
+      background: rgba(96, 170, 255, 0.16);
+      color: white;
+      box-shadow: inset 0 0 0 1px rgba(121, 198, 255, 0.18);
+    }
+
+    @keyframes version-trigger-settle {
+      0% { transform: translateY(1px) scale(0.98); opacity: 0.86; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
+
+    @keyframes version-menu-item-in {
+      0% { opacity: 0; transform: translateY(8px); }
+      100% { opacity: 1; transform: translateY(0); }
     }
 
     /* Download button column — always same width */
-    .pkg-action { flex-shrink: 0; }
+    .pkg-action {
+      flex-shrink: 0;
+      width: 132px;
+      display: flex;
+      justify-content: flex-end;
+    }
 
     .btn-sm {
       height: 36px;
+      width: 114px;
       padding: 0 16px;
       font-size: 0.8rem;
       border-radius: 0.45rem;
@@ -439,12 +992,20 @@
       .pkg-row {
         grid-template-columns: 40px 1fr;
         grid-template-rows: auto auto auto;
-        gap: 10px;
-        padding: 16px;
+        gap: 8px 10px;
+        padding: 12px 14px;
       }
+      .pkg-head { flex-direction: column; align-items: flex-start; gap: 2px; }
       .pkg-icon { width: 40px; height: 40px; border-radius: 10px; }
-      .pkg-meta { flex-direction: row; align-items: center; justify-content: flex-start; grid-column: 2; }
-      .pkg-action { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+      .pkg-icon svg, .pkg-icon img { width: 22px; height: 22px; }
+      .pkg-meta {
+        width: 100%;
+        justify-content: flex-start;
+        grid-column: 2;
+      }
+      .version-select-wrap { width: 5.9rem; flex-basis: 5.9rem; }
+      .pkg-action { width: auto; grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+      .btn-sm { width: 114px; }
     }
 
     /* ════════════════════════════════════════
@@ -481,7 +1042,7 @@
       border: 1px solid rgba(255, 255, 255, 0.18);
       border-radius: 0.5rem;
       padding: 9px 18px;
-      font-family: 'AirbnbCereal', sans-serif;
+      font-family: 'Airbnb Cereal App', sans-serif;
       font-size: 0.8125rem;
       color: white;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
@@ -501,8 +1062,8 @@
        FOOTER
     ════════════════════════════════════════ */
     .footer {
-      margin-top: 56px;
-      padding-top: 20px;
+      margin-top: 34px;
+      padding-top: 16px;
       border-top: 1px solid rgba(255, 255, 255, 0.12);
       display: flex;
       align-items: center;
@@ -513,7 +1074,7 @@
 
     .footer-copy {
       font-size: 0.75rem;
-      color: rgba(255, 255, 255, 0.4);
+      color: rgba(255, 255, 255, 0.72);
     }
 
     .footer-links {
@@ -523,7 +1084,7 @@
 
     .footer-links a {
       font-size: 0.75rem;
-      color: rgba(255, 255, 255, 0.5);
+      color: rgba(255, 255, 255, 0.82);
       text-decoration: none;
       display: flex;
       align-items: center;
@@ -536,11 +1097,16 @@
        RESPONSIVE
     ════════════════════════════════════════ */
     @media (max-width: 600px) {
-      .page { padding: 36px 16px 100px; }
-      .site-logo { margin-bottom: 28px; }
+      .page { padding: 32px 16px 76px; }
+      .site-logo {
+        top: 10px;
+        margin-bottom: 24px;
+        padding: 6px 12px;
+        border-radius: 1.25rem;
+      }
+      .site-logo-img { width: min(100%, 360px); }
       .vcc-row { flex-direction: column; }
       .url-field { min-width: unset; }
-      .pkg-sep { margin: 0 -1.5rem; }
     }
   </style>
 </head>
@@ -563,7 +1129,6 @@
       <span class="world-name">Silent Horizon</span>
       <span class="world-name">Sky Lounge</span>
     </div>
-    <span class="bottom-bar-right">YUCP Club</span>
   </div>
 
   <!-- ════ PAGE CONTENT ══════════════════════════════ -->
@@ -571,7 +1136,18 @@
 
     <!-- ── Logo / Wordmark ── -->
     <header class="site-logo">
-      <img src="./ComponentsLogo.png" alt="YUCP Components" class="site-logo-img">
+      <div class="site-logo-progressive-blur" aria-hidden="true">
+        <span class="site-logo-blur-layer site-logo-blur-layer--frost"></span>
+        <span class="site-logo-blur-layer site-logo-blur-layer--1"></span>
+        <span class="site-logo-blur-layer site-logo-blur-layer--2"></span>
+        <span class="site-logo-blur-layer site-logo-blur-layer--3"></span>
+        <span class="site-logo-blur-layer site-logo-blur-layer--4"></span>
+      </div>
+      <div class="site-logo-inner">
+        <div class="site-logo-mark">
+          <img src="./ComponentsLogo.png" alt="YUCP Components" class="site-logo-img">
+        </div>
+      </div>
     </header>
 
     <!-- ── VCC Card ── -->
@@ -591,18 +1167,22 @@
 
       <div class="vcc-row">
         <div class="url-field" id="listing-url-field">https://vpm.yucp.club/index.json</div>
-        <button class="btn btn-primary" onclick="addToVcc()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 5v14M5 12h14"/>
-          </svg>
-          Add to VCC
+        <button class="btn btn-primary" type="button" data-action="vcc" onclick="addToVcc(this)">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </span>
+          <span class="btn-label">Add to VCC</span>
         </button>
-        <button class="btn btn-ghost" onclick="copyUrl()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="9" width="13" height="13" rx="2"/>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
-          Copy URL
+        <button class="btn btn-ghost" type="button" data-action="copy" onclick="copyUrl(this)">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </span>
+          <span class="btn-label">Copy URL</span>
         </button>
       </div>
     </section>
@@ -643,7 +1223,54 @@
 
   </div><!-- /page -->
 
+  <div class="download-modal-backdrop" id="download-modal-backdrop" aria-hidden="true">
+    <div class="download-modal" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
+      <div class="download-modal-header">
+        <div>
+          <div class="download-modal-title" id="download-modal-title">Add through Creator Companion</div>
+          <div class="download-modal-subtitle" id="download-modal-package">Package</div>
+        </div>
+        <button class="btn btn-ghost download-modal-close" type="button" onclick="closeDownloadModal()" aria-label="Close download dialog">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6 6 18"/>
+            </svg>
+          </span>
+        </button>
+      </div>
+      <div class="download-modal-copy">
+        Hey! This works best when added through <strong>VRChat Creator Companion</strong> so dependencies, updates, and package management stay smooth.
+      </div>
+      <div class="download-modal-note">
+        Recommended: add the repository to VCC, then install the package from there. Manual downloads are still available if you specifically need the zip.
+      </div>
+      <div class="download-modal-actions">
+        <a class="btn btn-ghost" id="manual-download-button" href="#" target="_blank" rel="noopener" download>
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </span>
+          <span class="btn-label">Manual download</span>
+        </a>
+        <button class="btn btn-primary" type="button" id="modal-vcc-button" onclick="addToVcc(this)">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </span>
+          <span class="btn-label">Add to VCC</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast"></div>
+  <div class="version-menu-popup" id="version-menu-popup" hidden>
+    <div class="version-menu-list" id="version-menu-list" role="listbox" aria-label="Package versions"></div>
+  </div>
 
   <script>
     /* ── Slideshow randomise (exact VRChat pattern) ──────── */
@@ -663,37 +1290,11 @@
 
     /* ── Icon map ────────────────────────────────────────── */
     const PKG_ICONS = {
-      motion: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="24" height="24" rx="6" fill="rgba(168,85,247,0.25)"/>
-        <path d="M7 12l3 3 7-7" stroke="#c084fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="17" cy="7" r="2.5" fill="#c084fc" opacity="0.6"/>
-        <circle cx="7" cy="17" r="2.5" fill="#c084fc" opacity="0.6"/>
-      </svg>`,
-      importer: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="24" height="24" rx="6" fill="rgba(34,211,238,0.2)"/>
-        <path d="M12 4v10m0 0l-3-3m3 3l3-3" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M5 17h14" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
-        <path d="M5 20h14" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
-      </svg>`,
-      devtools: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="24" height="24" rx="6" fill="rgba(251,191,36,0.18)"/>
-        <path d="M12 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z" stroke="#fbbf24" stroke-width="1.8" fill="none" opacity="0.5"/>
-        <path d="M12 7v2.5l1.5 1.5" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
-        <path d="M5 19c0-2.76 3.13-5 7-5s7 2.24 7 5" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
-      </svg>`,
-      components: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="24" height="24" rx="6" fill="rgba(99,102,241,0.2)"/>
-        <rect x="4" y="4" width="7" height="7" rx="2" fill="#818cf8" opacity="0.7"/>
-        <rect x="13" y="4" width="7" height="7" rx="2" fill="#818cf8" opacity="0.45"/>
-        <rect x="4" y="13" width="7" height="7" rx="2" fill="#818cf8" opacity="0.45"/>
-        <rect x="13" y="13" width="7" height="7" rx="2" fill="#818cf8" opacity="0.7"/>
-      </svg>`,
-      default: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="24" height="24" rx="6" fill="rgba(156,163,175,0.2)"/>
-        <path d="M12 3L3 8.5v7L12 21l9-5.5v-7L12 3z" stroke="#9ca3af" stroke-width="1.8" fill="none"/>
-        <path d="M3 8.5L12 14l9-5.5" stroke="#9ca3af" stroke-width="1.8" opacity="0.6"/>
-        <line x1="12" y1="14" x2="12" y2="21" stroke="#9ca3af" stroke-width="1.8" opacity="0.6"/>
-      </svg>`
+      motion: `<img src="https://assets.streamlinehq.com/image/private/w_34,h_34,ar_1/f_auto/v1/icons/interface-essential/curves-levels-graph-2qvhi41sh0asgitewhqec.png/curves-levels-graph-alfx2utjg3cw08gj4zliv.png?_a=DATAiZAAZAA0" alt="" loading="lazy">`,
+      importer: `<img src="https://assets.streamlinehq.com/image/private/w_34,h_34,ar_1/f_auto/v1/icons/interface-essential/download-arrow-jdhdezlhxal59eh9zuy436.png/download-arrow-pbdw7ujv4eii8mi7y6trt.png?_a=DATAiZAAZAA0" alt="" loading="lazy">`,
+      devtools: `<img src="https://assets.streamlinehq.com/image/private/w_34,h_34,ar_1/f_auto/v1/icons/interface-essential/cog-3rzc2scxx31dpes99qu86l.png/cog-1323l85qqetpsuccick243.png?_a=DATAiZAAZAA0" alt="" loading="lazy">`,
+      components: `<img src="https://assets.streamlinehq.com/image/private/w_34,h_34,ar_1/f_auto/v1/icons/interface-essential/cube-yp72eolfbi5mr8acxa48r.png/cube-3jur8sj9v2lwzo1mb2tjm.png?_a=DATAiZAAZAA0" alt="" loading="lazy">`,
+      default: `<img src="https://assets.streamlinehq.com/image/private/w_34,h_34,ar_1/f_auto/v1/icons/interface-essential/dashboard-3-wjo5blbftawfoc5nxpms.png/dashboard-3-6t4dqnc1j2bdigj0i38hq.png?_a=DATAiZAAZAA0" alt="" loading="lazy">`
     };
 
     function iconFor(id) {
@@ -702,6 +1303,15 @@
         if (s.includes(key)) return PKG_ICONS[key];
       }
       return PKG_ICONS.default;
+    }
+
+    function kindFor(id) {
+      const s = id.toLowerCase();
+      if (s.includes('components')) return 'components';
+      if (s.includes('devtools')) return 'devtools';
+      if (s.includes('motion')) return 'motion';
+      if (s.includes('importer')) return 'importer';
+      return 'default';
     }
 
     /* ── Semver ──────────────────────────────────────────── */
@@ -719,6 +1329,14 @@
       return Object.keys(versions).reduce((best, v) => semverGt(v, best) ? v : best);
     }
 
+    function sortVersionsDesc(versions) {
+      return Object.keys(versions).sort((a, b) => {
+        if (semverGt(a, b)) return -1;
+        if (semverGt(b, a)) return 1;
+        return 0;
+      });
+    }
+
     /* ── Escape ──────────────────────────────────────────── */
     function esc(s) {
       return String(s ?? '')
@@ -729,7 +1347,11 @@
     /* ── Render ──────────────────────────────────────────── */
     function render(packages) {
       const entries = Object.entries(packages)
-        .map(([id, pkg]) => ({ id, ver: latestOf(pkg.versions), d: pkg.versions[latestOf(pkg.versions)] }))
+        .map(([id, pkg]) => {
+          const versions = sortVersionsDesc(pkg.versions);
+          const ver = versions[0];
+          return { id, pkg, versions, ver, d: pkg.versions[ver] };
+        })
         .sort((a, b) => (a.d.displayName || a.id).localeCompare(b.d.displayName || b.id));
 
       document.getElementById('pkg-count').textContent =
@@ -738,37 +1360,56 @@
       const list = document.getElementById('pkg-list');
       list.innerHTML = '';
 
-      for (const { id, ver, d } of entries) {
+      entries.forEach(({ id, ver, d, pkg, versions }, index) => {
         const row = document.createElement('div');
-        row.className = 'pkg-row';
+        row.className = `pkg-row pkg-row--${kindFor(id)}`;
+        row.style.animationDelay = `${index * 55}ms`;
+        const latestVer = versions[0];
         row.innerHTML = `
           <div class="pkg-icon">${iconFor(id)}</div>
           <div class="pkg-body">
-            <div class="pkg-name">${esc(d.displayName || id)}</div>
-            <div class="pkg-id">${esc(id)}</div>
-            <p class="pkg-desc">${esc(d.description || 'No description provided.')}</p>
+            <div class="pkg-head">
+              <div class="pkg-name">${esc(d.displayName || id)}</div>
+              <span class="pkg-id">${esc(id)}</span>
+            </div>
+            <p class="pkg-facts">Unity ${esc(d.unity || '2019.4')}+ · ${esc(d.type || 'package')}</p>
+            <p class="pkg-desc" title="${esc(d.description || '')}">${esc(d.description || 'No description provided.')}</p>
           </div>
           <div class="pkg-meta">
-            <span class="pkg-version">${esc(ver)}</span>
-            <div class="pkg-tags">
-              <span class="tag">Unity ${esc(d.unity || '2019.4')}+</span>
-              <span class="tag tag-accent">${esc(d.type || 'package')}</span>
+            <div class="version-select-wrap">
+              <input class="js-version-select" type="hidden" name="version-${index}" value="${esc(ver)}">
+              <button
+                class="version-select js-version-trigger"
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-label="Select version for ${esc(d.displayName || id)}"
+                data-versions='${esc(JSON.stringify(versions))}'
+                data-latest-version="${esc(latestVer)}"
+              >${esc(ver)}</button>
             </div>
           </div>
           <div class="pkg-action">
-            <a class="btn btn-primary btn-sm"
-               href="${esc(d.url || '#')}" target="_blank" rel="noopener" download>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              Download
-            </a>
+            <button class="btn btn-primary btn-sm js-download" type="button"
+               data-package-name="${esc(d.displayName || id)}"
+               data-latest-version="${esc(ver)}"
+               data-version-map='${esc(JSON.stringify(versions.map((version) => [version, pkg.versions[version]?.url || "#"]))) }'>
+              <span class="btn-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+              </span>
+              <span class="btn-label">Download</span>
+            </button>
           </div>
         `;
         list.appendChild(row);
-      }
+      });
+
+      bindVersionMenus();
+      bindDownloadAnimations();
     }
 
     /* ── Load ────────────────────────────────────────────── */
@@ -780,8 +1421,8 @@
         render(data.packages || {});
       } catch (e) {
         document.getElementById('pkg-list').innerHTML = `
-          <div class="pkg-row" style="justify-content:center;color:#f87171;font-size:.875rem">
-            Could not load packages — ${esc(e.message)}
+          <div class="pkg-row-error">
+            Could not load packages - ${esc(e.message)}
           </div>`;
         document.getElementById('pkg-count').textContent = 'Error';
       }
@@ -789,21 +1430,293 @@
 
     /* ── VCC actions ─────────────────────────────────────── */
     const LISTING = 'https://vpm.yucp.club/index.json';
+    const siteLogo = document.querySelector('.site-logo');
+    const downloadModalBackdrop = document.getElementById('download-modal-backdrop');
+    const downloadModalPackage = document.getElementById('download-modal-package');
+    const manualDownloadButton = document.getElementById('manual-download-button');
+    const versionMenuPopup = document.getElementById('version-menu-popup');
+    const versionMenuList = document.getElementById('version-menu-list');
+    let activeVersionMap = [];
+    let activeVersionTrigger = null;
+    let versionMenuCloseTimer = 0;
+    const ACTION_ICONS = {
+      vcc: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>`,
+      copy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+      download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+      check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7 9 18l-5-5"/></svg>`,
+      launch: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>`
+    };
 
-    function addToVcc() {
-      window.location.href = 'vcc://vpm/addRepo?url=' + encodeURIComponent(LISTING);
-      showToast('Opening VCC…');
+    function setButtonVisual(button, icon, label, success = false) {
+      if (!button) return;
+      const iconEl = button.querySelector('.btn-icon');
+      const labelEl = button.querySelector('.btn-label');
+      if (iconEl) iconEl.innerHTML = icon;
+      if (labelEl) labelEl.textContent = label;
+      button.classList.remove('is-busy', 'is-success');
+      if (success) button.classList.add('is-success');
     }
 
-    function copyUrl() {
+    function animateButtonReset(button, icon, label) {
+      if (!button) return;
+      window.clearTimeout(button._buttonVisualCleanupTimer);
+      button.classList.remove('is-restoring');
+      setButtonVisual(button, icon, label, false);
+      void button.offsetWidth;
+      button.classList.add('is-restoring');
+      button._buttonVisualCleanupTimer = window.setTimeout(() => {
+        button.classList.remove('is-restoring');
+      }, 320);
+    }
+
+    function pulseButton(button, icon, label, { success = false, restoreIcon, restoreLabel, restoreDelay = 1600 } = {}) {
+      if (!button) return;
+      const iconEl = button.querySelector('.btn-icon');
+      const labelEl = button.querySelector('.btn-label');
+      const baseIcon = restoreIcon ?? (iconEl ? iconEl.innerHTML : '');
+      const baseLabel = restoreLabel ?? (labelEl ? labelEl.textContent : '');
+      window.clearTimeout(button._buttonRestoreTimer);
+      button.classList.remove('is-busy', 'is-success');
+      void button.offsetWidth;
+      button.classList.add(success ? 'is-success' : 'is-busy');
+      setButtonVisual(button, icon, label, success);
+      button._buttonRestoreTimer = window.setTimeout(() => {
+        animateButtonReset(button, baseIcon, baseLabel);
+      }, restoreDelay);
+    }
+
+    function parseVersionMap(raw) {
+      try {
+        const parsed = JSON.parse(raw || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function urlForVersion(version) {
+      const match = activeVersionMap.find(([v]) => v === version);
+      return match?.[1] || '#';
+    }
+
+    function closeVersionMenu(immediate = false) {
+      if (!versionMenuPopup || !versionMenuList) return;
+      window.clearTimeout(versionMenuCloseTimer);
+
+      const trigger = activeVersionTrigger;
+      if (trigger) {
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.closest('.version-select-wrap')?.classList.remove('is-open');
+      }
+
+      const finalize = () => {
+        versionMenuPopup.hidden = true;
+        versionMenuPopup.classList.remove('is-visible', 'is-closing');
+        versionMenuList.innerHTML = '';
+        activeVersionTrigger = null;
+      };
+
+      if (immediate || versionMenuPopup.hidden) {
+        finalize();
+        return;
+      }
+
+      versionMenuPopup.classList.remove('is-visible');
+      versionMenuPopup.classList.add('is-closing');
+      versionMenuCloseTimer = window.setTimeout(finalize, 180);
+    }
+
+    function positionVersionMenu(trigger) {
+      if (!versionMenuPopup || !trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const popupWidth = 200;
+      const gap = 8;
+      const left = Math.min(window.innerWidth - popupWidth - 12, Math.max(12, rect.right - popupWidth));
+      const top = Math.min(window.innerHeight - 24, rect.bottom + gap);
+      versionMenuPopup.style.left = `${left}px`;
+      versionMenuPopup.style.top = `${top}px`;
+      versionMenuPopup.style.width = `${popupWidth}px`;
+    }
+
+    function openVersionMenu(trigger) {
+      if (!versionMenuPopup || !versionMenuList || !trigger) return;
+      if (activeVersionTrigger === trigger && !versionMenuPopup.hidden) {
+        closeVersionMenu();
+        return;
+      }
+
+      if (activeVersionTrigger && activeVersionTrigger !== trigger) {
+        closeVersionMenu(true);
+      }
+
+      const row = trigger.closest('.pkg-row');
+      const hidden = row?.querySelector('.js-version-select');
+      const versions = JSON.parse(trigger.dataset.versions || '[]');
+      const selectedVersion = hidden?.value || versions[0] || '';
+
+      versionMenuList.innerHTML = versions.map((version, index) => `
+        <button
+          type="button"
+          class="version-menu-item${version === selectedVersion ? ' is-selected' : ''}"
+          style="--item-index:${index};"
+          data-version="${esc(version)}"
+        >${esc(version)}</button>
+      `).join('');
+
+      activeVersionTrigger = trigger;
+      trigger.setAttribute('aria-expanded', 'true');
+      trigger.closest('.version-select-wrap')?.classList.add('is-open');
+      window.clearTimeout(versionMenuCloseTimer);
+      versionMenuPopup.classList.remove('is-closing', 'is-visible');
+      versionMenuPopup.hidden = false;
+      positionVersionMenu(trigger);
+      window.requestAnimationFrame(() => {
+        versionMenuPopup.classList.add('is-visible');
+      });
+    }
+
+    function bindVersionMenus() {
+      document.querySelectorAll('.js-version-trigger').forEach((trigger) => {
+        if (trigger.dataset.bound === 'true') return;
+        trigger.dataset.bound = 'true';
+        trigger.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openVersionMenu(trigger);
+        });
+      });
+    }
+
+    function bindDownloadAnimations() {
+      document.querySelectorAll('.js-download').forEach((link) => {
+        if (link.dataset.bound === 'true') return;
+        link.dataset.bound = 'true';
+        link.addEventListener('click', () => {
+          const row = link.closest('.pkg-row');
+          const select = row?.querySelector('.js-version-select');
+          const selectedVersion = select?.value || link.dataset.latestVersion;
+          pulseButton(link, ACTION_ICONS.launch, 'Opening', {
+            success: true,
+            restoreDelay: 1400
+          });
+          openDownloadModal(link.dataset.packageName, parseVersionMap(link.dataset.versionMap), selectedVersion);
+        });
+      });
+
+      bindMagneticButtons();
+    }
+
+    function bindMagneticButtons() {
+      document.querySelectorAll('.btn').forEach((button) => {
+        if (button.dataset.magneticBound === 'true') return;
+        button.dataset.magneticBound = 'true';
+
+        button.addEventListener('pointermove', (event) => {
+          if (event.pointerType === 'touch') return;
+          const rect = button.getBoundingClientRect();
+          const x = ((event.clientX - rect.left) / rect.width - 0.5) * 3.2;
+          const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2.4;
+          button.style.setProperty('--mx', `${x.toFixed(2)}px`);
+          button.style.setProperty('--my', `${y.toFixed(2)}px`);
+        });
+
+        const reset = () => {
+          button.style.setProperty('--mx', '0px');
+          button.style.setProperty('--my', '0px');
+        };
+
+        button.addEventListener('pointerleave', reset);
+        button.addEventListener('pointerup', reset);
+      });
+    }
+
+    function bindLogoMagnetism() {
+      if (!siteLogo) return;
+
+      let frame = 0;
+
+      const update = () => {
+        frame = 0;
+        const progress = Math.max(0, Math.min(1, window.scrollY / 260));
+        siteLogo.style.setProperty('--logo-scroll-progress', progress.toFixed(3));
+      };
+
+      const requestUpdate = () => {
+        if (frame) return;
+        frame = window.requestAnimationFrame(update);
+      };
+
+      window.addEventListener('scroll', requestUpdate, { passive: true });
+      window.addEventListener('resize', requestUpdate);
+      update();
+    }
+
+    function openDownloadModal(packageName, versionMap, selectedVersion) {
+      activeVersionMap = versionMap;
+      downloadModalPackage.textContent = packageName || 'Package';
+      manualDownloadButton.href = urlForVersion(selectedVersion) || '#';
+      downloadModalBackdrop.classList.add('visible');
+      downloadModalBackdrop.setAttribute('aria-hidden', 'false');
+      bindMagneticButtons();
+      showToast('Creator Companion is recommended');
+    }
+
+    function closeDownloadModal() {
+      downloadModalBackdrop.classList.remove('visible');
+      downloadModalBackdrop.setAttribute('aria-hidden', 'true');
+    }
+
+    function addToVcc(button) {
+      pulseButton(button, ACTION_ICONS.launch, 'Launching', {
+        success: true,
+        restoreDelay: 1600
+      });
+      closeDownloadModal();
+      showToast('Opening VCC…');
+      window.setTimeout(() => {
+        window.location.href = 'vcc://vpm/addRepo?url=' + encodeURIComponent(LISTING);
+      }, 140);
+    }
+
+    function copyUrl(button) {
+      const restoreIcon = ACTION_ICONS.copy;
+      const restoreLabel = 'Copy URL';
+      pulseButton(button, ACTION_ICONS.copy, 'Copying', {
+        restoreIcon,
+        restoreLabel,
+        restoreDelay: 1650
+      });
+
+      const onSuccess = () => {
+        pulseButton(button, ACTION_ICONS.check, 'Copied', {
+          success: true,
+          restoreIcon,
+          restoreLabel,
+          restoreDelay: 1800
+        });
+        showToast('Copied to clipboard');
+      };
+
+      const onFailure = () => {
+        pulseButton(button, ACTION_ICONS.check, 'Copied', {
+          success: true,
+          restoreIcon,
+          restoreLabel,
+          restoreDelay: 1800
+        });
+        showToast('Copied to clipboard');
+      };
+
       const fallback = () => {
         const t = document.createElement('textarea');
         t.value = LISTING; document.body.appendChild(t);
         t.select(); document.execCommand('copy'); t.remove();
       };
+
       (navigator.clipboard?.writeText(LISTING) ?? Promise.reject())
-        .catch(fallback)
-        .finally(() => showToast('Copied to clipboard'));
+        .catch(() => { fallback(); })
+        .then(onSuccess)
+        .catch(onFailure);
     }
 
     /* ── Toast ───────────────────────────────────────────── */
@@ -816,6 +1729,49 @@
       _t = setTimeout(() => el.classList.remove('visible'), 2400);
     }
 
+    downloadModalBackdrop.addEventListener('click', (event) => {
+      if (event.target === downloadModalBackdrop) closeDownloadModal();
+    });
+
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        closeVersionMenu();
+        return;
+      }
+
+      const menuItem = target.closest('.version-menu-item');
+      if (menuItem && activeVersionTrigger) {
+        const version = menuItem.getAttribute('data-version') || '';
+        const row = activeVersionTrigger.closest('.pkg-row');
+        const hidden = row?.querySelector('.js-version-select');
+        if (hidden) hidden.value = version;
+        activeVersionTrigger.textContent = version;
+        activeVersionTrigger.classList.remove('is-updating');
+        void activeVersionTrigger.offsetWidth;
+        activeVersionTrigger.classList.add('is-updating');
+        window.setTimeout(() => {
+          activeVersionTrigger?.classList?.remove('is-updating');
+        }, 260);
+        closeVersionMenu();
+        return;
+      }
+
+      if (target.closest('.version-menu-popup') || target.closest('.js-version-trigger')) return;
+      closeVersionMenu();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeVersionMenu();
+      if (event.key === 'Escape' && downloadModalBackdrop.classList.contains('visible')) {
+        closeDownloadModal();
+      }
+    });
+
+    window.addEventListener('resize', closeVersionMenu);
+
+    bindLogoMagnetism();
+    bindMagneticButtons();
     load();
   </script>
 </body>
