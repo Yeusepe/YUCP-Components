@@ -1,8 +1,4 @@
-# YUCP Components
-
-Advanced VRChat avatar components with VRCFury integration, distributed via VPM.
-
-![YUCP Components](Website/banner.png)
+![YUCP Components](https://github.com/user-attachments/assets/4a5638b3-8460-4b0b-b7fa-b2542517387e)
 
 ## 🚀 Features
 
