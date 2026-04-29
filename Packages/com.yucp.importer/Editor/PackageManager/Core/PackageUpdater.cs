@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using UnityEditor;
 using UnityEngine;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.PackageManager
 {

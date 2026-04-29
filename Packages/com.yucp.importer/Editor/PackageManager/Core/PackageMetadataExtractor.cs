@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Reflection;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEditor;
 
@@ -18,6 +20,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private const string ProtectedPayloadFileName = "YUCP_ProtectedPayload.json";
         private const string ProtectedImportIntentFileName = "YUCP_ProtectedImportIntent.json";
         private const string PackageJsonFileName = "package.json";
+        private const string PackageJsonMetadataFileName = "package.json.yucp";
         private const string PackageJsonAssetPath = "Assets/package.json";
         private const string InstalledPackagesRootAssetPath = "Packages/yucp.installed-packages/";
         private const string InstalledPackagesTempSegment = "/_temp/";
@@ -45,17 +48,35 @@ namespace YUCP.Importer.Editor.PackageManager
         /// </summary>
         public static PackageMetadata ExtractMetadataFromImportItems(System.Array importItems, string packagePath, string packageIconPath = null)
         {
+            PackageJsonImportData packageJsonData = LoadPackageJsonImportData(importItems);
+
             if (importItems == null || importItems.Length == 0)
             {
-                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
+                return CreateFallbackMetadata(packagePath, packageJsonData, packageIconPath, importItems);
             }
 
             // Find metadata item in import items
             object metadataItem = FindMetadataItem(importItems);
             if (metadataItem == null)
             {
-                Debug.Log("[YUCP PackageManager] No YUCP metadata file found in import items. Falling back to package name and Unity icon.");
-                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
+                if (packageJsonData?.packageMetadataJson == null)
+                {
+                    Debug.Log("[YUCP PackageManager] No importer metadata was found in import items. Falling back to package name and Unity icon.");
+                    return CreateFallbackMetadata(packagePath, packageJsonData, packageIconPath, importItems);
+                }
+
+                PackageMetadata aliasMetadata = ParsePackageMetadataJson(
+                    packageJsonData.packageMetadataJson,
+                    importItems,
+                    packagePath,
+                    packageIconPath);
+                if (aliasMetadata != null)
+                {
+                    ApplyPackageJsonData(aliasMetadata, packageJsonData);
+                    return aliasMetadata;
+                }
+
+                return CreateFallbackMetadata(packagePath, packageJsonData, packageIconPath, importItems);
             }
 
             // Read metadata file from extracted package location
@@ -66,7 +87,7 @@ namespace YUCP.Importer.Editor.PackageManager
             if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
             {
                 Debug.LogWarning("[YUCP PackageManager] Source folder or exported path is empty, creating fallback metadata");
-                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
+                return CreateFallbackMetadata(packagePath, packageJsonData, packageIconPath, importItems);
             }
 
             Debug.Log($"[YUCP PackageManager] Reading metadata from import item '{destinationPath ?? exportedPath}'.");
@@ -75,142 +96,18 @@ namespace YUCP.Importer.Editor.PackageManager
             if (string.IsNullOrEmpty(json))
             {
                 Debug.LogWarning("[YUCP PackageManager] Failed to read metadata file, creating fallback metadata");
-                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
+                return CreateFallbackMetadata(packagePath, packageJsonData, packageIconPath, importItems);
             }
 
-
-            try
+            PackageMetadata metadata = ParsePackageMetadataJson(json, importItems, packagePath, packageIconPath);
+            if (metadata == null)
             {
-                // First deserialize to a helper class that has icon/banner as strings
-                var metadataJson = JsonUtility.FromJson<PackageMetadataJson>(json);
-                if (metadataJson == null)
-                {
-                    return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
-                }
-
-                // Convert to PackageMetadata
-                var metadata = new PackageMetadata
-                {
-                    packageName = metadataJson.packageName ?? "",
-                    version = metadataJson.version ?? "",
-                    author = metadataJson.author ?? "",
-                    description = metadataJson.description ?? "",
-                    versionRule = metadataJson.versionRule ?? "semver",
-                    versionRuleName = metadataJson.versionRuleName ?? metadataJson.versionRule ?? "semver"
-                };
-
-                // Convert product links
-                if (metadataJson.productLinks != null)
-                {
-                    foreach (var link in metadataJson.productLinks)
-                    {
-                        var productLink = new ProductLink(link.url ?? "", link.label ?? "");
-                        
-                        // Resolve custom icon if path is provided
-                        if (!string.IsNullOrEmpty(link.icon))
-                        {
-                            productLink.customIcon = ResolveTextureFromPath(link.icon, importItems);
-                            if (productLink.customIcon == null)
-                            {
-                                Debug.LogWarning($"[YUCP PackageManager] Failed to load product link icon from path: {link.icon}");
-                            }
-                        }
-                        
-                        metadata.productLinks.Add(productLink);
-                    }
-                }
-                else
-                {
-                }
-
-                // Resolve icon and banner textures from paths
-                if (!string.IsNullOrEmpty(metadataJson.icon))
-                {
-                    metadata.icon = ResolveTextureFromPath(metadataJson.icon, importItems);
-                    if (metadata.icon == null)
-                    {
-                        Debug.LogWarning($"[YUCP PackageManager] Failed to load icon from path: {metadataJson.icon}");
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(metadataJson.banner))
-                {
-                    metadata.banner = ResolveTextureFromPath(metadataJson.banner, importItems);
-                    if (metadata.banner == null)
-                    {
-                        Debug.LogWarning($"[YUCP PackageManager] Failed to load banner from path: {metadataJson.banner}");
-                    }
-                }
-
-                // Extract dependencies from package.json if available
-                ExtractDependenciesFromPackageJson(metadata, importItems);
-
-                // Propagate license requirements
-                if (metadataJson.licensePackages != null)
-                {
-                    foreach (var lp in metadataJson.licensePackages)
-                    {
-                        if (lp == null || string.IsNullOrEmpty(lp.packageId)) continue;
-                        metadata.licensePackages.Add(new LicensePackageRequirement
-                        {
-                            packageId        = lp.packageId,
-                            packageName      = lp.packageName ?? lp.packageId,
-                            productId        = lp.productId ?? "",
-                            gumroadPermalink = lp.gumroadPermalink ?? "",
-                            jinxxyProductId  = lp.jinxxyProductId ?? "",
-                            discordGuildId   = lp.discordGuildId ?? "",
-                            discordRoleId    = lp.discordRoleId  ?? "",
-                            creatorAuthUserId = lp.creatorAuthUserId ?? "",
-                        });
-                    }
-                }
-
-                // Propagate storefront metadata
-                metadata.tagline = metadataJson.tagline ?? "";
-                metadata.category = metadataJson.category ?? "";
-                metadata.minimumUnityVersion = metadataJson.minimumUnityVersion ?? "";
-                metadata.creatorNote = metadataJson.creatorNote ?? "";
-                metadata.releaseNotes = metadataJson.releaseNotes ?? "";
-                metadata.exportDate = metadataJson.exportDate ?? "";
-                metadata.totalFileCount = metadataJson.totalFileCount;
-                metadata.totalFileSize = metadataJson.totalFileSize;
-
-                if (metadataJson.supportedPlatforms != null)
-                    metadata.supportedPlatforms = new List<string>(metadataJson.supportedPlatforms);
-                if (metadataJson.tags != null)
-                    metadata.tags = new List<string>(metadataJson.tags);
-
-                if (metadataJson.assetBreakdown != null)
-                {
-                    foreach (var ab in metadataJson.assetBreakdown)
-                    {
-                        if (ab != null && !string.IsNullOrEmpty(ab.type))
-                            metadata.assetBreakdown.Add(new AssetBreakdownEntry(ab.type, ab.count));
-                    }
-                }
-
-                // Resolve gallery images from embedded paths
-                if (metadataJson.galleryImages != null)
-                {
-                    foreach (var galleryPath in metadataJson.galleryImages)
-                    {
-                        if (string.IsNullOrEmpty(galleryPath)) continue;
-                        var tex = ResolveTextureFromPath(galleryPath, importItems);
-                        if (tex != null)
-                            metadata.galleryImages.Add(tex);
-                    }
-                }
-
-                metadata.protectedPayload = ExtractProtectedPayloadDescriptor(importItems);
-
-                Debug.Log($"[YUCP PackageManager] Parsed package metadata. packageName='{metadata.packageName}', version='{metadata.version}', iconLoaded={metadata.icon != null}, bannerLoaded={metadata.banner != null}, productLinks={metadata.productLinks.Count}, dependencies={metadata.dependencies.Count}");
-                return metadata;
+                return CreateFallbackMetadata(packagePath, packageJsonData, packageIconPath, importItems);
             }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to parse metadata JSON: {ex.Message}");
-                return CreateFallbackMetadata(packagePath, null, packageIconPath, importItems);
-            }
+
+            ApplyPackageJsonData(metadata, packageJsonData);
+            Debug.Log($"[YUCP PackageManager] Parsed package metadata. packageName='{metadata.packageName}', version='{metadata.version}', iconLoaded={metadata.icon != null}, bannerLoaded={metadata.banner != null}, productLinks={metadata.productLinks.Count}, dependencies={metadata.dependencies.Count}");
+            return metadata;
         }
 
         [Serializable]
@@ -240,6 +137,7 @@ namespace YUCP.Importer.Editor.PackageManager
             public long totalFileSize;
             public List<AssetBreakdownJsonImport> assetBreakdown;
             public string exportDate;
+            public List<FileHashJsonImport> fileHashes;
         }
 
         [Serializable]
@@ -270,9 +168,37 @@ namespace YUCP.Importer.Editor.PackageManager
             public int count;
         }
 
+        [Serializable]
+        private class FileHashJsonImport
+        {
+            public string path;
+            public string hash;
+        }
+
+        internal sealed class PackageJsonImportData
+        {
+            public string packageName;
+            public string displayName;
+            public string version;
+            public string author;
+            public string description;
+            public Dictionary<string, string> dependencies = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public AliasPackageContract aliasPackage;
+            public string packageMetadataJson;
+
+            public void ApplyMetadataJson(string metadataJson)
+            {
+                if (!string.IsNullOrWhiteSpace(metadataJson))
+                {
+                    packageMetadataJson = metadataJson;
+                }
+            }
+        }
+
         private static object FindMetadataItem(System.Array importItems)
         {
-            return FindItemByDestinationPath(importItems, IsMetadataAssetPath);
+            object packageJsonMetadataItem = FindItemByDestinationPath(importItems, IsPackageJsonMetadataAssetPath);
+            return packageJsonMetadataItem ?? FindItemByDestinationPath(importItems, IsMetadataAssetPath);
         }
 
         private static object FindItemByDestinationPath(System.Array importItems, Func<string, bool> predicate)
@@ -335,76 +261,6 @@ namespace YUCP.Importer.Editor.PackageManager
             catch (Exception ex)
             {
                 Debug.LogWarning($"[YUCP PackageManager] Failed to parse protected payload descriptor: {ex.Message}");
-                return null;
-            }
-        }
-
-        internal static ProtectedImportIntentDescriptor ExtractProtectedImportIntentDescriptor(
-            System.Array importItems,
-            IReadOnlyList<string> installedFiles = null)
-        {
-            string installedIntentPath = installedFiles?.FirstOrDefault(path =>
-                IsProtectedImportIntentAssetPath(ProtectedPayloadIntegrityUtility.NormalizeUnityPath(path ?? string.Empty)));
-            if (!string.IsNullOrWhiteSpace(installedIntentPath))
-                return ExtractProtectedImportIntentDescriptorFromAssetPath(installedIntentPath);
-
-            if (importItems == null || importItems.Length == 0)
-                return null;
-
-            object descriptorItem = FindItemByDestinationPath(importItems, IsProtectedImportIntentAssetPath);
-            if (descriptorItem == null)
-                return null;
-
-            string sourceFolder = GetFieldValue<string>(descriptorItem, _sourceFolderField);
-            string exportedPath = GetFieldValue<string>(descriptorItem, _exportedAssetPathField);
-            if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
-                return null;
-
-            string json = ReadMetadataFile(sourceFolder, exportedPath);
-            if (string.IsNullOrEmpty(json))
-                return null;
-
-            return ParseProtectedImportIntentDescriptor(json, null);
-        }
-
-        internal static ProtectedImportIntentDescriptor ExtractProtectedImportIntentDescriptorFromAssetPath(string assetPath)
-        {
-            if (string.IsNullOrWhiteSpace(assetPath))
-                return null;
-
-            string json = LoadTextAssetContents(assetPath);
-            if (string.IsNullOrWhiteSpace(json))
-                return null;
-
-            string shellRootAssetPath = Path.GetDirectoryName(assetPath)?.Replace('\\', '/') ?? string.Empty;
-            return ParseProtectedImportIntentDescriptor(json, shellRootAssetPath);
-        }
-
-        private static ProtectedImportIntentDescriptor ParseProtectedImportIntentDescriptor(string json, string shellRootAssetPath)
-        {
-            try
-            {
-                var descriptor = JsonUtility.FromJson<ProtectedImportIntentDescriptor>(json);
-                if (descriptor == null)
-                    return null;
-
-                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
-                descriptor.packageId ??= "";
-                descriptor.protectedAssetId ??= "";
-                descriptor.protectedPayloadAssetPath =
-                    ProtectedPayloadIntegrityUtility.NormalizeUnityPath(descriptor.protectedPayloadAssetPath ?? "");
-                descriptor.tempInstallAssetPath =
-                    ResolveInstalledAssetPath(descriptor.tempInstallAssetPath, shellRootAssetPath) ??
-                    ProtectedPayloadIntegrityUtility.NormalizeUnityPath(descriptor.tempInstallAssetPath ?? "");
-                descriptor.manifestBindingSha256 ??= "";
-                descriptor.protectedPayloadAssetPath =
-                    ResolveInstalledAssetPath(descriptor.protectedPayloadAssetPath, shellRootAssetPath) ??
-                    descriptor.protectedPayloadAssetPath;
-                return descriptor;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to parse protected import intent descriptor: {ex.Message}");
                 return null;
             }
         }
@@ -674,15 +530,370 @@ namespace YUCP.Importer.Editor.PackageManager
             return default(T);
         }
 
-        internal static PackageMetadata CreateFallbackMetadata(string packagePath, string packageName = null, string packageIconPath = null, System.Array importItems = null)
+        internal static PackageMetadata ParsePackageMetadataJson(
+            string json,
+            System.Array importItems,
+            string packagePath,
+            string packageIconPath)
         {
+            try
+            {
+                var metadataJson = JsonUtility.FromJson<PackageMetadataJson>(json);
+                if (metadataJson == null)
+                {
+                    return null;
+                }
+
+                var metadata = new PackageMetadata
+                {
+                    packageName = metadataJson.packageName ?? "",
+                    version = metadataJson.version ?? "",
+                    author = metadataJson.author ?? "",
+                    description = metadataJson.description ?? "",
+                    versionRule = metadataJson.versionRule ?? "semver",
+                    versionRuleName = metadataJson.versionRuleName ?? metadataJson.versionRule ?? "semver"
+                };
+
+                if (metadataJson.productLinks != null)
+                {
+                    foreach (ProductLinkJson link in metadataJson.productLinks)
+                    {
+                        if (link == null)
+                        {
+                            continue;
+                        }
+
+                        var productLink = new ProductLink(link.url ?? "", link.label ?? "");
+                        if (!string.IsNullOrEmpty(link.icon))
+                        {
+                            productLink.customIcon = ResolveTextureFromPath(link.icon, importItems);
+                            if (productLink.customIcon == null)
+                            {
+                                Debug.LogWarning($"[YUCP PackageManager] Failed to load product link icon from path: {link.icon}");
+                            }
+                        }
+
+                        metadata.productLinks.Add(productLink);
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(metadataJson.icon))
+                {
+                    metadata.icon = ResolveTextureFromPath(metadataJson.icon, importItems);
+                    if (metadata.icon == null)
+                    {
+                        Debug.LogWarning($"[YUCP PackageManager] Failed to load icon from path: {metadataJson.icon}");
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(metadataJson.banner))
+                {
+                    metadata.banner = ResolveTextureFromPath(metadataJson.banner, importItems);
+                    if (metadata.banner == null)
+                    {
+                        Debug.LogWarning($"[YUCP PackageManager] Failed to load banner from path: {metadataJson.banner}");
+                    }
+                }
+
+                if (metadataJson.licensePackages != null)
+                {
+                    foreach (LicensePackageJson lp in metadataJson.licensePackages)
+                    {
+                        if (lp == null || string.IsNullOrEmpty(lp.packageId))
+                        {
+                            continue;
+                        }
+
+                        metadata.licensePackages.Add(new LicensePackageRequirement
+                        {
+                            packageId = lp.packageId,
+                            packageName = lp.packageName ?? lp.packageId,
+                            productId = lp.productId ?? "",
+                            gumroadPermalink = lp.gumroadPermalink ?? "",
+                            jinxxyProductId = lp.jinxxyProductId ?? "",
+                            discordGuildId = lp.discordGuildId ?? "",
+                            discordRoleId = lp.discordRoleId ?? "",
+                            creatorAuthUserId = lp.creatorAuthUserId ?? "",
+                        });
+                    }
+                }
+
+                metadata.tagline = metadataJson.tagline ?? "";
+                metadata.category = metadataJson.category ?? "";
+                metadata.minimumUnityVersion = metadataJson.minimumUnityVersion ?? "";
+                metadata.creatorNote = metadataJson.creatorNote ?? "";
+                metadata.releaseNotes = metadataJson.releaseNotes ?? "";
+                metadata.exportDate = metadataJson.exportDate ?? "";
+                metadata.totalFileCount = metadataJson.totalFileCount;
+                metadata.totalFileSize = metadataJson.totalFileSize;
+
+                if (metadataJson.supportedPlatforms != null)
+                    metadata.supportedPlatforms = new List<string>(metadataJson.supportedPlatforms);
+                if (metadataJson.tags != null)
+                    metadata.tags = new List<string>(metadataJson.tags);
+
+                if (metadataJson.assetBreakdown != null)
+                {
+                    foreach (AssetBreakdownJsonImport ab in metadataJson.assetBreakdown)
+                    {
+                        if (ab != null && !string.IsNullOrEmpty(ab.type))
+                            metadata.assetBreakdown.Add(new AssetBreakdownEntry(ab.type, ab.count));
+                    }
+                }
+
+                if (metadataJson.fileHashes != null)
+                {
+                    foreach (FileHashJsonImport fileHash in metadataJson.fileHashes)
+                    {
+                        if (fileHash == null || string.IsNullOrWhiteSpace(fileHash.path))
+                        {
+                            continue;
+                        }
+
+                        metadata.fileHashes.Add(new PackageFileHashEntry
+                        {
+                            path = fileHash.path ?? string.Empty,
+                            hash = fileHash.hash ?? string.Empty,
+                        });
+                    }
+                }
+
+                if (metadataJson.galleryImages != null)
+                {
+                    foreach (string galleryPath in metadataJson.galleryImages)
+                    {
+                        if (string.IsNullOrEmpty(galleryPath)) continue;
+                        Texture2D tex = ResolveTextureFromPath(galleryPath, importItems);
+                        if (tex != null)
+                            metadata.galleryImages.Add(tex);
+                    }
+                }
+
+                metadata.protectedPayload = ExtractProtectedPayloadDescriptor(importItems);
+                return metadata;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse metadata JSON: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static void ApplyPackageJsonData(PackageMetadata metadata, PackageJsonImportData packageJsonData)
+        {
+            if (metadata == null || packageJsonData == null)
+            {
+                return;
+            }
+
+            if (metadata.dependencies == null)
+            {
+                metadata.dependencies = new Dictionary<string, string>();
+            }
+
+            foreach (KeyValuePair<string, string> dependency in packageJsonData.dependencies)
+            {
+                metadata.dependencies[dependency.Key] = dependency.Value;
+            }
+
+            if (string.IsNullOrWhiteSpace(metadata.author) && !string.IsNullOrWhiteSpace(packageJsonData.author))
+            {
+                metadata.author = packageJsonData.author;
+            }
+
+            if (string.IsNullOrWhiteSpace(metadata.description) && !string.IsNullOrWhiteSpace(packageJsonData.description))
+            {
+                metadata.description = packageJsonData.description;
+            }
+
+            metadata.aliasPackage = packageJsonData.aliasPackage?.Clone();
+        }
+
+        internal static PackageJsonImportData ParsePackageJsonImportData(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            try
+            {
+                JObject packageJson = JObject.Parse(json);
+                var result = new PackageJsonImportData
+                {
+                    packageName = GetString(packageJson, "name"),
+                    displayName = GetString(packageJson, "displayName"),
+                    version = GetString(packageJson, "version"),
+                    description = GetString(packageJson, "description"),
+                    author = ParseAuthor(packageJson["author"]),
+                    dependencies = ParseDependencyMap(packageJson["vpmDependencies"]),
+                };
+
+                JObject yucp = packageJson["yucp"] as JObject;
+                if (yucp != null)
+                {
+                    result.packageMetadataJson = (yucp["packageMetadata"] as JObject)?.ToString(Formatting.None);
+                    result.aliasPackage = ParseAliasPackageContract(packageJson, yucp);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse package.json metadata: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static PackageJsonImportData LoadPackageJsonImportData(System.Array importItems)
+        {
+            if (importItems == null || importItems.Length == 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                object packageJsonItem = FindPackageJsonItem(importItems);
+                if (packageJsonItem == null)
+                {
+                    return null;
+                }
+
+                string sourceFolder = GetFieldValue<string>(packageJsonItem, _sourceFolderField);
+                string exportedPath = GetFieldValue<string>(packageJsonItem, _exportedAssetPathField);
+                if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Source folder or exported path is empty for package.json");
+                    return null;
+                }
+
+                string json = ReadMetadataFile(sourceFolder, exportedPath);
+                PackageJsonImportData packageJsonData = string.IsNullOrWhiteSpace(json) ? null : ParsePackageJsonImportData(json);
+                return MergePackageJsonImportData(packageJsonData, LoadPackageJsonMetadataJson(importItems));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to extract package.json metadata: {ex.Message}");
+                return null;
+            }
+        }
+
+        internal static PackageJsonImportData MergePackageJsonImportData(
+            PackageJsonImportData packageJsonData,
+            string packageMetadataJson)
+        {
+            if (packageJsonData == null)
+            {
+                if (string.IsNullOrWhiteSpace(packageMetadataJson))
+                {
+                    return null;
+                }
+
+                packageJsonData = new PackageJsonImportData();
+            }
+
+            packageJsonData.ApplyMetadataJson(packageMetadataJson);
+            return packageJsonData;
+        }
+
+        internal static PackageMetadata LoadMetadataFromInstalledPackage(string packageId)
+        {
+            if (string.IsNullOrWhiteSpace(packageId))
+            {
+                return null;
+            }
+
+            string packageJsonAssetPath = $"Packages/{packageId.Trim()}/package.json";
+            string packageJson = AssetDatabase.LoadAssetAtPath<TextAsset>(packageJsonAssetPath)?.text;
+            if (string.IsNullOrWhiteSpace(packageJson))
+            {
+                string absolutePath = Path.GetFullPath(
+                    Path.Combine(Path.GetDirectoryName(Application.dataPath) ?? string.Empty,
+                        packageJsonAssetPath.Replace('/', Path.DirectorySeparatorChar)));
+                if (File.Exists(absolutePath))
+                {
+                    packageJson = File.ReadAllText(absolutePath);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(packageJson))
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Could not read installed package.json for '{packageId}'.");
+                return null;
+            }
+
+            PackageJsonImportData packageJsonData = ParsePackageJsonImportData(packageJson);
+            if (packageJsonData == null)
+            {
+                return null;
+            }
+
+            PackageMetadata metadata = null;
+            if (!string.IsNullOrWhiteSpace(packageJsonData.packageMetadataJson))
+            {
+                metadata = ParseInstalledPackageMetadataJson(packageJsonData.packageMetadataJson);
+            }
+
+            metadata ??= CreateFallbackMetadata(packageJsonAssetPath, packageJsonData);
+            ApplyPackageJsonData(metadata, packageJsonData);
+            return metadata;
+        }
+
+        private static string LoadPackageJsonMetadataJson(System.Array importItems)
+        {
+            if (importItems == null || importItems.Length == 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                object metadataItem = FindItemByDestinationPath(importItems, IsPackageJsonMetadataAssetPath);
+                if (metadataItem == null)
+                {
+                    return null;
+                }
+
+                string sourceFolder = GetFieldValue<string>(metadataItem, _sourceFolderField);
+                string exportedPath = GetFieldValue<string>(metadataItem, _exportedAssetPathField);
+                if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
+                {
+                    Debug.LogWarning("[YUCP PackageManager] Source folder or exported path is empty for package.json.yucp");
+                    return null;
+                }
+
+                return ReadMetadataFile(sourceFolder, exportedPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to extract package.json.yucp metadata: {ex.Message}");
+                return null;
+            }
+        }
+
+        internal static PackageMetadata CreateFallbackMetadata(
+            string packagePath,
+            PackageJsonImportData packageJsonData = null,
+            string packageIconPath = null,
+            System.Array importItems = null)
+        {
+            string packageName = packageJsonData?.displayName;
+            if (string.IsNullOrEmpty(packageName))
+            {
+                packageName = packageJsonData?.packageName;
+            }
+
             if (string.IsNullOrEmpty(packageName))
             {
                 packageName = Path.GetFileNameWithoutExtension(packagePath);
             }
-            
+             
             var metadata = new PackageMetadata(packageName);
-            
+            metadata.version = packageJsonData?.version ?? string.Empty;
+            metadata.author = packageJsonData?.author ?? string.Empty;
+            metadata.description = packageJsonData?.description ?? string.Empty;
+             
             // Extract icon from packageIconPath if provided (Unity's standard package icon)
             // packageIconPath is a temporary disk path, not an asset path within the package
             if (!string.IsNullOrEmpty(packageIconPath))
@@ -698,37 +909,24 @@ namespace YUCP.Importer.Editor.PackageManager
                     Debug.LogWarning($"[YUCP PackageManager] Failed to load icon from packageIconPath: {packageIconPath}");
                 }
             }
-            
-            // Extract dependencies from package.json if available (even for fallback metadata)
-            ExtractDependenciesFromPackageJson(metadata, importItems);
-            
+
+            ApplyPackageJsonData(metadata, packageJsonData ?? LoadPackageJsonImportData(importItems));
             return metadata;
         }
 
-        internal static PackageMetadata ExtractMetadataFromInstalledShell(
-            string metadataAssetPath,
-            string tempInstallAssetPath = null,
-            string protectedPayloadAssetPath = null,
-            string fallbackPackageName = null)
+        private static PackageMetadata ParseInstalledPackageMetadataJson(string json)
         {
-            if (string.IsNullOrWhiteSpace(metadataAssetPath))
-                return CreateInstalledShellFallbackMetadata(fallbackPackageName ?? "Protected Package", fallbackPackageName, tempInstallAssetPath, protectedPayloadAssetPath);
-
-            string metadataJsonText = LoadTextAssetContents(metadataAssetPath);
-            if (string.IsNullOrWhiteSpace(metadataJsonText))
-                return CreateInstalledShellFallbackMetadata(metadataAssetPath, fallbackPackageName, tempInstallAssetPath, protectedPayloadAssetPath);
-
-            string shellRootAssetPath = Path.GetDirectoryName(metadataAssetPath)?.Replace('\\', '/') ?? string.Empty;
-
             try
             {
-                var metadataJson = JsonUtility.FromJson<PackageMetadataJson>(metadataJsonText);
+                var metadataJson = JsonUtility.FromJson<PackageMetadataJson>(json);
                 if (metadataJson == null)
-                    return CreateInstalledShellFallbackMetadata(metadataAssetPath, fallbackPackageName, tempInstallAssetPath, protectedPayloadAssetPath);
+                {
+                    return null;
+                }
 
                 var metadata = new PackageMetadata
                 {
-                    packageName = metadataJson.packageName ?? fallbackPackageName ?? string.Empty,
+                    packageName = metadataJson.packageName ?? string.Empty,
                     version = metadataJson.version ?? string.Empty,
                     author = metadataJson.author ?? string.Empty,
                     description = metadataJson.description ?? string.Empty,
@@ -744,28 +942,44 @@ namespace YUCP.Importer.Editor.PackageManager
                     totalFileSize = metadataJson.totalFileSize,
                 };
 
-                if (!string.IsNullOrEmpty(metadataJson.icon))
-                    metadata.icon = LoadInstalledTexture(metadataJson.icon, shellRootAssetPath);
-
-                if (!string.IsNullOrEmpty(metadataJson.banner))
-                    metadata.banner = LoadInstalledTexture(metadataJson.banner, shellRootAssetPath);
-
                 if (metadataJson.productLinks != null)
                 {
-                    foreach (var link in metadataJson.productLinks)
+                    foreach (ProductLinkJson link in metadataJson.productLinks)
                     {
-                        var productLink = new ProductLink(link?.url ?? string.Empty, link?.label ?? string.Empty);
-                        if (!string.IsNullOrEmpty(link?.icon))
-                            productLink.customIcon = LoadInstalledTexture(link.icon, shellRootAssetPath);
+                        if (link == null)
+                        {
+                            continue;
+                        }
+
+                        var productLink = new ProductLink(link.url ?? string.Empty, link.label ?? string.Empty);
+                        if (!string.IsNullOrWhiteSpace(link.icon))
+                        {
+                            productLink.customIcon = ResolveProjectTexture(link.icon);
+                        }
+
                         metadata.productLinks.Add(productLink);
                     }
                 }
 
+                if (!string.IsNullOrWhiteSpace(metadataJson.icon))
+                {
+                    metadata.icon = ResolveProjectTexture(metadataJson.icon);
+                }
+
+                if (!string.IsNullOrWhiteSpace(metadataJson.banner))
+                {
+                    metadata.banner = ResolveProjectTexture(metadataJson.banner);
+                }
+
                 if (metadataJson.licensePackages != null)
                 {
-                    foreach (var lp in metadataJson.licensePackages)
+                    foreach (LicensePackageJson lp in metadataJson.licensePackages)
                     {
-                        if (lp == null || string.IsNullOrEmpty(lp.packageId)) continue;
+                        if (lp == null || string.IsNullOrEmpty(lp.packageId))
+                        {
+                            continue;
+                        }
+
                         metadata.licensePackages.Add(new LicensePackageRequirement
                         {
                             packageId = lp.packageId,
@@ -781,151 +995,92 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
 
                 if (metadataJson.supportedPlatforms != null)
+                {
                     metadata.supportedPlatforms = new List<string>(metadataJson.supportedPlatforms);
+                }
+
                 if (metadataJson.tags != null)
+                {
                     metadata.tags = new List<string>(metadataJson.tags);
+                }
 
                 if (metadataJson.assetBreakdown != null)
                 {
-                    foreach (var ab in metadataJson.assetBreakdown)
+                    foreach (AssetBreakdownJsonImport ab in metadataJson.assetBreakdown)
                     {
                         if (ab != null && !string.IsNullOrEmpty(ab.type))
+                        {
                             metadata.assetBreakdown.Add(new AssetBreakdownEntry(ab.type, ab.count));
+                        }
+                    }
+                }
+
+                if (metadataJson.fileHashes != null)
+                {
+                    foreach (FileHashJsonImport fileHash in metadataJson.fileHashes)
+                    {
+                        if (fileHash == null || string.IsNullOrWhiteSpace(fileHash.path))
+                        {
+                            continue;
+                        }
+
+                        metadata.fileHashes.Add(new PackageFileHashEntry
+                        {
+                            path = fileHash.path ?? string.Empty,
+                            hash = fileHash.hash ?? string.Empty,
+                        });
                     }
                 }
 
                 if (metadataJson.galleryImages != null)
                 {
-                    foreach (var galleryPath in metadataJson.galleryImages)
+                    foreach (string galleryPath in metadataJson.galleryImages)
                     {
-                        if (string.IsNullOrEmpty(galleryPath)) continue;
-                        var tex = LoadInstalledTexture(galleryPath, shellRootAssetPath);
-                        if (tex != null)
-                            metadata.galleryImages.Add(tex);
+                        if (string.IsNullOrWhiteSpace(galleryPath))
+                        {
+                            continue;
+                        }
+
+                        Texture2D texture = ResolveProjectTexture(galleryPath);
+                        if (texture != null)
+                        {
+                            metadata.galleryImages.Add(texture);
+                        }
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(tempInstallAssetPath))
-                {
-                    string packageJsonText = LoadTextAssetContents(tempInstallAssetPath);
-                    if (!string.IsNullOrWhiteSpace(packageJsonText))
-                        ParsePackageJsonDependencies(metadata, packageJsonText);
-                }
-
-                metadata.protectedPayload = ExtractProtectedPayloadDescriptorFromAssetPath(protectedPayloadAssetPath);
                 return metadata;
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to parse installed-shell metadata '{metadataAssetPath}': {ex.Message}");
-                return CreateInstalledShellFallbackMetadata(metadataAssetPath, fallbackPackageName, tempInstallAssetPath, protectedPayloadAssetPath);
-            }
-        }
-
-        private static PackageMetadata CreateInstalledShellFallbackMetadata(
-            string packagePathOrName,
-            string fallbackPackageName,
-            string tempInstallAssetPath,
-            string protectedPayloadAssetPath)
-        {
-            var fallback = CreateFallbackMetadata(packagePathOrName, fallbackPackageName);
-            if (!string.IsNullOrWhiteSpace(tempInstallAssetPath))
-            {
-                string packageJsonText = LoadTextAssetContents(tempInstallAssetPath);
-                if (!string.IsNullOrWhiteSpace(packageJsonText))
-                    ParsePackageJsonDependencies(fallback, packageJsonText);
-            }
-
-            fallback.protectedPayload = ExtractProtectedPayloadDescriptorFromAssetPath(protectedPayloadAssetPath);
-            return fallback;
-        }
-
-        internal static ProtectedPayloadDescriptor ExtractProtectedPayloadDescriptorFromAssetPath(string protectedPayloadAssetPath)
-        {
-            if (string.IsNullOrWhiteSpace(protectedPayloadAssetPath))
-                return null;
-
-            string json = LoadTextAssetContents(protectedPayloadAssetPath);
-            if (string.IsNullOrWhiteSpace(json))
-                return null;
-
-            string shellRootAssetPath = Path.GetDirectoryName(protectedPayloadAssetPath)?.Replace('\\', '/') ?? string.Empty;
-
-            try
-            {
-                var descriptor = JsonUtility.FromJson<ProtectedPayloadDescriptor>(json);
-                if (descriptor == null)
-                    return null;
-
-                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
-                descriptor.protectedAssetId ??= string.Empty;
-                descriptor.blobAssetPath ??= string.Empty;
-                descriptor.cipher ??= string.Empty;
-                descriptor.archiveFormat ??= string.Empty;
-                descriptor.ciphertextSha256 ??= string.Empty;
-                descriptor.plaintextSha256 ??= string.Empty;
-                descriptor.payloadAssetPaths =
-                    ProtectedPayloadIntegrityUtility.NormalizeUnityPaths(descriptor.payloadAssetPaths);
-                descriptor.manifestBindingSha256 = string.IsNullOrWhiteSpace(descriptor.manifestBindingSha256)
-                    ? ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)
-                    : descriptor.manifestBindingSha256;
-                descriptor.blobAssetPath = ResolveInstalledAssetPath(descriptor.blobAssetPath, shellRootAssetPath) ?? descriptor.blobAssetPath;
-                return descriptor;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to parse installed-shell protected payload descriptor '{protectedPayloadAssetPath}': {ex.Message}");
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse installed package metadata JSON: {ex.Message}");
                 return null;
             }
         }
 
-        private static Texture2D LoadInstalledTexture(string textureAssetPath, string shellRootAssetPath)
+        private static Texture2D ResolveProjectTexture(string relativePath)
         {
-            string resolved = ResolveInstalledAssetPath(textureAssetPath, shellRootAssetPath);
-            if (string.IsNullOrWhiteSpace(resolved))
-                return null;
-
-            return AssetDatabase.LoadAssetAtPath<Texture2D>(resolved);
-        }
-
-        private static string ResolveInstalledAssetPath(string assetPath, string shellRootAssetPath)
-        {
-            if (string.IsNullOrWhiteSpace(assetPath))
-                return null;
-
-            string normalized = assetPath.Replace('\\', '/').TrimStart('/');
-            if (normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
-                normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
-            {
-                return normalized;
-            }
-
-            if (string.IsNullOrWhiteSpace(shellRootAssetPath))
-                return normalized;
-
-            return (shellRootAssetPath.TrimEnd('/') + "/" + normalized).Replace('\\', '/');
-        }
-
-        private static string LoadTextAssetContents(string assetPath)
-        {
-            if (string.IsNullOrWhiteSpace(assetPath))
-                return null;
-
-            string normalized = assetPath.Replace('\\', '/');
-            var textAsset = AssetDatabase.LoadAssetAtPath<TextAsset>(normalized);
-            if (textAsset != null)
-                return textAsset.text;
-
-            try
-            {
-                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                string diskPath = Path.Combine(projectRoot, normalized.Replace('/', Path.DirectorySeparatorChar));
-                return File.Exists(diskPath) ? File.ReadAllText(diskPath) : null;
-            }
-            catch
+            if (string.IsNullOrWhiteSpace(relativePath))
             {
                 return null;
             }
+
+            foreach (string candidate in BuildDestinationPathCandidates(relativePath))
+            {
+                Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(candidate);
+                if (texture != null)
+                {
+                    return texture;
+                }
+
+                texture = LoadTextureFromDiskPath(candidate);
+                if (texture != null)
+                {
+                    return texture;
+                }
+            }
+
+            return null;
         }
 
         internal static bool HasTempInstallDescriptor(System.Array importItems)
@@ -950,46 +1105,21 @@ namespace YUCP.Importer.Editor.PackageManager
         /// </summary>
         private static void ExtractDependenciesFromPackageJson(PackageMetadata metadata, System.Array importItems)
         {
-            if (importItems == null || importItems.Length == 0)
+            if (metadata == null)
             {
                 return;
             }
 
-            try
+            PackageJsonImportData packageJsonData = LoadPackageJsonImportData(importItems);
+            if (packageJsonData == null)
             {
-                // Find package.json item in import items
-                object packageJsonItem = FindPackageJsonItem(importItems);
-                if (packageJsonItem == null)
-                {
-                    return;
-                }
-
-                // Read package.json file from extracted package location
-                string sourceFolder = GetFieldValue<string>(packageJsonItem, _sourceFolderField);
-                string exportedPath = GetFieldValue<string>(packageJsonItem, _exportedAssetPathField);
-
-                if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
-                {
-                    Debug.LogWarning("[YUCP PackageManager] Source folder or exported path is empty for package.json");
-                    return;
-                }
-
-                // Read JSON from extracted location
-                string json = ReadMetadataFile(sourceFolder, exportedPath);
-                
-                if (string.IsNullOrEmpty(json))
-                {
-                    Debug.LogWarning("[YUCP PackageManager] Failed to read package.json file");
-                    return;
-                }
-
-
-                // Parse package.json to extract vpmDependencies
-                ParsePackageJsonDependencies(metadata, json);
+                return;
             }
-            catch (Exception ex)
+
+            metadata.dependencies.Clear();
+            foreach (KeyValuePair<string, string> dependency in packageJsonData.dependencies)
             {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to extract dependencies from package.json: {ex.Message}");
+                metadata.dependencies[dependency.Key] = dependency.Value;
             }
         }
 
@@ -1022,6 +1152,11 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
                 if (destinationPath == null) continue;
+
+                if (IsRootPackageJsonPath(destinationPath))
+                {
+                    return item;
+                }
 
                 // Check for exact match (Assets/package.json)
                 if (IsPackageJsonAssetPath(destinationPath))
@@ -1065,19 +1200,6 @@ namespace YUCP.Importer.Editor.PackageManager
                  normalizedPath.EndsWith("/" + MetadataFileName, StringComparison.OrdinalIgnoreCase));
         }
 
-        internal static bool IsProtectedImportIntentAssetPath(string destinationPath)
-        {
-            if (string.IsNullOrEmpty(destinationPath))
-            {
-                return false;
-            }
-
-            string normalizedPath = destinationPath.Replace('\\', '/');
-            return normalizedPath.Equals("Assets/" + ProtectedImportIntentFileName, StringComparison.OrdinalIgnoreCase) ||
-                (normalizedPath.StartsWith(InstalledPackagesRootAssetPath, StringComparison.OrdinalIgnoreCase) &&
-                 normalizedPath.EndsWith("/" + ProtectedImportIntentFileName, StringComparison.OrdinalIgnoreCase));
-        }
-
         internal static bool IsProtectedPayloadAssetPath(string destinationPath)
         {
             if (string.IsNullOrEmpty(destinationPath))
@@ -1103,6 +1225,32 @@ namespace YUCP.Importer.Editor.PackageManager
                 normalizedPath.Equals("Packages/yucp.installed-packages/package.json", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsPackageJsonMetadataAssetPath(string destinationPath)
+        {
+            if (string.IsNullOrEmpty(destinationPath))
+            {
+                return false;
+            }
+
+            string normalizedPath = destinationPath.Replace('\\', '/');
+            return normalizedPath.Equals("Assets/" + PackageJsonMetadataFileName, StringComparison.OrdinalIgnoreCase) ||
+                (normalizedPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase) &&
+                 normalizedPath.EndsWith("/" + PackageJsonMetadataFileName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsRootPackageJsonPath(string destinationPath)
+        {
+            if (string.IsNullOrEmpty(destinationPath))
+            {
+                return false;
+            }
+
+            string normalizedPath = destinationPath.Replace('\\', '/');
+            return normalizedPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase) &&
+                normalizedPath.EndsWith("/package.json", StringComparison.OrdinalIgnoreCase) &&
+                !normalizedPath.Equals("Packages/yucp.installed-packages/package.json", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string[] BuildDestinationPathCandidates(string relativePath)
         {
             string normalizedPath = relativePath.Replace('\\', '/');
@@ -1124,101 +1272,179 @@ namespace YUCP.Importer.Editor.PackageManager
 
         /// <summary>
         /// Parse package.json JSON to extract vpmDependencies.
-        /// Uses simple string parsing since JsonUtility doesn't support Dictionary.
         /// </summary>
         private static void ParsePackageJsonDependencies(PackageMetadata metadata, string json)
         {
-            try
+            if (metadata == null)
             {
-                metadata.dependencies.Clear();
-
-                // Find vpmDependencies section in JSON
-                int vpmDepsIndex = json.IndexOf("\"vpmDependencies\"", StringComparison.OrdinalIgnoreCase);
-                if (vpmDepsIndex < 0)
-                {
-                    return;
-                }
-
-                // Find the opening brace after "vpmDependencies"
-                int startIndex = json.IndexOf('{', vpmDepsIndex);
-                if (startIndex < 0)
-                {
-                    Debug.LogWarning("[YUCP PackageManager] Invalid vpmDependencies format in package.json");
-                    return;
-                }
-
-                // Find the matching closing brace
-                int braceCount = 0;
-                int endIndex = startIndex;
-                for (int i = startIndex; i < json.Length; i++)
-                {
-                    if (json[i] == '{')
-                        braceCount++;
-                    else if (json[i] == '}')
-                    {
-                        braceCount--;
-                        if (braceCount == 0)
-                        {
-                            endIndex = i;
-                            break;
-                        }
-                    }
-                }
-
-                if (endIndex <= startIndex)
-                {
-                    Debug.LogWarning("[YUCP PackageManager] Could not find end of vpmDependencies in package.json");
-                    return;
-                }
-
-                // Extract the vpmDependencies JSON object
-                string vpmDepsJson = json.Substring(startIndex, endIndex - startIndex + 1);
-                
-                // Parse each key-value pair
-                // Format: "packageName": "version"
-                int currentIndex = 1; // Skip opening brace
-                while (currentIndex < vpmDepsJson.Length - 1)
-                {
-                    // Find next quote (start of key)
-                    int keyStart = vpmDepsJson.IndexOf('"', currentIndex);
-                    if (keyStart < 0) break;
-
-                    // Find end of key
-                    int keyEnd = vpmDepsJson.IndexOf('"', keyStart + 1);
-                    if (keyEnd < 0) break;
-
-                    string packageName = vpmDepsJson.Substring(keyStart + 1, keyEnd - keyStart - 1);
-
-                    // Find colon
-                    int colonIndex = vpmDepsJson.IndexOf(':', keyEnd);
-                    if (colonIndex < 0) break;
-
-                    // Find value (quoted string)
-                    int valueStart = vpmDepsJson.IndexOf('"', colonIndex);
-                    if (valueStart < 0) break;
-
-                    int valueEnd = vpmDepsJson.IndexOf('"', valueStart + 1);
-                    if (valueEnd < 0) break;
-
-                    string version = vpmDepsJson.Substring(valueStart + 1, valueEnd - valueStart - 1);
-
-                    // Add dependency
-                    if (!string.IsNullOrEmpty(packageName) && !string.IsNullOrEmpty(version))
-                    {
-                        metadata.dependencies[packageName] = version;
-                    }
-
-                    // Move to next entry (skip comma if present)
-                    currentIndex = valueEnd + 1;
-                    if (currentIndex < vpmDepsJson.Length && vpmDepsJson[currentIndex] == ',')
-                        currentIndex++;
-                }
-
+                return;
             }
-            catch (Exception ex)
+
+            PackageJsonImportData packageJsonData = ParsePackageJsonImportData(json);
+            metadata.dependencies.Clear();
+            if (packageJsonData == null)
             {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to parse package.json dependencies: {ex.Message}\n{ex.StackTrace}");
+                return;
             }
+
+            foreach (KeyValuePair<string, string> dependency in packageJsonData.dependencies)
+            {
+                metadata.dependencies[dependency.Key] = dependency.Value;
+            }
+        }
+
+        private static Dictionary<string, string> ParseDependencyMap(JToken token)
+        {
+            var dependencies = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            JObject dependencyObject = token as JObject;
+            if (dependencyObject == null)
+            {
+                return dependencies;
+            }
+
+            foreach (JProperty property in dependencyObject.Properties())
+            {
+                string name = property.Name?.Trim();
+                string value = property.Value?.Type == JTokenType.Null ? null : property.Value?.ToString();
+                if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                dependencies[name] = value.Trim();
+            }
+
+            return dependencies;
+        }
+
+        private static AliasPackageContract ParseAliasPackageContract(JObject packageJson, JObject yucp)
+        {
+            if (yucp == null)
+            {
+                return null;
+            }
+
+            var contract = new AliasPackageContract
+            {
+                kind = GetString(yucp, "kind") ?? string.Empty,
+                aliasId = GetString(yucp, "aliasId") ?? string.Empty,
+                packageName = GetString(packageJson, "name") ?? string.Empty,
+                packageDisplayName = GetString(packageJson, "displayName") ?? string.Empty,
+                packageVersion = GetString(packageJson, "version") ?? string.Empty,
+                installStrategy = GetString(yucp, "installStrategy") ?? string.Empty,
+                importerPackage = GetString(yucp, "importerPackage") ?? string.Empty,
+                minImporterVersion = GetString(yucp, "minImporterVersion") ?? string.Empty,
+                channel = GetString(yucp, "channel") ?? string.Empty,
+                catalogProductIds = ParseStringList(yucp["catalogProductIds"]),
+                rawContractJson = yucp.ToString(Formatting.None),
+                resolvedRelease = ParseReleaseIdentity(yucp),
+                resolvedArtifact = ParseArtifactIdentity(yucp),
+                installPlan = ParseInstallPlan(yucp),
+            };
+
+            return string.IsNullOrWhiteSpace(contract.aliasId) ? null : contract;
+        }
+
+        private static AliasResolvedReleaseIdentity ParseReleaseIdentity(JObject yucp)
+        {
+            JObject releaseObject = yucp["resolvedRelease"] as JObject ?? yucp["release"] as JObject;
+            return new AliasResolvedReleaseIdentity
+            {
+                releaseId = GetString(releaseObject, "id") ?? GetString(yucp, "releaseId") ?? string.Empty,
+                version = GetString(releaseObject, "version") ?? string.Empty,
+                channel = GetString(releaseObject, "channel") ?? GetString(yucp, "channel") ?? string.Empty,
+                artifactId = GetString(releaseObject, "artifactId") ?? GetString(yucp, "artifactId") ?? string.Empty,
+            };
+        }
+
+        private static AliasResolvedArtifactIdentity ParseArtifactIdentity(JObject yucp)
+        {
+            JObject artifactObject = yucp["resolvedArtifact"] as JObject ?? yucp["artifact"] as JObject;
+            return new AliasResolvedArtifactIdentity
+            {
+                artifactId = GetString(artifactObject, "id") ?? GetString(yucp, "artifactId") ?? string.Empty,
+                version = GetString(artifactObject, "version") ?? string.Empty,
+                sha256 = GetString(artifactObject, "sha256") ?? string.Empty,
+                downloadUrl = GetString(artifactObject, "downloadUrl") ?? string.Empty,
+            };
+        }
+
+        private static AliasInstallPlanMetadata ParseInstallPlan(JObject yucp)
+        {
+            JObject planObject = yucp["installPlan"] as JObject ?? yucp["plan"] as JObject;
+            if (planObject == null)
+            {
+                return new AliasInstallPlanMetadata();
+            }
+
+            return new AliasInstallPlanMetadata
+            {
+                planId = GetString(planObject, "id") ?? string.Empty,
+                planVersion = GetString(planObject, "version") ?? string.Empty,
+                operation = GetString(planObject, "operation") ?? string.Empty,
+                status = GetString(planObject, "status") ?? string.Empty,
+                managedPaths = ParseStringList(planObject["managedPaths"]),
+                generatedPaths = ParseStringList(planObject["generatedPaths"]),
+                sharedPaths = ParseStringList(planObject["sharedPaths"]),
+                rawPlanJson = planObject.ToString(Formatting.None),
+            };
+        }
+
+        private static List<string> ParseStringList(JToken token)
+        {
+            var values = new List<string>();
+            if (!(token is JArray array))
+            {
+                return values;
+            }
+
+            foreach (JToken item in array)
+            {
+                if (item?.Type != JTokenType.String)
+                {
+                    continue;
+                }
+
+                string value = item.Value<string>();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    values.Add(value.Trim());
+                }
+            }
+
+            return values;
+        }
+
+        private static string ParseAuthor(JToken authorToken)
+        {
+            if (authorToken == null || authorToken.Type == JTokenType.Null)
+            {
+                return null;
+            }
+
+            if (authorToken.Type == JTokenType.String)
+            {
+                return authorToken.Value<string>();
+            }
+
+            JObject authorObject = authorToken as JObject;
+            return GetString(authorObject, "name") ?? authorObject?.ToString(Formatting.None);
+        }
+
+        private static string GetString(JObject obj, string propertyName)
+        {
+            if (obj == null || string.IsNullOrWhiteSpace(propertyName))
+            {
+                return null;
+            }
+
+            JToken token = obj[propertyName];
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return null;
+            }
+
+            return token.Type == JTokenType.String ? token.Value<string>() : token.ToString(Formatting.None);
         }
     }
 }

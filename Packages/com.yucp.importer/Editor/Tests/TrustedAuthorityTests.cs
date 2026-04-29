@@ -75,5 +75,28 @@ namespace YUCP.Importer.Editor.Tests
 
             Assert.That(trustedKey, Is.Null);
         }
+
+        [Test]
+        public void ParseAuthorityResponse_AcceptsJwkBase64UrlKeysAndNormalizesToBase64()
+        {
+            const string keyId = TrustedAuthority.PrimaryRootKeyId;
+            string jwkX = TrustedAuthority.PinnedRootPublicKeyBase64
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
+            string json =
+                "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"kid\":\""
+                + keyId
+                + "\",\"x\":\""
+                + jwkX
+                + "\"}]}";
+
+            AuthorityKeyFetcher.FetchResult result = AuthorityKeyFetcher.ParseAuthorityResponse(json);
+
+            Assert.That(result.success, Is.True, result.error);
+            Assert.That(result.keys, Has.Count.EqualTo(1));
+            Assert.That(result.keys[0].keyId, Is.EqualTo(keyId));
+            Assert.That(result.keys[0].publicKey, Is.EqualTo(TrustedAuthority.PinnedRootPublicKeyBase64));
+        }
     }
 }

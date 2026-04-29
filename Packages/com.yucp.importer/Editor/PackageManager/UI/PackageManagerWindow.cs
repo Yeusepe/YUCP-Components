@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
-using UnityEditor.Compilation;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -62,32 +61,6 @@ namespace YUCP.Importer.Editor.PackageManager
                 {
                     window.ShowInstalledPackagesView();
                 }
-            };
-        }
-
-        public static void ShowResumeProtectedPackage(InstalledPackageInfo packageInfo)
-        {
-            if (packageInfo == null)
-                return;
-
-            if (!PackageManagerRuntimeSettings.IsEnabled())
-            {
-                Debug.LogWarning("[YUCP PackageManager] Package Manager is disabled; cannot resume protected package setup.");
-                return;
-            }
-
-            var window = GetWindow<PackageManagerWindow>(true, "Unlock Protected Package");
-            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.importer/Resources/Icons/YUCPIcon.png");
-            window.titleContent = icon == null
-                ? new GUIContent("Unlock Protected Package")
-                : new GUIContent("Unlock Protected Package", icon);
-            window.minSize = new Vector2(500, 600);
-            window.Show();
-
-            EditorApplication.delayCall += () =>
-            {
-                if (window != null)
-                    window.InitializeForProtectedResume(packageInfo);
             };
         }
 
@@ -193,9 +166,6 @@ namespace YUCP.Importer.Editor.PackageManager
         private string _pendingPackageName;
         private bool _pendingImportAfterVerification = false;
         private string _lastHostedVerifiedPackageId;
-        private bool _isResumeVerificationMode = false;
-        private InstalledPackageInfo _resumeProtectedPackageInfo;
-
         // Gallery carousel state
         private int _selectedGalleryIndex = -1;
         private Texture2D _originalBannerTexture;
@@ -963,11 +933,6 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private string GetPrimaryImportButtonText()
         {
-            if (_isResumeVerificationMode)
-            {
-                return RequiresVerificationBeforeImport() ? "Verify and Unlock" : "Unlock protected content";
-            }
-
             bool isMultiStep = _packageImportWizardInstance != null &&
                 PackageUtilityReflection.IsMultiStepWizard(_packageImportWizardInstance);
             bool isProjectStep = _packageImportWizardInstance != null &&
@@ -3188,9 +3153,7 @@ namespace YUCP.Importer.Editor.PackageManager
             if (_pendingImportAfterVerification)
             {
                 _importButton.SetEnabled(false);
-                _importButton.tooltip = _isResumeVerificationMode
-                    ? "Complete purchase verification in your browser to continue unlocking the protected content."
-                    : "Complete purchase verification in your browser to continue importing.";
+                _importButton.tooltip = "Complete purchase verification in your browser to continue importing.";
                 string statusText = _isCreatorIdentitySigningIn
                     ? "Signing in..."
                     : "Waiting for browser verification...";
@@ -3203,18 +3166,9 @@ namespace YUCP.Importer.Editor.PackageManager
 
             SetVerifyStatusLabel(null);
             _importButton.SetEnabled(true);
-            if (_isResumeVerificationMode)
-            {
-                _importButton.tooltip = hasUnverifiedLicense
-                    ? "Verify your purchase and then unlock the protected content in one step."
-                    : "Unlock the protected content for this package on this machine.";
-            }
-            else
-            {
-                _importButton.tooltip = hasUnverifiedLicense
-                    ? "Verify your purchase and then import the package in one step."
-                    : string.Empty;
-            }
+            _importButton.tooltip = hasUnverifiedLicense
+                ? "Verify your purchase and then import the package in one step."
+                : string.Empty;
             RefreshPrimaryImportButton();
         }
 
@@ -3839,30 +3793,6 @@ namespace YUCP.Importer.Editor.PackageManager
             Focus();
         }
 
-        private void InitializeForProtectedResume(InstalledPackageInfo packageInfo)
-        {
-            _isResumeVerificationMode = true;
-            _resumeProtectedPackageInfo = packageInfo;
-            _isImportMode = false;
-            _currentPackagePath = string.Empty;
-            _currentPackageIconPath = string.Empty;
-            _currentImportItems = null;
-            _allImportItems = null;
-            _packageImportWizardInstance = null;
-            _isProjectSettingsStep = false;
-            _pendingImportAfterVerification = false;
-            _pendingPackageName = null;
-            _waitingForImportCompletion = false;
-            _detailsExpanded = false;
-            _preferOverwriteExisting = true;
-
-            ShowInstallerView();
-            SetMetadata(packageInfo);
-            UpdateButtonStates();
-            UpdateImportButtonEnabled();
-            Focus();
-        }
-
         /// <summary>
         /// Fixed version of ShowModalUtility that preserves tooltip and cursor behavior.
         /// Based on Unity's implementation but skips the problematic EventDispatcher context push
@@ -4191,13 +4121,6 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             if (_importButton == null || _backButton == null) return;
 
-            if (_isResumeVerificationMode)
-            {
-                _backButton.style.display = DisplayStyle.None;
-                RefreshPrimaryImportButton();
-                return;
-            }
-
             bool isMultiStep = _packageImportWizardInstance != null && 
                 PackageUtilityReflection.IsMultiStepWizard(_packageImportWizardInstance);
             bool isProjectStep = _packageImportWizardInstance != null && 
@@ -4437,30 +4360,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 try
                 {
                     // Register package in registry (also moves assets into installed-packages container)
-                    bool refreshAssetsAfterUnlock;
-                    InstalledPackageInfo pendingProtectedApplyPackageInfo;
-                    string protectedApplyLogMessage;
-                    bool requestCompilationAfterUnlock = RegisterPackageAfterImport(
-                        out refreshAssetsAfterUnlock,
-                        out pendingProtectedApplyPackageInfo,
-                        out protectedApplyLogMessage);
-
-                    if (pendingProtectedApplyPackageInfo != null)
-                    {
-                        ProtectedPayloadInstallService.QueuePendingApply(pendingProtectedApplyPackageInfo);
-                        Debug.Log(protectedApplyLogMessage);
-                        pendingProtectedApplyPackageInfo = null;
-                        protectedApplyLogMessage = null;
-                    }
-
-                    if (requestCompilationAfterUnlock)
-                    {
-                        // Critical: many installs trigger an immediate domain reload right after we unlock reload assemblies.
-                        // Any delayCall/update callbacks can be wiped. Persist a "pending resolve" so we can finish enabling
-                        // *.yucp_disabled files after the reload.
-                        Debug.Log("[YUCP PackageManager] Marking pending .yucp_disabled resolve (pre-unlock)...");
-                        YucpDisabledFileResolver.SetPendingResolve(timeoutSeconds: 60.0);
-                    }
+                    RegisterPackageAfterImport();
 
                     // Unlock assembly reload (import is complete)
                     if (_isImportMode)
@@ -4470,31 +4370,6 @@ namespace YUCP.Importer.Editor.PackageManager
                         Debug.Log("[YUCP PackageManager] Unlocked assembly reload (import complete)");
                     }
 
-                    if (requestCompilationAfterUnlock || refreshAssetsAfterUnlock)
-                    {
-                        EditorApplication.delayCall += () =>
-                        {
-                            try
-                            {
-                                if (requestCompilationAfterUnlock)
-                                {
-                                    Debug.Log("[YUCP PackageManager] Post-import: forcing AssetDatabase.Refresh + requesting script compilation...");
-                                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-                                    // Request compilation; if this triggers a domain reload, the pending resolver will resume.
-                                    CompilationPipeline.RequestScriptCompilation();
-                                }
-                                else
-                                {
-                                    Debug.Log("[YUCP PackageManager] Post-import: refreshing AssetDatabase after direct protected apply cleanup.");
-                                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-                                }
-                            }
-                            catch (Exception refreshEx)
-                            {
-                                Debug.LogWarning($"[YUCP PackageManager] Post-import refresh/compile request failed: {refreshEx.Message}");
-                            }
-                        };
-                    }
                     // Close the import window after successful import
                     try
                     {
@@ -4517,12 +4392,6 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             try
             {
-                if (_isResumeVerificationMode)
-                {
-                    HandleResumeProtectedImportClick();
-                    return;
-                }
-
                 if (_currentImportItems == null || _currentImportItems.Length == 0)
                 {
                     Debug.LogWarning("[YUCP PackageManager] No import items, closing window");
@@ -4596,6 +4465,73 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 _pendingImportAfterVerification = false;
 
+                PackageMetadata installMetadata = _currentMetadata ?? _cachedMetadata;
+                if (AliasInstallPlanConfirmationService.RequiresInstallConfirmation(installMetadata) &&
+                    !AliasInstallPlanConfirmationService.ConfirmInstall(installMetadata))
+                {
+                    return;
+                }
+
+                if (installMetadata?.aliasPackage != null &&
+                    string.Equals(installMetadata.aliasPackage.kind, "alias-v1", StringComparison.OrdinalIgnoreCase))
+                {
+                    string serverUrl = GetLicenseServerUrl();
+                    if (string.IsNullOrWhiteSpace(serverUrl))
+                    {
+                        EditorUtility.DisplayDialog(
+                            "Install Package",
+                            "The verification server URL is not configured. Please check the YUCP Package Manager settings.",
+                            "OK");
+                        return;
+                    }
+
+                    try
+                    {
+                        EditorUtility.DisplayProgressBar(
+                            "Resolving Alias Install",
+                            $"Fetching the authorized install plan for '{installMetadata.packageName}'...",
+                            0.35f);
+
+                        bool resolved = UpdateDeliveryService.TryResolveAuthorizedInstallPlan(
+                            serverUrl,
+                            installMetadata.aliasPackage,
+                            out UpdateDeliveryService.AliasInstallPlan installPlan,
+                            out string resolveError);
+                        if (!resolved)
+                        {
+                            EditorUtility.DisplayDialog(
+                                "Install Package",
+                                string.IsNullOrWhiteSpace(resolveError)
+                                    ? "Could not resolve the alias install plan."
+                                    : resolveError,
+                                "OK");
+                            return;
+                        }
+
+                        EditorUtility.DisplayProgressBar(
+                            "Applying Alias Install",
+                            $"Installing '{installMetadata.packageName}' through the VPM resolver...",
+                            0.7f);
+                        if (!UpdateDeliveryService.TryApplyAuthorizedInstallPlan(installPlan, out string applyError))
+                        {
+                            EditorUtility.DisplayDialog(
+                                "Install Package",
+                                string.IsNullOrWhiteSpace(applyError)
+                                    ? "Could not apply the alias install plan."
+                                    : applyError,
+                                "OK");
+                            return;
+                        }
+
+                        CompleteAliasInstallFlow(installMetadata.packageName);
+                        return;
+                    }
+                    finally
+                    {
+                        EditorUtility.ClearProgressBar();
+                    }
+                }
+
                 if (isMultiStep && !isProjectStep)
                 {
                     // Not final step - call DoNextStep
@@ -4638,92 +4574,10 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
-        private void HandleResumeProtectedImportClick()
-        {
-            if (_resumeProtectedPackageInfo == null)
-            {
-                EditorUtility.DisplayDialog(
-                    "Protected Package Unavailable",
-                    "The protected package could not be resumed because its installer metadata is missing.",
-                    "OK");
-                return;
-            }
-
-            bool requiresVerification = RequiresVerificationBeforeImport();
-            Debug.Log($"[YUCP PackageManager] ResumeProtectedImport requiresVerification={requiresVerification}, isSignedIn={CreatorIdentityOAuthService.IsSignedIn()}, pendingAfterVerification={_pendingImportAfterVerification}, signingIn={_isCreatorIdentitySigningIn}");
-            if (requiresVerification)
-            {
-                var req = GetNextUnverifiedLicenseRequirement();
-                if (req == null)
-                {
-                    EditorUtility.DisplayDialog(
-                        "Verification Unavailable",
-                        "This package requires verification before unlocking, but no hosted verification method is available.",
-                        "OK");
-                    return;
-                }
-
-                var verificationRequirements = BuildVerificationRequirements(req);
-                if (verificationRequirements.Length == 0)
-                {
-                    EditorUtility.DisplayDialog(
-                        "Verification Unavailable",
-                        "This package requires verification before unlocking, but it does not currently expose any hosted verification methods.",
-                        "OK");
-                    return;
-                }
-
-                if (_isCreatorIdentitySigningIn)
-                {
-                    Debug.Log("[YUCP PackageManager] Resetting stale _isCreatorIdentitySigningIn flag before retry");
-                    _isCreatorIdentitySigningIn = false;
-                }
-
-                _pendingImportAfterVerification = true;
-                if (!_licenseStates.TryGetValue(req.packageId, out var state) || state == null)
-                {
-                    state = new LicenseVerificationState();
-                    _licenseStates[req.packageId] = state;
-                }
-
-                OnVerifyInBrowserClicked(req, state, _importButton, verificationRequirements);
-                return;
-            }
-
-            _pendingImportAfterVerification = false;
-            ProtectedPayloadInstallService.QueuePendingApply(_resumeProtectedPackageInfo);
-            Close();
-        }
-
         private void OnCancelClicked()
         {
             try
             {
-                if (_isResumeVerificationMode && _resumeProtectedPackageInfo != null)
-                {
-                    Debug.Log($"[YUCP PackageManager] Cancelling protected package setup for package: {_resumeProtectedPackageInfo.packageName}");
-                    if (!TryCleanupCancelledProtectedResume(_resumeProtectedPackageInfo, out string cleanupError))
-                    {
-                        Debug.LogError($"[YUCP PackageManager] Failed to clean up cancelled protected package setup: {cleanupError}");
-                        EditorUtility.DisplayDialog(
-                            "Cleanup Incomplete",
-                            "The protected package setup was cancelled, but the importer could not fully clean up the staged files.\n\n"
-                            + cleanupError,
-                            "OK");
-                    }
-
-                    try
-                    {
-                        Close();
-                        GUIUtility.ExitGUI();
-                    }
-                    catch (ExitGUIException)
-                    {
-                        // Expected
-                    }
-                    return;
-                }
-
                 if (_currentImportItems == null || _currentImportItems.Length == 0)
                 {
                     Debug.LogWarning("[YUCP PackageManager] No import items, closing window");
@@ -4792,22 +4646,6 @@ namespace YUCP.Importer.Editor.PackageManager
                     // Expected
                 }
             }
-        }
-
-        private static bool TryCleanupCancelledProtectedResume(InstalledPackageInfo packageInfo, out string error)
-        {
-            error = null;
-            if (packageInfo == null)
-                return true;
-
-            ProtectedPayloadInstallService.CancelPendingApply(packageInfo.packageId);
-
-            if (!ImportedAssetRollbackService.TryRollbackPackage(packageInfo, out error))
-                return false;
-
-            var registry = InstalledPackageRegistry.Load() ?? InstalledPackageRegistry.GetOrCreate();
-            registry?.UnregisterPackage(packageInfo.packageId);
-            return true;
         }
 
         private void UpdateImportItemSelections()
@@ -4962,10 +4800,128 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void OnUpdatePackage(InstalledPackageInfo packageInfo)
         {
-            // TODO: Implement update functionality
-            EditorUtility.DisplayDialog("Update Package", 
-                $"Update functionality for '{packageInfo.packageName}' will be implemented soon.", 
+            if (packageInfo?.aliasPackage != null &&
+                string.Equals(packageInfo.aliasPackage.kind, "alias-v1", StringComparison.OrdinalIgnoreCase))
+            {
+                string serverUrl = GetLicenseServerUrl();
+                if (string.IsNullOrWhiteSpace(serverUrl))
+                {
+                    EditorUtility.DisplayDialog(
+                        "Update Package",
+                        "The verification server URL is not configured. Please check the YUCP Package Manager settings.",
+                        "OK");
+                    return;
+                }
+
+                try
+                {
+                    string packageLabel = !string.IsNullOrWhiteSpace(packageInfo.packageName)
+                        ? packageInfo.packageName
+                        : packageInfo.packageId;
+                    EditorUtility.DisplayProgressBar(
+                        "Resolving Alias Update",
+                        $"Fetching the authorized install plan for '{packageLabel}'...",
+                        0.35f);
+
+                    bool resolved = UpdateDeliveryService.TryResolveAuthorizedInstallPlanForPackage(
+                        serverUrl,
+                        packageInfo.packageId,
+                        out UpdateDeliveryService.AliasInstallPlan installPlan,
+                        out string error);
+                    if (!resolved)
+                    {
+                        EditorUtility.DisplayDialog(
+                            "Update Package",
+                            string.IsNullOrWhiteSpace(error)
+                                ? "Could not resolve the alias update plan."
+                                : error,
+                            "OK");
+                        return;
+                    }
+
+                    if (!AliasInstallPlanConfirmationService.ConfirmUpdate(packageInfo, installPlan))
+                    {
+                        return;
+                    }
+
+                    EditorUtility.DisplayProgressBar(
+                        "Applying Alias Update",
+                        $"Updating '{packageLabel}' through the VPM resolver...",
+                        0.7f);
+                    if (!UpdateDeliveryService.TryApplyAuthorizedInstallPlan(installPlan, out string applyError))
+                    {
+                        EditorUtility.DisplayDialog(
+                            "Update Package",
+                            string.IsNullOrWhiteSpace(applyError)
+                                ? "Could not apply the alias update plan."
+                                : applyError,
+                            "OK");
+                        return;
+                    }
+
+                    RefreshInstalledPackageViews(packageInfo.packageId);
+                    EditorUtility.DisplayDialog(
+                        "Update Package",
+                        $"Updated '{packageLabel}' through the authorized alias delivery flow.",
+                        "OK");
+                    return;
+                }
+                finally
+                {
+                    EditorUtility.ClearProgressBar();
+                }
+            }
+
+            EditorUtility.DisplayDialog(
+                "Update Package",
+                $"Update functionality for '{packageInfo.packageName}' is not available in this importer flow yet.",
                 "OK");
+        }
+
+        private void CompleteAliasInstallFlow(string packageName)
+        {
+            _waitingForImportCompletion = false;
+            _pendingImportAfterVerification = false;
+            _pendingPackageName = string.Empty;
+
+            if (_isImportMode)
+            {
+                EditorApplication.UnlockReloadAssemblies();
+                _isImportMode = false;
+                Debug.Log("[YUCP PackageManager] Unlocked assembly reload (alias install complete)");
+            }
+
+            Debug.Log($"[YUCP PackageManager] Installed alias package '{packageName}' through the VPM resolver.");
+
+            try
+            {
+                Close();
+                GUIUtility.ExitGUI();
+            }
+            catch (ExitGUIException)
+            {
+                // Expected when closing the import window.
+            }
+        }
+
+        private void RefreshInstalledPackageViews(string packageId)
+        {
+            InstalledPackageRegistry registry = InstalledPackageRegistry.Load();
+            InstalledPackageInfo refreshedPackage = registry?.GetPackage(packageId);
+
+            if (_currentViewMode == ViewMode.PackageDetails && refreshedPackage != null)
+            {
+                ShowPackageDetailsView(refreshedPackage);
+                return;
+            }
+
+            if (_installedPackagesView != null)
+            {
+                _installedPackagesView.RefreshPackages();
+                return;
+            }
+
+            ShowInstalledPackagesView();
         }
 
         private void OnUninstallPackage(InstalledPackageInfo packageInfo)
@@ -4984,16 +4940,8 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
-        private bool RegisterPackageAfterImport(
-            out bool refreshAssetsAfterUnlock,
-            out InstalledPackageInfo pendingProtectedApplyPackageInfo,
-            out string protectedApplyLogMessage)
+        private bool RegisterPackageAfterImport()
         {
-            refreshAssetsAfterUnlock = false;
-            pendingProtectedApplyPackageInfo = null;
-            protectedApplyLogMessage = null;
-            ProtectedImportFastPath.PreparedDirectApplyState preparedDirectApplyState = null;
-
             try
             {
                 if (string.IsNullOrEmpty(_currentPackagePath))
@@ -5052,6 +5000,12 @@ namespace YUCP.Importer.Editor.PackageManager
                     {
                         packageId = hostedVerifiedPackageId;
                         Debug.Log($"[YUCP PackageManager] Falling back to hosted verified packageId during registration. packageId='{packageId}'");
+                    }
+
+                    if (string.IsNullOrEmpty(packageId) && !string.IsNullOrWhiteSpace(metadata?.aliasPackage?.aliasId))
+                    {
+                        packageId = metadata.aliasPackage.aliasId.Trim();
+                        Debug.Log($"[YUCP PackageManager] Falling back to alias contract packageId during registration. packageId='{packageId}'");
                     }
 
                     // Check verification
@@ -5133,224 +5087,42 @@ namespace YUCP.Importer.Editor.PackageManager
                     return false;
                 }
 
-                if (installedInfo.protectedPayload != null &&
-                    !ProtectedImportStateTracker.TryAdvance(
-                        installedInfo,
-                        ProtectedImportStateTracker.ProtectedImportPhase.shell_imported,
-                        out string protectedImportStateError))
+                if (installedInfo.protectedPayload != null)
                 {
-                    Debug.LogError($"[YUCP PackageManager] {protectedImportStateError}");
-                    EditorUtility.DisplayDialog(
-                        "Import Failed",
-                        protectedImportStateError,
-                        "OK");
-                    return false;
-                }
-
-                ProtectedImportIntentDescriptor protectedImportIntent =
-                    PackageMetadataExtractor.ExtractProtectedImportIntentDescriptor(
-                        _allImportItems ?? _currentImportItems,
-                        installedFiles);
-                bool hasProtectedImportIntent = protectedImportIntent != null;
-                if (hasProtectedImportIntent)
-                {
-                    Debug.Log("[YUCP PackageManager] Protected import intent detected. Evaluating whether the importer can complete the protected handoff directly or whether the generated installer flow is still required.");
-                }
-
-                if (!TryValidateProtectedImportIntent(installedInfo, protectedImportIntent, installedFiles, out string protectedImportIntentError))
-                {
-                    Debug.LogError($"[YUCP PackageManager] {protectedImportIntentError}");
-                    EditorUtility.DisplayDialog(
-                        "Import Failed",
-                        protectedImportIntentError,
-                        "OK");
-                    return false;
-                }
-
-                if (installedInfo.protectedPayload != null &&
-                    !ProtectedInstallIntentService.TryAuthorizeInstall(
-                        installedInfo.packageId,
-                        installedInfo.protectedPayload.protectedAssetId,
-                        installedInfo.protectedPayload.manifestBindingSha256,
-                        out string protectedInstallIntentError))
-                {
-                    Debug.LogError($"[YUCP PackageManager] {protectedInstallIntentError}");
-                    EditorUtility.DisplayDialog(
-                        "Import Failed",
-                        protectedInstallIntentError,
-                        "OK");
-                    return false;
-                }
-
-                if (installedInfo.protectedPayload != null &&
-                    !ProtectedImportStateTracker.TryAdvance(
-                        installedInfo,
-                        ProtectedImportStateTracker.ProtectedImportPhase.intent_verified,
-                        out string protectedImportStateIntentError))
-                {
-                    Debug.LogError($"[YUCP PackageManager] {protectedImportStateIntentError}");
-                    EditorUtility.DisplayDialog(
-                        "Import Failed",
-                        protectedImportStateIntentError,
-                        "OK");
-                    return false;
-                }
-
-                if (CouplingImportGuard.ShouldApplyDuringShellImport(installedInfo) &&
-                    !CouplingImportGuard.TryApplyCouplingOrRollback(installedInfo, out string couplingError))
-                {
-                    Debug.LogError("[YUCP PackageManager] A required package protection step failed and the import was rolled back.");
-                    EditorUtility.DisplayDialog(
-                        "Import Failed",
-                        couplingError,
-                        "OK");
-                    return false;
-                }
-
-                bool requestCompilationAfterUnlock = false;
-                bool usedProtectedFastPath = false;
-                bool usePrecompiledInstallerRuntimeHandoff = false;
-                string fastPathMessage = null;
-                if (hasProtectedImportIntent)
-                {
-                    if (installedInfo.protectedPayload != null &&
-                        ProtectedImportFastPath.TryPrepareForDirectApply(
-                            installedInfo,
-                            out preparedDirectApplyState,
-                            out refreshAssetsAfterUnlock,
-                            out fastPathMessage))
+                    if (!ImportedAssetRollbackService.TryRollbackImportedAssets(installedFiles, out string rollbackError))
                     {
-                        usedProtectedFastPath = true;
-                        Debug.Log($"[YUCP PackageManager] Protected import fast path active for '{installedInfo.packageName}'. {fastPathMessage}");
+                        Debug.LogError($"[YUCP PackageManager] Rejected legacy protected-shell import but rollback failed: {rollbackError}");
                     }
-                    else
-                    {
-                        if (!string.IsNullOrWhiteSpace(fastPathMessage))
-                        {
-                            Debug.Log($"[YUCP PackageManager] Protected import fast path not used for '{installedInfo.packageName}': {fastPathMessage}");
-                        }
 
-                        bool hasPrecompiledInstallerRuntime =
-                            ImportItemsContainPrecompiledInstallerPayload(_allImportItems ?? _currentImportItems);
-                        bool hasInstallerPayload =
-                            hasPrecompiledInstallerRuntime ||
-                            ImportItemsContainInstallerPayload(_allImportItems ?? _currentImportItems);
+                    const string legacyProtectedShellError =
+                        "This package was published with the legacy protected-shell import flow, which the importer no longer supports. Re-export and republish it through the server-first delivery pipeline.";
+                    Debug.LogError($"[YUCP PackageManager] {legacyProtectedShellError}");
+                    EditorUtility.DisplayDialog("Import Failed", legacyProtectedShellError, "OK");
+                    return false;
+                }
 
-                        usePrecompiledInstallerRuntimeHandoff = hasPrecompiledInstallerRuntime;
-                        refreshAssetsAfterUnlock = refreshAssetsAfterUnlock || usePrecompiledInstallerRuntimeHandoff;
-                        requestCompilationAfterUnlock =
-                            !usePrecompiledInstallerRuntimeHandoff &&
-                            (HasDirectVpmInstallerLoaded() || hasInstallerPayload);
-                        if (!requestCompilationAfterUnlock && !usePrecompiledInstallerRuntimeHandoff)
-                        {
-                            Debug.LogError("[YUCP PackageManager] Temp-install descriptor detected, but the imported package did not include a DirectVpmInstaller payload. The Unity import completed, but derived-content/VPM installation cannot run.");
-                        }
-                    }
+                if (AliasPackageInstallStateStore.TryPersist(installedInfo, out string installStateManifestPath, out string installStateError))
+                {
+                    installedInfo.installStateManifestPath = installStateManifestPath ?? string.Empty;
+                }
+                else if (!string.IsNullOrWhiteSpace(installStateError))
+                {
+                    Debug.LogWarning($"[YUCP PackageManager] Failed to persist alias install-state manifest for '{installedInfo.packageId}': {installStateError}");
                 }
 
                 // Register in registry
                 var registry = InstalledPackageRegistry.GetOrCreate();
                 registry.RegisterPackage(installedInfo);
-                if (preparedDirectApplyState != null)
-                {
-                    ProtectedImportFastPath.CommitPreparedDirectApply(preparedDirectApplyState);
-                    preparedDirectApplyState = null;
-                }
 
                 Debug.Log($"[YUCP PackageManager] Registered package: {installedInfo.packageName} (ID: {packageId}, verified={installedInfo.isVerified}, installedFiles={installedInfo.installedFiles?.Count ?? 0})");
-
-                if (hasProtectedImportIntent && installedInfo.protectedPayload != null)
-                {
-                    if (usedProtectedFastPath || requestCompilationAfterUnlock || usePrecompiledInstallerRuntimeHandoff)
-                    {
-                        pendingProtectedApplyPackageInfo = installedInfo;
-                        protectedApplyLogMessage = usedProtectedFastPath
-                            ? $"[YUCP PackageManager] Queued protected payload apply for '{installedInfo.packageName}' via the direct importer fast path."
-                            : usePrecompiledInstallerRuntimeHandoff
-                                ? $"[YUCP PackageManager] Queued protected payload apply for '{installedInfo.packageName}'. Waiting for the precompiled installer runtime handoff to complete."
-                                : $"[YUCP PackageManager] Queued protected payload apply for '{installedInfo.packageName}'. Waiting for installer/domain reload handoff to complete.";
-                    }
-                }
-
-                return requestCompilationAfterUnlock;
+                return true;
             }
             catch (Exception ex)
             {
-                ProtectedImportFastPath.RollbackPreparedDirectApply(preparedDirectApplyState);
                 Debug.LogError($"[YUCP PackageManager] Failed to register package after import: {ex.Message}");
                 Debug.LogException(ex);
-                refreshAssetsAfterUnlock = false;
-                pendingProtectedApplyPackageInfo = null;
-                protectedApplyLogMessage = null;
                 return false;
             }
-        }
-
-        private static bool TryValidateProtectedImportIntent(
-            InstalledPackageInfo installedInfo,
-            ProtectedImportIntentDescriptor intent,
-            IReadOnlyList<string> installedFiles,
-            out string error)
-        {
-            error = null;
-            bool hasProtectedPayload = installedInfo?.protectedPayload != null;
-
-            if (!hasProtectedPayload)
-            {
-                if (intent != null && intent.requiresProtectedPayload)
-                {
-                    error = "The package included a protected import intent, but no protected payload descriptor was present.";
-                    return false;
-                }
-
-                return true;
-            }
-
-            if (intent == null)
-            {
-                error = "The package includes protected content, but no signed protected import intent was present. The import was blocked before artifact materialization could be skipped silently.";
-                return false;
-            }
-
-            if (!string.IsNullOrWhiteSpace(intent.packageId) &&
-                !string.Equals(intent.packageId, installedInfo.packageId, StringComparison.Ordinal))
-            {
-                error = "The protected import intent did not match the signed package identity.";
-                return false;
-            }
-
-            if (!string.Equals(intent.protectedAssetId ?? string.Empty, installedInfo.protectedPayload.protectedAssetId ?? string.Empty, StringComparison.Ordinal))
-            {
-                error = "The protected import intent did not match the protected payload descriptor.";
-                return false;
-            }
-
-            if (!string.Equals(
-                    intent.manifestBindingSha256 ?? string.Empty,
-                    installedInfo.protectedPayload.manifestBindingSha256 ?? string.Empty,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                error = "The protected import intent did not match the manifest-bound protected payload descriptor.";
-                return false;
-            }
-
-            string normalizedIntentPayloadPath = NormalizeImportPath(intent.protectedPayloadAssetPath);
-            if (string.IsNullOrWhiteSpace(normalizedIntentPayloadPath) ||
-                !installedFiles.Any(path => string.Equals(NormalizeImportPath(path), normalizedIntentPayloadPath, StringComparison.OrdinalIgnoreCase)))
-            {
-                error = "The protected import intent referenced a protected payload file that was not installed.";
-                return false;
-            }
-
-            string normalizedTempInstallPath = NormalizeImportPath(intent.tempInstallAssetPath);
-            if (string.IsNullOrWhiteSpace(normalizedTempInstallPath) ||
-                !installedFiles.Any(path => string.Equals(NormalizeImportPath(path), normalizedTempInstallPath, StringComparison.OrdinalIgnoreCase)))
-            {
-                error = "The protected import intent referenced a temp-install descriptor that was not installed.";
-                return false;
-            }
-
-            return true;
         }
     }
 }

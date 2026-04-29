@@ -32,8 +32,10 @@ namespace YUCP.Importer.Editor.PackageManager
         public long totalFileSize = 0;
         public List<AssetBreakdownEntry> assetBreakdown = new List<AssetBreakdownEntry>();
         public string exportDate = "";
+        public List<PackageFileHashEntry> fileHashes = new List<PackageFileHashEntry>();
 
         public ProtectedPayloadDescriptor protectedPayload;
+        public AliasPackageContract aliasPackage;
 
         public PackageMetadata()
         {
@@ -96,6 +98,13 @@ namespace YUCP.Importer.Editor.PackageManager
             this.type = type ?? "";
             this.count = count;
         }
+    }
+
+    [Serializable]
+    public class PackageFileHashEntry
+    {
+        public string path = "";
+        public string hash = "";
     }
 
 }

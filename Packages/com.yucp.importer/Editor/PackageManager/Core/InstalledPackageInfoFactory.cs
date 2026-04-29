@@ -49,7 +49,9 @@ namespace YUCP.Importer.Editor.PackageManager
                 totalFileSize = metadata.totalFileSize,
                 assetBreakdown = CloneAssetBreakdown(metadata.assetBreakdown),
                 exportDate = metadata.exportDate ?? string.Empty,
+                fileHashes = CloneFileHashes(metadata.fileHashes),
                 protectedPayload = metadata.protectedPayload?.Clone(),
+                aliasPackage = metadata.aliasPackage?.Clone(),
                 packageId = packageId ?? string.Empty,
                 archiveSha256 = archiveSha256 ?? string.Empty,
                 installedVersion = metadata.version ?? string.Empty,
@@ -100,6 +102,18 @@ namespace YUCP.Importer.Editor.PackageManager
                 return new List<AssetBreakdownEntry>();
 
             return entries.Select(entry => new AssetBreakdownEntry(entry?.type ?? string.Empty, entry?.count ?? 0)).ToList();
+        }
+
+        private static List<PackageFileHashEntry> CloneFileHashes(List<PackageFileHashEntry> entries)
+        {
+            if (entries == null || entries.Count == 0)
+                return new List<PackageFileHashEntry>();
+
+            return entries.Select(entry => new PackageFileHashEntry
+            {
+                path = entry?.path ?? string.Empty,
+                hash = entry?.hash ?? string.Empty,
+            }).ToList();
         }
     }
 }

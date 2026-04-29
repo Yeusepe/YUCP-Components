@@ -65,7 +65,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static readonly OAuthDomainConfig Domain = new OAuthDomainConfig(
             clientId: "yucp-unity-user",
-            requestedScopes: new[] { "verification:read" },
+            requestedScopes: new[] { "verification:read", "products:read" },
             requiredScope: "verification:read",
             editorPrefsPrefix: "YUCP_UserOAuth",
             sessionFileName: "unity-user-oauth-session-v2.dat",
@@ -195,9 +195,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         public static async Task<string> GetValidAccessTokenAsync(string serverUrl)
         {
+            return await GetValidAccessTokenAsync(serverUrl, Domain.RequiredScope);
+        }
+
+        public static async Task<string> GetValidAccessTokenAsync(string serverUrl, params string[] requiredScopes)
+        {
+            string[] normalizedRequiredScopes = NormalizeRequiredScopes(requiredScopes);
             if (TryGetCachedSession(out OAuthSessionV2 session))
             {
-                if (HasUsableAccessToken(session))
+                if (HasUsableAccessToken(session, normalizedRequiredScopes))
                 {
                     PersistPresenceHints(session);
                     return session.accessToken;
@@ -205,7 +211,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 if (!string.IsNullOrEmpty(session.refreshToken))
                 {
-                    string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session);
+                    string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session, normalizedRequiredScopes);
                     if (!string.IsNullOrEmpty(refreshedAccessToken))
                     {
                         return refreshedAccessToken;
@@ -225,9 +231,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         public static async Task<string> ForceRefreshAccessTokenAsync(string serverUrl)
         {
+            return await ForceRefreshAccessTokenAsync(serverUrl, Domain.RequiredScope);
+        }
+
+        public static async Task<string> ForceRefreshAccessTokenAsync(string serverUrl, params string[] requiredScopes)
+        {
+            string[] normalizedRequiredScopes = NormalizeRequiredScopes(requiredScopes);
             if (TryGetCachedSession(out OAuthSessionV2 session) && !string.IsNullOrEmpty(session.refreshToken))
             {
-                string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session);
+                string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session, normalizedRequiredScopes);
                 if (!string.IsNullOrEmpty(refreshedAccessToken))
                 {
                     return refreshedAccessToken;
@@ -360,7 +372,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         string description = query.TryGetValue("error_description", out string errorDescription)
                             ? Uri.UnescapeDataString(errorDescription)
                             : authError;
-                        string message = BuildAuthorizationErrorMessage(description, Domain.RequiredScope);
+                        string message = BuildAuthorizationErrorMessage(description, Domain.RequestedScopeValue);
                         await SendErrorPageAsync(context, message);
                         onError?.Invoke(message);
                         return;
@@ -509,12 +521,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        private static async Task<string> RefreshAccessTokenAsync(string serverUrl, OAuthSessionV2 currentSession)
+        private static async Task<string> RefreshAccessTokenAsync(
+            string serverUrl,
+            OAuthSessionV2 currentSession,
+            params string[] requiredScopes)
         {
             if (currentSession == null || string.IsNullOrEmpty(currentSession.refreshToken) || string.IsNullOrEmpty(serverUrl))
             {
                 return null;
             }
+
+            string[] normalizedRequiredScopes = NormalizeRequiredScopes(requiredScopes);
 
             string formBody = $"grant_type=refresh_token&client_id={Uri.EscapeDataString(ClientId)}&refresh_token={Uri.EscapeDataString(currentSession.refreshToken)}";
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{serverUrl.TrimEnd('/')}/api/auth/oauth2/token");
@@ -551,11 +568,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return null;
             }
 
-            if (!HasRequiredScope(refreshedSession.scope, Domain.RequiredScope))
+            if (!HasRequiredScopes(refreshedSession.scope, normalizedRequiredScopes))
             {
                 Debug.LogWarning(
-                    $"[YUCP OAuth] Refreshed session is missing required scope '{Domain.RequiredScope}'. Clearing the current auth domain session.");
-                SignOut();
+                    $"[YUCP OAuth] Refreshed session is missing required scope '{string.Join(" ", normalizedRequiredScopes)}'.");
+                if (ContainsScope(normalizedRequiredScopes, Domain.RequiredScope))
+                {
+                    SignOut();
+                }
                 return null;
             }
 
@@ -694,23 +714,83 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static bool HasUsableAccessToken(OAuthSessionV2 session)
         {
+            return HasUsableAccessToken(session, Domain.RequiredScope);
+        }
+
+        private static bool HasUsableAccessToken(OAuthSessionV2 session, params string[] requiredScopes)
+        {
+            string[] normalizedRequiredScopes = NormalizeRequiredScopes(requiredScopes);
             return session != null
                 && !string.IsNullOrEmpty(session.accessToken)
-                && HasRequiredScope(session.scope, Domain.RequiredScope)
+                && HasRequiredScopes(session.scope, normalizedRequiredScopes)
                 && session.accessTokenExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + AccessTokenSkewSeconds;
         }
 
         private static bool HasRequiredScope(string scopeValue, string requiredScope)
         {
-            if (string.IsNullOrWhiteSpace(scopeValue) || string.IsNullOrWhiteSpace(requiredScope))
+            return HasRequiredScopes(scopeValue, requiredScope);
+        }
+
+        private static bool HasRequiredScopes(string scopeValue, params string[] requiredScopes)
+        {
+            string[] normalizedRequiredScopes = NormalizeRequiredScopes(requiredScopes);
+            if (string.IsNullOrWhiteSpace(scopeValue) || normalizedRequiredScopes.Length == 0)
             {
                 return false;
             }
 
             string[] scopes = scopeValue.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (string scope in scopes)
+            foreach (string requiredScope in normalizedRequiredScopes)
             {
-                if (string.Equals(scope.Trim(), requiredScope, StringComparison.Ordinal))
+                bool matched = false;
+                foreach (string scope in scopes)
+                {
+                    if (string.Equals(scope.Trim(), requiredScope, StringComparison.Ordinal))
+                    {
+                        matched = true;
+                        break;
+                    }
+                }
+
+                if (!matched)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static string[] NormalizeRequiredScopes(params string[] requiredScopes)
+        {
+            if (requiredScopes == null || requiredScopes.Length == 0)
+            {
+                return new[] { Domain.RequiredScope };
+            }
+
+            var normalized = new List<string>();
+            foreach (string requiredScope in requiredScopes)
+            {
+                string value = requiredScope?.Trim();
+                if (!string.IsNullOrEmpty(value) && !normalized.Contains(value))
+                {
+                    normalized.Add(value);
+                }
+            }
+
+            return normalized.Count == 0 ? new[] { Domain.RequiredScope } : normalized.ToArray();
+        }
+
+        private static bool ContainsScope(IReadOnlyList<string> scopes, string expectedScope)
+        {
+            if (scopes == null || string.IsNullOrWhiteSpace(expectedScope))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < scopes.Count; i++)
+            {
+                if (string.Equals(scopes[i], expectedScope, StringComparison.Ordinal))
                 {
                     return true;
                 }

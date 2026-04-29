@@ -214,6 +214,55 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
             return true;
         }
 
+        private static bool TryDecodePublicKey(string encodedPublicKey, out byte[] keyBytes)
+        {
+            keyBytes = null;
+
+            if (string.IsNullOrWhiteSpace(encodedPublicKey))
+            {
+                return false;
+            }
+
+            if (TryDecodeStandardBase64(encodedPublicKey, out keyBytes))
+            {
+                return true;
+            }
+
+            return TryDecodeBase64Url(encodedPublicKey, out keyBytes);
+        }
+
+        private static bool TryDecodeStandardBase64(string encodedPublicKey, out byte[] keyBytes)
+        {
+            try
+            {
+                keyBytes = Convert.FromBase64String(encodedPublicKey);
+                return true;
+            }
+            catch (FormatException)
+            {
+                keyBytes = null;
+                return false;
+            }
+        }
+
+        private static bool TryDecodeBase64Url(string encodedPublicKey, out byte[] keyBytes)
+        {
+            string normalized = encodedPublicKey.Replace('-', '+').Replace('_', '/');
+            int remainder = normalized.Length % 4;
+            if (remainder == 1)
+            {
+                keyBytes = null;
+                return false;
+            }
+
+            if (remainder > 0)
+            {
+                normalized = normalized.PadRight(normalized.Length + (4 - remainder), '=');
+            }
+
+            return TryDecodeStandardBase64(normalized, out keyBytes);
+        }
+
         private static void AddValidatedKey(FetchResult result, AuthorityKey authority)
         {
             if (authority == null)
@@ -233,21 +282,20 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
                 return;
             }
 
-            try
-            {
-                byte[] keyBytes = Convert.FromBase64String(authority.publicKey);
-                if (keyBytes.Length != 32)
-                {
-                    Debug.LogWarning($"[AuthorityKeyFetcher] Skipping authority '{authority.keyId}': invalid key length {keyBytes.Length} (expected 32)");
-                    return;
-                }
-
-                result.keys.Add(authority);
-            }
-            catch (FormatException)
+            if (!TryDecodePublicKey(authority.publicKey, out byte[] keyBytes))
             {
                 Debug.LogWarning($"[AuthorityKeyFetcher] Skipping authority '{authority.keyId}': invalid base64 publicKey");
+                return;
             }
+
+            if (keyBytes.Length != 32)
+            {
+                Debug.LogWarning($"[AuthorityKeyFetcher] Skipping authority '{authority.keyId}': invalid key length {keyBytes.Length} (expected 32)");
+                return;
+            }
+
+            authority.publicKey = Convert.ToBase64String(keyBytes);
+            result.keys.Add(authority);
         }
 
         private static string BuildRequestError(string sourceUrl, string fetchUrl, UnityWebRequest request)

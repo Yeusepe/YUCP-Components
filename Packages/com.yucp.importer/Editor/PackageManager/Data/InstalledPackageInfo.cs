@@ -56,6 +56,11 @@ namespace YUCP.Importer.Editor.PackageManager
         public bool hasUpdate = false;
 
         /// <summary>
+        /// Relative importer-owned install-state manifest path for alias packages.
+        /// </summary>
+        public string installStateManifestPath = "";
+
+        /// <summary>
         /// Get installed date as DateTime
         /// </summary>
         public DateTime GetInstalledDateTime()

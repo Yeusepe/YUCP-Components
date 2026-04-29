@@ -92,6 +92,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return false;
             }
 
+            if (IsServerAuthorizedAliasPackage(packageId, out AliasPackageContract aliasPackage))
+            {
+                string aliasId = aliasPackage?.aliasId ?? packageId;
+                error =
+                    $"Alias package '{aliasId}' uses server-authorized delivery and must be resolved through UpdateDeliveryService instead of the legacy protected unlock endpoint.";
+                return false;
+            }
+
             string licenseToken = LicenseTokenCache.GetValidToken(packageId);
             if (string.IsNullOrEmpty(licenseToken))
             {
@@ -301,6 +309,27 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string safePackageId = packageId.Replace('/', '_').Replace('\\', '_').Replace(':', '_');
             string safeAssetId = protectedAssetId.Replace('/', '_').Replace('\\', '_').Replace(':', '_');
             return Path.Combine(CacheDir, $"{safePackageId}__{safeAssetId}.dat");
+        }
+
+        private static bool IsServerAuthorizedAliasPackage(string packageId, out AliasPackageContract aliasPackage)
+        {
+            aliasPackage = ResolveInstalledPackage(packageId)?.aliasPackage;
+            return aliasPackage != null &&
+                string.Equals(aliasPackage.kind, "alias-v1", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(aliasPackage.installStrategy, UpdateDeliveryService.ServerAuthorizedInstallStrategy, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static InstalledPackageInfo ResolveInstalledPackage(string packageId)
+        {
+#if UNITY_INCLUDE_TESTS
+            if (ProtectedAssetUnlockServiceTestHooks.InstalledPackageResolver != null)
+            {
+                return ProtectedAssetUnlockServiceTestHooks.InstalledPackageResolver(packageId);
+            }
+#endif
+
+            InstalledPackageRegistry registry = InstalledPackageRegistry.Load();
+            return registry?.GetPackage(packageId);
         }
 
         [Serializable]
