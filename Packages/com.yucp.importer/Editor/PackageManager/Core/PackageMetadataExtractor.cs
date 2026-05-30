@@ -754,7 +754,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
             try
             {
-                object packageJsonItem = FindPackageJsonItem(importItems);
+                object packageJsonItem = FindPackageJsonItemForMetadata(importItems);
                 if (packageJsonItem == null)
                 {
                     return null;
@@ -767,6 +767,9 @@ namespace YUCP.Importer.Editor.PackageManager
                     Debug.LogWarning("[YUCP PackageManager] Source folder or exported path is empty for package.json");
                     return null;
                 }
+
+                string destinationPath = GetFieldValue<string>(packageJsonItem, _destinationAssetPathField);
+                Debug.Log($"[YUCP PackageManager] Reading package.json import metadata from '{destinationPath ?? exportedPath}'.");
 
                 string json = ReadMetadataFile(sourceFolder, exportedPath);
                 PackageJsonImportData packageJsonData = string.IsNullOrWhiteSpace(json) ? null : ParsePackageJsonImportData(json);
@@ -878,7 +881,12 @@ namespace YUCP.Importer.Editor.PackageManager
             string packageIconPath = null,
             System.Array importItems = null)
         {
-            string packageName = packageJsonData?.displayName;
+            string packageName = packageJsonData?.aliasPackage?.packageDisplayName;
+            if (string.IsNullOrEmpty(packageName))
+            {
+                packageName = packageJsonData?.displayName;
+            }
+
             if (string.IsNullOrEmpty(packageName))
             {
                 packageName = packageJsonData?.packageName;
@@ -1085,8 +1093,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
         internal static bool HasTempInstallDescriptor(System.Array importItems)
         {
-            string destinationPath = GetPackageJsonDestinationPath(importItems);
-            return IsTempInstallPackageJsonPath(destinationPath);
+            return FindTempInstallPackageJsonItem(importItems) != null;
         }
 
         internal static string GetPackageJsonDestinationPath(System.Array importItems)
@@ -1165,6 +1172,135 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
             }
             return null;
+        }
+
+        private static object FindPackageJsonItemForMetadata(System.Array importItems)
+        {
+            if (_destinationAssetPathField == null || importItems == null) return null;
+
+            object selected = FindPackageJsonCandidate(
+                importItems,
+                path => IsRootPackageJsonPath(path) && !IsTempInstallPackageJsonPath(path),
+                data => IsAliasPackageJsonData(data) && HasEmbeddedPackageMetadata(data),
+                "alias package metadata");
+            if (selected != null) return selected;
+
+            selected = FindPackageJsonCandidate(
+                importItems,
+                IsTempInstallPackageJsonPath,
+                data => IsAliasPackageJsonData(data) && HasEmbeddedPackageMetadata(data),
+                "temp alias package metadata");
+            if (selected != null) return selected;
+
+            selected = FindPackageJsonCandidate(
+                importItems,
+                IsRootPackageJsonPath,
+                HasEmbeddedPackageMetadata,
+                "embedded package metadata");
+            if (selected != null) return selected;
+
+            selected = FindPackageJsonCandidate(
+                importItems,
+                IsTempInstallPackageJsonPath,
+                data => data != null,
+                "temp package descriptor");
+            if (selected != null) return selected;
+
+            return FindPackageJsonItem(importItems);
+        }
+
+        private static object FindTempInstallPackageJsonItem(System.Array importItems)
+        {
+            if (_destinationAssetPathField == null || importItems == null) return null;
+
+            foreach (var item in importItems)
+            {
+                if (item == null) continue;
+
+                string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
+                if (IsTempInstallPackageJsonPath(destinationPath))
+                {
+                    return item;
+                }
+            }
+
+            return null;
+        }
+
+        private static object FindPackageJsonCandidate(
+            System.Array importItems,
+            Func<string, bool> pathPredicate,
+            Func<PackageJsonImportData, bool> dataPredicate,
+            string reason)
+        {
+            if (importItems == null || pathPredicate == null || dataPredicate == null)
+            {
+                return null;
+            }
+
+            foreach (var item in importItems)
+            {
+                if (item == null) continue;
+
+                string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
+                if (!pathPredicate(destinationPath))
+                {
+                    continue;
+                }
+
+                if (!TryReadPackageJsonImportData(item, out PackageJsonImportData importData))
+                {
+                    continue;
+                }
+
+                if (!dataPredicate(importData))
+                {
+                    continue;
+                }
+
+                Debug.Log($"[YUCP PackageManager] Selected package.json import metadata source '{destinationPath}' ({reason}).");
+                return item;
+            }
+
+            return null;
+        }
+
+        private static bool TryReadPackageJsonImportData(object item, out PackageJsonImportData importData)
+        {
+            importData = null;
+            if (item == null)
+            {
+                return false;
+            }
+
+            string sourceFolder = GetFieldValue<string>(item, _sourceFolderField);
+            string exportedPath = GetFieldValue<string>(item, _exportedAssetPathField);
+            if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
+            {
+                return false;
+            }
+
+            string json = ReadMetadataFile(sourceFolder, exportedPath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            importData = ParsePackageJsonImportData(json);
+            return importData != null;
+        }
+
+        private static bool IsAliasPackageJsonData(PackageJsonImportData importData)
+        {
+            return string.Equals(
+                importData?.aliasPackage?.kind,
+                "alias-v1",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasEmbeddedPackageMetadata(PackageJsonImportData importData)
+        {
+            return !string.IsNullOrWhiteSpace(importData?.packageMetadataJson);
         }
 
         internal static bool IsTempInstallPackageJsonPath(string destinationPath)
@@ -1329,7 +1465,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 kind = GetString(yucp, "kind") ?? string.Empty,
                 aliasId = GetString(yucp, "aliasId") ?? string.Empty,
                 packageName = GetString(packageJson, "name") ?? string.Empty,
-                packageDisplayName = GetString(packageJson, "displayName") ?? string.Empty,
+                packageDisplayName = GetString(yucp, "packageDisplayName") ?? GetString(packageJson, "displayName") ?? string.Empty,
                 packageVersion = GetString(packageJson, "version") ?? string.Empty,
                 installStrategy = GetString(yucp, "installStrategy") ?? string.Empty,
                 importerPackage = GetString(yucp, "importerPackage") ?? string.Empty,
@@ -1448,3 +1584,4 @@ namespace YUCP.Importer.Editor.PackageManager
         }
     }
 }
+

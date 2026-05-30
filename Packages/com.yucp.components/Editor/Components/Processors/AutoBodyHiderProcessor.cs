@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
@@ -19,6 +20,9 @@ namespace YUCP.Components.Editor
     /// </summary>
     public class AutoBodyHiderProcessor : IVRCSDKPreprocessAvatarCallback
     {
+        private const string GeneratedMaterialsRoot = "Assets/YUCPGenerated";
+        private const string GeneratedMaterialsFolder = GeneratedMaterialsRoot + "/AutoBodyHider";
+
         public int callbackOrder => int.MinValue + 100;
 
         private class BodyMeshProcessing
@@ -568,32 +572,25 @@ namespace YUCP.Components.Editor
             
             Material[] materials = data.targetBodyMesh.sharedMaterials;
             List<Material> configuredMaterials = new List<Material>();
+            HashSet<int> affectedMaterialIndices = GetAffectedMaterialIndices(originalMesh, new[] { hiddenVertices });
+            bool hasExplicitTargetMaterials = data.targetMaterials != null && data.targetMaterials.Any(m => m != null);
             
             // If user specified target materials, configure those
-            if (data.targetMaterials != null && data.targetMaterials.Length > 0)
+            if (hasExplicitTargetMaterials)
             {
                 var validTargetMaterials = data.targetMaterials.Where(m => m != null).ToArray();
                 
                 foreach (var targetMaterial in validTargetMaterials)
                 {
-                    // Find the material in the materials array - match by reference or shader name
+                    // Find the material in the renderer materials by reference or asset path.
                     for (int i = 0; i < materials.Length; i++)
                     {
-                        bool isMatchingMaterial = materials[i] == targetMaterial;
-                        if (!isMatchingMaterial && materials[i] != null && targetMaterial != null)
-                        {
-                            // Also check by shader name in case material instances differ
-                            string meshShaderName = materials[i].shader != null ? materials[i].shader.name.ToLower() : "";
-                            string targetShaderName = targetMaterial.shader != null ? targetMaterial.shader.name.ToLower() : "";
-                            if (meshShaderName == targetShaderName && !string.IsNullOrEmpty(meshShaderName))
-                            {
-                                isMatchingMaterial = true;
-                            }
-                        }
+                        bool isMatchingMaterial = IsSameMaterialAsset(materials[i], targetMaterial);
                         
-                        if (isMatchingMaterial && UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
+                        if (isMatchingMaterial && affectedMaterialIndices.Contains(i) && UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                         {
-                            Material materialCopy = UnityEngine.Object.Instantiate(materials[i]);
+                            Material materialCopy = CreateUploadMaterialCopy(materials[i], $"{data.name}_{i}", data);
+                            ThryMaterialOptimizerBridge.UnlockIfNeeded(new[] { materialCopy }, data);
                             
                             // Configure for toggle if creating toggle OR using existing toggle
                             bool shouldConfigureForToggle = data.createToggle || data.useExistingToggle;
@@ -615,7 +612,7 @@ namespace YUCP.Components.Editor
                 
                 if (configuredMaterials.Count == 0)
                 {
-                    Debug.LogWarning($"[AutoBodyHiderProcessor] None of the {validTargetMaterials.Length} target material(s) were found or compatible. Auto-detecting instead.", data);
+                    Debug.LogError($"[AutoBodyHiderProcessor] None of the {validTargetMaterials.Length} target material(s) matched an affected compatible material slot. UV discard material setup was skipped to avoid rewriting unrelated materials.", data);
                 }
                 else
                 {
@@ -624,13 +621,20 @@ namespace YUCP.Components.Editor
             }
             
             // If no target materials specified or none found, auto-detect all compatible materials
-            if (configuredMaterials.Count == 0)
+            if (!hasExplicitTargetMaterials && configuredMaterials.Count == 0)
             {
-                foreach (var material in materials)
+                for (int materialIndex = 0; materialIndex < materials.Length; materialIndex++)
                 {
+                    var material = materials[materialIndex];
+                    if (!affectedMaterialIndices.Contains(materialIndex))
+                    {
+                        continue;
+                    }
+
                     if (UVManipulator.IsPoiyomiWithUVSupport(material))
                     {
-                        Material materialCopy = UnityEngine.Object.Instantiate(material);
+                        Material materialCopy = CreateUploadMaterialCopy(material, $"{data.name}_{materialIndex}", data);
+                        ThryMaterialOptimizerBridge.UnlockIfNeeded(new[] { materialCopy }, data);
                         
                         // Configure for toggle if creating toggle OR using existing toggle
                         bool shouldConfigureForToggle = data.createToggle || data.useExistingToggle;
@@ -644,13 +648,7 @@ namespace YUCP.Components.Editor
                             ConfigurePoiyomiForToggle(materialCopy, data, originalMesh);
                         }
                         
-                        for (int i = 0; i < materials.Length; i++)
-                        {
-                            if (materials[i] == material)
-                            {
-                                materials[i] = materialCopy;
-                            }
-                        }
+                        materials[materialIndex] = materialCopy;
                         
                         configuredMaterials.Add(materialCopy);
                     }
@@ -662,6 +660,7 @@ namespace YUCP.Components.Editor
                 }
             }
             
+            ThryMaterialOptimizerBridge.SyncAndLock(configuredMaterials, data);
             data.targetBodyMesh.sharedMaterials = materials;
             
             // Create toggle or integrate with existing VRCFury toggle
@@ -824,6 +823,107 @@ namespace YUCP.Components.Editor
             }
         }
 
+        private HashSet<int> GetAffectedMaterialIndices(Mesh mesh, IEnumerable<bool[]> hiddenVertexSets)
+        {
+            HashSet<int> affected = new HashSet<int>();
+            if (mesh == null || hiddenVertexSets == null)
+            {
+                return affected;
+            }
+
+            bool[] combinedHidden = new bool[mesh.vertexCount];
+            foreach (var hiddenVertices in hiddenVertexSets)
+            {
+                if (hiddenVertices == null)
+                {
+                    continue;
+                }
+
+                int count = Mathf.Min(hiddenVertices.Length, combinedHidden.Length);
+                for (int i = 0; i < count; i++)
+                {
+                    combinedHidden[i] |= hiddenVertices[i];
+                }
+            }
+
+            for (int subMesh = 0; subMesh < mesh.subMeshCount; subMesh++)
+            {
+                int[] triangles = mesh.GetTriangles(subMesh);
+                for (int i = 0; i < triangles.Length; i++)
+                {
+                    int vertexIndex = triangles[i];
+                    if (vertexIndex >= 0 && vertexIndex < combinedHidden.Length && combinedHidden[vertexIndex])
+                    {
+                        affected.Add(subMesh);
+                        break;
+                    }
+                }
+            }
+
+            return affected;
+        }
+
+        private bool IsSameMaterialAsset(Material candidate, Material target)
+        {
+            if (candidate == null || target == null)
+            {
+                return false;
+            }
+
+            if (candidate == target)
+            {
+                return true;
+            }
+
+            string candidatePath = AssetDatabase.GetAssetPath(candidate);
+            string targetPath = AssetDatabase.GetAssetPath(target);
+            return !string.IsNullOrEmpty(candidatePath) &&
+                   !string.IsNullOrEmpty(targetPath) &&
+                   candidatePath == targetPath;
+        }
+
+        private Material CreateUploadMaterialCopy(Material source, string suffix, UnityEngine.Object context)
+        {
+            Material copy = UnityEngine.Object.Instantiate(source);
+            copy.name = SanitizeAssetName($"{source.name}_{suffix}_YUCP");
+
+            EnsureGeneratedMaterialsFolder();
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{GeneratedMaterialsFolder}/{copy.name}.mat");
+            AssetDatabase.CreateAsset(copy, path);
+            AssetDatabase.ImportAsset(path);
+
+            Debug.Log($"[AutoBodyHiderProcessor] Created upload material copy '{copy.name}' at '{path}' so shader optimizers can lock it for VRChat upload.", context);
+            return copy;
+        }
+
+        private static void EnsureGeneratedMaterialsFolder()
+        {
+            if (!AssetDatabase.IsValidFolder(GeneratedMaterialsRoot))
+            {
+                AssetDatabase.CreateFolder("Assets", Path.GetFileName(GeneratedMaterialsRoot));
+            }
+
+            if (!AssetDatabase.IsValidFolder(GeneratedMaterialsFolder))
+            {
+                AssetDatabase.CreateFolder(GeneratedMaterialsRoot, Path.GetFileName(GeneratedMaterialsFolder));
+            }
+        }
+
+        private static string SanitizeAssetName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "AutoBodyHiderMaterial_YUCP";
+            }
+
+            foreach (char invalidChar in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(invalidChar, '_');
+            }
+
+            return value;
+        }
+
         private void ConfigurePoiyomiForToggle(Material material, AutoBodyHiderData data, Mesh mesh = null)
         {
             string shaderNameLower = material.shader.name.ToLower();
@@ -897,7 +997,10 @@ namespace YUCP.Components.Editor
                 }
             }
             
-            material.SetFloat("_UDIMDiscardMode", 0f);
+            if (material.HasProperty("_UDIMDiscardMode"))
+            {
+                material.SetFloat("_UDIMDiscardMode", 0f);
+            }
             
             // Use effective UV channel (auto-detect if enabled)
             if (mesh == null && data.targetBodyMesh != null)
@@ -905,7 +1008,14 @@ namespace YUCP.Components.Editor
                 mesh = data.targetBodyMesh.sharedMesh;
             }
             int uvChannel = UVManipulator.GetEffectiveUVChannel(data, mesh);
-            material.SetFloat("_UDIMDiscardUV", uvChannel);
+            if (material.HasProperty("_UDIMDiscardUV"))
+            {
+                material.SetFloat("_UDIMDiscardUV", uvChannel);
+            }
+            else if (material.HasProperty("_UDIMDiscardUVChannel"))
+            {
+                material.SetFloat("_UDIMDiscardUVChannel", uvChannel);
+            }
             
             string tilePropertyName = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
             if (material.HasProperty(tilePropertyName))
@@ -1663,9 +1773,11 @@ namespace YUCP.Components.Editor
         {
             Material[] materials = group.bodyMesh.sharedMaterials;
             Material poiyomiMaterial = null;
+            HashSet<int> affectedMaterialIndices = GetAffectedMaterialIndices(group.originalMesh, group.hiddenVerticesMap.Values);
             
             Debug.Log($"[AutoBodyHiderProcessor] ConfigureMaterialsForMultipleUV - Searching for compatible material on '{group.bodyMesh.name}'");
             Debug.Log($"[AutoBodyHiderProcessor] Body mesh has {materials.Length} materials:");
+            Debug.Log($"[AutoBodyHiderProcessor] Hidden vertices affect material slots: {string.Join(", ", affectedMaterialIndices.OrderBy(i => i))}");
             
             // Collect all target materials from components
             List<Material> targetMaterials = new List<Material>();
@@ -1696,29 +1808,21 @@ namespace YUCP.Components.Editor
                 {
                     continue;
                 }
+
+                if (!affectedMaterialIndices.Contains(i))
+                {
+                    if (targetMaterials.Count > 0)
+                    {
+                        Debug.Log($"[AutoBodyHiderProcessor] Material at index {i}: '{materials[i].name}' skipped because no hidden vertices use this material slot");
+                    }
+                    continue;
+                }
                 
                 bool shouldInclude = false;
                 if (targetMaterials.Count > 0)
                 {
-                    // Use target materials if specified - match by reference or by shader name
-                    bool isTargetMaterial = targetMaterials.Contains(materials[i]);
-                    if (!isTargetMaterial)
-                    {
-                        // Also check by shader name in case material instances differ
-                        string meshShaderName = materials[i].shader != null ? materials[i].shader.name.ToLower() : "";
-                        foreach (var targetMat in targetMaterials)
-                        {
-                            if (targetMat != null && targetMat.shader != null)
-                            {
-                                string targetShaderName = targetMat.shader.name.ToLower();
-                                if (meshShaderName == targetShaderName)
-                                {
-                                    isTargetMaterial = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    // Use target materials if specified - match by reference or asset path only.
+                    bool isTargetMaterial = targetMaterials.Any(targetMat => IsSameMaterialAsset(materials[i], targetMat));
                     
                     if (isTargetMaterial && UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                     {
@@ -1764,6 +1868,7 @@ namespace YUCP.Components.Editor
             
             string shaderName = poiyomiMaterial != null ? UVManipulator.GetShaderDisplayName(poiyomiMaterial) : "Poiyomi/FastFur";
             Debug.Log($"[AutoBodyHiderProcessor] Configuring multi-UV on {poiyomiMaterialIndices.Count} material(s)");
+            List<Material> configuredMaterials = new List<Material>();
             
             // Use effective UV channel (auto-detect if enabled)
             int uvChannel = 1; // Default to UV1
@@ -1776,8 +1881,8 @@ namespace YUCP.Components.Editor
             foreach (int materialIndex in poiyomiMaterialIndices)
             {
                 Material materialToConfigure = materials[materialIndex];
-                Material materialCopy = UnityEngine.Object.Instantiate(materialToConfigure);
-                materialCopy.name = materialToConfigure.name + "_MultiUV";
+                Material materialCopy = CreateUploadMaterialCopy(materialToConfigure, $"MultiUV_{materialIndex}", group.bodyMesh);
+                ThryMaterialOptimizerBridge.UnlockIfNeeded(new[] { materialCopy }, group.bodyMesh);
                 
                 string shaderNameLower = materialCopy.shader.name.ToLower();
                 Debug.Log($"[AutoBodyHiderProcessor] Configuring material '{materialCopy.name}' with shader '{materialCopy.shader.name}' (lowercase: '{shaderNameLower}')");
@@ -1942,9 +2047,11 @@ namespace YUCP.Components.Editor
                 
                 // Replace the material in array
                 materials[materialIndex] = materialCopy;
+                configuredMaterials.Add(materialCopy);
                 EditorUtility.SetDirty(materialCopy);
             }
             
+            ThryMaterialOptimizerBridge.SyncAndLock(configuredMaterials, group.bodyMesh);
             // Update all materials on the mesh
             group.bodyMesh.sharedMaterials = materials;
             EditorUtility.SetDirty(group.bodyMesh);

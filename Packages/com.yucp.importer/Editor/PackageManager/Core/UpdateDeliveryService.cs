@@ -6,11 +6,11 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEditor;
+using UnityEditor.PackageManager;
 using UnityEngine;
-using VRC.PackageManagement.Core;
-using VRC.PackageManagement.Core.Types.Packages;
-using VRC.PackageManagement.Resolver;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
@@ -62,25 +62,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
 
         [Serializable]
-        private sealed class ProductAccessRecord
-        {
-            public string authUserId;
-            public string providerProductRef;
-            public string canonicalSlug;
-            public string displayName;
-            public BackstagePackageSummary[] backstagePackages = Array.Empty<BackstagePackageSummary>();
-        }
-
-        [Serializable]
-        private sealed class BackstagePackageSummary
-        {
-            public string packageId;
-            public string displayName;
-            public string latestPublishedVersion;
-            public string latestReleaseChannel;
-            public AliasPackageContract aliasContract;
-        }
-
         private sealed class RequestResult
         {
             public long responseCode;
@@ -204,7 +185,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             string accessToken = await CreatorIdentityOAuthService.GetValidAccessTokenAsync(
                 serverUrl,
-                AliasDeliveryRequiredScopes);
+                AliasDeliveryRequiredScopes).ConfigureAwait(false);
             if (string.IsNullOrEmpty(accessToken))
             {
                 throw new ReauthenticationRequiredException();
@@ -215,10 +196,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 try
                 {
-                    ProductAccessRecord product = await GetProductAccessRecordAsync(serverUrl, accessToken, catalogProductId);
-                    string creatorRef = GetCreatorRef(product);
-                    string productRef = GetProductRef(product);
-                    AliasInstallPlan plan = await GetAliasInstallPlanAsync(serverUrl, accessToken, creatorRef, productRef);
+                    AliasInstallPlan plan = await GetAliasInstallPlanAsync(serverUrl, accessToken, catalogProductId)
+                        .ConfigureAwait(false);
                     ValidateInstallPlan(plan, aliasPackage);
                     return plan;
                 }
@@ -299,51 +278,55 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static void ApplyAuthorizedInstallPlanToProject(AliasInstallPlan installPlan)
         {
-            string projectDir = Resolver.ProjectDir;
+            string projectDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, ".."));
             if (string.IsNullOrWhiteSpace(projectDir))
             {
                 throw new Exception("Could not resolve the current Unity project directory.");
             }
 
-            EnsureCatalogRepoAvailable(installPlan.repositoryUrl);
-
-            VPMProjectManifest manifest = VPMProjectManifest.Load(projectDir);
-            manifest.dependencies ??= new Dictionary<string, VPMProjectManifest.VPMPackageInfoMinimal>(StringComparer.OrdinalIgnoreCase);
-
             foreach (AliasInstallPlanPackage package in installPlan.packages)
             {
-                manifest.dependencies[package.packageId] = new VPMProjectManifest.VPMPackageInfoMinimal
-                {
-                    version = package.version.Trim(),
-                    repoUrl = installPlan.repositoryUrl ?? string.Empty,
-                };
-                manifest.locked?.Remove(package.packageId);
+                AuthorizedVpmPackageInstaller.InstallPackage(
+                    projectDir,
+                    installPlan.repositoryUrl,
+                    package.packageId,
+                    package.version,
+                    package.zipSha256);
             }
 
-            manifest.Save();
-            if (!VPMProjectManifest.Resolve(projectDir))
-            {
-                throw new Exception("VPM could not resolve the authorized alias install plan.");
-            }
-
-            Resolver.ForceRefresh();
+            UpdateProjectVpmManifest(projectDir, installPlan);
+            Client.Resolve();
             AssetDatabase.Refresh();
         }
 
-        private static void EnsureCatalogRepoAvailable(string repositoryUrl)
+        private static void UpdateProjectVpmManifest(string projectDir, AliasInstallPlan installPlan)
         {
-            Uri repositoryUri = new Uri(repositoryUrl, UriKind.Absolute);
-            if (Repos.UserRepoExists(repositoryUri))
+            string manifestPath = System.IO.Path.Combine(projectDir, "Packages", "vpm-manifest.json");
+            JObject manifest = System.IO.File.Exists(manifestPath)
+                ? JObject.Parse(System.IO.File.ReadAllText(manifestPath))
+                : new JObject();
+
+            JObject dependencies = manifest["dependencies"] as JObject ?? new JObject();
+            JObject locked = manifest["locked"] as JObject ?? new JObject();
+            manifest["dependencies"] = dependencies;
+            manifest["locked"] = locked;
+
+            foreach (AliasInstallPlanPackage package in installPlan.packages)
             {
-                return;
+                string version = package.version?.Trim();
+                dependencies[package.packageId] = new JObject
+                {
+                    ["version"] = version,
+                };
+
+                locked[package.packageId] = new JObject
+                {
+                    ["version"] = version,
+                    ["dependencies"] = new JObject(),
+                };
             }
 
-            bool added = Repos.AddRepo(repositoryUri, new Dictionary<string, string>());
-            if (!added && !Repos.UserRepoExists(repositoryUri))
-            {
-                throw new Exception(
-                    $"Could not register the alias catalog repository '{repositoryUrl}' with VPM.");
-            }
+            System.IO.File.WriteAllText(manifestPath, manifest.ToString(Formatting.Indented));
         }
 
         private static InstalledPackageInfo BuildInstalledPackageInfo(
@@ -502,49 +485,25 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        private static async Task<ProductAccessRecord> GetProductAccessRecordAsync(
+        private static async Task<AliasInstallPlan> GetAliasInstallPlanAsync(
             string serverUrl,
             string accessToken,
             string catalogProductId)
         {
-            string url = $"{serverUrl.TrimEnd('/')}/api/public/v2/products/{Uri.EscapeDataString(catalogProductId)}";
-            RequestResult result = await SendAuthorizedJsonAsync(
-                serverUrl,
-                accessToken,
-                "GET",
-                url,
-                null,
-                AliasDeliveryRequiredScopes);
-            if (result.responseCode != 200)
+            if (string.IsNullOrWhiteSpace(catalogProductId))
             {
-                throw new Exception(
-                    BuildServerErrorMessage(result.responseCode, result.body, "Could not resolve alias product access"));
+                throw new Exception("Alias package metadata included an empty catalog product ID.");
             }
 
-            ProductAccessRecord product = JsonUtility.FromJson<ProductAccessRecord>(result.body);
-            if (product == null)
-            {
-                throw new Exception("Alias product access response was invalid.");
-            }
-
-            return product;
-        }
-
-        private static async Task<AliasInstallPlan> GetAliasInstallPlanAsync(
-            string serverUrl,
-            string accessToken,
-            string creatorRef,
-            string productRef)
-        {
             string url =
-                $"{serverUrl.TrimEnd('/')}/api/backstage/access/{Uri.EscapeDataString(creatorRef)}/{Uri.EscapeDataString(productRef)}/install-plan";
+                $"{serverUrl.TrimEnd('/')}/api/backstage/access/products/{Uri.EscapeDataString(catalogProductId)}/install-plan";
             RequestResult result = await SendAuthorizedJsonAsync(
                 serverUrl,
                 accessToken,
                 "POST",
                 url,
                 null,
-                AliasDeliveryRequiredScopes);
+                AliasDeliveryRequiredScopes).ConfigureAwait(false);
             if (result.responseCode != 200)
             {
                 throw new Exception(
@@ -558,30 +517,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             return installPlan;
-        }
-
-        private static string GetCreatorRef(ProductAccessRecord product)
-        {
-            string creatorRef = product?.authUserId?.Trim();
-            if (string.IsNullOrEmpty(creatorRef))
-            {
-                throw new Exception("Alias product access response was missing authUserId.");
-            }
-
-            return creatorRef;
-        }
-
-        private static string GetProductRef(ProductAccessRecord product)
-        {
-            string productRef = !string.IsNullOrWhiteSpace(product?.canonicalSlug)
-                ? product.canonicalSlug.Trim()
-                : product?.providerProductRef?.Trim();
-            if (string.IsNullOrEmpty(productRef))
-            {
-                throw new Exception("Alias product access response was missing a product reference.");
-            }
-
-            return productRef;
         }
 
         private static void ValidateInstallPlan(AliasInstallPlan installPlan, AliasPackageContract aliasPackage)
@@ -676,7 +611,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             while (true)
             {
-                RequestResult result = await SendHttpJsonAsync(method, url, accessToken, bodyJson);
+                RequestResult result = await SendHttpJsonAsync(method, url, accessToken, bodyJson)
+                    .ConfigureAwait(false);
 
                 if (result.responseCode == 401)
                 {
@@ -684,7 +620,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     {
                         string refreshed = await CreatorIdentityOAuthService.ForceRefreshAccessTokenAsync(
                             serverUrl,
-                            requiredScopes);
+                            requiredScopes).ConfigureAwait(false);
                         if (!string.IsNullOrEmpty(refreshed))
                         {
                             accessToken = refreshed;

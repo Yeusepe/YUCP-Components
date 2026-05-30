@@ -1,9 +1,7 @@
 {
     "name": "com.yucp.importer.Editor",
     "rootNamespace": "YUCP.Importer.Editor",
-    "references": [
-        "com.vrchat.core.vpm-resolver.Editor"
-    ],
+    "references": [],
     "includePlatforms": [
         "Editor"
     ],
@@ -13,8 +11,7 @@
     "precompiledReferences": [
         "Newtonsoft.Json.dll",
         "ICSharpCode.SharpZipLib.dll",
-        "0Harmony.dll",
-        "vpm-core-lib.dll"
+        "0Harmony.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],

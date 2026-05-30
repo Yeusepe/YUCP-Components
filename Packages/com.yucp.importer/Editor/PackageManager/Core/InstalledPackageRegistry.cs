@@ -138,6 +138,12 @@ namespace YUCP.Importer.Editor.PackageManager
         /// </summary>
         public void Save()
         {
+            if (this == null)
+            {
+                Debug.LogWarning("[InstalledPackageRegistry] Skipped saving a destroyed registry instance.");
+                return;
+            }
+
             EditorUtility.SetDirty(this);
             AssetDatabase.SaveAssets();
         }

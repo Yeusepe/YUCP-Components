@@ -61,7 +61,7 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(installPlan.packages[0].packageId, Is.EqualTo(TestPackageId));
             Assert.That(installPlan.packages[0].importerDelivery.repoCatalogDeliveryMode, Is.EqualTo(UpdateDeliveryService.RepoTokenVpmDeliveryMode));
             Assert.That(server.CapturedAuthorizationHeader, Is.EqualTo("Bearer access-token"));
-            Assert.That(server.ProductEndpointHits, Is.EqualTo(1));
+            Assert.That(server.ProductEndpointHits, Is.EqualTo(0));
             Assert.That(server.InstallPlanEndpointHits, Is.EqualTo(1));
         }
 
@@ -124,6 +124,48 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(grant, Is.Null);
             Assert.That(error, Does.Contain("server-authorized delivery"));
             Assert.That(error, Does.Contain("UpdateDeliveryService"));
+        }
+
+        [Test]
+        public void PackageMetadata_DoesNotDependOnVrchatVpmResolver()
+        {
+            string packagesRoot = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "Packages"));
+            string[] requiredFiles =
+            {
+                Path.Combine(packagesRoot, "com.yucp.importer", "package.json"),
+                Path.Combine(packagesRoot, "com.yucp.importer", "Editor", "com.yucp.importer.Editor.asmdef"),
+                Path.Combine(packagesRoot, "com.yucp.importer", "Editor", "PackageManager", "Core", "UpdateDeliveryService.cs"),
+            };
+            string[] optionalSiblingPackageFiles =
+            {
+                Path.Combine(packagesRoot, "com.yucp.devtools", "package.json"),
+                Path.Combine(packagesRoot, "com.yucp.components", "package.json"),
+            };
+            string resolverPackage = "com.vrchat.core." + "vpm-resolver";
+            string resolverNamespace = "VRC.Package" + "Management";
+            string resolverLibrary = "vpm-core" + "-lib.dll";
+
+            foreach (string file in requiredFiles)
+            {
+                Assert.That(File.Exists(file), Is.True, $"Expected package file to exist: {file}");
+                string contents = File.ReadAllText(file);
+                Assert.That(contents, Does.Not.Contain(resolverPackage), file);
+                Assert.That(contents, Does.Not.Contain(resolverNamespace), file);
+                Assert.That(contents, Does.Not.Contain(resolverLibrary), file);
+            }
+
+            foreach (string file in optionalSiblingPackageFiles)
+            {
+                if (!File.Exists(file))
+                {
+                    continue;
+                }
+
+                string contents = File.ReadAllText(file);
+                Assert.That(contents, Does.Not.Contain(resolverPackage), file);
+                Assert.That(contents, Does.Not.Contain(resolverNamespace), file);
+                Assert.That(contents, Does.Not.Contain(resolverLibrary), file);
+            }
         }
 
         [Test]
@@ -452,7 +494,7 @@ namespace YUCP.Importer.Editor.Tests
             }
 
             if (context.Request.HttpMethod == "POST" &&
-                string.Equals(path, "/api/backstage/access/auth-user-1/song-thing/install-plan", StringComparison.OrdinalIgnoreCase))
+                string.Equals(path, "/api/backstage/access/products/catalog_1/install-plan", StringComparison.OrdinalIgnoreCase))
             {
                 server.InstallPlanEndpointHits++;
                 await server.WriteJsonAsync(
@@ -507,7 +549,7 @@ namespace YUCP.Importer.Editor.Tests
             }
 
             if (context.Request.HttpMethod == "POST" &&
-                string.Equals(path, "/api/backstage/access/auth-user-1/song-thing/install-plan", StringComparison.OrdinalIgnoreCase))
+                string.Equals(path, "/api/backstage/access/products/catalog_1/install-plan", StringComparison.OrdinalIgnoreCase))
             {
                 await server.WriteJsonAsync(
                     context,

@@ -1681,7 +1681,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     "Packages",
                     "yucp.installed-packages",
                     "Editor",
-                    "YUCP.DirectVpmInstaller.Template.dll");
+                    "YUCP.DirectVpmInstaller.Runtime.dll");
                 return File.Exists(runtimePath);
             }
             catch
@@ -1699,7 +1699,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
             return string.Equals(
                 path.Replace('\\', '/'),
-                "Packages/yucp.installed-packages/Editor/YUCP.DirectVpmInstaller.Template.dll",
+                "Packages/yucp.installed-packages/Editor/YUCP.DirectVpmInstaller.Runtime.dll",
                 StringComparison.OrdinalIgnoreCase);
         }
 
@@ -3225,7 +3225,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             Debug.Log("[YUCP PackageManager] Opening browser for Creator Identity sign-in...");
-            CreatorIdentityOAuthService.SignInAsync(
+            _ = CreatorIdentityOAuthService.SignInAsync(
                 serverUrl,
                 onSuccess: () =>
                 {
@@ -3606,119 +3606,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void ShowSampleTree()
         {
-            // Always use fallback tree for now since reflection might fail
-            // In production, this will use real ImportPackageItem[] from Unity
-            CreateFallbackTree();
-        }
-
-        private object[] CreateSampleImportItems()
-        {
-            // Create sample data structure that mimics ImportPackageItem
-            // This is for demonstration only - in real use, we'll get actual ImportPackageItem objects
-            var sampleData = new List<object>();
-            
-            var samplePaths = new[]
-            {
-                "Assets/YUCP/Components/Scripts/Core/ComponentBase.cs",
-                "Assets/YUCP/Components/Scripts/Core/ComponentManager.cs",
-                "Assets/YUCP/Components/Scripts/UI/ButtonComponent.cs",
-                "Assets/YUCP/Components/Scripts/UI/InputComponent.cs",
-                "Assets/YUCP/Components/Scripts/UI/PanelComponent.cs",
-                "Assets/YUCP/Components/Scripts/Animation/AnimatorComponent.cs",
-                "Assets/YUCP/Components/Scripts/Audio/AudioManager.cs",
-                "Assets/YUCP/Components/Prefabs/UI/Button.prefab",
-                "Assets/YUCP/Components/Prefabs/UI/Panel.prefab",
-                "Assets/YUCP/Components/Materials/UI/ButtonMaterial.mat",
-                "Assets/YUCP/Components/Textures/Icons/ButtonIcon.png",
-                "Assets/YUCP/Components/Shaders/UI/ButtonShader.shader",
-                "Assets/YUCP/Components/Editor/Inspectors/ComponentInspector.cs"
-            };
-
-            // Use reflection to create mock ImportPackageItem objects
-            var importItemType = Type.GetType("UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
-            if (importItemType != null)
-            {
-                try
-                {
-                    foreach (var path in samplePaths)
-                    {
-                        var item = Activator.CreateInstance(importItemType);
-                        var destPathProp = importItemType.GetProperty("destinationAssetPath");
-                        var isFolderProp = importItemType.GetProperty("isFolder");
-                        var enabledProp = importItemType.GetProperty("enabledStatus");
-                        var existsProp = importItemType.GetProperty("exists");
-
-                        if (destPathProp != null) destPathProp.SetValue(item, path);
-                        if (isFolderProp != null) isFolderProp.SetValue(item, false);
-                        if (enabledProp != null) enabledProp.SetValue(item, 1); // Enabled
-                        if (existsProp != null) existsProp.SetValue(item, false); // New file
-
-                        sampleData.Add(item);
-                    }
-                }
-                catch (Exception)
-                {
-                    return null;
-                }
-            }
-            else
-            {
-                return null;
-            }
-
-            return sampleData.Count > 0 ? sampleData.ToArray() : null;
-        }
-
-        private void CreateFallbackTree()
-        {
-            // Create a simple tree directly without using ImportPackageItem
-            var root = new PackageItemNode("Assets", "Assets", true, 0);
-            root.IsExpanded = true;
-
-            var componentsFolder = new PackageItemNode("YUCP", "Assets/YUCP", true, 1);
-            componentsFolder.IsExpanded = true;
-            componentsFolder.IsSelected = true;
-            componentsFolder.SelectionState = 1;
-
-            var scriptsFolder = new PackageItemNode("Scripts", "Assets/YUCP/Components/Scripts", true, 2);
-            scriptsFolder.IsExpanded = true;
-            scriptsFolder.IsSelected = true;
-            scriptsFolder.SelectionState = 1;
-
-            var coreFolder = new PackageItemNode("Core", "Assets/YUCP/Components/Scripts/Core", true, 3);
-            coreFolder.IsExpanded = true;
-            coreFolder.IsSelected = true;
-            coreFolder.SelectionState = 1;
-
-            coreFolder.Children.Add(new PackageItemNode("ComponentBase.cs", "Assets/YUCP/Components/Scripts/Core/ComponentBase.cs", false, 4) { IsSelected = true });
-            coreFolder.Children.Add(new PackageItemNode("ComponentManager.cs", "Assets/YUCP/Components/Scripts/Core/ComponentManager.cs", false, 4) { IsSelected = true });
-
-            var uiFolder = new PackageItemNode("UI", "Assets/YUCP/Components/Scripts/UI", true, 3);
-            uiFolder.IsExpanded = true;
-            uiFolder.IsSelected = true;
-            uiFolder.SelectionState = 1;
-
-            uiFolder.Children.Add(new PackageItemNode("ButtonComponent.cs", "Assets/YUCP/Components/Scripts/UI/ButtonComponent.cs", false, 4) { IsSelected = true });
-            uiFolder.Children.Add(new PackageItemNode("InputComponent.cs", "Assets/YUCP/Components/Scripts/UI/InputComponent.cs", false, 4) { IsSelected = true });
-            uiFolder.Children.Add(new PackageItemNode("PanelComponent.cs", "Assets/YUCP/Components/Scripts/UI/PanelComponent.cs", false, 4) { IsSelected = true });
-
-            scriptsFolder.Children.Add(coreFolder);
-            scriptsFolder.Children.Add(uiFolder);
-
-            var prefabsFolder = new PackageItemNode("Prefabs", "Assets/YUCP/Components/Prefabs", true, 2);
-            prefabsFolder.IsExpanded = true;
-            prefabsFolder.IsSelected = true;
-            prefabsFolder.SelectionState = 1;
-
-            prefabsFolder.Children.Add(new PackageItemNode("Button.prefab", "Assets/YUCP/Components/Prefabs/Button.prefab", false, 3) { IsSelected = true });
-            prefabsFolder.Children.Add(new PackageItemNode("Panel.prefab", "Assets/YUCP/Components/Prefabs/Panel.prefab", false, 3) { IsSelected = true });
-
-            componentsFolder.Children.Add(scriptsFolder);
-            componentsFolder.Children.Add(prefabsFolder);
-
-            root.Children.Add(componentsFolder);
-
-            _treeView.SetTree(root);
+            _treeView.SetTree(new PackageItemNode("Assets", "Assets", true, 0));
         }
 
         private int CountNodes(PackageItemNode node)

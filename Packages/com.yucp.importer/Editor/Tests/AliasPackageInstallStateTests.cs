@@ -1,5 +1,9 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
 using NUnit.Framework;
+using UnityEditor;
 using YUCP.Importer.Editor.PackageManager;
 using YUCP.Importer.Editor.PackageManager.Core;
 
@@ -65,6 +69,224 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(metadata.fileHashes, Has.Count.EqualTo(1));
             Assert.That(metadata.fileHashes[0].path, Is.EqualTo("Packages/com.creator.alias/package.json"));
             Assert.That(metadata.fileHashes[0].hash, Is.EqualTo("expected-sha"));
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_BuildsMetadataForServerAuthorizedShim()
+        {
+            const string packageJson = "{"
+                + "\"name\":\"com.creator.alias\","
+                + "\"displayName\":\"Creator Alias\","
+                + "\"version\":\"1.2.3\","
+                + "\"description\":\"Alias package shell\","
+                + "\"vpmDependencies\":{\"com.yucp.importer\":\">=0.4.0\"},"
+                + "\"yucp\":{"
+                + "\"kind\":\"alias-v1\","
+                + "\"aliasId\":\"creator.alias\","
+                + "\"installStrategy\":\"server-authorized\","
+                + "\"importerPackage\":\"com.yucp.importer\","
+                + "\"minImporterVersion\":\"0.4.0\","
+                + "\"channel\":\"stable\","
+                + "\"catalogProductIds\":[\"product-primary\"]"
+                + "}"
+                + "}";
+
+            bool built = AliasPackageAutoInstaller.TryBuildAliasPackageMetadata(
+                "com.creator.alias",
+                packageJson,
+                out PackageMetadata metadata,
+                out string error);
+
+            Assert.That(built, Is.True, error);
+            Assert.That(metadata, Is.Not.Null);
+            Assert.That(metadata.packageName, Is.EqualTo("Creator Alias"));
+            Assert.That(metadata.version, Is.EqualTo("1.2.3"));
+            Assert.That(metadata.dependencies["com.yucp.importer"], Is.EqualTo(">=0.4.0"));
+            Assert.That(metadata.aliasPackage, Is.Not.Null);
+            Assert.That(metadata.aliasPackage.packageName, Is.EqualTo("com.creator.alias"));
+            Assert.That(metadata.aliasPackage.packageVersion, Is.EqualTo("1.2.3"));
+            Assert.That(metadata.aliasPackage.catalogProductIds, Is.EqualTo(new[] { "product-primary" }));
+            Assert.That(AliasPackageAutoInstaller.BuildSessionKey(metadata), Does.Contain("com.creator.alias@1.2.3"));
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_PrefersAliasPackageDisplayNameOverSanitizedUnityDisplayName()
+        {
+            const string packageJson = "{"
+                + "\"name\":\"com.creator.alias\","
+                + "\"displayName\":\"Song Thing - Your Spotify library within VRChat - VRCFury Ready\","
+                + "\"version\":\"1.2.3\","
+                + "\"vpmDependencies\":{\"com.yucp.importer\":\">=0.4.0\"},"
+                + "\"yucp\":{"
+                + "\"kind\":\"alias-v1\","
+                + "\"aliasId\":\"creator.alias\","
+                + "\"packageDisplayName\":\"Song Thing | Your Spotify library within VRChat | VRCFury Ready\","
+                + "\"installStrategy\":\"server-authorized\","
+                + "\"importerPackage\":\"com.yucp.importer\""
+                + "}"
+                + "}";
+
+            bool built = AliasPackageAutoInstaller.TryBuildAliasPackageMetadata(
+                "com.creator.alias",
+                packageJson,
+                out PackageMetadata metadata,
+                out string error);
+
+            Assert.That(built, Is.True, error);
+            Assert.That(metadata.packageName, Is.EqualTo("Song Thing | Your Spotify library within VRChat | VRCFury Ready"));
+            Assert.That(metadata.aliasPackage.packageDisplayName, Is.EqualTo("Song Thing | Your Spotify library within VRChat | VRCFury Ready"));
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_DiscoversEmbeddedAliasPackageFolders()
+        {
+            string packagesRoot = Path.Combine(Path.GetTempPath(), "YUCP-AliasScan-" + System.Guid.NewGuid().ToString("N"));
+            string aliasDirectory = Path.Combine(packagesRoot, "com.creator.alias");
+            Directory.CreateDirectory(aliasDirectory);
+            try
+            {
+                File.WriteAllText(Path.Combine(aliasDirectory, "package.json"), "{"
+                    + "\"name\":\"com.creator.alias\","
+                    + "\"displayName\":\"Creator Alias\","
+                    + "\"version\":\"1.2.3\","
+                    + "\"yucp\":{"
+                    + "\"kind\":\"alias-v1\","
+                    + "\"aliasId\":\"creator.alias\","
+                    + "\"installStrategy\":\"server-authorized\""
+                    + "}"
+                    + "}");
+
+                string[] packageJsonPaths = AliasPackageAutoInstaller.FindEmbeddedPackageJsonPaths(
+                    packagesRoot,
+                    new HashSet<string>(System.StringComparer.OrdinalIgnoreCase));
+
+                Assert.That(packageJsonPaths, Is.EqualTo(new[] { Path.Combine(aliasDirectory, "package.json") }));
+            }
+            finally
+            {
+                Directory.Delete(packagesRoot, true);
+            }
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_RejectsNonServerAuthorizedPackages()
+        {
+            const string packageJson = "{"
+                + "\"name\":\"com.creator.alias\","
+                + "\"displayName\":\"Creator Alias\","
+                + "\"version\":\"1.2.3\","
+                + "\"yucp\":{"
+                + "\"kind\":\"alias-v1\","
+                + "\"aliasId\":\"creator.alias\","
+                + "\"installStrategy\":\"direct\""
+                + "}"
+                + "}";
+
+            bool built = AliasPackageAutoInstaller.TryBuildAliasPackageMetadata(
+                "com.creator.alias",
+                packageJson,
+                out PackageMetadata metadata,
+                out string error);
+
+            Assert.That(built, Is.False);
+            Assert.That(metadata, Is.Null);
+            Assert.That(error, Does.Contain("server-authorized"));
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_BuildsClearInstallPrompt()
+        {
+            var metadata = new PackageMetadata("Song Thing | Your Spotify library within VRChat | VRCFury Ready");
+
+            string message = AliasPackageAutoInstaller.BuildInstallPromptMessage(metadata);
+
+            Assert.That(message, Does.Contain("Ready to finish installing"));
+            Assert.That(message, Does.Contain("Verify access"));
+            Assert.That(message, Does.Not.Contain("shim"));
+            Assert.That(message, Does.Not.Contain("YUCP needs"));
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_ClearsAttemptGateAfterFailedVerification()
+        {
+            var metadata = new PackageMetadata("Song Thing")
+            {
+                version = "1.2.3",
+                aliasPackage = new AliasPackageContract
+                {
+                    kind = "alias-v1",
+                    aliasId = "song-thing",
+                    packageName = "com.yucp.songthing",
+                    packageVersion = "1.2.3",
+                    installStrategy = UpdateDeliveryService.ServerAuthorizedInstallStrategy,
+                },
+            };
+
+            string sessionKey = AliasPackageAutoInstaller.BuildSessionKey(metadata);
+            SessionState.SetBool(sessionKey, true);
+
+            MethodInfo clearAttempt = typeof(AliasPackageAutoInstaller).GetMethod(
+                "ClearInstallAttemptForRetry",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(clearAttempt, Is.Not.Null, "Failed verification must clear the alias attempt gate so removing and re-adding the shim prompts again.");
+            clearAttempt.Invoke(null, new object[] { metadata });
+
+            Assert.That(SessionState.GetBool(sessionKey, false), Is.False);
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_SessionKeyChangesWhenPackageFolderIsRecreated()
+        {
+            string packagesRoot = Path.Combine(Path.GetTempPath(), "YUCP-AliasAttempt-" + System.Guid.NewGuid().ToString("N"));
+            string aliasDirectory = Path.Combine(packagesRoot, "com.yucp.songthing");
+            string packageJsonPath = Path.Combine(aliasDirectory, "package.json");
+
+            try
+            {
+                Directory.CreateDirectory(aliasDirectory);
+                File.WriteAllText(packageJsonPath, "{}");
+
+                var metadata = new PackageMetadata("Song Thing")
+                {
+                    version = "1.0.6",
+                    aliasPackage = new AliasPackageContract
+                    {
+                        kind = "alias-v1",
+                        aliasId = "song-thing",
+                        packageName = "com.yucp.songthing",
+                        packageVersion = "1.0.6",
+                        installStrategy = UpdateDeliveryService.ServerAuthorizedInstallStrategy,
+                    },
+                };
+
+                DateTime firstTimestamp = new DateTime(2026, 5, 2, 18, 0, 0, DateTimeKind.Utc);
+                File.SetLastWriteTimeUtc(packageJsonPath, firstTimestamp);
+                Directory.SetLastWriteTimeUtc(aliasDirectory, firstTimestamp);
+                MethodInfo buildSessionKey = typeof(AliasPackageAutoInstaller).GetMethod(
+                    "BuildSessionKey",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                    null,
+                    new[] { typeof(PackageMetadata), typeof(string) },
+                    null);
+
+                Assert.That(buildSessionKey, Is.Not.Null);
+                string firstSessionKey = buildSessionKey.Invoke(null, new object[] { metadata, packageJsonPath }) as string;
+
+                DateTime secondTimestamp = firstTimestamp.AddMinutes(5);
+                File.SetLastWriteTimeUtc(packageJsonPath, secondTimestamp);
+                Directory.SetLastWriteTimeUtc(aliasDirectory, secondTimestamp);
+                string secondSessionKey = buildSessionKey.Invoke(null, new object[] { metadata, packageJsonPath }) as string;
+
+                Assert.That(secondSessionKey, Is.Not.EqualTo(firstSessionKey));
+            }
+            finally
+            {
+                if (Directory.Exists(packagesRoot))
+                {
+                    Directory.Delete(packagesRoot, true);
+                }
+            }
         }
 
         [Test]
@@ -176,3 +398,6 @@ namespace YUCP.Importer.Editor.Tests
         }
     }
 }
+
+
+

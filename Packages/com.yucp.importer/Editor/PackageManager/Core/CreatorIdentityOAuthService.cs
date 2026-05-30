@@ -195,7 +195,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         public static async Task<string> GetValidAccessTokenAsync(string serverUrl)
         {
-            return await GetValidAccessTokenAsync(serverUrl, Domain.RequiredScope);
+            return await GetValidAccessTokenAsync(serverUrl, Domain.RequiredScope).ConfigureAwait(false);
         }
 
         public static async Task<string> GetValidAccessTokenAsync(string serverUrl, params string[] requiredScopes)
@@ -211,7 +211,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 if (!string.IsNullOrEmpty(session.refreshToken))
                 {
-                    string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session, normalizedRequiredScopes);
+                    string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session, normalizedRequiredScopes)
+                        .ConfigureAwait(false);
                     if (!string.IsNullOrEmpty(refreshedAccessToken))
                     {
                         return refreshedAccessToken;
@@ -231,7 +232,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         public static async Task<string> ForceRefreshAccessTokenAsync(string serverUrl)
         {
-            return await ForceRefreshAccessTokenAsync(serverUrl, Domain.RequiredScope);
+            return await ForceRefreshAccessTokenAsync(serverUrl, Domain.RequiredScope).ConfigureAwait(false);
         }
 
         public static async Task<string> ForceRefreshAccessTokenAsync(string serverUrl, params string[] requiredScopes)
@@ -239,7 +240,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string[] normalizedRequiredScopes = NormalizeRequiredScopes(requiredScopes);
             if (TryGetCachedSession(out OAuthSessionV2 session) && !string.IsNullOrEmpty(session.refreshToken))
             {
-                string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session, normalizedRequiredScopes);
+                string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session, normalizedRequiredScopes)
+                    .ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(refreshedAccessToken))
                 {
                     return refreshedAccessToken;
@@ -543,8 +545,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string tokenJson;
             try
             {
-                httpResponse = await s_tokenHttpClient.SendAsync(httpRequest);
-                tokenJson = await httpResponse.Content.ReadAsStringAsync();
+                httpResponse = await s_tokenHttpClient.SendAsync(httpRequest).ConfigureAwait(false);
+                tokenJson = await httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
