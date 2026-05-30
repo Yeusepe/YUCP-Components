@@ -210,7 +210,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     if (isSubscribed) EditorApplication.update -= Tick;
                     if (!everSawDisabledFiles)
                     {
-                        LogWarning($"No .yucp_disabled files were found to resolve before timeout. roots={DescribeScanRoots()}");
+                        LogWarning($"No .yucp_disabled files were found to resolve before timeout. roots={DescribeScanRootsSanitized()}");
                     }
                     ClearPending();
                     _isRunning = false;
@@ -337,16 +337,16 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             catch (Exception ex)
             {
-                LogWarning($"Failed to enumerate .yucp_disabled files under roots [{string.Join(", ", roots)}]: {ex.Message}");
+                LogWarning($"Failed to enumerate .yucp_disabled files under roots [{SanitizePaths(roots)}]: {ex.Message}");
                 return false;
             }
 
             if (disabledFiles.Length == 0)
                 return false;
 
-            Log($"TryResolveAll: found {disabledFiles.Length} .yucp_disabled file(s). roots=[{string.Join(", ", roots)}]");
+            Log($"TryResolveAll: found {disabledFiles.Length} .yucp_disabled file(s). roots=[{SanitizePaths(roots)}]");
             foreach (var p in disabledFiles.Take(10))
-                Log($"TryResolveAll: sample '{p}'");
+                Log($"TryResolveAll: sample '{SanitizePath(p)}'");
             if (disabledFiles.Length > 10)
                 Log($"TryResolveAll: (+{disabledFiles.Length - 10} more)");
 
@@ -367,7 +367,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     // No conflict: enable by renaming the file (and meta if present).
                     if (!File.Exists(enabledFile))
                     {
-                        Log($"Enable (no conflict): '{disabledFile}' -> '{enabledFile}'");
+                        Log($"Enable (no conflict): '{SanitizePath(disabledFile)}' -> '{SanitizePath(enabledFile)}'");
                         MoveFileIfExists(disabledFile, enabledFile);
                         MoveFileIfExists(disabledMeta, enabledMeta);
                         TryRestoreOriginalGuidInMeta(enabledMeta);
@@ -384,7 +384,7 @@ namespace YUCP.Importer.Editor.PackageManager
                         string backupEnabled = enabledFile + ".old";
                         string backupEnabledMeta = enabledMeta + ".old";
 
-                        Log($"Update enabled with disabled: enabled='{enabledFile}' disabled='{disabledFile}' backup='{backupEnabled}'");
+                        Log($"Update enabled with disabled: enabled='{SanitizePath(enabledFile)}' disabled='{SanitizePath(disabledFile)}' backup='{SanitizePath(backupEnabled)}'");
                         MoveFileIfExists(enabledFile, backupEnabled);
                         MoveFileIfExists(enabledMeta, backupEnabledMeta);
 
@@ -398,7 +398,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
                     if (decision == Decision.DeleteDisabledAsDuplicate)
                     {
-                        Log($"Delete disabled duplicate: '{disabledFile}' (enabled exists '{enabledFile}')");
+                        Log($"Delete disabled duplicate: '{SanitizePath(disabledFile)}' (enabled exists '{SanitizePath(enabledFile)}')");
                         DeleteFileIfExists(disabledFile);
                         DeleteFileIfExists(disabledMeta);
                         stats.duplicatesDeleted++;
@@ -409,14 +409,14 @@ namespace YUCP.Importer.Editor.PackageManager
                     // and won't compile as C#.
                     string rejectedPath = enabledFile + ".incoming";
                     string rejectedMeta = rejectedPath + ".meta";
-                    LogWarning($"Reject (keep enabled): disabled='{disabledFile}' -> '{rejectedPath}' (enabled exists '{enabledFile}')");
+                    LogWarning($"Reject (keep enabled): disabled='{SanitizePath(disabledFile)}' -> '{SanitizePath(rejectedPath)}' (enabled exists '{SanitizePath(enabledFile)}')");
                     MoveFileIfExists(disabledFile, rejectedPath);
                     MoveFileIfExists(disabledMeta, rejectedMeta);
                     stats.rejected++;
                 }
                 catch (Exception ex)
                 {
-                    LogWarning($"Failed to resolve '{disabledFile}': {ex.Message}\n{ex.StackTrace}");
+                    LogWarning($"Failed to resolve '{SanitizePath(disabledFile)}': {ex.Message}\n{ex.StackTrace}");
                 }
             }
 
@@ -441,19 +441,63 @@ namespace YUCP.Importer.Editor.PackageManager
             return true;
         }
 
-        private static string DescribeScanRoots()
+        private static string DescribeScanRootsSanitized()
         {
             try
             {
-                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string projectRoot = GetProjectRoot();
                 string packagesPath = Path.Combine(projectRoot, "Packages");
                 string assetsPath = Path.Combine(projectRoot, "Assets");
-                return $"projectRoot='{projectRoot}', PackagesExists={Directory.Exists(packagesPath)}, AssetsExists={Directory.Exists(assetsPath)}";
+                return $"projectRoot='{SanitizePath(projectRoot)}', PackagesExists={Directory.Exists(packagesPath)}, AssetsExists={Directory.Exists(assetsPath)}";
             }
             catch (Exception ex)
             {
                 return $"<failed to describe roots: {ex.Message}>";
             }
+        }
+
+        private static string GetProjectRoot()
+        {
+            return Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+        }
+
+        private static string SanitizePaths(System.Collections.Generic.IEnumerable<string> paths)
+        {
+            return string.Join(", ", paths.Select(SanitizePath));
+        }
+
+        private static string SanitizePath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+
+            try
+            {
+                string fullPath = Path.GetFullPath(path);
+                string projectRoot = GetProjectRoot();
+                string normalizedRoot = Path.GetFullPath(projectRoot)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+                if (string.Equals(
+                        fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        normalizedRoot,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return ".";
+                }
+
+                string rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+                if (fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+                {
+                    return fullPath.Substring(rootWithSeparator.Length).Replace('\\', '/');
+                }
+            }
+            catch
+            {
+                // Fall through to filename-only fallback.
+            }
+
+            return Path.GetFileName(path);
         }
 
         private enum Decision
@@ -504,7 +548,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
             if (!File.Exists(source))
             {
-                if (IsVerbose()) Log($"Move skipped because source does not exist: '{source}' -> '{target}'");
+                if (IsVerbose()) Log($"Move skipped because source does not exist: '{SanitizePath(source)}' -> '{SanitizePath(target)}'");
                 return;
             }
 
@@ -523,10 +567,10 @@ namespace YUCP.Importer.Editor.PackageManager
             if (File.Exists(target))
             {
                 try { File.Delete(target); }
-                catch (Exception ex) { LogWarning($"Failed to delete existing target before move '{target}': {ex.Message}"); }
+                catch (Exception ex) { LogWarning($"Failed to delete existing target before move '{SanitizePath(target)}': {ex.Message}"); }
             }
 
-            if (IsVerbose()) Log($"Moving file: '{source}' -> '{target}'");
+            if (IsVerbose()) Log($"Moving file: '{SanitizePath(source)}' -> '{SanitizePath(target)}'");
             File.Move(source, target);
         }
 

@@ -14,6 +14,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal static class AuthorizedVpmPackageInstaller
     {
         private const int FriendlyWindowsPathLimit = 240;
+        private const int WebRequestTimeoutMilliseconds = 60000;
         private const string ZipPackageSourceKind = "zip";
         private const string UnityPackageSourceKind = "unitypackage";
         private const string RepoTokenHeaderName = "X-YUCP-Repo-Token";
@@ -25,6 +26,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public string expectedArchiveHash;
             public string deliverySourceKind;
             public Dictionary<string, string> requestHeaders;
+        }
+
+        private sealed class TimeoutWebClient : WebClient
+        {
+            protected override WebRequest GetWebRequest(Uri address)
+            {
+                WebRequest request = base.GetWebRequest(address);
+                if (request == null)
+                {
+                    return null;
+                }
+
+                request.Timeout = WebRequestTimeoutMilliseconds;
+                if (request is HttpWebRequest httpRequest)
+                {
+                    httpRequest.ReadWriteTimeout = WebRequestTimeoutMilliseconds;
+                }
+
+                return request;
+            }
         }
 
         public static void InstallPackage(
@@ -67,7 +88,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             try
             {
-                using (var downloadClient = new WebClient())
+                using (var downloadClient = new TimeoutWebClient())
                 {
                     downloadClient.Headers.Add(HttpRequestHeader.UserAgent, "YUCP-Importer/1.0");
                     downloadClient.Headers.Add(HttpRequestHeader.Accept, "application/octet-stream");
@@ -144,7 +165,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidOperationException($"Repository URL '{repositoryUrl}' is not trusted.");
             }
 
-            using var repoClient = new WebClient();
+            using var repoClient = new TimeoutWebClient();
             repoClient.Headers.Add(HttpRequestHeader.UserAgent, "YUCP-Importer/1.0");
             repoClient.Headers.Add(HttpRequestHeader.Accept, "application/json");
 

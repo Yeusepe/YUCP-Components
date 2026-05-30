@@ -8,6 +8,7 @@
 - Improved `UpdateDeliveryService` and `PackageMetadataExtractor` for more reliable updates.
 - Refactored `PackageManagerWindow` and `InstalledPackagesView` for better performance and UI consistency.
 - Enhanced `YucpDisabledFileResolver` for improved file conflict management.
+- Updated `CreatorIdentityOAuthService`.
 - Added comprehensive unit tests for alias package states and update delivery.
 
 ### com.yucp.components

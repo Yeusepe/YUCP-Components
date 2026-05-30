@@ -545,8 +545,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string tokenJson;
             try
             {
-                httpResponse = await s_tokenHttpClient.SendAsync(httpRequest).ConfigureAwait(false);
-                tokenJson = await httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
+                httpResponse = await s_tokenHttpClient.SendAsync(httpRequest);
+                tokenJson = await httpResponse.Content.ReadAsStringAsync();
             }
             catch (Exception ex)
             {
