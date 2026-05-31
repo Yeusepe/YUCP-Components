@@ -64,6 +64,34 @@ namespace YUCP.Importer.Editor.PackageManager
             };
         }
 
+        public static void ShowResumeProtectedPackage(InstalledPackageInfo packageInfo)
+        {
+            if (packageInfo == null)
+            {
+                Debug.LogWarning("[YUCP PackageManager] Cannot resume protected package because package info is missing.");
+                return;
+            }
+
+            if (!PackageManagerRuntimeSettings.IsEnabled())
+            {
+                Debug.LogWarning("[YUCP PackageManager] Package Manager is disabled (Tools > YUCP > Package Manager > Enable).");
+                return;
+            }
+
+            var window = GetWindow<PackageManagerWindow>();
+            window.titleContent = new GUIContent("YUCP Package Manager");
+            window.minSize = new Vector2(500, 600);
+            window.Show();
+
+            EditorApplication.delayCall += () =>
+            {
+                if (window != null)
+                {
+                    window.ShowPackageDetailsView(packageInfo);
+                }
+            };
+        }
+
         // UI Elements
         private VisualElement _bannerContainer;
         private VisualElement _bannerImageContainer;

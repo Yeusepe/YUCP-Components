@@ -49,6 +49,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public string version;
             public string channel;
             public string zipSha256;
+            public string packageSha256;
+            public string sourceKind;
+            public string downloadAuthorizationUrl;
             public AliasPackageContract aliasContract;
             public ImporterDeliveryContract importerDelivery;
         }
@@ -170,6 +173,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 ApplyAuthorizedInstallPlan(installPlan);
                 return true;
             }
+            catch (ReauthenticationRequiredException)
+            {
+                CreatorIdentityOAuthService.SignOut();
+                error = ReauthenticationMessage;
+                return false;
+            }
             catch (Exception ex)
             {
                 error = ex.Message;
@@ -273,6 +282,24 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     throw new Exception(
                         $"Alias install plan for '{package.packageId}' is missing a package version.");
                 }
+
+                if (string.IsNullOrWhiteSpace(package.downloadAuthorizationUrl))
+                {
+                    throw new Exception(
+                        $"Alias install plan for '{package.packageId}' is missing a package download authorization URL.");
+                }
+
+                if (string.IsNullOrWhiteSpace(package.packageSha256))
+                {
+                    throw new Exception(
+                        $"Alias install plan for '{package.packageId}' is missing a package SHA-256 digest.");
+                }
+
+                if (!IsSupportedSourceKind(package.sourceKind))
+                {
+                    throw new Exception(
+                        $"Alias install plan for '{package.packageId}' declared unsupported source kind '{package.sourceKind ?? "<missing>"}'.");
+                }
             }
         }
 
@@ -286,12 +313,32 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             foreach (AliasInstallPlanPackage package in installPlan.packages)
             {
-                AuthorizedVpmPackageInstaller.InstallPackage(
+                string serverUrl = GetTrustedServerOrigin(
+                    package.downloadAuthorizationUrl,
+                    installPlan.repositoryUrl);
+                string accessToken = CreatorIdentityOAuthService.GetValidAccessTokenAsync(
+                    serverUrl,
+                    AliasDeliveryRequiredScopes).GetAwaiter().GetResult();
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    throw new ReauthenticationRequiredException();
+                }
+
+#if UNITY_INCLUDE_TESTS
+                if (UpdateDeliveryServiceTestHooks.AuthorizedPackageInstallerHandler != null)
+                {
+                    UpdateDeliveryServiceTestHooks.AuthorizedPackageInstallerHandler(
+                        projectDir,
+                        serverUrl,
+                        package,
+                        accessToken);
+                    continue;
+                }
+#endif
+                AuthorizedVpmPackageInstaller.InstallAuthorizedPackage(
                     projectDir,
-                    installPlan.repositoryUrl,
-                    package.packageId,
-                    package.version,
-                    package.zipSha256);
+                    package,
+                    accessToken);
             }
 
             UpdateProjectVpmManifest(projectDir, installPlan);
@@ -345,7 +392,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             var installedInfo = InstalledPackageInfoFactory.Create(
                 metadata,
                 package.packageId ?? string.Empty,
-                package.zipSha256 ?? string.Empty,
+                package.packageSha256 ?? package.zipSha256 ?? string.Empty,
                 installPlan.creatorRepoRef ?? string.Empty,
                 true,
                 ResolveManagedPackagePaths(metadata.aliasPackage, package));
@@ -404,7 +451,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             merged.resolvedArtifact ??= new AliasResolvedArtifactIdentity();
             if (string.IsNullOrWhiteSpace(merged.resolvedArtifact.sha256))
             {
-                merged.resolvedArtifact.sha256 = package.zipSha256 ?? string.Empty;
+                merged.resolvedArtifact.sha256 = package.packageSha256 ?? package.zipSha256 ?? string.Empty;
             }
 
             return merged;
@@ -555,6 +602,24 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         $"Alias install plan for '{package.packageId}' is missing importer delivery metadata.");
                 }
 
+                if (string.IsNullOrWhiteSpace(package.downloadAuthorizationUrl))
+                {
+                    throw new Exception(
+                        $"Alias install plan for '{package.packageId}' is missing a package download authorization URL.");
+                }
+
+                if (string.IsNullOrWhiteSpace(package.packageSha256))
+                {
+                    throw new Exception(
+                        $"Alias install plan for '{package.packageId}' is missing a package SHA-256 digest.");
+                }
+
+                if (!IsSupportedSourceKind(package.sourceKind))
+                {
+                    throw new Exception(
+                        $"Alias install plan for '{package.packageId}' declared unsupported source kind '{package.sourceKind ?? "<missing>"}'.");
+                }
+
                 if (!string.Equals(
                         package.importerDelivery.packageInstallStrategy,
                         ServerAuthorizedInstallStrategy,
@@ -597,6 +662,40 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new Exception(
                     $"Alias install plan did not include the expected alias package '{aliasPackage.aliasId}'.");
             }
+        }
+
+        private static bool IsSupportedSourceKind(string sourceKind)
+        {
+            return string.Equals(sourceKind, "zip", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(sourceKind, "unitypackage", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetTrustedServerOrigin(string url, string expectedRepositoryUrl)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri))
+            {
+                throw new Exception("Package download authorization URL is invalid.");
+            }
+
+            if (uri.Scheme != Uri.UriSchemeHttps &&
+                !(uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback))
+            {
+                throw new Exception("Package download authorization URL is not trusted.");
+            }
+
+            string origin = uri.GetLeftPart(UriPartial.Authority);
+            if (!Uri.TryCreate(expectedRepositoryUrl, UriKind.Absolute, out Uri repositoryUri))
+            {
+                throw new Exception("Alias install plan repository URL is invalid.");
+            }
+
+            string repositoryOrigin = repositoryUri.GetLeftPart(UriPartial.Authority);
+            if (!string.Equals(origin, repositoryOrigin, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception("Package download authorization URL did not match the repository origin.");
+            }
+
+            return origin;
         }
 
         private static async Task<RequestResult> SendAuthorizedJsonAsync(

@@ -1,8 +1,18 @@
 # Changelog
 
+## [2026-05-31]
+
+### com.yucp.importer
+- Enhanced `AuthorizedVpmPackageInstaller` and `UpdateDeliveryService` for more robust package management.
+- Improved `PackageMetadataExtractor` logic for better reliability.
+- Added `ExecutionIntegrityTestHooks` for internal validation.
+- Updated `PackageManagerWindow` user interface.
+- Added comprehensive unit tests for `UpdateDeliveryService`.
+
 ## [2026-05-30]
 
 ### com.yucp.importer
+- Bumped the package to `0.1.9` so VPM alias shims require the importer build that detects installed alias packages and starts the authorized install flow.
 - Added `AliasPackageAutoInstaller` to automatically handle package aliases.
 - Added `AuthorizedVpmPackageInstaller` for secure VPM package installation.
 - Improved `UpdateDeliveryService` and `PackageMetadataExtractor` for more reliable updates.

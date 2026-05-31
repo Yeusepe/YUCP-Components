@@ -48,6 +48,80 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
+        public static void InstallAuthorizedPackage(
+            string projectDir,
+            UpdateDeliveryService.AliasInstallPlanPackage package,
+            string accessToken)
+        {
+            if (package == null)
+            {
+                throw new InvalidOperationException("Authorized package install plan entry is missing.");
+            }
+
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                throw new InvalidOperationException("Package download access token is missing.");
+            }
+
+            if (!IsSafePackageName(package.packageId))
+            {
+                throw new InvalidDataException($"Invalid package name '{package.packageId}'.");
+            }
+
+            string sourceKind = NormalizeSourceKind(package.sourceKind);
+            if (sourceKind == null)
+            {
+                throw new InvalidOperationException(
+                    $"Package '{package.packageId}' declared an unsupported source kind '{package.sourceKind ?? "<missing>"}'.");
+            }
+
+            string expectedHash = NormalizeSha256(package.packageSha256);
+            if (string.IsNullOrEmpty(expectedHash))
+            {
+                throw new InvalidOperationException(
+                    $"Package '{package.packageId}' did not include a valid package SHA-256 digest.");
+            }
+
+            JObject authorizationResponse = RequestAuthorizedPackageDownload(package, accessToken);
+            string downloadUrl = authorizationResponse["downloadUrl"]?.ToString();
+            if (!IsTrustedWebUrl(downloadUrl))
+            {
+                throw new InvalidOperationException("Package download authorization returned an untrusted URL.");
+            }
+
+            string responseHash = NormalizeSha256(authorizationResponse["packageSha256"]?.ToString());
+            if (string.IsNullOrEmpty(responseHash))
+            {
+                throw new InvalidOperationException("Package download authorization did not include a valid SHA-256 digest.");
+            }
+
+            if (!string.Equals(responseHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Package download authorization hash did not match the install plan for {package.packageId}@{package.version}.");
+            }
+
+            string responseSourceKind = NormalizeSourceKind(authorizationResponse["sourceKind"]?.ToString());
+            if (!string.IsNullOrEmpty(responseSourceKind) &&
+                !string.Equals(responseSourceKind, sourceKind, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Package download authorization source kind did not match the install plan for {package.packageId}@{package.version}.");
+            }
+
+            var resolution = new ResolvedPackageDownload
+            {
+                downloadUrl = downloadUrl,
+                resolvedVersion = string.IsNullOrWhiteSpace(authorizationResponse["version"]?.ToString())
+                    ? package.version?.Trim()
+                    : authorizationResponse["version"]?.ToString()?.Trim(),
+                expectedArchiveHash = expectedHash,
+                deliverySourceKind = sourceKind,
+            };
+
+            InstallResolvedPackage(projectDir, package.packageId, resolution);
+        }
+
         public static void InstallPackage(
             string projectDir,
             string repositoryUrl,
@@ -81,6 +155,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     $"Could not resolve authorized package '{packageName}' version '{version}' from the repository catalog.");
             }
 
+            InstallResolvedPackage(projectDir, packageName, resolution);
+        }
+
+        private static void InstallResolvedPackage(
+            string projectDir,
+            string packageName,
+            ResolvedPackageDownload resolution)
+        {
             string workspaceRoot = Path.Combine(projectDir, ".yucp-dvi", "AuthorizedVpmInstall");
             Directory.CreateDirectory(workspaceRoot);
             string tempDownloadPath = Path.Combine(workspaceRoot, $"{Guid.NewGuid():N}.zip");
@@ -149,6 +231,40 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 TryDeleteFile(tempDownloadPath);
                 TryDeleteDirectory(stagingDirectory);
             }
+        }
+
+        private static JObject RequestAuthorizedPackageDownload(
+            UpdateDeliveryService.AliasInstallPlanPackage package,
+            string accessToken)
+        {
+            if (!IsTrustedWebUrl(package.downloadAuthorizationUrl))
+            {
+                throw new InvalidOperationException("Package download authorization endpoint is not trusted.");
+            }
+
+            var requestBody = new JObject
+            {
+                ["version"] = string.IsNullOrWhiteSpace(package.version) ? null : package.version.Trim(),
+                ["channel"] = string.IsNullOrWhiteSpace(package.channel) ? null : package.channel.Trim(),
+            };
+
+            using var client = new TimeoutWebClient();
+            client.Headers.Add(HttpRequestHeader.UserAgent, "YUCP-Importer/1.0");
+            client.Headers.Add(HttpRequestHeader.Accept, "application/json");
+            client.Headers.Add(HttpRequestHeader.Authorization, $"Bearer {accessToken}");
+            client.Headers.Add(HttpRequestHeader.ContentType, "application/json");
+
+            string responseText = client.UploadString(
+                package.downloadAuthorizationUrl,
+                "POST",
+                requestBody.ToString(Newtonsoft.Json.Formatting.None));
+            JObject response = JObject.Parse(responseText);
+            if (string.IsNullOrWhiteSpace(response["downloadUrl"]?.ToString()))
+            {
+                throw new InvalidOperationException("Package download authorization returned an invalid response.");
+            }
+
+            return response;
         }
 
         private static bool TryResolvePackageDownload(
@@ -353,6 +469,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return normalized.Length == 64 && normalized.All(Uri.IsHexDigit)
                 ? normalized
                 : null;
+        }
+
+        private static string NormalizeSourceKind(string sourceKind)
+        {
+            if (string.Equals(sourceKind, ZipPackageSourceKind, StringComparison.OrdinalIgnoreCase))
+            {
+                return ZipPackageSourceKind;
+            }
+
+            if (string.Equals(sourceKind, UnityPackageSourceKind, StringComparison.OrdinalIgnoreCase))
+            {
+                return UnityPackageSourceKind;
+            }
+
+            return null;
         }
 
         private static string ComputeFileSha256(string path)

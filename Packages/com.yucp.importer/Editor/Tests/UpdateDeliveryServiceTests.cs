@@ -59,6 +59,9 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(installPlan.repositoryUrl, Is.EqualTo(server.BaseUrl + "/v1/backstage/repos/auth-user-1/index.json"));
             Assert.That(installPlan.packages, Has.Length.EqualTo(1));
             Assert.That(installPlan.packages[0].packageId, Is.EqualTo(TestPackageId));
+            Assert.That(installPlan.packages[0].downloadAuthorizationUrl, Is.EqualTo(server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/download"));
+            Assert.That(installPlan.packages[0].packageSha256, Is.EqualTo(new string('b', 64)));
+            Assert.That(installPlan.packages[0].sourceKind, Is.EqualTo("zip"));
             Assert.That(installPlan.packages[0].importerDelivery.repoCatalogDeliveryMode, Is.EqualTo(UpdateDeliveryService.RepoTokenVpmDeliveryMode));
             Assert.That(server.CapturedAuthorizationHeader, Is.EqualTo("Bearer access-token"));
             Assert.That(server.ProductEndpointHits, Is.EqualTo(0));
@@ -89,6 +92,86 @@ namespace YUCP.Importer.Editor.Tests
 
             Assert.That(resolved, Is.False);
             Assert.That(error, Does.Contain("unsupported repo delivery mode"));
+        }
+
+        [Test]
+        public void TryApplyAuthorizedInstallPlan_InstallsThroughBearerAuthorizedPackageDownload()
+        {
+            PersistVerificationSession("verification:read products:read");
+
+            var installPlan = new UpdateDeliveryService.AliasInstallPlan
+            {
+                kind = UpdateDeliveryService.AliasInstallPlanKind,
+                repositoryUrl = "https://api.test/v1/backstage/repos/auth-user-1/index.json",
+                packages = new[]
+                {
+                    new UpdateDeliveryService.AliasInstallPlanPackage
+                    {
+                        packageId = TestPackageId,
+                        displayName = "Song Thing Package",
+                        version = "1.2.3",
+                        channel = "stable",
+                        zipSha256 = new string('a', 64),
+                        packageSha256 = new string('b', 64),
+                        sourceKind = "zip",
+                        downloadAuthorizationUrl = "https://api.test/api/backstage/access/products/catalog_1/packages/com.yucp.song/download",
+                        aliasContract = new AliasPackageContract
+                        {
+                            kind = "alias-v1",
+                            aliasId = "song-thing",
+                            packageName = TestPackageId,
+                            installStrategy = UpdateDeliveryService.ServerAuthorizedInstallStrategy,
+                            importerPackage = "com.yucp.importer",
+                        },
+                        importerDelivery = new UpdateDeliveryService.ImporterDeliveryContract
+                        {
+                            packageInstallStrategy = UpdateDeliveryService.ServerAuthorizedInstallStrategy,
+                            repoCatalogDeliveryMode = UpdateDeliveryService.RepoTokenVpmDeliveryMode,
+                            repoCatalogReadOnly = true,
+                        }
+                    }
+                }
+            };
+
+            string capturedServerUrl = null;
+            string capturedAccessToken = null;
+            UpdateDeliveryService.AliasInstallPlanPackage capturedPackage = null;
+            UpdateDeliveryServiceTestHooks.AuthorizedPackageInstallerHandler = (projectDir, serverUrl, package, accessToken) =>
+            {
+                Assert.That(projectDir, Is.Not.Null.And.Not.Empty);
+                capturedServerUrl = serverUrl;
+                capturedAccessToken = accessToken;
+                capturedPackage = package;
+            };
+            UpdateDeliveryServiceTestHooks.InstalledPackageMetadataLoader = _ => new PackageMetadata("Song Thing")
+            {
+                version = "1.2.3",
+                aliasPackage = installPlan.packages[0].aliasContract.Clone(),
+                fileHashes = new System.Collections.Generic.List<PackageFileHashEntry>
+                {
+                    new PackageFileHashEntry
+                    {
+                        path = "Packages/com.yucp.song/package.json",
+                        hash = new string('b', 64),
+                    }
+                }
+            };
+            UpdateDeliveryServiceTestHooks.PersistInstallStateHandler = packageInfo =>
+            {
+                packageInfo.installStateManifestPath = ".yucp-dvi/Importer/InstallState/song-thing.install-state.json";
+            };
+            UpdateDeliveryServiceTestHooks.RegisterInstalledPackageHandler = _ => { };
+
+            bool applied = UpdateDeliveryService.TryApplyAuthorizedInstallPlan(
+                installPlan,
+                out string error);
+
+            Assert.That(applied, Is.True, error);
+            Assert.That(error, Is.Null.Or.Empty);
+            Assert.That(capturedServerUrl, Is.EqualTo("https://api.test"));
+            Assert.That(capturedAccessToken, Is.EqualTo("access-token"));
+            Assert.That(capturedPackage, Is.Not.Null);
+            Assert.That(capturedPackage.downloadAuthorizationUrl, Is.EqualTo(installPlan.packages[0].downloadAuthorizationUrl));
         }
 
         [Test]
@@ -242,6 +325,9 @@ namespace YUCP.Importer.Editor.Tests
                         displayName = "Song Thing Package",
                         version = "1.2.3",
                         channel = "stable",
+                        packageSha256 = new string('b', 64),
+                        sourceKind = "zip",
+                        downloadAuthorizationUrl = "https://api.test/api/backstage/access/products/catalog_1/packages/com.yucp.song/download",
                         aliasContract = new AliasPackageContract
                         {
                             kind = "alias-v1",
@@ -306,6 +392,9 @@ namespace YUCP.Importer.Editor.Tests
                         displayName = "Song Thing Package",
                         version = "1.2.3",
                         zipSha256 = new string('a', 64),
+                        packageSha256 = new string('b', 64),
+                        sourceKind = "zip",
+                        downloadAuthorizationUrl = "https://api.test/api/backstage/access/products/catalog_1/packages/com.yucp.song/download",
                         aliasContract = new AliasPackageContract
                         {
                             kind = "alias-v1",
@@ -405,6 +494,9 @@ namespace YUCP.Importer.Editor.Tests
                     {
                         packageId = TestPackageId,
                         version = "1.2.3",
+                        packageSha256 = new string('b', 64),
+                        sourceKind = "zip",
+                        downloadAuthorizationUrl = "https://api.test/api/backstage/access/products/catalog_1/packages/com.yucp.song/download",
                         aliasContract = new AliasPackageContract
                         {
                             kind = "alias-v1",
@@ -513,6 +605,9 @@ namespace YUCP.Importer.Editor.Tests
                     + "\"version\":\"1.2.3\","
                     + "\"channel\":\"stable\","
                     + "\"zipSha256\":\"" + new string('a', 64) + "\","
+                    + "\"packageSha256\":\"" + new string('b', 64) + "\","
+                    + "\"sourceKind\":\"zip\","
+                    + "\"downloadAuthorizationUrl\":\"" + server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/download\","
                     + "\"aliasContract\":{"
                     + "\"kind\":\"alias-v1\","
                     + "\"aliasId\":\"song-thing\","
@@ -558,6 +653,9 @@ namespace YUCP.Importer.Editor.Tests
                     + "\"repositoryUrl\":\"" + server.BaseUrl + "/v1/backstage/repos/auth-user-1/index.json\","
                     + "\"packages\":[{"
                     + "\"packageId\":\"" + TestPackageId + "\","
+                    + "\"packageSha256\":\"" + new string('b', 64) + "\","
+                    + "\"sourceKind\":\"zip\","
+                    + "\"downloadAuthorizationUrl\":\"" + server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/download\","
                     + "\"aliasContract\":{"
                     + "\"kind\":\"alias-v1\","
                     + "\"aliasId\":\"song-thing\","

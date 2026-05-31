@@ -265,6 +265,91 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
+        internal static ProtectedPayloadDescriptor ExtractProtectedPayloadDescriptorFromAssetPath(
+            string protectedPayloadAssetPath)
+        {
+            string json = ReadProjectTextAsset(protectedPayloadAssetPath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            try
+            {
+                var descriptor = JsonUtility.FromJson<ProtectedPayloadDescriptor>(json);
+                if (descriptor == null)
+                {
+                    return null;
+                }
+
+                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
+                descriptor.protectedAssetId ??= string.Empty;
+                descriptor.blobAssetPath ??= string.Empty;
+                descriptor.cipher ??= string.Empty;
+                descriptor.archiveFormat ??= string.Empty;
+                descriptor.ciphertextSha256 ??= string.Empty;
+                descriptor.plaintextSha256 ??= string.Empty;
+                descriptor.payloadAssetPaths =
+                    ProtectedPayloadIntegrityUtility.NormalizeUnityPaths(descriptor.payloadAssetPaths);
+                descriptor.manifestBindingSha256 = string.IsNullOrWhiteSpace(descriptor.manifestBindingSha256)
+                    ? ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)
+                    : descriptor.manifestBindingSha256;
+                return descriptor;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse protected payload descriptor from asset path: {ex.Message}");
+                return null;
+            }
+        }
+
+        internal static ProtectedImportIntentDescriptor ExtractProtectedImportIntentDescriptor(
+            System.Array importItems,
+            IEnumerable<string> importedAssetPaths)
+        {
+            string intentAssetPath = importedAssetPaths?
+                .FirstOrDefault(path => IsProtectedImportIntentAssetPath(path));
+            string json = ReadProjectTextAsset(intentAssetPath);
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                object descriptorItem = FindItemByDestinationPath(importItems, IsProtectedImportIntentAssetPath);
+                if (descriptorItem != null)
+                {
+                    string sourceFolder = GetFieldValue<string>(descriptorItem, _sourceFolderField);
+                    string exportedPath = GetFieldValue<string>(descriptorItem, _exportedAssetPathField);
+                    json = ReadMetadataFile(sourceFolder, exportedPath);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            try
+            {
+                var descriptor = JsonUtility.FromJson<ProtectedImportIntentDescriptor>(json);
+                if (descriptor == null)
+                {
+                    return null;
+                }
+
+                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
+                descriptor.packageId ??= string.Empty;
+                descriptor.protectedAssetId ??= string.Empty;
+                descriptor.protectedPayloadAssetPath ??= string.Empty;
+                descriptor.tempInstallAssetPath ??= string.Empty;
+                descriptor.manifestBindingSha256 ??= string.Empty;
+                return descriptor;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Failed to parse protected import intent descriptor: {ex.Message}");
+                return null;
+            }
+        }
+
         private static string ReadMetadataFile(string sourceFolder, string exportedPath)
         {
             try
@@ -843,6 +928,87 @@ namespace YUCP.Importer.Editor.PackageManager
             return metadata;
         }
 
+        internal static PackageMetadata ExtractMetadataFromInstalledShell(
+            string metadataAssetPath,
+            string tempInstallAssetPath,
+            string protectedPayloadAssetPath,
+            string fallbackPackageName)
+        {
+            PackageJsonImportData packageJsonData = null;
+            string packageJson = ReadProjectTextAsset(tempInstallAssetPath);
+            if (!string.IsNullOrWhiteSpace(packageJson))
+            {
+                packageJsonData = ParsePackageJsonImportData(packageJson);
+            }
+
+            PackageMetadata metadata = null;
+            string metadataJson = ReadProjectTextAsset(metadataAssetPath);
+            if (!string.IsNullOrWhiteSpace(metadataJson))
+            {
+                metadata = ParseInstalledPackageMetadataJson(metadataJson);
+            }
+
+            metadata ??= CreateFallbackMetadata(fallbackPackageName, packageJsonData);
+            ApplyPackageJsonData(metadata, packageJsonData);
+
+            string protectedPayloadJson = ReadProjectTextAsset(protectedPayloadAssetPath);
+            if (!string.IsNullOrWhiteSpace(protectedPayloadJson))
+            {
+                try
+                {
+                    var descriptor = JsonUtility.FromJson<ProtectedPayloadDescriptor>(protectedPayloadJson);
+                    if (descriptor != null)
+                    {
+                        descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
+                        descriptor.protectedAssetId ??= string.Empty;
+                        descriptor.blobAssetPath ??= string.Empty;
+                        descriptor.cipher ??= string.Empty;
+                        descriptor.archiveFormat ??= string.Empty;
+                        descriptor.ciphertextSha256 ??= string.Empty;
+                        descriptor.plaintextSha256 ??= string.Empty;
+                        descriptor.payloadAssetPaths =
+                            ProtectedPayloadIntegrityUtility.NormalizeUnityPaths(descriptor.payloadAssetPaths);
+                        descriptor.manifestBindingSha256 = string.IsNullOrWhiteSpace(descriptor.manifestBindingSha256)
+                            ? ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)
+                            : descriptor.manifestBindingSha256;
+                        metadata.protectedPayload = descriptor;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[YUCP PackageManager] Failed to parse installed protected payload descriptor: {ex.Message}");
+                }
+            }
+
+            return metadata;
+        }
+
+        private static string ReadProjectTextAsset(string assetPath)
+        {
+            if (string.IsNullOrWhiteSpace(assetPath))
+            {
+                return null;
+            }
+
+            string normalizedAssetPath = assetPath.Replace('\\', '/').TrimStart('/');
+            string text = AssetDatabase.LoadAssetAtPath<TextAsset>(normalizedAssetPath)?.text;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string diskPath = Path.GetFullPath(Path.Combine(
+                projectRoot,
+                normalizedAssetPath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!diskPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase) || !File.Exists(diskPath))
+            {
+                return null;
+            }
+
+            return File.ReadAllText(diskPath);
+        }
+
         private static string LoadPackageJsonMetadataJson(System.Array importItems)
         {
             if (importItems == null || importItems.Length == 0)
@@ -1347,6 +1513,18 @@ namespace YUCP.Importer.Editor.PackageManager
             return normalizedPath.Equals("Assets/" + ProtectedPayloadFileName, StringComparison.OrdinalIgnoreCase) ||
                 (normalizedPath.StartsWith(InstalledPackagesRootAssetPath, StringComparison.OrdinalIgnoreCase) &&
                  normalizedPath.EndsWith("/" + ProtectedPayloadFileName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        internal static bool IsProtectedImportIntentAssetPath(string destinationPath)
+        {
+            if (string.IsNullOrEmpty(destinationPath))
+            {
+                return false;
+            }
+
+            string normalizedPath = destinationPath.Replace('\\', '/');
+            return normalizedPath.Equals("Assets/" + ProtectedImportIntentFileName, StringComparison.OrdinalIgnoreCase) ||
+                normalizedPath.EndsWith("/" + ProtectedImportIntentFileName, StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsPackageJsonAssetPath(string destinationPath)
