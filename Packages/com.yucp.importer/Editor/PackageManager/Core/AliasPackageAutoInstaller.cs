@@ -18,10 +18,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         private const string LogPrefix = "[YUCP PackageManager][AliasAutoInstaller]";
         private const string SessionKeyPrefix = "YUCP.PackageManager.AliasAutoInstaller.AttemptedV3.";
+        private const double VpmAliasStatePollIntervalSeconds = 1.0d;
         private static readonly HashSet<string> ProcessingPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, HashSet<string>> AttemptSessionKeysByPackage =
             new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         private static bool s_scanQueued;
+        private static string s_lastVpmAliasStateFingerprint;
+        private static double s_nextVpmAliasStatePollTime;
 
         static AliasPackageAutoInstaller()
         {
@@ -31,6 +34,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             UnityEditor.PackageManager.Events.registeredPackages += OnRegisteredPackages;
+            EditorApplication.update += PollVpmAliasState;
+            s_lastVpmAliasStateFingerprint = BuildVpmAliasStateFingerprint(GetProjectPackagesDirectory());
             QueueScan();
         }
 
@@ -146,6 +151,32 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             QueueScan();
         }
 
+        private static void PollVpmAliasState()
+        {
+            if (!PackageManagerRuntimeSettings.IsEnabled())
+            {
+                return;
+            }
+
+            double now = EditorApplication.timeSinceStartup;
+            if (now < s_nextVpmAliasStatePollTime)
+            {
+                return;
+            }
+
+            s_nextVpmAliasStatePollTime = now + VpmAliasStatePollIntervalSeconds;
+
+            string fingerprint = BuildVpmAliasStateFingerprint(GetProjectPackagesDirectory());
+            if (string.Equals(fingerprint, s_lastVpmAliasStateFingerprint, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            s_lastVpmAliasStateFingerprint = fingerprint;
+            Debug.Log($"{LogPrefix} Detected VPM package state change; scanning for server-authorized package aliases.");
+            QueueScan();
+        }
+
         private static void QueueScan()
         {
             if (s_scanQueued)
@@ -209,6 +240,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             return packageJsonPaths.ToArray();
+        }
+
+        internal static string BuildVpmAliasStateFingerprint(string packagesDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(packagesDirectory) || !Directory.Exists(packagesDirectory))
+            {
+                return "packages:missing";
+            }
+
+            var parts = new List<string>();
+            AddFileFingerprint(parts, "vpm", Path.Combine(packagesDirectory, "vpm-manifest.json"));
+
+            string[] packageJsonPaths = FindEmbeddedPackageJsonPaths(packagesDirectory, null);
+            Array.Sort(packageJsonPaths, StringComparer.OrdinalIgnoreCase);
+            foreach (string packageJsonPath in packageJsonPaths)
+            {
+                AddFileFingerprint(parts, "package", packageJsonPath);
+            }
+
+            return string.Join("|", parts);
         }
 
         private static void ScanEmbeddedPackageFolders(ISet<string> inspectedPackageRoots)
@@ -283,6 +334,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             SessionState.SetBool(sessionKey, true);
             RecordInstallAttempt(metadata, sessionKey);
+            Debug.Log($"{LogPrefix} Queued server-authorized alias package '{metadata.aliasPackage.packageName}' for completion.");
             EditorApplication.delayCall += () => PromptAndInstall(metadata);
         }
 
@@ -300,6 +352,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             catch (Exception)
             {
                 return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+        }
+
+        private static void AddFileFingerprint(List<string> parts, string label, string path)
+        {
+            string normalizedPath = NormalizePath(path) ?? label;
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    parts.Add($"{label}:{normalizedPath}:missing");
+                    return;
+                }
+
+                var fileInfo = new FileInfo(path);
+                parts.Add($"{label}:{normalizedPath}:{fileInfo.Length}:{fileInfo.LastWriteTimeUtc.Ticks}");
+            }
+            catch (Exception ex)
+            {
+                parts.Add($"{label}:{normalizedPath}:error:{ex.GetType().Name}");
             }
         }
 

@@ -169,6 +169,50 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void AliasPackageAutoInstaller_VpmStateFingerprintChangesWhenExternalVpmToolWritesAliasState()
+        {
+            string packagesRoot = Path.Combine(Path.GetTempPath(), "YUCP-VpmAliasState-" + System.Guid.NewGuid().ToString("N"));
+            string aliasDirectory = Path.Combine(packagesRoot, "com.creator.alias");
+            string packageJsonPath = Path.Combine(aliasDirectory, "package.json");
+            string vpmManifestPath = Path.Combine(packagesRoot, "vpm-manifest.json");
+
+            try
+            {
+                Directory.CreateDirectory(packagesRoot);
+                string beforeExternalWrite = AliasPackageAutoInstaller.BuildVpmAliasStateFingerprint(packagesRoot);
+
+                Directory.CreateDirectory(aliasDirectory);
+                File.WriteAllText(packageJsonPath, "{"
+                    + "\"name\":\"com.creator.alias\","
+                    + "\"version\":\"1.2.3\","
+                    + "\"yucp\":{"
+                    + "\"kind\":\"alias-v1\","
+                    + "\"aliasId\":\"creator.alias\","
+                    + "\"installStrategy\":\"server-authorized\""
+                    + "}"
+                    + "}");
+                string afterAliasWrite = AliasPackageAutoInstaller.BuildVpmAliasStateFingerprint(packagesRoot);
+
+                File.WriteAllText(vpmManifestPath, "{"
+                    + "\"dependencies\":{"
+                    + "\"com.creator.alias\":\"1.2.3\""
+                    + "}"
+                    + "}");
+                string afterManifestWrite = AliasPackageAutoInstaller.BuildVpmAliasStateFingerprint(packagesRoot);
+
+                Assert.That(afterAliasWrite, Is.Not.EqualTo(beforeExternalWrite));
+                Assert.That(afterManifestWrite, Is.Not.EqualTo(afterAliasWrite));
+            }
+            finally
+            {
+                if (Directory.Exists(packagesRoot))
+                {
+                    Directory.Delete(packagesRoot, true);
+                }
+            }
+        }
+
+        [Test]
         public void AliasPackageAutoInstaller_RejectsNonServerAuthorizedPackages()
         {
             const string packageJson = "{"

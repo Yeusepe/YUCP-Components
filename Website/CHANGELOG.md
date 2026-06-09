@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-06-08]
+
+### com.yucp.importer
+- Enhanced `AliasPackageAutoInstaller` for more robust automatic package alias handling.
+- Added unit tests for `AliasPackageInstallState` to ensure reliable installation flows.
+
 ## [2026-05-31]
 
 ### com.yucp.importer
