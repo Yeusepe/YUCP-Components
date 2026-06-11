@@ -60,11 +60,57 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(installPlan.packages, Has.Length.EqualTo(1));
             Assert.That(installPlan.packages[0].packageId, Is.EqualTo(TestPackageId));
             Assert.That(installPlan.packages[0].downloadAuthorizationUrl, Is.EqualTo(server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/download"));
+            Assert.That(installPlan.packages[0].media, Is.Not.Null);
+            Assert.That(installPlan.packages[0].media.icon.downloadUrl, Is.EqualTo(server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/media/icon"));
+            Assert.That(installPlan.packages[0].media.icon.contentType, Is.EqualTo("image/png"));
+            Assert.That(installPlan.packages[0].media.icon.sha256, Is.EqualTo(new string('c', 64)));
+            Assert.That(installPlan.packages[0].media.banner.downloadUrl, Is.EqualTo(server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/media/banner"));
+            Assert.That(installPlan.packages[0].media.banner.contentType, Is.EqualTo("image/webp"));
+            Assert.That(installPlan.packages[0].media.banner.sha256, Is.EqualTo(new string('d', 64)));
             Assert.That(installPlan.packages[0].packageSha256, Is.EqualTo(new string('b', 64)));
-            Assert.That(installPlan.packages[0].sourceKind, Is.EqualTo("zip"));
+            Assert.That(installPlan.packages[0].sourceKind, Is.EqualTo("unitypackage"));
             Assert.That(installPlan.packages[0].importerDelivery.repoCatalogDeliveryMode, Is.EqualTo(UpdateDeliveryService.RepoTokenVpmDeliveryMode));
             Assert.That(server.CapturedAuthorizationHeader, Is.EqualTo("Bearer access-token"));
             Assert.That(server.ProductEndpointHits, Is.EqualTo(0));
+            Assert.That(server.InstallPlanEndpointHits, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void TryResolveAuthorizedInstallPlanForPackage_FallsBackToInstalledAliasMetadataWhenRegistryIsStale()
+        {
+            PersistVerificationSession("verification:read products:read");
+
+            using var server = new LocalHttpServer(HandleHappyPathRequest);
+            UpdateDeliveryServiceTestHooks.InstalledPackageMetadataLoader = packageId =>
+            {
+                Assert.That(packageId, Is.EqualTo(TestPackageId));
+                return new PackageMetadata("Song Thing")
+                {
+                    version = "1.2.3",
+                    aliasPackage = new AliasPackageContract
+                    {
+                        kind = "alias-v1",
+                        aliasId = "song-thing",
+                        packageName = TestPackageId,
+                        packageVersion = "1.2.3",
+                        installStrategy = UpdateDeliveryService.ServerAuthorizedInstallStrategy,
+                        importerPackage = "com.yucp.importer",
+                        catalogProductIds = new System.Collections.Generic.List<string> { "catalog_1" },
+                    },
+                };
+            };
+
+            bool resolved = UpdateDeliveryService.TryResolveAuthorizedInstallPlanForPackage(
+                server.BaseUrl,
+                TestPackageId,
+                out UpdateDeliveryService.AliasInstallPlan installPlan,
+                out string error);
+
+            Assert.That(resolved, Is.True, error);
+            Assert.That(error, Is.Null.Or.Empty);
+            Assert.That(installPlan, Is.Not.Null);
+            Assert.That(installPlan.packages, Has.Length.EqualTo(1));
+            Assert.That(installPlan.packages[0].packageId, Is.EqualTo(TestPackageId));
             Assert.That(server.InstallPlanEndpointHits, Is.EqualTo(1));
         }
 
@@ -115,6 +161,19 @@ namespace YUCP.Importer.Editor.Tests
                         packageSha256 = new string('b', 64),
                         sourceKind = "zip",
                         downloadAuthorizationUrl = "https://api.test/api/backstage/access/products/catalog_1/packages/com.yucp.song/download",
+                        media = new AliasPackageMediaSet
+                        {
+                            icon = new AliasPackageMediaDescriptor
+                            {
+                                kind = "icon",
+                                localPath = "Packages/yucp.installed-packages/Media/com.yucp.song/1.2.3/icon.png",
+                            },
+                            banner = new AliasPackageMediaDescriptor
+                            {
+                                kind = "banner",
+                                localPath = "Packages/yucp.installed-packages/Media/com.yucp.song/1.2.3/banner.webp",
+                            },
+                        },
                         aliasContract = new AliasPackageContract
                         {
                             kind = "alias-v1",
@@ -142,6 +201,10 @@ namespace YUCP.Importer.Editor.Tests
                 capturedServerUrl = serverUrl;
                 capturedAccessToken = accessToken;
                 capturedPackage = package;
+                return new AuthorizedVpmPackageInstaller.AuthorizedPackageInstallResult
+                {
+                    managedPaths = new[] { "Assets/YUCP Assets/Song Thing/Marker.txt" },
+                };
             };
             UpdateDeliveryServiceTestHooks.InstalledPackageMetadataLoader = _ => new PackageMetadata("Song Thing")
             {
@@ -172,6 +235,9 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(capturedAccessToken, Is.EqualTo("access-token"));
             Assert.That(capturedPackage, Is.Not.Null);
             Assert.That(capturedPackage.downloadAuthorizationUrl, Is.EqualTo(installPlan.packages[0].downloadAuthorizationUrl));
+            Assert.That(
+                installPlan.packages[0].aliasContract.installPlan.managedPaths,
+                Has.Member("Assets/YUCP Assets/Song Thing/Marker.txt"));
         }
 
         [Test]
@@ -328,6 +394,19 @@ namespace YUCP.Importer.Editor.Tests
                         packageSha256 = new string('b', 64),
                         sourceKind = "zip",
                         downloadAuthorizationUrl = "https://api.test/api/backstage/access/products/catalog_1/packages/com.yucp.song/download",
+                        media = new AliasPackageMediaSet
+                        {
+                            icon = new AliasPackageMediaDescriptor
+                            {
+                                kind = "icon",
+                                localPath = "Packages/yucp.installed-packages/Media/com.yucp.song/1.2.3/icon.png",
+                            },
+                            banner = new AliasPackageMediaDescriptor
+                            {
+                                kind = "banner",
+                                localPath = "Packages/yucp.installed-packages/Media/com.yucp.song/1.2.3/banner.webp",
+                            },
+                        },
                         aliasContract = new AliasPackageContract
                         {
                             kind = "alias-v1",
@@ -395,6 +474,19 @@ namespace YUCP.Importer.Editor.Tests
                         packageSha256 = new string('b', 64),
                         sourceKind = "zip",
                         downloadAuthorizationUrl = "https://api.test/api/backstage/access/products/catalog_1/packages/com.yucp.song/download",
+                        media = new AliasPackageMediaSet
+                        {
+                            icon = new AliasPackageMediaDescriptor
+                            {
+                                kind = "icon",
+                                localPath = "Packages/yucp.installed-packages/Media/com.yucp.song/1.2.3/icon.png",
+                            },
+                            banner = new AliasPackageMediaDescriptor
+                            {
+                                kind = "banner",
+                                localPath = "Packages/yucp.installed-packages/Media/com.yucp.song/1.2.3/banner.webp",
+                            },
+                        },
                         aliasContract = new AliasPackageContract
                         {
                             kind = "alias-v1",
@@ -478,6 +570,8 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(registeredPackage.packageId, Is.EqualTo(TestPackageId));
             Assert.That(registeredPackage.installedVersion, Is.EqualTo("1.2.3"));
             Assert.That(registeredPackage.installedFiles, Has.Member("Packages/com.yucp.song/package.json"));
+            Assert.That(registeredPackage.aliasPackage.installPlan.generatedPaths, Has.Member("Packages/yucp.installed-packages/Media/com.yucp.song/1.2.3/icon.png"));
+            Assert.That(registeredPackage.aliasPackage.installPlan.generatedPaths, Has.Member("Packages/yucp.installed-packages/Media/com.yucp.song/1.2.3/banner.webp"));
             Assert.That(registeredPackage.installStateManifestPath, Is.EqualTo(".yucp-dvi/Importer/InstallState/song-thing.install-state.json"));
         }
 
@@ -606,8 +700,24 @@ namespace YUCP.Importer.Editor.Tests
                     + "\"channel\":\"stable\","
                     + "\"zipSha256\":\"" + new string('a', 64) + "\","
                     + "\"packageSha256\":\"" + new string('b', 64) + "\","
-                    + "\"sourceKind\":\"zip\","
+                    + "\"sourceKind\":\"unitypackage\","
                     + "\"downloadAuthorizationUrl\":\"" + server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/download\","
+                    + "\"media\":{"
+                    + "\"icon\":{"
+                    + "\"kind\":\"icon\","
+                    + "\"downloadUrl\":\"" + server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/media/icon\","
+                    + "\"contentType\":\"image/png\","
+                    + "\"byteSize\":10,"
+                    + "\"sha256\":\"" + new string('c', 64) + "\""
+                    + "},"
+                    + "\"banner\":{"
+                    + "\"kind\":\"banner\","
+                    + "\"downloadUrl\":\"" + server.BaseUrl + "/api/backstage/access/products/catalog_1/packages/com.yucp.song/media/banner\","
+                    + "\"contentType\":\"image/webp\","
+                    + "\"byteSize\":12,"
+                    + "\"sha256\":\"" + new string('d', 64) + "\""
+                    + "}"
+                    + "},"
                     + "\"aliasContract\":{"
                     + "\"kind\":\"alias-v1\","
                     + "\"aliasId\":\"song-thing\","

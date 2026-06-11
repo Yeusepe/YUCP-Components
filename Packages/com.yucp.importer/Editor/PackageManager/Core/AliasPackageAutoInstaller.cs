@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
@@ -18,13 +20,22 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         private const string LogPrefix = "[YUCP PackageManager][AliasAutoInstaller]";
         private const string SessionKeyPrefix = "YUCP.PackageManager.AliasAutoInstaller.AttemptedV3.";
-        private const double VpmAliasStatePollIntervalSeconds = 1.0d;
+        private const string PersistentPromptKeyPrefix = "YUCP.PackageManager.AliasAutoInstaller.PromptedV1.";
+        private const string PersistentPromptIndexKeyPrefix = "YUCP.PackageManager.AliasAutoInstaller.PromptedIndexV1.";
         private static readonly HashSet<string> ProcessingPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, HashSet<string>> AttemptSessionKeysByPackage =
             new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        private static bool s_scanQueued;
-        private static string s_lastVpmAliasStateFingerprint;
-        private static double s_nextVpmAliasStatePollTime;
+
+        private sealed class InstallFlowSession
+        {
+            public InstallFlowSession(PackageMetadata metadata)
+            {
+                Metadata = metadata;
+            }
+
+            public PackageMetadata Metadata { get; }
+            public bool TerminalDialogShown { get; set; }
+        }
 
         static AliasPackageAutoInstaller()
         {
@@ -33,10 +44,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return;
             }
 
+            // Unity raises registeredPackages after UPM applies package-list changes and after refresh/compile/domain reload.
+            // https://docs.unity3d.com/6000.0/Documentation/ScriptReference/PackageManager.Events-registeredPackages.html
             UnityEditor.PackageManager.Events.registeredPackages += OnRegisteredPackages;
-            EditorApplication.update += PollVpmAliasState;
-            s_lastVpmAliasStateFingerprint = BuildVpmAliasStateFingerprint(GetProjectPackagesDirectory());
-            QueueScan();
         }
 
         internal static bool TryBuildAliasPackageMetadata(
@@ -135,11 +145,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 : "this package";
 
             return $"Ready to finish installing '{packageLabel}'.\n\n" +
-                "Verify access to import the authorized package into this project.";
+                "Verify access to import the authorized package into this project. If sign-in is needed, YUCP will open your browser and continue automatically.";
         }
 
         private static void OnRegisteredPackages(PackageRegistrationEventArgs args)
         {
+            if (args == null)
+            {
+                return;
+            }
+
             if (args?.removed != null)
             {
                 foreach (PackageInfo package in args.removed)
@@ -148,72 +163,29 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
             }
 
-            QueueScan();
-        }
-
-        private static void PollVpmAliasState()
-        {
-            if (!PackageManagerRuntimeSettings.IsEnabled())
+            if (args.changedFrom != null)
             {
-                return;
+                foreach (PackageInfo package in args.changedFrom)
+                {
+                    ClearRecordedInstallAttempts(package?.name, package?.version);
+                }
             }
 
-            double now = EditorApplication.timeSinceStartup;
-            if (now < s_nextVpmAliasStatePollTime)
+            if (args.added != null)
             {
-                return;
+                foreach (PackageInfo package in args.added)
+                {
+                    TrySchedulePackage(package, null);
+                }
             }
 
-            s_nextVpmAliasStatePollTime = now + VpmAliasStatePollIntervalSeconds;
-
-            string fingerprint = BuildVpmAliasStateFingerprint(GetProjectPackagesDirectory());
-            if (string.Equals(fingerprint, s_lastVpmAliasStateFingerprint, StringComparison.Ordinal))
+            if (args.changedTo != null)
             {
-                return;
+                foreach (PackageInfo package in args.changedTo)
+                {
+                    TrySchedulePackage(package, null);
+                }
             }
-
-            s_lastVpmAliasStateFingerprint = fingerprint;
-            Debug.Log($"{LogPrefix} Detected VPM package state change; scanning for server-authorized package aliases.");
-            QueueScan();
-        }
-
-        private static void QueueScan()
-        {
-            if (s_scanQueued)
-            {
-                return;
-            }
-
-            s_scanQueued = true;
-            EditorApplication.delayCall += ScanInstalledAliasPackages;
-        }
-
-        private static void ScanInstalledAliasPackages()
-        {
-            s_scanQueued = false;
-            if (!PackageManagerRuntimeSettings.IsEnabled())
-            {
-                return;
-            }
-
-            var inspectedPackageRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            PackageInfo[] packages;
-            try
-            {
-                packages = PackageInfo.GetAllRegisteredPackages();
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"{LogPrefix} Could not inspect registered packages: {ex.Message}");
-                packages = Array.Empty<PackageInfo>();
-            }
-
-            foreach (PackageInfo package in packages)
-            {
-                TrySchedulePackage(package, inspectedPackageRoots);
-            }
-
-            ScanEmbeddedPackageFolders(inspectedPackageRoots);
         }
 
         internal static string[] FindEmbeddedPackageJsonPaths(string packagesDirectory, ISet<string> excludedResolvedPaths)
@@ -260,21 +232,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             return string.Join("|", parts);
-        }
-
-        private static void ScanEmbeddedPackageFolders(ISet<string> inspectedPackageRoots)
-        {
-            string packagesDirectory = GetProjectPackagesDirectory();
-            foreach (string packageJsonPath in FindEmbeddedPackageJsonPaths(packagesDirectory, inspectedPackageRoots))
-            {
-                TrySchedulePackageJson(Path.GetFileName(Path.GetDirectoryName(packageJsonPath)), packageJsonPath);
-            }
-        }
-
-        private static string GetProjectPackagesDirectory()
-        {
-            string projectRoot = Path.GetDirectoryName(Application.dataPath);
-            return string.IsNullOrWhiteSpace(projectRoot) ? null : Path.Combine(projectRoot, "Packages");
         }
 
         private static void TrySchedulePackage(PackageInfo package, ISet<string> inspectedPackageRoots)
@@ -327,12 +284,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return;
             }
 
+            string persistentPromptKey = BuildPersistentPromptKey(metadata, packageJsonPath, packageJson);
+            if (EditorPrefs.GetBool(persistentPromptKey, false))
+            {
+                return;
+            }
+
             if (!ProcessingPackages.Add(metadata.aliasPackage.packageName))
             {
                 return;
             }
 
             SessionState.SetBool(sessionKey, true);
+            EditorPrefs.SetBool(persistentPromptKey, true);
+            EditorPrefs.SetString(BuildPersistentPromptIndexKey(metadata), persistentPromptKey);
             RecordInstallAttempt(metadata, sessionKey);
             Debug.Log($"{LogPrefix} Queued server-authorized alias package '{metadata.aliasPackage.packageName}' for completion.");
             EditorApplication.delayCall += () => PromptAndInstall(metadata);
@@ -366,8 +331,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     return;
                 }
 
-                var fileInfo = new FileInfo(path);
-                parts.Add($"{label}:{normalizedPath}:{fileInfo.Length}:{fileInfo.LastWriteTimeUtc.Ticks}");
+                parts.Add($"{label}:{normalizedPath}:{ComputeStableHash(File.ReadAllText(path))}");
             }
             catch (Exception ex)
             {
@@ -390,18 +354,264 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return false;
             }
 
+            AliasPackageInstallStateManifest installState =
+                AliasPackageInstallStateStore.Load(installed.installStateManifestPath);
+            return IsManagedInstallCompleteForAlias(
+                metadata,
+                installed,
+                installState,
+                ProjectRelativePathExists);
+        }
+
+        internal static bool IsManagedInstallCompleteForAlias(
+            PackageMetadata metadata,
+            InstalledPackageInfo installed,
+            AliasPackageInstallStateManifest installState,
+            Func<string, bool> projectPathExists)
+        {
+            if (metadata?.aliasPackage == null || installed?.aliasPackage == null)
+            {
+                return false;
+            }
+
             string expectedVersion = metadata.aliasPackage.packageVersion ?? metadata.version ?? string.Empty;
-            return string.IsNullOrWhiteSpace(expectedVersion) ||
+            bool versionMatches = string.IsNullOrWhiteSpace(expectedVersion) ||
                 string.Equals(installed.installedVersion, expectedVersion, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(installed.version, expectedVersion, StringComparison.OrdinalIgnoreCase);
+            if (!versionMatches)
+            {
+                return false;
+            }
+
+            if (installState == null)
+            {
+                return false;
+            }
+
+            var expectedTrackedPaths = BuildExpectedTrackedPaths(metadata);
+            string packageJsonPath = BuildAliasPackageJsonPath(metadata.aliasPackage.packageName);
+            bool currentMetadataDeclaresPayloadPaths = HasNonShimPath(expectedTrackedPaths, packageJsonPath);
+            if (!currentMetadataDeclaresPayloadPaths &&
+                !HasNonShimPath(installState.managedPaths, packageJsonPath))
+            {
+                return false;
+            }
+
+            foreach (string expectedPath in expectedTrackedPaths)
+            {
+                if (!ContainsPath(installState.managedPaths, expectedPath) &&
+                    !ContainsPath(installState.generatedPaths, expectedPath))
+                {
+                    return false;
+                }
+
+                if (projectPathExists != null && !projectPathExists(NormalizeRelativePath(expectedPath)))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        internal static string BuildPersistentPromptKey(
+            PackageMetadata metadata,
+            string packageJsonPath,
+            string packageJson)
+        {
+            AliasPackageContract aliasPackage = metadata?.aliasPackage;
+            string packageName = aliasPackage?.packageName ?? metadata?.packageName ?? "unknown-package";
+            string version = aliasPackage?.packageVersion ?? metadata?.version ?? "unknown-version";
+            string aliasId = aliasPackage?.aliasId ?? "unknown-alias";
+            string projectIdentity = ResolvePromptProjectIdentity(packageJsonPath);
+            string packageJsonHash = ComputeStableHash(packageJson ?? string.Empty);
+            return PersistentPromptKeyPrefix +
+                ComputeStableHash($"{projectIdentity}|{packageName}|{version}|{aliasId}|{packageJsonHash}");
+        }
+
+        private static string BuildPersistentPromptIndexKey(PackageMetadata metadata)
+        {
+            AliasPackageContract aliasPackage = metadata?.aliasPackage;
+            string packageName = aliasPackage?.packageName ?? metadata?.packageName ?? "unknown-package";
+            string version = aliasPackage?.packageVersion ?? metadata?.version ?? "unknown-version";
+            return BuildPersistentPromptIndexKey(packageName, version);
+        }
+
+        private static string BuildPersistentPromptIndexKey(string packageName, string version)
+        {
+            string projectRoot = ResolvePromptProjectIdentity(null);
+            return PersistentPromptIndexKeyPrefix +
+                ComputeStableHash($"{projectRoot}|{packageName ?? "unknown-package"}");
+        }
+
+        private static string ResolvePromptProjectIdentity(string packageJsonPath)
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                if (!string.IsNullOrWhiteSpace(projectRoot))
+                {
+                    return NormalizePath(projectRoot) ?? projectRoot;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                string path = string.IsNullOrWhiteSpace(packageJsonPath)
+                    ? Directory.GetCurrentDirectory()
+                    : Path.GetFullPath(packageJsonPath);
+                return NormalizePath(path) ?? path;
+            }
+            catch (Exception)
+            {
+                return "unknown-project";
+            }
+        }
+
+        private static string ComputeStableHash(string value)
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
+                byte[] hash = sha256.ComputeHash(bytes);
+                return BitConverter.ToString(hash).Replace("-", string.Empty).ToLowerInvariant();
+            }
+        }
+
+        private static List<string> BuildExpectedTrackedPaths(PackageMetadata metadata)
+        {
+            var paths = new List<string>();
+            string packageJsonPath = BuildAliasPackageJsonPath(metadata?.aliasPackage?.packageName);
+            AddDistinctPath(paths, packageJsonPath);
+            AddDistinctPaths(paths, metadata?.aliasPackage?.installPlan?.managedPaths);
+            AddDistinctPaths(paths, metadata?.aliasPackage?.installPlan?.generatedPaths);
+            return paths;
+        }
+
+        private static string BuildAliasPackageJsonPath(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+            {
+                return null;
+            }
+
+            return $"Packages/{packageName.Trim()}/package.json";
+        }
+
+        private static void AddDistinctPaths(List<string> paths, IEnumerable<string> candidates)
+        {
+            if (paths == null || candidates == null)
+            {
+                return;
+            }
+
+            foreach (string candidate in candidates)
+            {
+                AddDistinctPath(paths, candidate);
+            }
+        }
+
+        private static void AddDistinctPath(List<string> paths, string candidate)
+        {
+            string normalized = NormalizeRelativePath(candidate);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
+
+            if (!ContainsPath(paths, normalized))
+            {
+                paths.Add(normalized);
+            }
+        }
+
+        private static bool HasNonShimPath(IEnumerable<string> paths, string packageJsonPath)
+        {
+            string normalizedPackageJsonPath = NormalizeRelativePath(packageJsonPath);
+            if (paths == null)
+            {
+                return false;
+            }
+
+            foreach (string path in paths)
+            {
+                string normalized = NormalizeRelativePath(path);
+                if (!string.IsNullOrWhiteSpace(normalized) &&
+                    !string.Equals(normalized, normalizedPackageJsonPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsPath(IEnumerable<string> paths, string expectedPath)
+        {
+            string normalizedExpectedPath = NormalizeRelativePath(expectedPath);
+            if (paths == null || string.IsNullOrWhiteSpace(normalizedExpectedPath))
+            {
+                return false;
+            }
+
+            foreach (string path in paths)
+            {
+                if (string.Equals(
+                        NormalizeRelativePath(path),
+                        normalizedExpectedPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ProjectRelativePathExists(string relativePath)
+        {
+            string normalized = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
+
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string normalizedRoot = projectRoot
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+                    Path.DirectorySeparatorChar;
+                string absolutePath = Path.GetFullPath(
+                    Path.Combine(normalizedRoot, normalized.Replace('/', Path.DirectorySeparatorChar)));
+                if (!absolutePath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                return File.Exists(absolutePath) || Directory.Exists(absolutePath);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static string NormalizeRelativePath(string path)
+        {
+            return (path ?? string.Empty).Replace('\\', '/').TrimStart('/').Trim();
         }
 
         private static void PromptAndInstall(PackageMetadata metadata)
         {
             string packageId = metadata?.aliasPackage?.packageName ?? metadata?.packageName ?? "this package";
+            var session = new InstallFlowSession(metadata);
             try
             {
-                if (!EditorUtility.DisplayDialog(
+                if (!YucpEditorDialog.DisplayDialog(
                     "YUCP Importer",
                         BuildInstallPromptMessage(metadata),
                         "Verify and Install",
@@ -413,21 +623,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string serverUrl = LicenseServerResolver.GetLicenseServerUrl();
                 if (string.IsNullOrWhiteSpace(serverUrl))
                 {
-                    EditorUtility.DisplayDialog(
+                    ShowTerminalInstallDialog(
+                        session,
                         "YUCP Importer",
                         "The YUCP verification server URL is not configured. Open Project Settings > YUCP Package Manager and choose a trusted server.",
-                        "OK");
-                    ClearInstallAttemptForRetry(metadata);
+                        clearForRetry: true);
                     return;
                 }
 
                 if (!CreatorIdentityOAuthService.IsSignedIn())
                 {
-                    StartSignInThenInstall(serverUrl, metadata);
+                    StartSignInThenInstall(serverUrl, session);
                     return;
                 }
 
-                ResolveAndApply(serverUrl, metadata);
+                ResolveAndApply(serverUrl, session);
             }
             finally
             {
@@ -435,23 +645,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        private static void StartSignInThenInstall(string serverUrl, PackageMetadata metadata)
+        private static void StartSignInThenInstall(
+            string serverUrl,
+            InstallFlowSession session,
+            bool reauthenticationAttempted = false)
         {
-            EditorUtility.DisplayDialog(
-                "YUCP License Verification",
-                "Your browser will open so you can sign in and verify access before YUCP imports the real package.",
-                "Continue");
-
             Task signInTask = CreatorIdentityOAuthService.SignInAsync(
                 serverUrl,
-                () => EditorApplication.delayCall += () => ResolveAndApply(serverUrl, metadata),
+                () => EditorApplication.delayCall += () => ResolveAndApply(serverUrl, session, reauthenticationAttempted),
                 error => EditorApplication.delayCall += () =>
                 {
-                    ClearInstallAttemptForRetry(metadata);
-                    EditorUtility.DisplayDialog(
+                    ShowTerminalInstallDialog(
+                        session,
                         "YUCP License Verification",
                         string.IsNullOrWhiteSpace(error) ? "Sign-in failed." : error,
-                        "OK");
+                        clearForRetry: true);
                 });
 
             signInTask.ContinueWith(task =>
@@ -463,18 +671,22 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 EditorApplication.delayCall += () =>
                 {
-                    ClearInstallAttemptForRetry(metadata);
                     Debug.LogError($"{LogPrefix} Sign-in failed: {task.Exception.GetBaseException().Message}");
-                    EditorUtility.DisplayDialog(
+                    ShowTerminalInstallDialog(
+                        session,
                         "YUCP License Verification",
                         $"Sign-in failed: {task.Exception.GetBaseException().Message}",
-                        "OK");
+                        clearForRetry: true);
                 };
             });
         }
 
-        private static void ResolveAndApply(string serverUrl, PackageMetadata metadata)
+        private static void ResolveAndApply(
+            string serverUrl,
+            InstallFlowSession session,
+            bool reauthenticationAttempted = false)
         {
+            PackageMetadata metadata = session?.Metadata;
             string packageLabel = metadata?.packageName ?? metadata?.aliasPackage?.packageName ?? "this package";
 
             try
@@ -491,36 +703,25 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     out string resolveError))
                 {
                     EditorUtility.ClearProgressBar();
-                    if (RequiresReauthentication(resolveError) &&
-                        EditorUtility.DisplayDialog(
-                            "YUCP License Verification",
-                            resolveError + "\n\nSign in again now?",
-                            "Sign In",
-                            "Later"))
+                    if (RequiresReauthentication(resolveError) && !reauthenticationAttempted)
                     {
-                        StartSignInThenInstall(serverUrl, metadata);
+                        StartSignInThenInstall(serverUrl, session, true);
                     }
                     else
                     {
-                        ClearInstallAttemptForRetry(metadata);
-                        EditorUtility.DisplayDialog(
+                        ShowTerminalInstallDialog(
+                            session,
                             "Complete YUCP Install",
                             string.IsNullOrWhiteSpace(resolveError)
                                 ? "Could not resolve the authorized install plan."
                                 : resolveError,
-                            "OK");
+                            clearForRetry: true);
                     }
 
                     return;
                 }
 
                 EditorUtility.ClearProgressBar();
-                if (!AliasInstallPlanConfirmationService.ConfirmInstall(metadata))
-                {
-                    ClearInstallAttemptForRetry(metadata);
-                    return;
-                }
-
                 EditorUtility.DisplayProgressBar(
                     "Installing YUCP Package",
                     $"Installing '{packageLabel}' through the authorized VPM resolver...",
@@ -529,32 +730,51 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 if (!UpdateDeliveryService.TryApplyAuthorizedInstallPlan(installPlan, out string applyError))
                 {
                     EditorUtility.ClearProgressBar();
-                    ClearInstallAttemptForRetry(metadata);
-                    EditorUtility.DisplayDialog(
+                    ShowTerminalInstallDialog(
+                        session,
                         "Complete YUCP Install",
                         string.IsNullOrWhiteSpace(applyError)
                             ? "Could not apply the authorized install plan."
                             : applyError,
-                        "OK");
+                        clearForRetry: true);
                     return;
                 }
 
                 EditorUtility.ClearProgressBar();
-                EditorUtility.DisplayDialog(
-                    "YUCP Install Complete",
-                    $"'{packageLabel}' was verified and installed.",
-                    "OK");
+                Debug.Log($"{LogPrefix} '{packageLabel}' was verified and installed.");
             }
             catch (Exception ex)
             {
                 EditorUtility.ClearProgressBar();
-                ClearInstallAttemptForRetry(metadata);
                 Debug.LogError($"{LogPrefix} Failed to complete alias install for '{packageLabel}': {ex.Message}\n{ex.StackTrace}");
-                EditorUtility.DisplayDialog(
+                ShowTerminalInstallDialog(
+                    session,
                     "Complete YUCP Install",
                     $"Could not complete the YUCP install for '{packageLabel}': {ex.Message}",
-                    "OK");
+                    clearForRetry: true);
             }
+        }
+
+        private static void ShowTerminalInstallDialog(
+            InstallFlowSession session,
+            string title,
+            string message,
+            bool clearForRetry)
+        {
+            if (session == null || session.TerminalDialogShown)
+            {
+                return;
+            }
+
+            session.TerminalDialogShown = true;
+            if (clearForRetry)
+            {
+                ClearInstallAttemptForRetry(session.Metadata);
+            }
+
+            YucpEditorDialog.DisplayErrorDialog(
+                title,
+                string.IsNullOrWhiteSpace(message) ? "The install did not complete." : message);
         }
 
         private static bool RequiresReauthentication(string error)
@@ -606,6 +826,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             SessionState.SetBool(BuildSessionKey(packageName, packageVersion, "unknown-instance"), false);
+            // Package refresh/change events are part of a successful install. Keep the durable
+            // "already auto-prompted" key so Unity does not reopen the same prompt after install.
 
             if (AttemptSessionKeysByPackage.TryGetValue(packageName, out HashSet<string> sessionKeys))
             {
@@ -631,13 +853,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 string fullPath = Path.GetFullPath(packageJsonPath);
                 string packageDirectory = Path.GetDirectoryName(fullPath);
-                long fileWriteTicks = File.Exists(fullPath)
-                    ? File.GetLastWriteTimeUtc(fullPath).Ticks
-                    : 0;
-                long directoryWriteTicks = !string.IsNullOrEmpty(packageDirectory) && Directory.Exists(packageDirectory)
-                    ? Directory.GetLastWriteTimeUtc(packageDirectory).Ticks
-                    : 0;
-                return $"{NormalizePath(packageDirectory ?? fullPath)}:{directoryWriteTicks}:{fileWriteTicks}";
+                string packageJsonHash = File.Exists(fullPath)
+                    ? ComputeStableHash(File.ReadAllText(fullPath))
+                    : "missing";
+                return $"{NormalizePath(packageDirectory ?? fullPath)}:{packageJsonHash}";
             }
             catch (Exception)
             {

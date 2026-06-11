@@ -91,7 +91,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     public static class UpdateDeliveryServiceTestHooks
     {
         public static Action<UpdateDeliveryService.AliasInstallPlan> ApplyAuthorizedInstallPlanHandler;
-        public static Action<string, string, UpdateDeliveryService.AliasInstallPlanPackage, string> AuthorizedPackageInstallerHandler;
+        internal static Func<
+            string,
+            string,
+            UpdateDeliveryService.AliasInstallPlanPackage,
+            string,
+            AuthorizedVpmPackageInstaller.AuthorizedPackageInstallResult> AuthorizedPackageInstallerHandler;
         public static Func<string, PackageMetadata> InstalledPackageMetadataLoader;
         public static Action<InstalledPackageInfo> PersistInstallStateHandler;
         public static Action<InstalledPackageInfo> RegisterInstalledPackageHandler;

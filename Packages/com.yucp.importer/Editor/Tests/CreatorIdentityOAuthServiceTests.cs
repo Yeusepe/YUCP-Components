@@ -59,6 +59,18 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(File.Exists(unlockCachePath), Is.False);
         }
 
+        [Test]
+        public void MissingDeliveryScopeInvalidatesCachedSession()
+        {
+            MethodInfo shouldClear = GetEditorType("YUCP.Importer.Editor.PackageManager.Core.CreatorIdentityOAuthService")
+                .GetMethod("ShouldClearSessionForMissingRequiredScopes", BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(shouldClear, Is.Not.Null);
+            bool result = (bool)shouldClear.Invoke(null, new object[] { new[] { "products:read" } });
+
+            Assert.That(result, Is.True);
+        }
+
         [UnityTest]
         public System.Collections.IEnumerator LicenseTokenCache_StoreToken_FromBackgroundThread_MarshalsSessionStateAccess()
         {

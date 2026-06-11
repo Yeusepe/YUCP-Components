@@ -24,13 +24,6 @@ namespace YUCP.Importer.Editor.PackageManager
     /// </summary>
     public class PackageManagerWindow : EditorWindow
     {
-        private enum ViewMode
-        {
-            InstalledPackages,
-            PackageDetails,
-            Installer
-        }
-
         [MenuItem("Tools/YUCP/Package Manager")]
         public static void ShowWindow()
         {
@@ -41,25 +34,24 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             var window = GetWindow<PackageManagerWindow>();
-            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.importer/Resources/Icons/YUCPIcon.png");
+            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.importer/Editor/PackageManager/Resources/MainLogo.png");
             if (icon == null)
             {
                 // Fallback if icon doesn't exist
-                window.titleContent = new GUIContent("YUCP Package Manager");
+                window.titleContent = new GUIContent("YUCP Installer");
             }
             else
             {
-                window.titleContent = new GUIContent("YUCP Package Manager", icon);
+                window.titleContent = new GUIContent("YUCP Installer", icon);
             }
             window.minSize = new Vector2(500, 600);
             window.Show();
-            
-            // Ensure view is shown after window is displayed
+
             EditorApplication.delayCall += () =>
             {
                 if (window != null && !window._isImportMode)
                 {
-                    window.ShowInstalledPackagesView();
+                    window.ShowInstallerPlaceholderView();
                 }
             };
         }
@@ -78,18 +70,10 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
-            var window = GetWindow<PackageManagerWindow>();
-            window.titleContent = new GUIContent("YUCP Package Manager");
-            window.minSize = new Vector2(500, 600);
-            window.Show();
-
-            EditorApplication.delayCall += () =>
-            {
-                if (window != null)
-                {
-                    window.ShowPackageDetailsView(packageInfo);
-                }
-            };
+            string packageLabel = !string.IsNullOrWhiteSpace(packageInfo.packageName)
+                ? packageInfo.packageName
+                : packageInfo.packageId ?? "the package";
+            Debug.Log($"[YUCP PackageManager] '{packageLabel}' is installed and ready.");
         }
 
         // UI Elements
@@ -110,6 +94,9 @@ namespace YUCP.Importer.Editor.PackageManager
         private Button _cancelButton;
         private Button _backButton;
         private Label _verifyStatusLabel;
+        private VisualElement _flowNoticeElement;
+        private Label _flowNoticeTitleLabel;
+        private Label _flowNoticeBodyLabel;
         private VisualElement _conflictModeSection;
         private Button _overwriteModeButton;
         private Button _keepExistingModeButton;
@@ -120,7 +107,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool _detailsExpanded = false;
         private bool _preferOverwriteExisting = true;
         private int _cachedGradientHeight = 0;
-        private const string DefaultGridPlaceholderPath = "Packages/com.yucp.devtools/Resources/DefaultGrid.png";
+        private const string DefaultPlaceholderTexturePath = "Packages/com.yucp.importer/Editor/PackageManager/Resources/MainLogo.png";
         private const string CreatorIdentityBagIconPath = "Packages/com.yucp.devtools/Editor/PackageSigning/Resources/Bag.png";
         private const string ImporterBagIconPath = "Packages/com.yucp.importer/Editor/PackageManager/Resources/Bag.png";
         private const string VerifiedBadgePath = "Packages/com.yucp.importer/Editor/PackageManager/Resources/VerifiedBadge.png";
@@ -173,6 +160,13 @@ namespace YUCP.Importer.Editor.PackageManager
             public VisualElement keyInputRow;  // shown for gumroad/jinxxy
             public VisualElement discordRow;   // shown for discord
         }
+
+        private enum FlowNoticeTone
+        {
+            Info,
+            Success,
+            Error,
+        }
         
         // Domain reload prevention
         private bool _isImportMode = false; // Track if window is in import mode (prevents domain reload)
@@ -182,11 +176,6 @@ namespace YUCP.Importer.Editor.PackageManager
         private VisualElement _lastHoveredElement = null;
         private VisualElement _currentTooltipElement = null;
         
-        // View mode management
-        private ViewMode _currentViewMode = ViewMode.InstalledPackages;
-        private InstalledPackagesView _installedPackagesView;
-        private PackageDetailsView _packageDetailsView;
-        private InstalledPackageInfo _currentPackageInfo;
         private VisualElement _currentViewContainer;
 
         // Import completion tracking
@@ -227,15 +216,13 @@ namespace YUCP.Importer.Editor.PackageManager
             // Ensure TrustedAuthority is initialized with all keys (root, cached, etc.)
             TrustedAuthority.ReloadAllKeys();
             
-            // Show default view if not in import mode
-            // Use delayCall to ensure GUI is fully initialized
             if (!_isImportMode)
             {
                 EditorApplication.delayCall += () =>
                 {
                     if (!_isImportMode && _currentViewContainer != null)
                     {
-                        ShowInstalledPackagesView();
+                        ShowInstallerPlaceholderView();
                     }
                 };
             }
@@ -330,7 +317,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 root.styleSheets.Add(styleSheet);
             }
 
-            // Container for views (InstalledPackages, Details, or Installer)
+            // Container for the installer surface.
             _currentViewContainer = new VisualElement();
             _currentViewContainer.style.flexGrow = 1;
             _currentViewContainer.style.flexShrink = 1;
@@ -349,6 +336,9 @@ namespace YUCP.Importer.Editor.PackageManager
             // Metadata card (compact 2-column grid)
             _metadataSection = CreateMetadataSection();
             _installerRoot.Add(_metadataSection);
+
+            _flowNoticeElement = CreateFlowNotice();
+            _installerRoot.Add(_flowNoticeElement);
 
             // Details view (hidden by default; fills full height when expanded)
             _contentsSection = CreateContentsSection();
@@ -451,11 +441,15 @@ namespace YUCP.Importer.Editor.PackageManager
             _bannerImageContainer.style.bottom = 0;
 
             Texture2D displayBanner = _currentMetadata?.banner;
-            if (displayBanner == null) displayBanner = GetPlaceholderTexture();
             if (displayBanner != null)
             {
                 _bannerImageContainer.style.backgroundImage = new StyleBackground(displayBanner);
                 _originalBannerTexture = displayBanner;
+            }
+            else
+            {
+                _bannerImageContainer.AddToClassList("yucp-banner-image-empty");
+                _originalBannerTexture = null;
             }
             bannerSection.Add(_bannerImageContainer);
 
@@ -498,11 +492,20 @@ namespace YUCP.Importer.Editor.PackageManager
             // Package icon
             var iconWrap = new VisualElement();
             iconWrap.AddToClassList("yucp-hero-icon");
-            var iconImage = new Image();
-            iconImage.image = _currentMetadata?.icon ?? GetPlaceholderTexture();
-            iconImage.style.width = Length.Percent(100);
-            iconImage.style.height = Length.Percent(100);
-            iconWrap.Add(iconImage);
+            if (_currentMetadata?.icon != null)
+            {
+                var iconImage = new Image();
+                iconImage.image = _currentMetadata.icon;
+                iconImage.style.width = Length.Percent(100);
+                iconImage.style.height = Length.Percent(100);
+                iconWrap.Add(iconImage);
+            }
+            else
+            {
+                var iconText = new Label("Y");
+                iconText.AddToClassList("yucp-hero-icon-text");
+                iconWrap.Add(iconText);
+            }
             hero.Add(iconWrap);
 
             // Text block
@@ -699,7 +702,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private static Texture2D GetPlaceholderTexture()
         {
-            return AssetDatabase.LoadAssetAtPath<Texture2D>(DefaultGridPlaceholderPath);
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(DefaultPlaceholderTexturePath);
         }
 
         private VisualElement CreateMetadataSection()
@@ -3056,6 +3059,10 @@ namespace YUCP.Importer.Editor.PackageManager
             if (!isSignedIn)
             {
                 Debug.Log("[YUCP PackageManager] Not signed in — starting creator identity sign-in flow");
+                ShowFlowNotice(
+                    "Finish verification in your browser",
+                    "Sign in with YUCP. The installer will continue automatically after verification finishes.",
+                    FlowNoticeTone.Info);
                 // Capture everything needed for intent creation now, before BuildLicenseSection
                 // destroys the current button references.
                 string serverUrlForVerify = GetLicenseServerUrl();
@@ -3091,7 +3098,10 @@ namespace YUCP.Importer.Editor.PackageManager
                         UpdateImportButtonEnabled();
                         if (!LicenseVerificationService.IsCreatorIdentityReauthenticationError(err))
                         {
-                            EditorUtility.DisplayDialog("Purchase Verification Failed", $"{err}", "OK");
+                            ShowFlowNotice(
+                                "Verification failed",
+                                string.IsNullOrWhiteSpace(err) ? "Could not verify access for this package." : err,
+                                FlowNoticeTone.Error);
                         }
                     };
                 };
@@ -3108,16 +3118,20 @@ namespace YUCP.Importer.Editor.PackageManager
 
             if (verificationRequirements == null || verificationRequirements.Length == 0)
             {
-                EditorUtility.DisplayDialog(
+                ShowFlowNotice(
                     "Verification Unavailable",
                     "This package does not currently expose any hosted verification methods.",
-                    "OK");
+                    FlowNoticeTone.Error);
                 return;
             }
 
             Debug.Log($"[YUCP PackageManager] Starting browser verification for packageId='{req.packageId}', serverUrl='{GetLicenseServerUrl()}'");
             verifyBtn.SetEnabled(false);
             UpdateButtonLabel(verifyBtn, ReferenceEquals(verifyBtn, _importButton) ? "Verifying..." : "Opening browser...");
+            ShowFlowNotice(
+                "Finish verification in your browser",
+                "Complete the browser step. The installer will continue automatically.",
+                FlowNoticeTone.Info);
 
             string serverUrl = GetLicenseServerUrl();
 
@@ -3167,8 +3181,10 @@ namespace YUCP.Importer.Editor.PackageManager
                         {
                             PopulateCreatorIdentityButton(verifyBtn, GetDiscordVerificationButtonLabel(CreatorIdentityOAuthService.IsSignedIn()));
                         }
-                        EditorUtility.DisplayDialog("Purchase Verification Failed",
-                            $"{err}", "OK");
+                        ShowFlowNotice(
+                            "Verification failed",
+                            string.IsNullOrWhiteSpace(err) ? "Could not verify access for this package." : err,
+                            FlowNoticeTone.Error);
                     };
                 });
         }
@@ -3215,6 +3231,67 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
+        private VisualElement CreateFlowNotice()
+        {
+            var notice = new VisualElement();
+            notice.AddToClassList("yucp-flow-notice");
+            notice.style.display = DisplayStyle.None;
+
+            _flowNoticeTitleLabel = new Label();
+            _flowNoticeTitleLabel.AddToClassList("yucp-flow-notice-title");
+            notice.Add(_flowNoticeTitleLabel);
+
+            _flowNoticeBodyLabel = new Label();
+            _flowNoticeBodyLabel.AddToClassList("yucp-flow-notice-body");
+            notice.Add(_flowNoticeBodyLabel);
+
+            return notice;
+        }
+
+        private void ShowFlowNotice(string title, string body, FlowNoticeTone tone)
+        {
+            if (_flowNoticeElement == null)
+            {
+                return;
+            }
+
+            _flowNoticeElement.RemoveFromClassList("yucp-flow-notice-info");
+            _flowNoticeElement.RemoveFromClassList("yucp-flow-notice-success");
+            _flowNoticeElement.RemoveFromClassList("yucp-flow-notice-error");
+            _flowNoticeElement.AddToClassList(tone switch
+            {
+                FlowNoticeTone.Success => "yucp-flow-notice-success",
+                FlowNoticeTone.Error => "yucp-flow-notice-error",
+                _ => "yucp-flow-notice-info"
+            });
+
+            _flowNoticeTitleLabel.text = string.IsNullOrWhiteSpace(title) ? "YUCP Installer" : title.Trim();
+            _flowNoticeBodyLabel.text = string.IsNullOrWhiteSpace(body) ? string.Empty : body.Trim();
+            _flowNoticeBodyLabel.style.display = string.IsNullOrWhiteSpace(_flowNoticeBodyLabel.text)
+                ? DisplayStyle.None
+                : DisplayStyle.Flex;
+            _flowNoticeElement.style.display = DisplayStyle.Flex;
+        }
+
+        private void ClearFlowNotice()
+        {
+            if (_flowNoticeElement == null)
+            {
+                return;
+            }
+
+            _flowNoticeElement.style.display = DisplayStyle.None;
+            if (_flowNoticeTitleLabel != null)
+            {
+                _flowNoticeTitleLabel.text = string.Empty;
+            }
+
+            if (_flowNoticeBodyLabel != null)
+            {
+                _flowNoticeBodyLabel.text = string.Empty;
+            }
+        }
+
         private void OnCreatorIdentitySignInClicked()
         {
             BeginCreatorIdentitySignIn();
@@ -3234,7 +3311,10 @@ namespace YUCP.Importer.Editor.PackageManager
             if (string.IsNullOrEmpty(serverUrl))
             {
                 Debug.LogError("[YUCP PackageManager] BeginCreatorIdentitySignIn: server URL is empty — cannot sign in. Check Package Manager settings.");
-                EditorUtility.DisplayDialog("Sign-In Failed", "The verification server URL is not configured. Please check the YUCP Package Manager settings.", "OK");
+                ShowFlowNotice(
+                    "Sign-in unavailable",
+                    "The verification server URL is not configured. Open Project Settings > YUCP Package Manager and choose a trusted server.",
+                    FlowNoticeTone.Error);
                 return;
             }
 
@@ -3302,8 +3382,10 @@ namespace YUCP.Importer.Editor.PackageManager
                         }
                         BuildLicenseSection();
                         UpdateImportButtonEnabled();
-                        EditorUtility.DisplayDialog("Sign-In Failed",
-                            $"Could not complete sign-in: {err}", "OK");
+                        ShowFlowNotice(
+                            "Sign-in failed",
+                            string.IsNullOrWhiteSpace(err) ? "Could not complete sign-in." : err,
+                            FlowNoticeTone.Error);
                     };
                 });
         }
@@ -4308,6 +4390,8 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             try
             {
+                ClearFlowNotice();
+
                 if (_currentImportItems == null || _currentImportItems.Length == 0)
                 {
                     Debug.LogWarning("[YUCP PackageManager] No import items, closing window");
@@ -4353,10 +4437,10 @@ namespace YUCP.Importer.Editor.PackageManager
                         Debug.Log($"[YUCP PackageManager] VerificationRequirements count={verificationRequirements.Length}");
                         if (verificationRequirements.Length == 0)
                         {
-                            EditorUtility.DisplayDialog(
+                            ShowFlowNotice(
                                 "Verification Unavailable",
                                 "This package requires verification before import, but it does not currently expose any hosted verification methods.",
-                                "OK");
+                                FlowNoticeTone.Error);
                             return;
                         }
 
@@ -4382,22 +4466,16 @@ namespace YUCP.Importer.Editor.PackageManager
                 _pendingImportAfterVerification = false;
 
                 PackageMetadata installMetadata = _currentMetadata ?? _cachedMetadata;
-                if (AliasInstallPlanConfirmationService.RequiresInstallConfirmation(installMetadata) &&
-                    !AliasInstallPlanConfirmationService.ConfirmInstall(installMetadata))
-                {
-                    return;
-                }
-
                 if (installMetadata?.aliasPackage != null &&
                     string.Equals(installMetadata.aliasPackage.kind, "alias-v1", StringComparison.OrdinalIgnoreCase))
                 {
                     string serverUrl = GetLicenseServerUrl();
                     if (string.IsNullOrWhiteSpace(serverUrl))
                     {
-                        EditorUtility.DisplayDialog(
+                        ShowFlowNotice(
                             "Install Package",
                             "The verification server URL is not configured. Please check the YUCP Package Manager settings.",
-                            "OK");
+                            FlowNoticeTone.Error);
                         return;
                     }
 
@@ -4415,12 +4493,12 @@ namespace YUCP.Importer.Editor.PackageManager
                             out string resolveError);
                         if (!resolved)
                         {
-                            EditorUtility.DisplayDialog(
+                            ShowFlowNotice(
                                 "Install Package",
                                 string.IsNullOrWhiteSpace(resolveError)
                                     ? "Could not resolve the alias install plan."
                                     : resolveError,
-                                "OK");
+                                FlowNoticeTone.Error);
                             return;
                         }
 
@@ -4430,12 +4508,12 @@ namespace YUCP.Importer.Editor.PackageManager
                             0.7f);
                         if (!UpdateDeliveryService.TryApplyAuthorizedInstallPlan(installPlan, out string applyError))
                         {
-                            EditorUtility.DisplayDialog(
+                            ShowFlowNotice(
                                 "Install Package",
                                 string.IsNullOrWhiteSpace(applyError)
                                     ? "Could not apply the alias install plan."
                                     : applyError,
-                                "OK");
+                                FlowNoticeTone.Error);
                             return;
                         }
 
@@ -4486,7 +4564,7 @@ namespace YUCP.Importer.Editor.PackageManager
             catch (Exception ex)
             {
                 Debug.LogError($"[YUCP PackageManager] Failed to import package: {ex.Message}\n{ex.StackTrace}");
-                EditorUtility.DisplayDialog("Import Failed", $"Failed to import package: {ex.Message}", "OK");
+                ShowFlowNotice("Import failed", $"Failed to import package: {ex.Message}", FlowNoticeTone.Error);
             }
         }
 
@@ -4662,136 +4740,15 @@ namespace YUCP.Importer.Editor.PackageManager
             return path.Replace('\\', '/').TrimStart('/');
         }
 
-        // View management methods
-        private void ShowInstalledPackagesView()
-        {
-            _currentViewMode = ViewMode.InstalledPackages;
-            _currentViewContainer.Clear();
-            
-            // Always create a new view to ensure it's fresh
-            _installedPackagesView = new InstalledPackagesView(OnPackageSelected);
-            
-            _installedPackagesView.RefreshPackages();
-            _currentViewContainer.Add(_installedPackagesView);
-            
-            Debug.Log("[PackageManager] Showing InstalledPackagesView");
-        }
-
-        private void ShowPackageDetailsView(InstalledPackageInfo packageInfo)
-        {
-            _currentViewMode = ViewMode.PackageDetails;
-            _currentPackageInfo = packageInfo;
-            _currentViewContainer.Clear();
-            
-            _packageDetailsView = new PackageDetailsView(
-                packageInfo,
-                OnBackToInstalledPackages,
-                OnUpdatePackage,
-                OnUninstallPackage
-            );
-            
-            _currentViewContainer.Add(_packageDetailsView);
-        }
-
+        // Installer view management
         private void ShowInstallerView()
         {
-            _currentViewMode = ViewMode.Installer;
             _currentViewContainer.Clear();
             if (_installerRoot != null)
             {
                 _installerRoot.style.display = DisplayStyle.Flex;
                 _currentViewContainer.Add(_installerRoot);
             }
-        }
-
-        private void OnPackageSelected(InstalledPackageInfo packageInfo)
-        {
-            ShowPackageDetailsView(packageInfo);
-        }
-
-        private void OnBackToInstalledPackages()
-        {
-            ShowInstalledPackagesView();
-        }
-
-        private void OnUpdatePackage(InstalledPackageInfo packageInfo)
-        {
-            if (packageInfo?.aliasPackage != null &&
-                string.Equals(packageInfo.aliasPackage.kind, "alias-v1", StringComparison.OrdinalIgnoreCase))
-            {
-                string serverUrl = GetLicenseServerUrl();
-                if (string.IsNullOrWhiteSpace(serverUrl))
-                {
-                    EditorUtility.DisplayDialog(
-                        "Update Package",
-                        "The verification server URL is not configured. Please check the YUCP Package Manager settings.",
-                        "OK");
-                    return;
-                }
-
-                try
-                {
-                    string packageLabel = !string.IsNullOrWhiteSpace(packageInfo.packageName)
-                        ? packageInfo.packageName
-                        : packageInfo.packageId;
-                    EditorUtility.DisplayProgressBar(
-                        "Resolving Alias Update",
-                        $"Fetching the authorized install plan for '{packageLabel}'...",
-                        0.35f);
-
-                    bool resolved = UpdateDeliveryService.TryResolveAuthorizedInstallPlanForPackage(
-                        serverUrl,
-                        packageInfo.packageId,
-                        out UpdateDeliveryService.AliasInstallPlan installPlan,
-                        out string error);
-                    if (!resolved)
-                    {
-                        EditorUtility.DisplayDialog(
-                            "Update Package",
-                            string.IsNullOrWhiteSpace(error)
-                                ? "Could not resolve the alias update plan."
-                                : error,
-                            "OK");
-                        return;
-                    }
-
-                    if (!AliasInstallPlanConfirmationService.ConfirmUpdate(packageInfo, installPlan))
-                    {
-                        return;
-                    }
-
-                    EditorUtility.DisplayProgressBar(
-                        "Applying Alias Update",
-                        $"Updating '{packageLabel}' through the VPM resolver...",
-                        0.7f);
-                    if (!UpdateDeliveryService.TryApplyAuthorizedInstallPlan(installPlan, out string applyError))
-                    {
-                        EditorUtility.DisplayDialog(
-                            "Update Package",
-                            string.IsNullOrWhiteSpace(applyError)
-                                ? "Could not apply the alias update plan."
-                                : applyError,
-                            "OK");
-                        return;
-                    }
-
-                    RefreshInstalledPackageViews(packageInfo.packageId);
-                    EditorUtility.DisplayDialog(
-                        "Update Package",
-                        $"Updated '{packageLabel}' through the authorized alias delivery flow.",
-                        "OK");
-                    return;
-                }
-                finally
-                {
-                    EditorUtility.ClearProgressBar();
-                }
-            }
-
-            EditorUtility.DisplayDialog(
-                "Update Package",
-                $"Update functionality for '{packageInfo.packageName}' is not available in this importer flow yet.",
-                "OK");
         }
 
         private void CompleteAliasInstallFlow(string packageName)
@@ -4820,40 +4777,68 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
-        private void RefreshInstalledPackageViews(string packageId)
+        private void ShowInstallerPlaceholderView()
         {
-            InstalledPackageRegistry registry = InstalledPackageRegistry.Load();
-            InstalledPackageInfo refreshedPackage = registry?.GetPackage(packageId);
-
-            if (_currentViewMode == ViewMode.PackageDetails && refreshedPackage != null)
+            if (_currentViewContainer == null)
             {
-                ShowPackageDetailsView(refreshedPackage);
                 return;
             }
 
-            if (_installedPackagesView != null)
+            _currentViewContainer.Clear();
+
+            var placeholder = new VisualElement();
+            placeholder.AddToClassList("yucp-installer-placeholder");
+
+            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.importer/Editor/PackageManager/Resources/MainLogo.png");
+            if (icon != null)
             {
-                _installedPackagesView.RefreshPackages();
-                return;
+                var iconImage = new Image { image = icon };
+                iconImage.AddToClassList("yucp-installer-placeholder-icon");
+                placeholder.Add(iconImage);
             }
 
-            ShowInstalledPackagesView();
+            var eyebrow = new Label("YUCP Installer");
+            eyebrow.AddToClassList("yucp-installer-placeholder-eyebrow");
+            placeholder.Add(eyebrow);
+
+            var title = new Label("Import packages through the installer");
+            title.AddToClassList("yucp-installer-placeholder-title");
+            placeholder.Add(title);
+
+            var body = new Label("Choose a .unitypackage to open the same verification, package review, and install flow used by protected YUCP packages.");
+            body.AddToClassList("yucp-installer-placeholder-body");
+            placeholder.Add(body);
+
+            var actionRow = new VisualElement();
+            actionRow.AddToClassList("yucp-installer-placeholder-actions");
+
+            var openButton = new Button(OpenUnityPackageForImport)
+            {
+                text = "Open Package"
+            };
+            openButton.AddToClassList("yucp-cta-button");
+            actionRow.Add(openButton);
+
+            var settingsButton = new Button(() => SettingsService.OpenProjectSettings("Project/YUCP Package Manager"))
+            {
+                text = "Settings"
+            };
+            settingsButton.AddToClassList("yucp-cta-cancel");
+            actionRow.Add(settingsButton);
+
+            placeholder.Add(actionRow);
+            _currentViewContainer.Add(placeholder);
         }
 
-        private void OnUninstallPackage(InstalledPackageInfo packageInfo)
+        private static void OpenUnityPackageForImport()
         {
-            if (PackageUninstaller.UninstallPackage(packageInfo.packageId))
+            string packagePath = EditorUtility.OpenFilePanel("Open Unity Package", string.Empty, "unitypackage");
+            if (string.IsNullOrWhiteSpace(packagePath))
             {
-                // Refresh the view
-                if (_currentViewMode == ViewMode.InstalledPackages && _installedPackagesView != null)
-                {
-                    _installedPackagesView.RefreshPackages();
-                }
-                else
-                {
-                    ShowInstalledPackagesView();
-                }
+                return;
             }
+
+            AssetDatabase.ImportPackage(packagePath, true);
         }
 
         private bool RegisterPackageAfterImport()
@@ -5013,7 +4998,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     const string legacyProtectedShellError =
                         "This package was published with the legacy protected-shell import flow, which the importer no longer supports. Re-export and republish it through the server-first delivery pipeline.";
                     Debug.LogError($"[YUCP PackageManager] {legacyProtectedShellError}");
-                    EditorUtility.DisplayDialog("Import Failed", legacyProtectedShellError, "OK");
+                    ShowFlowNotice("Import failed", legacyProtectedShellError, FlowNoticeTone.Error);
                     return false;
                 }
 

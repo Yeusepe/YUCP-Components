@@ -280,7 +280,56 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void AliasPackageAutoInstaller_SessionKeyChangesWhenPackageFolderIsRecreated()
+        public void AliasPackageAutoInstaller_DoesNotTreatShimOnlyStateAsCompleteWhenPayloadPathsAreExpected()
+        {
+            var metadata = new PackageMetadata("Song Thing")
+            {
+                version = "1.0.12",
+                aliasPackage = new AliasPackageContract
+                {
+                    kind = "alias-v1",
+                    aliasId = "song-thing",
+                    packageName = "com.yucp.songthing",
+                    packageVersion = "1.0.12",
+                    installStrategy = UpdateDeliveryService.ServerAuthorizedInstallStrategy,
+                    installPlan = new AliasInstallPlanMetadata
+                    {
+                        managedPaths = new List<string>
+                        {
+                            "Packages/com.yucp.songthing/package.json",
+                            "Assets/YUCP Assets/Song Thing/Marker.txt",
+                        },
+                    },
+                },
+            };
+            var installed = new InstalledPackageInfo
+            {
+                packageId = "com.yucp.songthing",
+                installedVersion = "1.0.12",
+                version = "1.0.12",
+                aliasPackage = metadata.aliasPackage.Clone(),
+            };
+            var staleInstallState = new AliasPackageInstallStateManifest
+            {
+                packageId = "com.yucp.songthing",
+                installedVersion = "1.0.12",
+                managedPaths = new List<string>
+                {
+                    "Packages/com.yucp.songthing/package.json",
+                },
+            };
+
+            bool isComplete = AliasPackageAutoInstaller.IsManagedInstallCompleteForAlias(
+                metadata,
+                installed,
+                staleInstallState,
+                path => string.Equals(path, "Packages/com.yucp.songthing/package.json", StringComparison.OrdinalIgnoreCase));
+
+            Assert.That(isComplete, Is.False);
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_SessionKeyIgnoresTimestampOnlyPackageRefresh()
         {
             string packagesRoot = Path.Combine(Path.GetTempPath(), "YUCP-AliasAttempt-" + System.Guid.NewGuid().ToString("N"));
             string aliasDirectory = Path.Combine(packagesRoot, "com.yucp.songthing");
@@ -322,7 +371,132 @@ namespace YUCP.Importer.Editor.Tests
                 Directory.SetLastWriteTimeUtc(aliasDirectory, secondTimestamp);
                 string secondSessionKey = buildSessionKey.Invoke(null, new object[] { metadata, packageJsonPath }) as string;
 
-                Assert.That(secondSessionKey, Is.Not.EqualTo(firstSessionKey));
+                File.WriteAllText(packageJsonPath, "{\"name\":\"com.yucp.songthing\",\"version\":\"1.0.7\"}");
+                string changedContentSessionKey = buildSessionKey.Invoke(null, new object[] { metadata, packageJsonPath }) as string;
+
+                Assert.That(secondSessionKey, Is.EqualTo(firstSessionKey));
+                Assert.That(changedContentSessionKey, Is.Not.EqualTo(firstSessionKey));
+            }
+            finally
+            {
+                if (Directory.Exists(packagesRoot))
+                {
+                    Directory.Delete(packagesRoot, true);
+                }
+            }
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_PersistentPromptKeyIgnoresTimestampOnlyReloadChurn()
+        {
+            string packagesRoot = Path.Combine(Path.GetTempPath(), "YUCP-AliasPrompt-" + System.Guid.NewGuid().ToString("N"));
+            string aliasDirectory = Path.Combine(packagesRoot, "com.yucp.songthing");
+            string packageJsonPath = Path.Combine(aliasDirectory, "package.json");
+
+            try
+            {
+                Directory.CreateDirectory(aliasDirectory);
+                const string packageJson = "{\"name\":\"com.yucp.songthing\",\"version\":\"1.0.12\"}";
+                File.WriteAllText(packageJsonPath, packageJson);
+
+                var metadata = new PackageMetadata("Song Thing")
+                {
+                    version = "1.0.12",
+                    aliasPackage = new AliasPackageContract
+                    {
+                        kind = "alias-v1",
+                        aliasId = "song-thing",
+                        packageName = "com.yucp.songthing",
+                        packageVersion = "1.0.12",
+                        installStrategy = UpdateDeliveryService.ServerAuthorizedInstallStrategy,
+                    },
+                };
+
+                string firstPromptKey = AliasPackageAutoInstaller.BuildPersistentPromptKey(
+                    metadata,
+                    packageJsonPath,
+                    File.ReadAllText(packageJsonPath));
+
+                DateTime changedTimestamp = new DateTime(2026, 5, 2, 18, 5, 0, DateTimeKind.Utc);
+                File.SetLastWriteTimeUtc(packageJsonPath, changedTimestamp);
+                Directory.SetLastWriteTimeUtc(aliasDirectory, changedTimestamp);
+                string secondPromptKey = AliasPackageAutoInstaller.BuildPersistentPromptKey(
+                    metadata,
+                    packageJsonPath,
+                    File.ReadAllText(packageJsonPath));
+
+                File.WriteAllText(packageJsonPath, "{\"name\":\"com.yucp.songthing\",\"version\":\"1.0.13\"}");
+                string changedContentPromptKey = AliasPackageAutoInstaller.BuildPersistentPromptKey(
+                    metadata,
+                    packageJsonPath,
+                    File.ReadAllText(packageJsonPath));
+
+                Assert.That(secondPromptKey, Is.EqualTo(firstPromptKey));
+                Assert.That(changedContentPromptKey, Is.Not.EqualTo(firstPromptKey));
+            }
+            finally
+            {
+                if (Directory.Exists(packagesRoot))
+                {
+                    Directory.Delete(packagesRoot, true);
+                }
+            }
+        }
+
+        [Test]
+        public void AliasPackageAutoInstaller_ClearingPackageChangeAttemptsKeepsDurablePromptGate()
+        {
+            string packagesRoot = Path.Combine(Path.GetTempPath(), "YUCP-AliasPromptGate-" + System.Guid.NewGuid().ToString("N"));
+            string aliasDirectory = Path.Combine(packagesRoot, "com.yucp.songthing");
+            string packageJsonPath = Path.Combine(aliasDirectory, "package.json");
+
+            try
+            {
+                Directory.CreateDirectory(aliasDirectory);
+                const string packageJson = "{\"name\":\"com.yucp.songthing\",\"version\":\"1.0.12\"}";
+                File.WriteAllText(packageJsonPath, packageJson);
+
+                var metadata = new PackageMetadata("Song Thing")
+                {
+                    version = "1.0.12",
+                    aliasPackage = new AliasPackageContract
+                    {
+                        kind = "alias-v1",
+                        aliasId = "song-thing",
+                        packageName = "com.yucp.songthing",
+                        packageVersion = "1.0.12",
+                        installStrategy = UpdateDeliveryService.ServerAuthorizedInstallStrategy,
+                    },
+                };
+
+                string promptKey = AliasPackageAutoInstaller.BuildPersistentPromptKey(
+                    metadata,
+                    packageJsonPath,
+                    File.ReadAllText(packageJsonPath));
+                MethodInfo buildPromptIndexKey = typeof(AliasPackageAutoInstaller).GetMethod(
+                    "BuildPersistentPromptIndexKey",
+                    BindingFlags.NonPublic | BindingFlags.Static,
+                    null,
+                    new[] { typeof(string), typeof(string) },
+                    null);
+                Assert.That(buildPromptIndexKey, Is.Not.Null);
+                string promptIndexKey =
+                    buildPromptIndexKey.Invoke(null, new object[] { "com.yucp.songthing", "1.0.12" }) as string;
+
+                EditorPrefs.SetBool(promptKey, true);
+                EditorPrefs.SetString(promptIndexKey, promptKey);
+
+                MethodInfo clearRecordedAttempts = typeof(AliasPackageAutoInstaller).GetMethod(
+                    "ClearRecordedInstallAttempts",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+                Assert.That(clearRecordedAttempts, Is.Not.Null);
+                clearRecordedAttempts.Invoke(null, new object[] { "com.yucp.songthing", "1.0.12" });
+
+                Assert.That(
+                    EditorPrefs.GetBool(promptKey, false),
+                    Is.True,
+                    "Unity package changed/removed events may clear transient session attempts, but must not forget that this exact shim already auto-opened a prompt.");
             }
             finally
             {

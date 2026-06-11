@@ -406,7 +406,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                         : $"[YUCP PackageManager] A required package protection step failed and the import could not be rolled back cleanly. {rollbackError}");
 
-                    EditorUtility.DisplayDialog(
+                    YucpEditorDialog.DisplayDialog(
 
                         "Import Failed",
 
@@ -458,7 +458,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                         : "[YUCP PackageManager] A required package protection step failed and the import could not be rolled back cleanly.");
 
-                    EditorUtility.DisplayDialog(
+                    YucpEditorDialog.DisplayDialog(
 
                         "Import Failed",
 

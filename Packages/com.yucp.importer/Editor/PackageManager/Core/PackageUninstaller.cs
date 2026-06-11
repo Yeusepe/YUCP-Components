@@ -182,7 +182,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     "Only tracked safe paths will be removed.";
             }
 
-            return EditorUtility.DisplayDialog(
+            return YucpEditorDialog.DisplayDialog(
                 "Uninstall Package",
                 message,
                 "Remove Safe Files",

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -52,6 +54,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public string packageSha256;
             public string sourceKind;
             public string downloadAuthorizationUrl;
+            public AliasPackageMediaSet media = new AliasPackageMediaSet();
             public AliasPackageContract aliasContract;
             public ImporterDeliveryContract importerDelivery;
         }
@@ -69,6 +72,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             public long responseCode;
             public string body;
+        }
+
+        private sealed class BinaryRequestResult
+        {
+            public long responseCode;
+            public byte[] bytes;
         }
 
         public static bool TryResolveAuthorizedInstallPlan(
@@ -113,14 +122,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return false;
             }
 
-            InstalledPackageInfo package = ResolveInstalledPackage(packageId);
-            if (package?.aliasPackage == null)
+            AliasPackageContract aliasPackage = ResolveInstalledAliasPackage(packageId);
+            if (aliasPackage == null)
             {
                 error = $"Package '{packageId}' is not an alias package with server-authorized delivery metadata.";
                 return false;
             }
 
-            return TryResolveAuthorizedInstallPlan(serverUrl, package.aliasPackage, out installPlan, out error);
+            return TryResolveAuthorizedInstallPlan(serverUrl, aliasPackage, out installPlan, out error);
         }
 
         public static string CheckForUpdate(string packageId, string currentVersion)
@@ -130,8 +139,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return null;
             }
 
-            InstalledPackageInfo package = ResolveInstalledPackage(packageId);
-            if (package?.aliasPackage == null)
+            AliasPackageContract aliasPackage = ResolveInstalledAliasPackage(packageId);
+            if (aliasPackage == null)
             {
                 return null;
             }
@@ -324,19 +333,31 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     throw new ReauthenticationRequiredException();
                 }
 
+                AuthorizedVpmPackageInstaller.AuthorizedPackageInstallResult installResult = null;
 #if UNITY_INCLUDE_TESTS
+                bool installedThroughHook = false;
                 if (UpdateDeliveryServiceTestHooks.AuthorizedPackageInstallerHandler != null)
                 {
-                    UpdateDeliveryServiceTestHooks.AuthorizedPackageInstallerHandler(
+                    installResult = UpdateDeliveryServiceTestHooks.AuthorizedPackageInstallerHandler(
                         projectDir,
                         serverUrl,
                         package,
                         accessToken);
-                    continue;
+                    installedThroughHook = true;
                 }
+                if (!installedThroughHook)
 #endif
-                AuthorizedVpmPackageInstaller.InstallAuthorizedPackage(
+                {
+                    installResult = AuthorizedVpmPackageInstaller.InstallAuthorizedPackage(
+                        projectDir,
+                        package,
+                        accessToken);
+                }
+
+                MergeImportedManagedPaths(package, installResult?.managedPaths);
+                CacheAuthorizedPackageMedia(
                     projectDir,
+                    serverUrl,
                     package,
                     accessToken);
             }
@@ -388,6 +409,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             metadata.aliasPackage = MergeAliasPackageContract(metadata.aliasPackage, package);
+            ApplyCachedPackageMedia(metadata, package.media);
 
             var installedInfo = InstalledPackageInfoFactory.Create(
                 metadata,
@@ -454,26 +476,447 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 merged.resolvedArtifact.sha256 = package.packageSha256 ?? package.zipSha256 ?? string.Empty;
             }
 
+            AddGeneratedPackageMediaPath(merged, package.media?.icon);
+            AddGeneratedPackageMediaPath(merged, package.media?.banner);
+
             return merged;
+        }
+
+        internal static void CacheAuthorizedPackageMedia(
+            string projectDir,
+            string serverUrl,
+            AliasInstallPlanPackage package,
+            string accessToken)
+        {
+            if (package?.media == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(projectDir))
+            {
+                throw new Exception("Could not resolve the current Unity project directory.");
+            }
+
+            CacheAuthorizedPackageMediaDescriptor(
+                projectDir,
+                serverUrl,
+                package,
+                package.media.icon,
+                "icon",
+                accessToken);
+            CacheAuthorizedPackageMediaDescriptor(
+                projectDir,
+                serverUrl,
+                package,
+                package.media.banner,
+                "banner",
+                accessToken);
+        }
+
+        private static void CacheAuthorizedPackageMediaDescriptor(
+            string projectDir,
+            string serverUrl,
+            AliasInstallPlanPackage package,
+            AliasPackageMediaDescriptor descriptor,
+            string fallbackKind,
+            string accessToken)
+        {
+            if (descriptor == null || string.IsNullOrWhiteSpace(descriptor.downloadUrl))
+            {
+                return;
+            }
+
+            string mediaKind = NormalizeMediaKind(descriptor.kind, fallbackKind);
+            if (string.IsNullOrWhiteSpace(mediaKind))
+            {
+                throw new Exception(
+                    $"Alias install plan for '{package.packageId}' included unsupported package media kind '{descriptor.kind ?? "<missing>"}'.");
+            }
+
+            EnsureTrustedSameOrigin(descriptor.downloadUrl, serverUrl, "Package media download URL");
+
+            string expectedSha256 = NormalizeSha256(descriptor.sha256);
+            if (string.IsNullOrEmpty(expectedSha256))
+            {
+                throw new Exception(
+                    $"Alias install plan for '{package.packageId}' included {mediaKind} media without a valid SHA-256 digest.");
+            }
+
+            string extension = GetMediaExtension(descriptor.contentType);
+            if (string.IsNullOrEmpty(extension))
+            {
+                throw new Exception(
+                    $"Alias install plan for '{package.packageId}' included unsupported {mediaKind} media content type '{descriptor.contentType ?? "<missing>"}'.");
+            }
+
+            byte[] bytes = DownloadAuthorizedBytesAsync(
+                serverUrl,
+                accessToken,
+                descriptor.downloadUrl,
+                $"Could not download {mediaKind} media for {package.packageId}@{package.version}")
+                .GetAwaiter()
+                .GetResult();
+
+            if (descriptor.byteSize > 0 && bytes.LongLength != descriptor.byteSize)
+            {
+                throw new Exception(
+                    $"Downloaded {mediaKind} media for {package.packageId}@{package.version} had {bytes.LongLength} bytes, expected {descriptor.byteSize}.");
+            }
+
+            string actualSha256 = ComputeSha256(bytes);
+            if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception(
+                    $"SHA-256 mismatch for {mediaKind} media on {package.packageId}@{package.version}. Expected {expectedSha256}, got {actualSha256}.");
+            }
+
+            string relativePath = BuildPackageMediaRelativePath(package.packageId, package.version, mediaKind, extension);
+            WriteProjectRelativeFile(projectDir, relativePath, bytes);
+            descriptor.kind = mediaKind;
+            descriptor.localPath = relativePath;
+        }
+
+        private static async Task<byte[]> DownloadAuthorizedBytesAsync(
+            string serverUrl,
+            string accessToken,
+            string url,
+            string fallback)
+        {
+            BinaryRequestResult result = await SendAuthorizedBytesAsync(
+                serverUrl,
+                accessToken,
+                url,
+                AliasDeliveryRequiredScopes).ConfigureAwait(false);
+            if (result.responseCode == 200)
+            {
+                return result.bytes ?? Array.Empty<byte>();
+            }
+
+            string body = result.bytes != null && result.bytes.Length > 0
+                ? Encoding.UTF8.GetString(result.bytes)
+                : string.Empty;
+            throw new Exception(BuildServerErrorMessage(result.responseCode, body, fallback));
+        }
+
+        private static async Task<BinaryRequestResult> SendAuthorizedBytesAsync(
+            string serverUrl,
+            string accessToken,
+            string url,
+            params string[] requiredScopes)
+        {
+            bool hasRetried = false;
+
+            while (true)
+            {
+                BinaryRequestResult result = await SendHttpBytesAsync(url, accessToken).ConfigureAwait(false);
+                if (result.responseCode == 401)
+                {
+                    if (!hasRetried)
+                    {
+                        string refreshed = await CreatorIdentityOAuthService.ForceRefreshAccessTokenAsync(
+                            serverUrl,
+                            requiredScopes).ConfigureAwait(false);
+                        if (!string.IsNullOrEmpty(refreshed))
+                        {
+                            accessToken = refreshed;
+                            hasRetried = true;
+                            continue;
+                        }
+                    }
+
+                    throw new ReauthenticationRequiredException();
+                }
+
+                string parsedError = ExtractErrorMessage(
+                    result.bytes != null && result.bytes.Length > 0
+                        ? Encoding.UTF8.GetString(result.bytes)
+                        : string.Empty);
+                if (result.responseCode == 403 &&
+                    !string.IsNullOrEmpty(parsedError) &&
+                    parsedError.IndexOf("products:read", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    throw new ReauthenticationRequiredException();
+                }
+
+                return result;
+            }
+        }
+
+        private static async Task<BinaryRequestResult> SendHttpBytesAsync(string url, string accessToken)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("Accept", "image/*,application/octet-stream");
+            request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            HttpResponseMessage response = await s_http.SendAsync(request).ConfigureAwait(false);
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            return new BinaryRequestResult
+            {
+                responseCode = (long)response.StatusCode,
+                bytes = bytes,
+            };
+        }
+
+        private static void ApplyCachedPackageMedia(PackageMetadata metadata, AliasPackageMediaSet media)
+        {
+            if (metadata == null || media == null)
+            {
+                return;
+            }
+
+            Texture2D icon = LoadCachedMediaTexture(media.icon);
+            if (icon != null)
+            {
+                metadata.icon = icon;
+            }
+
+            Texture2D banner = LoadCachedMediaTexture(media.banner);
+            if (banner != null)
+            {
+                metadata.banner = banner;
+            }
+        }
+
+        private static Texture2D LoadCachedMediaTexture(AliasPackageMediaDescriptor descriptor)
+        {
+            if (descriptor == null || string.IsNullOrWhiteSpace(descriptor.localPath))
+            {
+                return null;
+            }
+
+            string assetPath = NormalizeProjectRelativePath(descriptor.localPath);
+            if (!assetPath.StartsWith(InstalledPackagesOrganizer.RootAssetPath + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+        }
+
+        private static void AddGeneratedPackageMediaPath(
+            AliasPackageContract aliasPackage,
+            AliasPackageMediaDescriptor descriptor)
+        {
+            if (aliasPackage == null || descriptor == null || string.IsNullOrWhiteSpace(descriptor.localPath))
+            {
+                return;
+            }
+
+            aliasPackage.installPlan ??= new AliasInstallPlanMetadata();
+            aliasPackage.installPlan.generatedPaths ??= new List<string>();
+            string normalizedPath = NormalizeProjectRelativePath(descriptor.localPath);
+            if (!aliasPackage.installPlan.generatedPaths.Any(
+                    path => string.Equals(
+                        NormalizeProjectRelativePath(path),
+                        normalizedPath,
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                aliasPackage.installPlan.generatedPaths.Add(normalizedPath);
+            }
+        }
+
+        private static void WriteProjectRelativeFile(string projectDir, string relativePath, byte[] bytes)
+        {
+            string normalizedRelativePath = NormalizeProjectRelativePath(relativePath);
+            string projectRoot = Path.GetFullPath(projectDir);
+            string fullPath = Path.GetFullPath(Path.Combine(
+                projectRoot,
+                normalizedRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!fullPath.StartsWith(projectRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception("Package media path resolved outside the Unity project.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+            File.WriteAllBytes(fullPath, bytes);
+        }
+
+        private static string BuildPackageMediaRelativePath(
+            string packageId,
+            string version,
+            string mediaKind,
+            string extension)
+        {
+            string safePackageId = SanitizeAssetPathSegment(packageId, "package");
+            string safeVersion = SanitizeAssetPathSegment(version, "version");
+            return $"{InstalledPackagesOrganizer.RootAssetPath}/Media/{safePackageId}/{safeVersion}/{mediaKind}{extension}";
+        }
+
+        private static string SanitizeAssetPathSegment(string value, string fallback)
+        {
+            string candidate = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+            var builder = new StringBuilder(candidate.Length);
+            foreach (char character in candidate)
+            {
+                bool allowed =
+                    (character >= 'a' && character <= 'z') ||
+                    (character >= 'A' && character <= 'Z') ||
+                    (character >= '0' && character <= '9') ||
+                    character == '.' ||
+                    character == '-' ||
+                    character == '_';
+                builder.Append(allowed ? character : '-');
+            }
+
+            string sanitized = builder.ToString().Trim('-', '.');
+            return string.IsNullOrEmpty(sanitized) ? fallback : sanitized;
+        }
+
+        private static string NormalizeProjectRelativePath(string path)
+        {
+            return (path ?? string.Empty)
+                .Replace('\\', '/')
+                .Trim()
+                .TrimStart('/');
+        }
+
+        private static string NormalizeMediaKind(string kind, string fallbackKind)
+        {
+            string normalized = string.IsNullOrWhiteSpace(kind) ? fallbackKind : kind.Trim();
+            if (string.Equals(normalized, "icon", StringComparison.OrdinalIgnoreCase))
+            {
+                return "icon";
+            }
+
+            if (string.Equals(normalized, "banner", StringComparison.OrdinalIgnoreCase))
+            {
+                return "banner";
+            }
+
+            return null;
+        }
+
+        private static string GetMediaExtension(string contentType)
+        {
+            string normalized = (contentType ?? string.Empty).Split(';')[0].Trim().ToLowerInvariant();
+            return normalized switch
+            {
+                "image/gif" => ".gif",
+                "image/jpeg" => ".jpg",
+                "image/png" => ".png",
+                "image/webp" => ".webp",
+                _ => null,
+            };
+        }
+
+        private static string ComputeSha256(byte[] bytes)
+        {
+            using var sha256 = SHA256.Create();
+            return BitConverter.ToString(sha256.ComputeHash(bytes)).Replace("-", string.Empty).ToLowerInvariant();
+        }
+
+        private static string NormalizeSha256(string value)
+        {
+            string normalized = value?.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(normalized) || normalized.Length != 64)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < normalized.Length; i++)
+            {
+                char c = normalized[i];
+                bool isHex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+                if (!isHex)
+                {
+                    return null;
+                }
+            }
+
+            return normalized;
+        }
+
+        private static void EnsureTrustedSameOrigin(string url, string expectedOrigin, string label)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri))
+            {
+                throw new Exception($"{label} is invalid.");
+            }
+
+            if (uri.Scheme != Uri.UriSchemeHttps &&
+                !(uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback))
+            {
+                throw new Exception($"{label} is not trusted.");
+            }
+
+            if (!Uri.TryCreate(expectedOrigin, UriKind.Absolute, out Uri expectedUri))
+            {
+                throw new Exception("Alias install plan repository URL is invalid.");
+            }
+
+            if (!string.Equals(
+                    uri.GetLeftPart(UriPartial.Authority),
+                    expectedUri.GetLeftPart(UriPartial.Authority),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception($"{label} did not match the package download origin.");
+            }
         }
 
         private static IEnumerable<string> ResolveManagedPackagePaths(
             AliasPackageContract aliasPackage,
             AliasInstallPlanPackage package)
         {
+            var resolvedPaths = new List<string>();
+            AddDistinctManagedPath(resolvedPaths, $"Packages/{package.packageId}/package.json");
             List<string> managedPaths = aliasPackage?.installPlan?.managedPaths?
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (managedPaths != null && managedPaths.Count > 0)
             {
-                return managedPaths;
+                foreach (string managedPath in managedPaths)
+                {
+                    AddDistinctManagedPath(resolvedPaths, managedPath);
+                }
             }
 
-            return new[]
+            return resolvedPaths;
+        }
+
+        private static void MergeImportedManagedPaths(
+            AliasInstallPlanPackage package,
+            IEnumerable<string> managedPaths)
+        {
+            if (package == null || managedPaths == null)
             {
-                $"Packages/{package.packageId}/package.json"
+                return;
+            }
+
+            package.aliasContract ??= new AliasPackageContract
+            {
+                kind = "alias-v1",
+                aliasId = package.packageId ?? string.Empty,
+                packageName = package.packageId ?? string.Empty,
+                packageVersion = package.version ?? string.Empty,
+                installStrategy = ServerAuthorizedInstallStrategy,
+                importerPackage = "com.yucp.importer",
             };
+            package.aliasContract.installPlan ??= new AliasInstallPlanMetadata();
+            package.aliasContract.installPlan.managedPaths ??= new List<string>();
+            AddDistinctManagedPath(
+                package.aliasContract.installPlan.managedPaths,
+                $"Packages/{package.packageId}/package.json");
+            foreach (string managedPath in managedPaths)
+            {
+                AddDistinctManagedPath(package.aliasContract.installPlan.managedPaths, managedPath);
+            }
+        }
+
+        private static void AddDistinctManagedPath(List<string> paths, string path)
+        {
+            if (paths == null || string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            string normalized = path.Trim().Replace('\\', '/').TrimStart('/');
+            if (!paths.Any(existing => string.Equals(existing, normalized, StringComparison.OrdinalIgnoreCase)))
+            {
+                paths.Add(normalized);
+            }
         }
 
         private static void PersistInstallState(InstalledPackageInfo installedInfo)
@@ -819,6 +1262,18 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return registry?.GetPackage(packageId);
         }
 
+        private static AliasPackageContract ResolveInstalledAliasPackage(string packageId)
+        {
+            InstalledPackageInfo package = ResolveInstalledPackage(packageId);
+            if (package?.aliasPackage != null)
+            {
+                return package.aliasPackage;
+            }
+
+            PackageMetadata metadata = LoadInstalledPackageMetadata(packageId);
+            return metadata?.aliasPackage;
+        }
+
         [Serializable]
         private sealed class ErrorResponse
         {
@@ -976,7 +1431,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return confirmationHandler(request);
             }
 
-            return EditorUtility.DisplayDialog(
+            return YucpEditorDialog.DisplayDialog(
                 request.title,
                 request.message,
                 request.confirmButton,

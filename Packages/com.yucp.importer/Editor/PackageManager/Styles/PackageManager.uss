@@ -20,8 +20,13 @@
     left: 0;
     right: 0;
     bottom: 0;
+    background-color: rgba(42, 42, 47, 1.0);
     background-size: cover;
     background-position: center;
+}
+
+.yucp-banner-image-empty {
+    background-color: rgba(42, 42, 47, 1.0);
 }
 
 /* Crossfade overlay: sits between the banner image and gradient */
@@ -362,6 +367,475 @@
 
 .yucp-import-button:hover {
     background-color: rgba(255, 255, 255, 1.0);
+}
+
+/* ============================================================================
+   BRANDED MODAL DIALOGS
+   ============================================================================ */
+.yucp-dialog-installer-root {
+    flex-direction: column;
+    flex-grow: 1;
+    min-height: 0;
+    overflow: hidden;
+    background-color: rgba(17, 17, 20, 1.0);
+}
+
+.yucp-dialog-banner-section {
+    position: relative;
+    flex-shrink: 0;
+    height: 210px;
+    width: 100%;
+    overflow: hidden;
+    background-color: rgba(42, 42, 47, 1.0);
+}
+
+.yucp-dialog-banner-image {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(42, 42, 47, 1.0);
+    background-size: cover;
+    -unity-background-scale-mode: scale-and-crop;
+}
+
+.yucp-dialog-banner-gradient {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+}
+
+.yucp-dialog-hero-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    flex-direction: row;
+    align-items: flex-end;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-bottom: 17px;
+}
+
+.yucp-dialog-hero-icon {
+    width: 62px;
+    height: 62px;
+    min-width: 62px;
+    min-height: 62px;
+    max-width: 62px;
+    max-height: 62px;
+    border-top-left-radius: 13px;
+    border-top-right-radius: 13px;
+    border-bottom-left-radius: 13px;
+    border-bottom-right-radius: 13px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.20);
+    border-right-color: rgba(255, 255, 255, 0.20);
+    border-bottom-color: rgba(255, 255, 255, 0.20);
+    border-left-color: rgba(255, 255, 255, 0.20);
+    background-color: rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+}
+
+.yucp-dialog-hero-icon-image {
+    width: 62px;
+    height: 62px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.yucp-dialog-hero-icon-text {
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 22px;
+    -unity-font-style: bold;
+}
+
+.yucp-dialog-hero-copy {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-left: 14px;
+    margin-bottom: 3px;
+}
+
+.yucp-dialog-hero-eyebrow {
+    color: rgba(240, 240, 244, 0.52);
+    font-size: 9px;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.yucp-dialog-hero-title {
+    color: rgba(255, 255, 255, 1.0);
+    font-size: 21px;
+    -unity-font-style: bold;
+    white-space: normal;
+}
+
+.yucp-dialog-content {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    padding-left: 22px;
+    padding-right: 22px;
+    padding-top: 18px;
+}
+
+.yucp-dialog-body-text {
+    color: rgba(224, 224, 230, 0.76);
+    font-size: 12px;
+    white-space: normal;
+}
+
+.yucp-dialog-body-scroll {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    max-height: 280px;
+    background-color: transparent;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
+.yucp-dialog-action-row {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+    padding-left: 22px;
+    padding-right: 22px;
+    padding-top: 16px;
+    padding-bottom: 20px;
+}
+
+.yucp-dialog-action {
+    min-width: 134px;
+    margin-left: 10px;
+}
+
+.yucp-error-dialog-root {
+    flex-direction: column;
+    flex-grow: 1;
+    min-height: 0;
+    overflow: hidden;
+    background-color: rgba(239, 239, 244, 1.0);
+}
+
+.dark .yucp-error-dialog-root {
+    background-color: rgba(239, 239, 244, 1.0);
+}
+
+.yucp-error-dialog-surface {
+    background-color: rgba(239, 239, 244, 1.0);
+}
+
+.dark .yucp-error-dialog-surface {
+    background-color: rgba(239, 239, 244, 1.0);
+}
+
+.yucp-error-dialog-header {
+    flex-shrink: 0;
+    padding-left: 26px;
+    padding-right: 26px;
+    padding-top: 24px;
+    padding-bottom: 16px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(20, 20, 26, 0.10);
+}
+
+.dark .yucp-error-dialog-header {
+    border-bottom-color: rgba(20, 20, 26, 0.10);
+}
+
+.yucp-error-dialog-header-row {
+    flex-direction: row;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.yucp-error-dialog-brand-mark {
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    min-height: 52px;
+    max-width: 52px;
+    max-height: 52px;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.86);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(20, 20, 26, 0.10);
+    border-right-color: rgba(20, 20, 26, 0.10);
+    border-bottom-color: rgba(20, 20, 26, 0.10);
+    border-left-color: rgba(20, 20, 26, 0.10);
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+.dark .yucp-error-dialog-brand-mark {
+    background-color: rgba(255, 255, 255, 0.86);
+    border-top-color: rgba(20, 20, 26, 0.10);
+    border-right-color: rgba(20, 20, 26, 0.10);
+    border-bottom-color: rgba(20, 20, 26, 0.10);
+    border-left-color: rgba(20, 20, 26, 0.10);
+}
+
+.yucp-error-dialog-brand-image {
+    width: 46px;
+    height: 46px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.yucp-error-dialog-brand-text {
+    color: rgba(20, 20, 26, 0.90);
+    font-size: 19px;
+    -unity-font-style: bold;
+}
+
+.dark .yucp-error-dialog-brand-text {
+    color: rgba(20, 20, 26, 0.90);
+}
+
+.yucp-error-dialog-title-stack {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-left: 14px;
+}
+
+.yucp-error-dialog-eyebrow {
+    color: rgba(20, 20, 26, 0.46);
+    font-size: 9px;
+    -unity-font-style: bold;
+    margin-bottom: 5px;
+}
+
+.dark .yucp-error-dialog-eyebrow {
+    color: rgba(20, 20, 26, 0.46);
+}
+
+.yucp-error-dialog-title {
+    color: rgba(17, 17, 22, 0.96);
+    font-size: 19px;
+    -unity-font-style: bold;
+    white-space: normal;
+}
+
+.dark .yucp-error-dialog-title {
+    color: rgba(17, 17, 22, 0.96);
+}
+
+.yucp-error-dialog-summary {
+    color: rgba(42, 42, 50, 0.68);
+    font-size: 12px;
+    margin-top: 8px;
+    white-space: normal;
+}
+
+.dark .yucp-error-dialog-summary {
+    color: rgba(42, 42, 50, 0.68);
+}
+
+.yucp-error-dialog-details {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 136px;
+    margin-left: 26px;
+    margin-right: 26px;
+    margin-top: 18px;
+    margin-bottom: 0;
+    background-color: rgba(255, 255, 255, 0.72);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(20, 20, 26, 0.12);
+    border-right-color: rgba(20, 20, 26, 0.12);
+    border-bottom-color: rgba(20, 20, 26, 0.12);
+    border-left-color: rgba(20, 20, 26, 0.12);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    color: rgba(20, 20, 26, 0.90);
+    font-size: 12px;
+    white-space: normal;
+}
+
+.dark .yucp-error-dialog-details {
+    background-color: rgba(255, 255, 255, 0.72);
+    border-top-color: rgba(20, 20, 26, 0.12);
+    border-right-color: rgba(20, 20, 26, 0.12);
+    border-bottom-color: rgba(20, 20, 26, 0.12);
+    border-left-color: rgba(20, 20, 26, 0.12);
+    color: rgba(20, 20, 26, 0.90);
+}
+
+.yucp-error-dialog-action-row {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+    flex-shrink: 0;
+    padding-left: 26px;
+    padding-right: 26px;
+    padding-top: 16px;
+    padding-bottom: 22px;
+}
+
+.yucp-error-dialog-copy-button {
+    min-width: 118px;
+    min-height: 38px;
+    margin-right: 10px;
+    padding-left: 16px;
+    padding-right: 16px;
+    background-color: rgba(255, 255, 255, 0.62);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(20, 20, 26, 0.13);
+    border-right-color: rgba(20, 20, 26, 0.13);
+    border-bottom-color: rgba(20, 20, 26, 0.13);
+    border-left-color: rgba(20, 20, 26, 0.13);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    color: rgba(20, 20, 26, 0.76);
+    font-size: 12px;
+}
+
+.dark .yucp-error-dialog-copy-button {
+    background-color: rgba(255, 255, 255, 0.62);
+    border-top-color: rgba(20, 20, 26, 0.13);
+    border-right-color: rgba(20, 20, 26, 0.13);
+    border-bottom-color: rgba(20, 20, 26, 0.13);
+    border-left-color: rgba(20, 20, 26, 0.13);
+    color: rgba(20, 20, 26, 0.76);
+}
+
+.yucp-error-dialog-copy-button:hover {
+    background-color: rgba(255, 255, 255, 0.86);
+    color: rgba(20, 20, 26, 0.92);
+}
+
+.dark .yucp-error-dialog-copy-button:hover {
+    background-color: rgba(255, 255, 255, 0.86);
+    color: rgba(20, 20, 26, 0.92);
+}
+
+.yucp-error-dialog-ok-button {
+    min-width: 96px;
+    min-height: 38px;
+    padding-left: 18px;
+    padding-right: 18px;
+    background-color: rgba(17, 17, 22, 0.96);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(17, 17, 22, 0.96);
+    border-right-color: rgba(17, 17, 22, 0.96);
+    border-bottom-color: rgba(17, 17, 22, 0.96);
+    border-left-color: rgba(17, 17, 22, 0.96);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    color: rgba(255, 255, 255, 0.94);
+    font-size: 12px;
+}
+
+.dark .yucp-error-dialog-ok-button {
+    background-color: rgba(17, 17, 22, 0.96);
+    border-top-color: rgba(17, 17, 22, 0.96);
+    border-right-color: rgba(17, 17, 22, 0.96);
+    border-bottom-color: rgba(17, 17, 22, 0.96);
+    border-left-color: rgba(17, 17, 22, 0.96);
+    color: rgba(255, 255, 255, 0.94);
+}
+
+.yucp-error-dialog-ok-button:hover {
+    background-color: rgba(0, 0, 0, 1.0);
+    color: rgba(255, 255, 255, 1.0);
+}
+
+.dark .yucp-error-dialog-ok-button:hover {
+    background-color: rgba(0, 0, 0, 1.0);
+    color: rgba(255, 255, 255, 1.0);
+}
+
+.yucp-error-dialog-ok-button Label {
+    color: rgba(255, 255, 255, 0.94);
+}
+
+.dark .yucp-error-dialog-ok-button Label {
+    color: rgba(255, 255, 255, 0.94);
+}
+
+/* ============================================================================
+   INSTALLER-ONLY IDLE SURFACE
+   ============================================================================ */
+.yucp-installer-placeholder {
+    flex-grow: 1;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-start;
+    background-color: rgba(17, 17, 20, 1.0);
+    padding-left: 28px;
+    padding-right: 28px;
+    padding-top: 28px;
+    padding-bottom: 28px;
+}
+
+.yucp-installer-placeholder-icon {
+    width: 58px;
+    height: 58px;
+    margin-bottom: 14px;
+}
+
+.yucp-installer-placeholder-eyebrow {
+    color: rgba(255, 255, 255, 0.34);
+    font-size: 9px;
+    -unity-font-style: bold;
+    margin-bottom: 5px;
+}
+
+.yucp-installer-placeholder-title {
+    color: #f2f2f4;
+    font-size: 20px;
+    -unity-font-style: bold;
+    white-space: normal;
+}
+
+.yucp-installer-placeholder-body {
+    color: rgba(224, 224, 230, 0.66);
+    font-size: 12px;
+    white-space: normal;
+    margin-top: 9px;
+}
+
+.yucp-installer-placeholder-actions {
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    margin-top: 18px;
+    margin-left: -8px;
 }
 
 /* ============================================================================
@@ -2004,6 +2478,112 @@
     -unity-font-style: italic;
 }
 
+.dark .yucp-verify-status {
+    color: rgba(180, 200, 255, 0.75);
+}
+
+.yucp-flow-notice {
+    flex-shrink: 0;
+    margin-left: 20px;
+    margin-right: 20px;
+    margin-top: 10px;
+    margin-bottom: 0;
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    background-color: rgba(255, 255, 255, 0.035);
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .yucp-flow-notice {
+    background-color: rgba(255, 255, 255, 0.035);
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.yucp-flow-notice-info {
+    background-color: rgba(255, 255, 255, 0.035);
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .yucp-flow-notice-info {
+    background-color: rgba(255, 255, 255, 0.035);
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.yucp-flow-notice-success {
+    background-color: rgba(109, 232, 158, 0.055);
+    border-top-color: rgba(109, 232, 158, 0.16);
+    border-right-color: rgba(109, 232, 158, 0.16);
+    border-bottom-color: rgba(109, 232, 158, 0.16);
+    border-left-color: rgba(109, 232, 158, 0.16);
+}
+
+.dark .yucp-flow-notice-success {
+    background-color: rgba(109, 232, 158, 0.055);
+    border-top-color: rgba(109, 232, 158, 0.16);
+    border-right-color: rgba(109, 232, 158, 0.16);
+    border-bottom-color: rgba(109, 232, 158, 0.16);
+    border-left-color: rgba(109, 232, 158, 0.16);
+}
+
+.yucp-flow-notice-error {
+    background-color: rgba(239, 68, 68, 0.06);
+    border-top-color: rgba(239, 68, 68, 0.16);
+    border-right-color: rgba(239, 68, 68, 0.16);
+    border-bottom-color: rgba(239, 68, 68, 0.16);
+    border-left-color: rgba(239, 68, 68, 0.16);
+}
+
+.dark .yucp-flow-notice-error {
+    background-color: rgba(239, 68, 68, 0.06);
+    border-top-color: rgba(239, 68, 68, 0.16);
+    border-right-color: rgba(239, 68, 68, 0.16);
+    border-bottom-color: rgba(239, 68, 68, 0.16);
+    border-left-color: rgba(239, 68, 68, 0.16);
+}
+
+.yucp-flow-notice-title {
+    color: rgba(244, 244, 248, 0.92);
+    font-size: 11px;
+    -unity-font-style: bold;
+}
+
+.dark .yucp-flow-notice-title {
+    color: rgba(244, 244, 248, 0.92);
+}
+
+.yucp-flow-notice-body {
+    color: rgba(224, 224, 230, 0.70);
+    font-size: 11px;
+    white-space: normal;
+    margin-top: 3px;
+}
+
+.dark .yucp-flow-notice-body {
+    color: rgba(224, 224, 230, 0.70);
+}
+
 .yucp-cta-cancel {
     min-width: 70px;
     min-height: 40px;
@@ -2433,6 +3013,14 @@
     border-bottom-color: rgba(255, 255, 255, 0.20);
     border-left-color: rgba(255, 255, 255, 0.20);
     background-color: rgba(0, 0, 0, 0.18);
+    align-items: center;
+    justify-content: center;
+}
+
+.yucp-hero-icon-text {
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 22px;
+    -unity-font-style: bold;
 }
 
 .yucp-hero-text {

@@ -69,7 +69,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (!TryResumeFromImportedShell(state, out string error))
             {
                 Debug.LogError($"[YUCP ProtectedBootstrap] Failed to resume protected package setup: {error}");
-                EditorUtility.DisplayDialog(
+                YucpEditorDialog.DisplayDialog(
                     "Protected Package Setup Failed",
                     $"The YUCP Importer was installed, but the protected package could not be resumed automatically.\n\n{error}",
                     "OK");

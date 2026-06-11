@@ -122,7 +122,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 ClearPendingApply();
                 RollbackRegisteredPackage(packageInfo);
                 Debug.LogError("[YUCP PackageManager] A required package protection step failed and the import was rolled back.");
-                EditorUtility.DisplayDialog(
+                YucpEditorDialog.DisplayDialog(
                     "Import Failed",
                     stateError,
                     "OK");
@@ -134,7 +134,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 ClearPendingApply();
                 RollbackRegisteredPackage(packageInfo);
                 Debug.LogError("[YUCP PackageManager] A required package protection step failed and the import was rolled back.");
-                EditorUtility.DisplayDialog(
+                YucpEditorDialog.DisplayDialog(
                     "Import Failed",
                     error,
                     "OK");

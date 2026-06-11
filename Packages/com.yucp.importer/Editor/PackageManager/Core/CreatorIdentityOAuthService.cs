@@ -574,7 +574,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 Debug.LogWarning(
                     $"[YUCP OAuth] Refreshed session is missing required scope '{string.Join(" ", normalizedRequiredScopes)}'.");
-                if (ContainsScope(normalizedRequiredScopes, Domain.RequiredScope))
+                if (ShouldClearSessionForMissingRequiredScopes(normalizedRequiredScopes))
                 {
                     SignOut();
                 }
@@ -783,22 +783,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return normalized.Count == 0 ? new[] { Domain.RequiredScope } : normalized.ToArray();
         }
 
-        private static bool ContainsScope(IReadOnlyList<string> scopes, string expectedScope)
+        private static bool ShouldClearSessionForMissingRequiredScopes(IReadOnlyList<string> requiredScopes)
         {
-            if (scopes == null || string.IsNullOrWhiteSpace(expectedScope))
-            {
-                return false;
-            }
-
-            for (int i = 0; i < scopes.Count; i++)
-            {
-                if (string.Equals(scopes[i], expectedScope, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return requiredScopes != null && requiredScopes.Count > 0;
         }
 
         private static bool IsRefreshableSession(OAuthSessionV2 session)

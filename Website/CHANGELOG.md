@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-06-11]
+
+### com.yucp.importer
+- Introduced `YucpEditorDialog` for improved user interactions within the package manager.
+- Significant refactor of the `PackageManagerWindow` UI, consolidating views and updating styles.
+- Enhanced reliability of core installation services, including update delivery and automatic package alias handling.
+- Added comprehensive unit tests for `AuthorizedVpmPackageInstaller`, `UpdateDeliveryService`, and `YucpEditorDialog`.
+
 ## [2026-06-08]
 
 ### com.yucp.importer

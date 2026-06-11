@@ -28,6 +28,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public Dictionary<string, string> requestHeaders;
         }
 
+        public sealed class AuthorizedPackageInstallResult
+        {
+            public string[] managedPaths = Array.Empty<string>();
+        }
+
         private sealed class TimeoutWebClient : WebClient
         {
             protected override WebRequest GetWebRequest(Uri address)
@@ -48,7 +53,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        public static void InstallAuthorizedPackage(
+        public static AuthorizedPackageInstallResult InstallAuthorizedPackage(
             string projectDir,
             UpdateDeliveryService.AliasInstallPlanPackage package,
             string accessToken)
@@ -119,7 +124,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 deliverySourceKind = sourceKind,
             };
 
-            InstallResolvedPackage(projectDir, package.packageId, resolution);
+            return InstallResolvedPackage(projectDir, package.packageId, resolution);
         }
 
         public static void InstallPackage(
@@ -158,15 +163,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             InstallResolvedPackage(projectDir, packageName, resolution);
         }
 
-        private static void InstallResolvedPackage(
+        private static AuthorizedPackageInstallResult InstallResolvedPackage(
             string projectDir,
             string packageName,
             ResolvedPackageDownload resolution)
         {
             string workspaceRoot = Path.Combine(projectDir, ".yucp-dvi", "AuthorizedVpmInstall");
             Directory.CreateDirectory(workspaceRoot);
-            string tempDownloadPath = Path.Combine(workspaceRoot, $"{Guid.NewGuid():N}.zip");
-            string stagingDirectory = Path.Combine(workspaceRoot, $"{Guid.NewGuid():N}");
+            bool isUnityPackage = string.Equals(
+                resolution.deliverySourceKind,
+                UnityPackageSourceKind,
+                StringComparison.Ordinal);
+            string tempDownloadPath = Path.Combine(
+                workspaceRoot,
+                $"{Guid.NewGuid():N}{(isUnityPackage ? ".unitypackage" : ".zip")}");
+            string stagingDirectory = isUnityPackage
+                ? null
+                : Path.Combine(workspaceRoot, $"{Guid.NewGuid():N}");
 
             try
             {
@@ -191,6 +204,19 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     throw new InvalidDataException(
                         $"SHA-256 mismatch for {packageName}@{resolution.resolvedVersion}. Expected {resolution.expectedArchiveHash}, got {actualArchiveHash}.");
+                }
+
+                if (isUnityPackage)
+                {
+                    string[] importedPaths = ImportUnityPackageToProjectSafely(
+                        tempDownloadPath,
+                        projectDir,
+                        packageName);
+                    ValidateInstalledAliasPackageManifest(projectDir, packageName, resolution.resolvedVersion);
+                    return new AuthorizedPackageInstallResult
+                    {
+                        managedPaths = importedPaths,
+                    };
                 }
 
                 ExtractDownloadedPackageToDirectorySafely(
@@ -225,6 +251,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string packageDestination = GetValidatedPackageDestination(projectDir, packageName);
                 MoveDirectoryIntoPlace(stagingDirectory, packageDestination);
                 stagingDirectory = null;
+                return new AuthorizedPackageInstallResult
+                {
+                    managedPaths = new[] { $"Packages/{packageName}/package.json" },
+                };
             }
             finally
             {
@@ -509,6 +539,60 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return candidate;
         }
 
+        private static void ValidateInstalledAliasPackageManifest(
+            string projectDir,
+            string packageName,
+            string expectedVersion)
+        {
+            string packageJsonPath = Path.Combine(GetValidatedPackageDestination(projectDir, packageName), "package.json");
+            if (!File.Exists(packageJsonPath))
+            {
+                throw new InvalidDataException(
+                    $"Installed alias package '{packageName}' is missing package.json after importing the authorized unitypackage payload.");
+            }
+
+            JObject packageJson = JObject.Parse(File.ReadAllText(packageJsonPath));
+            string manifestPackageName = packageJson["name"]?.ToString();
+            string manifestVersion = packageJson["version"]?.ToString();
+
+            if (!string.Equals(manifestPackageName, packageName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    $"Installed alias package name mismatch. Expected {packageName}, got {manifestPackageName ?? "<missing>"}.");
+            }
+
+            if (!string.Equals(manifestVersion, expectedVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    $"Installed alias package version mismatch. Expected {expectedVersion}, got {manifestVersion ?? "<missing>"}.");
+            }
+        }
+
+        private static string GetValidatedProjectImportPath(
+            string projectDir,
+            string importPath,
+            string sourceDescription)
+        {
+            if (string.IsNullOrWhiteSpace(importPath))
+            {
+                throw new InvalidDataException($"Unitypackage entry from '{sourceDescription}' has an empty pathname.");
+            }
+
+            string normalizedRoot = Path.GetFullPath(projectDir)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string normalizedEntry = importPath
+                .Trim()
+                .Replace('/', Path.DirectorySeparatorChar)
+                .Replace('\\', Path.DirectorySeparatorChar);
+            string candidate = Path.GetFullPath(Path.Combine(normalizedRoot, normalizedEntry));
+            if (!candidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"Unitypackage pathname '{importPath}' from '{sourceDescription}' escapes '{normalizedRoot}'.");
+            }
+
+            return candidate;
+        }
+
         private static void ExtractDownloadedPackageToDirectorySafely(
             string downloadPath,
             string sourceKind,
@@ -522,6 +606,95 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             ExtractZipToDirectorySafely(downloadPath, destinationDirectory, packageLabel);
+        }
+
+        private static string[] ImportUnityPackageToProjectSafely(
+            string unityPackagePath,
+            string projectDir,
+            string packageLabel)
+        {
+            string stagingDirectory = Path.Combine(
+                Path.GetDirectoryName(unityPackagePath) ?? Path.GetTempPath(),
+                $"{Guid.NewGuid():N}-unitypackage");
+            int importedAssetCount = 0;
+            var importedPaths = new List<string>();
+
+            try
+            {
+                ExtractUnityPackageToDirectorySafely(unityPackagePath, stagingDirectory, packageLabel);
+
+                foreach (string entryDirectory in Directory.GetDirectories(stagingDirectory))
+                {
+                    string pathnamePath = Path.Combine(entryDirectory, "pathname");
+                    if (!File.Exists(pathnamePath))
+                    {
+                        continue;
+                    }
+
+                    string importPath = File.ReadAllText(pathnamePath).Trim();
+                    if (string.IsNullOrWhiteSpace(importPath))
+                    {
+                        continue;
+                    }
+
+                    string assetPath = Path.Combine(entryDirectory, "asset");
+                    if (!File.Exists(assetPath))
+                    {
+                        continue;
+                    }
+
+                    string destinationPath = GetValidatedProjectImportPath(
+                        projectDir,
+                        importPath,
+                        unityPackagePath);
+                    EnsureCreatorFriendlyPathLength(destinationPath, packageLabel);
+                    string destinationDirectory = Path.GetDirectoryName(destinationPath);
+                    if (!string.IsNullOrEmpty(destinationDirectory))
+                    {
+                        EnsureCreatorFriendlyPathLength(destinationDirectory, packageLabel);
+                        Directory.CreateDirectory(destinationDirectory);
+                    }
+
+                    File.Copy(assetPath, destinationPath, true);
+                    importedAssetCount++;
+                    AddImportedPath(importedPaths, importPath);
+
+                    string assetMetaPath = Path.Combine(entryDirectory, "asset.meta");
+                    if (File.Exists(assetMetaPath))
+                    {
+                        string destinationMetaPath = destinationPath + ".meta";
+                        EnsureCreatorFriendlyPathLength(destinationMetaPath, packageLabel);
+                        File.Copy(assetMetaPath, destinationMetaPath, true);
+                        AddImportedPath(importedPaths, importPath + ".meta");
+                    }
+                }
+            }
+            finally
+            {
+                TryDeleteDirectory(stagingDirectory);
+            }
+
+            if (importedAssetCount == 0)
+            {
+                throw new InvalidDataException(
+                    $"Authorized unitypackage for {packageLabel} did not contain importable asset entries.");
+            }
+
+            return importedPaths.ToArray();
+        }
+
+        private static void AddImportedPath(List<string> importedPaths, string importPath)
+        {
+            if (importedPaths == null || string.IsNullOrWhiteSpace(importPath))
+            {
+                return;
+            }
+
+            string normalized = importPath.Trim().Replace('\\', '/').TrimStart('/');
+            if (!importedPaths.Any(path => string.Equals(path, normalized, StringComparison.OrdinalIgnoreCase)))
+            {
+                importedPaths.Add(normalized);
+            }
         }
 
         private static void ExtractZipToDirectorySafely(string zipPath, string destinationDirectory, string packageLabel)

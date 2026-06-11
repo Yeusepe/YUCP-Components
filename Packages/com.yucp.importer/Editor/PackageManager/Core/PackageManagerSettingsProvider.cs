@@ -300,7 +300,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 string normalized = TrustedAuthoritiesSettings.NormalizeUrl(newUrlField.value);
                 if (string.IsNullOrEmpty(normalized))
                 {
-                    EditorUtility.DisplayDialog("Invalid URL", "Enter a valid absolute URL before adding it to the trusted list.", "OK");
+                    YucpEditorDialog.DisplayDialog("Invalid URL", "Enter a valid absolute URL before adding it to the trusted list.", "OK");
                     return;
                 }
 
@@ -340,7 +340,7 @@ namespace YUCP.Importer.Editor.PackageManager
             string failure = result.success
                 ? "The server did not advertise any pinned YUCP Ed25519 root keys."
                 : result.error;
-            EditorUtility.DisplayDialog("Failed to Refresh Trusted URL", $"Could not validate authority keys from server '{url}'.\nUnity tried '{fetchUrl}'.\n\n{failure}", "OK");
+            YucpEditorDialog.DisplayDialog("Failed to Refresh Trusted URL", $"Could not validate authority keys from server '{url}'.\nUnity tried '{fetchUrl}'.\n\n{failure}", "OK");
             return false;
         }
 
