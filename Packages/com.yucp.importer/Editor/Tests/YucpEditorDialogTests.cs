@@ -9,7 +9,7 @@ namespace YUCP.Importer.Editor.Tests
     public class YucpEditorDialogTests
     {
         [Test]
-        public void CreateErrorDialogWindow_RendersPlainCopyableErrorDetails()
+        public void CreateErrorDialogWindow_RendersCopyableErrorDetails()
         {
             var dialog = YucpEditorDialog.CreateErrorDialogWindow(
                 "Complete YUCP Install",
@@ -17,8 +17,6 @@ namespace YUCP.Importer.Editor.Tests
             try
             {
                 dialog.CreateGUI();
-
-                Assert.That(dialog.rootVisualElement.Q(className: "yucp-dialog-banner-section"), Is.Null);
 
                 var details = dialog.rootVisualElement.Q<TextField>("yucp-error-dialog-details");
                 Assert.That(details, Is.Not.Null);
@@ -37,7 +35,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void CreateErrorDialogWindow_UsesInstallerErrorSurfaceInsteadOfGenericDarkShell()
+        public void CreateErrorDialogWindow_SharesInstallerBannerSurface()
         {
             var dialog = YucpEditorDialog.CreateErrorDialogWindow(
                 "Complete YUCP Install",
@@ -46,17 +44,14 @@ namespace YUCP.Importer.Editor.Tests
             {
                 dialog.CreateGUI();
 
-                Assert.That(dialog.rootVisualElement.Q(className: "yucp-dialog-banner-section"), Is.Null);
-                Assert.That(dialog.rootVisualElement.Q(className: "yucp-error-dialog-status-mark"), Is.Null);
-                Assert.That(dialog.rootVisualElement.ClassListContains("yucp-error-dialog-surface"), Is.True);
+                // The error dialog now reuses the installer's dark, banner-led chrome instead of a
+                // stray light-themed popup, so it reads as one family.
+                Assert.That(dialog.rootVisualElement.ClassListContains("yucp-dialog-installer-root"), Is.True);
+                Assert.That(dialog.rootVisualElement.Q(className: "yucp-dialog-banner-section"), Is.Not.Null);
 
-                var eyebrow = dialog.rootVisualElement.Q<Label>("yucp-error-dialog-eyebrow");
-                Assert.That(eyebrow, Is.Not.Null);
-                Assert.That(eyebrow.text, Is.EqualTo("YUCP Installer"));
-
-                var title = dialog.rootVisualElement.Q<Label>("yucp-error-dialog-title");
-                Assert.That(title, Is.Not.Null);
-                Assert.That(title.text, Is.EqualTo("Complete YUCP Install"));
+                var heroTitle = dialog.rootVisualElement.Q<Label>(className: "yucp-dialog-hero-title");
+                Assert.That(heroTitle, Is.Not.Null);
+                Assert.That(heroTitle.text, Is.EqualTo("Complete YUCP Install"));
 
                 var copyButton = dialog.rootVisualElement.Q<Button>("yucp-error-dialog-copy-button");
                 var okButton = dialog.rootVisualElement.Q<Button>("yucp-error-dialog-ok-button");

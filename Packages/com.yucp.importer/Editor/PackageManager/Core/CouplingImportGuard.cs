@@ -43,6 +43,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return TryApplyCouplingOrRollback(packageInfo, out error);
         }
 
+        /// <summary>
+        /// Applies coupling for an explicit set of installed files without performing any
+        /// rollback on failure. Callers that install multiple packages in one transaction
+        /// (e.g. the alias/VPM install plan) own their own multi-package rollback and use
+        /// this instead of <see cref="TryApplyCouplingOrRollback"/>.
+        /// </summary>
+        internal static bool TryApplyCouplingForFiles(
+            string packageId,
+            IReadOnlyList<string> installedFiles,
+            out string error)
+        {
+            return TryApplyCoupling(packageId, installedFiles, out error);
+        }
+
         internal static bool TryApplyCouplingOrRollback(InstalledPackageInfo packageInfo, out string error)
         {
             error = null;

@@ -641,49 +641,51 @@
 }
 
 .yucp-error-dialog-summary {
-    color: rgba(42, 42, 50, 0.68);
+    color: rgba(224, 224, 230, 0.70);
     font-size: 12px;
-    margin-top: 8px;
+    margin-bottom: 14px;
     white-space: normal;
 }
 
-.dark .yucp-error-dialog-summary {
-    color: rgba(42, 42, 50, 0.68);
-}
-
-.yucp-error-dialog-details {
+.yucp-error-dialog-details-scroll {
     flex-grow: 1;
     flex-shrink: 1;
-    min-height: 136px;
-    margin-left: 26px;
-    margin-right: 26px;
-    margin-top: 18px;
-    margin-bottom: 0;
-    background-color: rgba(255, 255, 255, 0.72);
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    border-top-color: rgba(20, 20, 26, 0.12);
-    border-right-color: rgba(20, 20, 26, 0.12);
-    border-bottom-color: rgba(20, 20, 26, 0.12);
-    border-left-color: rgba(20, 20, 26, 0.12);
+    min-height: 120px;
+    max-height: 260px;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
-    color: rgba(20, 20, 26, 0.90);
-    font-size: 12px;
-    white-space: normal;
+    background-color: rgba(0, 0, 0, 0.28);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-right-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    border-left-color: rgba(255, 255, 255, 0.08);
 }
 
-.dark .yucp-error-dialog-details {
-    background-color: rgba(255, 255, 255, 0.72);
-    border-top-color: rgba(20, 20, 26, 0.12);
-    border-right-color: rgba(20, 20, 26, 0.12);
-    border-bottom-color: rgba(20, 20, 26, 0.12);
-    border-left-color: rgba(20, 20, 26, 0.12);
-    color: rgba(20, 20, 26, 0.90);
+.yucp-error-dialog-details {
+    flex-grow: 1;
+    background-color: rgba(0, 0, 0, 0.0);
+    color: rgba(232, 198, 198, 0.92);
+    font-size: 12px;
+    white-space: normal;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.yucp-error-dialog-details > TextInput {
+    background-color: rgba(0, 0, 0, 0.0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    color: rgba(232, 198, 198, 0.92);
 }
 
 .yucp-error-dialog-action-row {

@@ -461,12 +461,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             void RestoreEditorWindows()
             {
                 attempts++;
-                if (attempts == 1 &&
-                    UnityEngine.Resources.FindObjectsOfTypeAll<YUCP.Importer.Editor.PackageManager.PackageManagerWindow>().Length == 0)
-                {
-                    YUCP.Importer.Editor.PackageManager.PackageManagerWindow.ShowWindow();
-                }
-
+                // Verification is browser-hosted; only re-focus an installer window that is already
+                // open (during an active import). Never spawn a standalone window here.
                 EditorWindow.FocusWindowIfItsOpen<YUCP.Importer.Editor.PackageManager.PackageManagerWindow>();
                 TryBringUnityEditorToFront();
 

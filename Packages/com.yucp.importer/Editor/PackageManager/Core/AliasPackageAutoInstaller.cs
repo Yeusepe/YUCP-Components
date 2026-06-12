@@ -148,6 +148,87 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 "Verify access to import the authorized package into this project. If sign-in is needed, YUCP will open your browser and continue automatically.";
         }
 
+        private static bool ConfirmEnrichedInstall(
+            PackageMetadata requestedMetadata,
+            UpdateDeliveryService.AliasInstallPlan installPlan,
+            out PackageMetadata previewMetadata)
+        {
+            previewMetadata = null;
+            try
+            {
+                previewMetadata = UpdateDeliveryService.BuildPreviewMetadataFromPlan(
+                    installPlan,
+                    requestedMetadata?.aliasPackage);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"{LogPrefix} Could not build install preview metadata: {ex.Message}");
+            }
+
+            string message = BuildEnrichedInstallMessage(previewMetadata, requestedMetadata);
+            return YucpEditorDialog.DisplayDialog(
+                "Install YUCP Package",
+                message,
+                "Install",
+                "Cancel");
+        }
+
+        internal static string BuildEnrichedInstallMessage(
+            PackageMetadata preview,
+            PackageMetadata fallback)
+        {
+            PackageMetadata source = preview ?? fallback;
+            string name = FirstNonEmptyValue(
+                source?.packageName,
+                fallback?.packageName,
+                source?.aliasPackage?.packageDisplayName,
+                "this package");
+
+            var builder = new StringBuilder();
+            builder.Append("Install '").Append(name).Append("'?").Append('\n');
+
+            string version = FirstNonEmptyValue(source?.version, fallback?.version);
+            if (!string.IsNullOrWhiteSpace(version))
+            {
+                builder.Append('\n').Append("Version: ").Append(version);
+            }
+
+            string creator = FirstNonEmptyValue(source?.author, fallback?.author);
+            if (!string.IsNullOrWhiteSpace(creator))
+            {
+                builder.Append('\n').Append("Creator: ").Append(creator);
+            }
+
+            string tagline = source?.tagline;
+            if (!string.IsNullOrWhiteSpace(tagline) &&
+                !string.Equals(tagline, name, StringComparison.OrdinalIgnoreCase))
+            {
+                builder.Append('\n').Append('\n').Append(tagline.Trim());
+            }
+
+            builder.Append('\n').Append('\n')
+                .Append("This package will be imported into your project through the authorized YUCP installer.");
+            return builder.ToString();
+        }
+
+        private static string FirstNonEmptyValue(params string[] values)
+        {
+            if (values == null)
+            {
+                return null;
+            }
+
+            foreach (string value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+
+            return null;
+        }
+
         private static void OnRegisteredPackages(PackageRegistrationEventArgs args)
         {
             if (args == null)
@@ -157,9 +238,28 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (args?.removed != null)
             {
+                // A package that is also re-added/upgraded in the same event is a version change or
+                // reinstall, not a real uninstall. Only reconcile genuine removals.
+                var retainedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                AddPackageNames(retainedNames, args.added);
+                AddPackageNames(retainedNames, args.changedTo);
+
+                var removedNames = new List<string>();
                 foreach (PackageInfo package in args.removed)
                 {
                     ClearRecordedInstallAttempts(package?.name, package?.version);
+                    if (!string.IsNullOrWhiteSpace(package?.name))
+                    {
+                        removedNames.Add(package.name);
+                    }
+                }
+
+                foreach (string packageId in ResolvePackageIdsToReconcileOnRemoval(
+                    removedNames,
+                    retainedNames,
+                    LookupInstalledPackage))
+                {
+                    ScheduleRemovalReconciliation(packageId);
                 }
             }
 
@@ -186,6 +286,104 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     TrySchedulePackage(package, null);
                 }
             }
+        }
+
+        private static void AddPackageNames(ISet<string> names, IEnumerable<PackageInfo> packages)
+        {
+            if (names == null || packages == null)
+            {
+                return;
+            }
+
+            foreach (PackageInfo package in packages)
+            {
+                if (!string.IsNullOrWhiteSpace(package?.name))
+                {
+                    names.Add(package.name);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Determines which YUCP-managed package IDs should have their imported files reconciled
+        /// after Unity reports them as removed. Packages that are simultaneously re-added or upgraded
+        /// (version changes / reinstalls) are skipped so an update does not delete imported assets.
+        /// </summary>
+        internal static List<string> ResolvePackageIdsToReconcileOnRemoval(
+            IEnumerable<string> removedPackageNames,
+            ICollection<string> retainedPackageNames,
+            Func<string, InstalledPackageInfo> lookupInstalled)
+        {
+            var packageIds = new List<string>();
+            if (removedPackageNames == null || lookupInstalled == null)
+            {
+                return packageIds;
+            }
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string removedName in removedPackageNames)
+            {
+                if (string.IsNullOrWhiteSpace(removedName))
+                {
+                    continue;
+                }
+
+                if (retainedPackageNames != null && retainedPackageNames.Contains(removedName))
+                {
+                    // Re-added/upgraded in the same event: an update, not a removal.
+                    continue;
+                }
+
+                InstalledPackageInfo installed = lookupInstalled(removedName);
+                if (installed == null)
+                {
+                    continue;
+                }
+
+                string packageId = !string.IsNullOrWhiteSpace(installed.packageId)
+                    ? installed.packageId
+                    : removedName;
+                if (seen.Add(packageId))
+                {
+                    packageIds.Add(packageId);
+                }
+            }
+
+            return packageIds;
+        }
+
+        private static InstalledPackageInfo LookupInstalledPackage(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+            {
+                return null;
+            }
+
+            InstalledPackageRegistry registry = InstalledPackageRegistry.Load();
+            return registry?.GetPackage(packageName);
+        }
+
+        private static void ScheduleRemovalReconciliation(string packageId)
+        {
+            if (string.IsNullOrWhiteSpace(packageId))
+            {
+                return;
+            }
+
+            // Defer until after UPM finishes applying the package-list change so the registry and
+            // disk are in a settled state before the reconciler builds its removal plan.
+            EditorApplication.delayCall += () =>
+            {
+                try
+                {
+                    Debug.Log($"{LogPrefix} Reconciling imported files for removed package '{packageId}'.");
+                    PackageUninstaller.UninstallPackage(packageId, skipConfirmation: false);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"{LogPrefix} Failed to reconcile removal of '{packageId}': {ex.Message}\n{ex.StackTrace}");
+                }
+            };
         }
 
         internal static string[] FindEmbeddedPackageJsonPaths(string packagesDirectory, ISet<string> excludedResolvedPaths)
@@ -722,6 +920,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
 
                 EditorUtility.ClearProgressBar();
+
+                // Show the real package details fetched from the server before importing anything,
+                // so the user confirms what is actually being installed (not just the shim name).
+                if (!ConfirmEnrichedInstall(metadata, installPlan, out PackageMetadata previewMetadata))
+                {
+                    ClearInstallAttemptForRetry(session.Metadata);
+                    return;
+                }
+
+                packageLabel = previewMetadata?.packageName ?? packageLabel;
                 EditorUtility.DisplayProgressBar(
                     "Installing YUCP Package",
                     $"Installing '{packageLabel}' through the authorized VPM resolver...",

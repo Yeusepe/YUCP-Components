@@ -54,6 +54,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public string packageSha256;
             public string sourceKind;
             public string downloadAuthorizationUrl;
+            // Server-minted, machine-bound license token (aud=yucp-license-gate) bound to the
+            // buyer's canonical licenseSubject. Used to authorize per-buyer coupling for this
+            // install. Treat as a secret: never log it or surface it in preview/confirmation text.
+            public string licenseToken;
             public AliasPackageMediaSet media = new AliasPackageMediaSet();
             public AliasPackageContract aliasContract;
             public ImporterDeliveryContract importerDelivery;
@@ -65,6 +69,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public string packageInstallStrategy;
             public string repoCatalogDeliveryMode;
             public bool repoCatalogReadOnly;
+        }
+
+        [Serializable]
+        private sealed class AliasInstallPlanRequest
+        {
+            public string machineFingerprint;
         }
 
         [Serializable]
@@ -320,6 +330,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new Exception("Could not resolve the current Unity project directory.");
             }
 
+            // Files installed so far across this plan, so a coupling failure on a later package
+            // can unwind every package installed in this transaction (fail-closed rollback).
+            var installedFilesForRollback = new List<string>();
+
             foreach (AliasInstallPlanPackage package in installPlan.packages)
             {
                 string serverUrl = GetTrustedServerOrigin(
@@ -360,11 +374,93 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     serverUrl,
                     package,
                     accessToken);
+
+                ApplyPerBuyerCoupling(projectDir, package, installResult, installedFilesForRollback);
             }
 
             UpdateProjectVpmManifest(projectDir, installPlan);
             Client.Resolve();
             AssetDatabase.Refresh();
+        }
+
+        /// <summary>
+        /// Applies the per-buyer coupling watermark for a freshly installed alias/VPM package.
+        /// The minted license token is cached first so coupling can authorize itself, then
+        /// coupling runs fail-closed: any failure rolls back every package installed so far in
+        /// this plan and rethrows, leaving the project clean.
+        /// </summary>
+        private static void ApplyPerBuyerCoupling(
+            string projectDir,
+            AliasInstallPlanPackage package,
+            AuthorizedVpmPackageInstaller.AuthorizedPackageInstallResult installResult,
+            List<string> installedFilesForRollback)
+        {
+            // Cache the server-minted token first; coupling authorizes against it.
+            if (!string.IsNullOrWhiteSpace(package.licenseToken))
+            {
+                LicenseTokenCache.StoreToken(package.packageId, package.licenseToken);
+            }
+
+            IReadOnlyList<string> couplingFiles = CollectCouplingFiles(projectDir, package, installResult);
+            if (couplingFiles.Count > 0)
+            {
+                installedFilesForRollback.AddRange(couplingFiles);
+            }
+
+            if (couplingFiles.Count == 0)
+            {
+                return;
+            }
+
+            if (!CouplingImportGuard.TryApplyCouplingForFiles(package.packageId, couplingFiles, out string couplingError))
+            {
+                ImportedAssetRollbackService.TryRollbackImportedAssets(installedFilesForRollback, out _);
+                throw new Exception(
+                    $"The package protection step could not be completed for '{package.packageId}'. {couplingError}");
+            }
+        }
+
+        /// <summary>
+        /// Resolves the project-relative files installed for a package, used both as coupling
+        /// candidates (coupling itself filters to .png/.fbx) and as the rollback file set.
+        /// </summary>
+        private static IReadOnlyList<string> CollectCouplingFiles(
+            string projectDir,
+            AliasInstallPlanPackage package,
+            AuthorizedVpmPackageInstaller.AuthorizedPackageInstallResult installResult)
+        {
+            if (package == null || string.IsNullOrWhiteSpace(package.packageId))
+            {
+                return Array.Empty<string>();
+            }
+
+            // unitypackage source: the installer already returns the full imported file list.
+            if (string.Equals(package.sourceKind, "unitypackage", StringComparison.OrdinalIgnoreCase))
+            {
+                return installResult?.managedPaths != null
+                    ? new List<string>(installResult.managedPaths)
+                    : (IReadOnlyList<string>)Array.Empty<string>();
+            }
+
+            // zip source: the package was extracted to Packages/{packageId}; enumerate it.
+            string packageRoot = System.IO.Path.Combine(projectDir, "Packages", package.packageId);
+            if (!System.IO.Directory.Exists(packageRoot))
+            {
+                return Array.Empty<string>();
+            }
+
+            var files = new List<string>();
+            foreach (string fullPath in System.IO.Directory.GetFiles(
+                         packageRoot, "*", System.IO.SearchOption.AllDirectories))
+            {
+                string relativeWithinPackage = fullPath
+                    .Substring(packageRoot.Length)
+                    .Replace('\\', '/')
+                    .TrimStart('/');
+                files.Add($"Packages/{package.packageId}/{relativeWithinPackage}");
+            }
+
+            return files;
         }
 
         private static void UpdateProjectVpmManifest(string projectDir, AliasInstallPlan installPlan)
@@ -425,6 +521,193 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 : package.displayName ?? package.packageId ?? string.Empty;
             installedInfo.SetInstalledDateTime(DateTime.Now);
             return installedInfo;
+        }
+
+        /// <summary>
+        /// Builds display metadata for an alias package from an already-resolved authorized install
+        /// plan, WITHOUT installing anything. Used to show real package details (title, version,
+        /// creator) before the user confirms the install. Media textures are attached separately via
+        /// <see cref="TryAttachPlanMedia"/>. Returns null if the plan carries no usable package.
+        /// </summary>
+        internal static PackageMetadata BuildPreviewMetadataFromPlan(
+            AliasInstallPlan plan,
+            AliasPackageContract requested)
+        {
+            if (plan == null)
+            {
+                return null;
+            }
+
+            AliasInstallPlanPackage package = SelectPlanPackage(plan, requested);
+            if (package == null)
+            {
+                return null;
+            }
+
+            string displayName = FirstNonEmpty(
+                package.displayName,
+                package.aliasContract?.packageDisplayName,
+                requested?.packageDisplayName,
+                plan.title,
+                package.packageId);
+
+            var metadata = new PackageMetadata(string.IsNullOrWhiteSpace(displayName) ? "Package" : displayName)
+            {
+                version = FirstNonEmpty(package.version, requested?.packageVersion, requested?.minImporterVersion) ?? string.Empty,
+                author = plan.creatorName ?? string.Empty,
+                tagline = plan.title ?? string.Empty,
+                aliasPackage = MergeAliasPackageContract(requested?.Clone(), package),
+            };
+
+            return metadata;
+        }
+
+        /// <summary>
+        /// Best-effort download of the alias package's icon/banner into in-memory textures for the
+        /// pre-install preview. Never throws and never writes to the project; failures simply leave
+        /// the corresponding texture unset.
+        /// </summary>
+        internal static void TryAttachPlanMedia(
+            PackageMetadata metadata,
+            AliasInstallPlan plan,
+            AliasPackageContract requested,
+            string serverUrl)
+        {
+            if (metadata == null || plan == null || string.IsNullOrWhiteSpace(serverUrl))
+            {
+                return;
+            }
+
+            AliasInstallPlanPackage package = SelectPlanPackage(plan, requested);
+            if (package?.media == null)
+            {
+                return;
+            }
+
+            string accessToken;
+            try
+            {
+                accessToken = CreatorIdentityOAuthService.GetValidAccessTokenAsync(
+                    serverUrl,
+                    AliasDeliveryRequiredScopes).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP UpdateDelivery] Could not acquire token for preview media: {ex.Message}");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                return;
+            }
+
+            Texture2D icon = TryDownloadPreviewTexture(serverUrl, accessToken, package.media.icon);
+            if (icon != null)
+            {
+                metadata.icon = icon;
+            }
+
+            Texture2D banner = TryDownloadPreviewTexture(serverUrl, accessToken, package.media.banner);
+            if (banner != null)
+            {
+                metadata.banner = banner;
+            }
+        }
+
+        private static Texture2D TryDownloadPreviewTexture(
+            string serverUrl,
+            string accessToken,
+            AliasPackageMediaDescriptor descriptor)
+        {
+            if (descriptor == null || string.IsNullOrWhiteSpace(descriptor.downloadUrl))
+            {
+                return null;
+            }
+
+            try
+            {
+                EnsureTrustedSameOrigin(descriptor.downloadUrl, serverUrl, "Package media download URL");
+                byte[] bytes = DownloadAuthorizedBytesAsync(
+                    serverUrl,
+                    accessToken,
+                    descriptor.downloadUrl,
+                    "Could not download package preview media")
+                    .GetAwaiter()
+                    .GetResult();
+
+                string expectedSha256 = NormalizeSha256(descriptor.sha256);
+                if (!string.IsNullOrEmpty(expectedSha256) &&
+                    !string.Equals(ComputeSha256(bytes), expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!texture.LoadImage(bytes))
+                {
+                    UnityEngine.Object.DestroyImmediate(texture);
+                    return null;
+                }
+
+                return texture;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP UpdateDelivery] Skipping preview media: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static AliasInstallPlanPackage SelectPlanPackage(
+            AliasInstallPlan plan,
+            AliasPackageContract requested)
+        {
+            if (plan?.packages == null || plan.packages.Length == 0)
+            {
+                return null;
+            }
+
+            string requestedName = requested?.packageName;
+            if (!string.IsNullOrWhiteSpace(requestedName))
+            {
+                foreach (AliasInstallPlanPackage candidate in plan.packages)
+                {
+                    if (candidate != null &&
+                        string.Equals(candidate.packageId, requestedName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+
+            foreach (AliasInstallPlanPackage candidate in plan.packages)
+            {
+                if (candidate != null)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            if (values == null)
+            {
+                return null;
+            }
+
+            foreach (string value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+
+            return null;
         }
 
         private static PackageMetadata LoadInstalledPackageMetadata(string packageId)
@@ -987,12 +1270,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             string url =
                 $"{serverUrl.TrimEnd('/')}/api/backstage/access/products/{Uri.EscapeDataString(catalogProductId)}/install-plan";
+            string bodyJson = JsonUtility.ToJson(new AliasInstallPlanRequest
+            {
+                machineFingerprint = MachineFingerprintService.GetFingerprint(),
+            });
             RequestResult result = await SendAuthorizedJsonAsync(
                 serverUrl,
                 accessToken,
                 "POST",
                 url,
-                null,
+                bodyJson,
                 AliasDeliveryRequiredScopes).ConfigureAwait(false);
             if (result.responseCode != 200)
             {

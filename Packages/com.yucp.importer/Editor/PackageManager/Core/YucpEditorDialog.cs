@@ -77,23 +77,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             dialog._isErrorDialog = isErrorDialog;
             dialog._result = !dialog._hasCancel;
             dialog.titleContent = new GUIContent("YUCP Installer");
-            dialog.minSize = new Vector2(DialogWidth, isErrorDialog ? 320f : DialogMinHeight);
-            dialog.maxSize = new Vector2(DialogWidth, isErrorDialog ? 520f : DialogMaxHeight);
-            dialog.position = BuildCenteredPosition(dialog._message, isErrorDialog);
+            dialog.minSize = new Vector2(DialogWidth, DialogMinHeight);
+            dialog.maxSize = new Vector2(DialogWidth, DialogMaxHeight);
+            dialog.position = BuildCenteredPosition(dialog._message);
             return dialog;
         }
 
-        private static Rect BuildCenteredPosition(string message, bool isErrorDialog = false)
+        private static Rect BuildCenteredPosition(string message)
         {
             int lineCount = string.IsNullOrEmpty(message)
                 ? 1
                 : message.Split(new[] { '\n' }, StringSplitOptions.None).Length;
             int wrappedLineEstimate = Mathf.CeilToInt((message?.Length ?? 0) / 76f);
-            float baseHeight = isErrorDialog ? 250f : 302f;
-            float minHeight = isErrorDialog ? 320f : DialogMinHeight;
-            float maxHeight = isErrorDialog ? 520f : DialogMaxHeight;
-            float contentHeight = baseHeight + Mathf.Max(lineCount, wrappedLineEstimate) * 8f;
-            float height = Mathf.Clamp(contentHeight, minHeight, maxHeight);
+            float contentHeight = 302f + Mathf.Max(lineCount, wrappedLineEstimate) * 8f;
+            float height = Mathf.Clamp(contentHeight, DialogMinHeight, DialogMaxHeight);
             Rect main = EditorGUIUtility.GetMainWindowPosition();
             float x = main.x + Mathf.Max(0f, (main.width - DialogWidth) * 0.5f);
             float y = main.y + Mathf.Max(0f, (main.height - height) * 0.42f);
@@ -104,7 +101,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             VisualElement root = rootVisualElement;
             root.Clear();
-            root.AddToClassList(_isErrorDialog ? "yucp-error-dialog-root" : "yucp-dialog-installer-root");
+            // Both the confirmation and error dialogs share the dark, banner-led installer surface so
+            // they read as one family instead of a stray light-themed popup.
+            root.AddToClassList("yucp-dialog-installer-root");
 
             StyleSheet styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(StyleSheetPath);
             if (styleSheet != null)
@@ -166,39 +165,18 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private void CreateErrorGUI(VisualElement root)
         {
-            root.AddToClassList("yucp-error-dialog-surface");
+            // Reuse the installer dialog's banner/hero so the error screen matches the rest of the UI.
+            root.Add(CreateBannerSection());
 
-            var header = new VisualElement();
-            header.AddToClassList("yucp-error-dialog-header");
-
-            var headerRow = new VisualElement();
-            headerRow.AddToClassList("yucp-error-dialog-header-row");
-
-            VisualElement mark = CreateErrorBrandMark();
-            headerRow.Add(mark);
-
-            var titleStack = new VisualElement();
-            titleStack.AddToClassList("yucp-error-dialog-title-stack");
-
-            var eyebrow = new Label("YUCP Installer")
-            {
-                name = "yucp-error-dialog-eyebrow"
-            };
-            eyebrow.AddToClassList("yucp-error-dialog-eyebrow");
-            titleStack.Add(eyebrow);
-
-            var title = new Label(_title);
-            title.name = "yucp-error-dialog-title";
-            title.AddToClassList("yucp-error-dialog-title");
-            titleStack.Add(title);
+            var content = new VisualElement();
+            content.AddToClassList("yucp-dialog-content");
 
             var summary = new Label("The install did not complete. Copy the details below if you need to report it.");
             summary.AddToClassList("yucp-error-dialog-summary");
-            titleStack.Add(summary);
+            content.Add(summary);
 
-            headerRow.Add(titleStack);
-            header.Add(headerRow);
-            root.Add(header);
+            var detailsScroll = new ScrollView(ScrollViewMode.Vertical);
+            detailsScroll.AddToClassList("yucp-error-dialog-details-scroll");
 
             var details = new TextField
             {
@@ -208,10 +186,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 value = string.IsNullOrWhiteSpace(_message) ? "The install did not complete." : _message
             };
             details.AddToClassList("yucp-error-dialog-details");
-            root.Add(details);
+            detailsScroll.Add(details);
+            content.Add(detailsScroll);
+
+            root.Add(content);
 
             var actions = new VisualElement();
-            actions.AddToClassList("yucp-error-dialog-action-row");
+            actions.AddToClassList("yucp-dialog-action-row");
 
             var copyButton = new Button(() =>
             {
@@ -221,7 +202,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 name = "yucp-error-dialog-copy-button",
                 text = "Copy Error"
             };
-            copyButton.AddToClassList("yucp-error-dialog-copy-button");
+            copyButton.AddToClassList("yucp-dialog-action");
+            copyButton.AddToClassList("yucp-cta-cancel");
             actions.Add(copyButton);
 
             var okButton = new Button(() => CloseWithResult(true))
@@ -229,32 +211,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 name = "yucp-error-dialog-ok-button",
                 text = _ok
             };
-            okButton.AddToClassList("yucp-error-dialog-ok-button");
+            okButton.AddToClassList("yucp-dialog-action");
+            okButton.AddToClassList("yucp-cta-button");
             actions.Add(okButton);
             root.Add(actions);
 
             root.RegisterCallback<KeyDownEvent>(OnKeyDown);
-            details.Focus();
-        }
-
-        private static VisualElement CreateErrorBrandMark()
-        {
-            var frame = new VisualElement();
-            frame.AddToClassList("yucp-error-dialog-brand-mark");
-
-            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.importer/Editor/PackageManager/Resources/MainLogo.png");
-            if (icon != null)
-            {
-                var iconImage = new Image { image = icon };
-                iconImage.AddToClassList("yucp-error-dialog-brand-image");
-                frame.Add(iconImage);
-                return frame;
-            }
-
-            var iconText = new Label("Y");
-            iconText.AddToClassList("yucp-error-dialog-brand-text");
-            frame.Add(iconText);
-            return frame;
+            okButton.Focus();
         }
 
         private string BuildCopyableErrorText()

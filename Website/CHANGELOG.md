@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-06-12]
+
+### com.yucp.importer
+- Introduced `AliasMetadataEnrichmentService` to enhance package metadata during the alias installation process.
+- Significant improvements to `UpdateDeliveryService` and `AliasPackageAutoInstaller` for more robust package handling.
+- Refactored the `PackageManagerWindow` user interface and associated styles.
+- Added `CouplingImportGuard` and updated `CreatorIdentityOAuthService` logic.
+- Added comprehensive unit tests for alias removal, metadata enrichment, and protected payload decryption.
+
 ## [2026-06-11]
 
 ### com.yucp.importer

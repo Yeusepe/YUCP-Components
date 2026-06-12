@@ -24,38 +24,6 @@ namespace YUCP.Importer.Editor.PackageManager
     /// </summary>
     public class PackageManagerWindow : EditorWindow
     {
-        [MenuItem("Tools/YUCP/Package Manager")]
-        public static void ShowWindow()
-        {
-            if (!PackageManagerRuntimeSettings.IsEnabled())
-            {
-                Debug.LogWarning("[YUCP PackageManager] Package Manager is disabled (Tools > YUCP > Package Manager > Enable).");
-                return;
-            }
-
-            var window = GetWindow<PackageManagerWindow>();
-            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.importer/Editor/PackageManager/Resources/MainLogo.png");
-            if (icon == null)
-            {
-                // Fallback if icon doesn't exist
-                window.titleContent = new GUIContent("YUCP Installer");
-            }
-            else
-            {
-                window.titleContent = new GUIContent("YUCP Installer", icon);
-            }
-            window.minSize = new Vector2(500, 600);
-            window.Show();
-
-            EditorApplication.delayCall += () =>
-            {
-                if (window != null && !window._isImportMode)
-                {
-                    window.ShowInstallerPlaceholderView();
-                }
-            };
-        }
-
         public static void ShowResumeProtectedPackage(InstalledPackageInfo packageInfo)
         {
             if (packageInfo == null)
@@ -170,6 +138,10 @@ namespace YUCP.Importer.Editor.PackageManager
         
         // Domain reload prevention
         private bool _isImportMode = false; // Track if window is in import mode (prevents domain reload)
+
+        // Set once the window has been handed an import/alias-install context, so a stray
+        // domain-reload restore (which resets _isImportMode) is not mistaken for an empty window.
+        private bool _hasPendingImportContext = false;
         
         // Fixed modal implementation state
         private bool _isModalFixed = false;
@@ -216,16 +188,17 @@ namespace YUCP.Importer.Editor.PackageManager
             // Ensure TrustedAuthority is initialized with all keys (root, cached, etc.)
             TrustedAuthority.ReloadAllKeys();
             
-            if (!_isImportMode)
+            // This window only exists as the import installer (driven by the interceptor or the
+            // alias install flow). Package browsing/management now lives in the Creator Companion.
+            // If Unity restores a stray instance after a domain reload with no import context,
+            // close it instead of showing a standalone manager surface.
+            EditorApplication.delayCall += () =>
             {
-                EditorApplication.delayCall += () =>
+                if (this != null && !_isImportMode && !_hasPendingImportContext)
                 {
-                    if (!_isImportMode && _currentViewContainer != null)
-                    {
-                        ShowInstallerPlaceholderView();
-                    }
-                };
-            }
+                    Close();
+                }
+            };
         }
 
         private void OnDisable()
@@ -3734,13 +3707,15 @@ namespace YUCP.Importer.Editor.PackageManager
         /// </summary>
         public void InitializeForImport(string packagePath, System.Array importItems, System.Array allImportItems, string packageIconPath, object wizardInstance, bool isProjectSettingsStep)
         {
+            _hasPendingImportContext = true;
+
             // Lock assembly reload to prevent domain reload during import (like Unity's original window)
             if (!_isImportMode)
             {
                 EditorApplication.LockReloadAssemblies();
                 _isImportMode = true;
             }
-            
+
             // Store import items first (needed for verification)
             _currentPackagePath = packagePath;
             _currentImportItems = importItems;
@@ -3777,6 +3752,11 @@ namespace YUCP.Importer.Editor.PackageManager
             s_lastImportMetadata = metadata;
             s_lastImportPackagePath = packagePath;
             LogTempInstallStatus();
+
+            // For server-authorized alias packages the embedded metadata is intentionally minimal;
+            // pull the real title/version/creator/media from the server so the installer shows what
+            // is actually being imported. Best-effort and only when already signed in.
+            TryEnrichAliasMetadataDisplay();
 
             // Build tree from current step's import items
             SetImportItems(importItems);
@@ -4320,6 +4300,106 @@ namespace YUCP.Importer.Editor.PackageManager
             BuildLicenseSection();
         }
 
+        /// <summary>
+        /// When the current package is a server-authorized alias, fetch the real package details
+        /// (title, version, creator, icon, banner) from the server and merge them into the display.
+        /// Runs only when the user is already signed in so opening the installer never forces a
+        /// browser sign-in just to preview, and never blocks the initial render.
+        /// </summary>
+        private void TryEnrichAliasMetadataDisplay()
+        {
+            PackageMetadata current = _currentMetadata ?? _cachedMetadata;
+            AliasPackageContract alias = current?.aliasPackage;
+            if (alias == null || !AliasPackageAutoInstaller.IsServerAuthorizedAlias(alias))
+            {
+                return;
+            }
+
+            if (!CreatorIdentityOAuthService.IsSignedIn())
+            {
+                return;
+            }
+
+            string serverUrl = GetLicenseServerUrl();
+            if (string.IsNullOrWhiteSpace(serverUrl))
+            {
+                return;
+            }
+
+            EditorApplication.delayCall += () =>
+            {
+                if (this == null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    EditorUtility.DisplayProgressBar("YUCP Importer", "Fetching package details…", 0.5f);
+                    if (AliasMetadataEnrichmentService.TryEnrich(serverUrl, alias, out PackageMetadata enriched, out string enrichError) &&
+                        enriched != null)
+                    {
+                        MergeEnrichedMetadata(current, enriched);
+                        SetMetadata(current);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(enrichError))
+                    {
+                        Debug.LogWarning($"[YUCP PackageManager] Could not enrich alias metadata: {enrichError}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[YUCP PackageManager] Alias metadata enrichment failed: {ex.Message}");
+                }
+                finally
+                {
+                    EditorUtility.ClearProgressBar();
+                }
+            };
+        }
+
+        /// <summary>
+        /// Overlays server-sourced display fields onto the existing metadata, keeping embedded
+        /// fields (description, gallery, contents) the server plan does not carry.
+        /// </summary>
+        private static void MergeEnrichedMetadata(PackageMetadata target, PackageMetadata enriched)
+        {
+            if (target == null || enriched == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(enriched.packageName))
+            {
+                target.packageName = enriched.packageName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(enriched.version))
+            {
+                target.version = enriched.version;
+            }
+
+            if (!string.IsNullOrWhiteSpace(enriched.author))
+            {
+                target.author = enriched.author;
+            }
+
+            if (!string.IsNullOrWhiteSpace(enriched.tagline))
+            {
+                target.tagline = enriched.tagline;
+            }
+
+            if (enriched.icon != null)
+            {
+                target.icon = enriched.icon;
+            }
+
+            if (enriched.banner != null)
+            {
+                target.banner = enriched.banner;
+            }
+        }
+
         private void OnImportPackageStarted(string packageName)
         {
             // Try to extract metadata using reflection to access Unity's internal import items
@@ -4775,70 +4855,6 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 // Expected when closing the import window.
             }
-        }
-
-        private void ShowInstallerPlaceholderView()
-        {
-            if (_currentViewContainer == null)
-            {
-                return;
-            }
-
-            _currentViewContainer.Clear();
-
-            var placeholder = new VisualElement();
-            placeholder.AddToClassList("yucp-installer-placeholder");
-
-            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.importer/Editor/PackageManager/Resources/MainLogo.png");
-            if (icon != null)
-            {
-                var iconImage = new Image { image = icon };
-                iconImage.AddToClassList("yucp-installer-placeholder-icon");
-                placeholder.Add(iconImage);
-            }
-
-            var eyebrow = new Label("YUCP Installer");
-            eyebrow.AddToClassList("yucp-installer-placeholder-eyebrow");
-            placeholder.Add(eyebrow);
-
-            var title = new Label("Import packages through the installer");
-            title.AddToClassList("yucp-installer-placeholder-title");
-            placeholder.Add(title);
-
-            var body = new Label("Choose a .unitypackage to open the same verification, package review, and install flow used by protected YUCP packages.");
-            body.AddToClassList("yucp-installer-placeholder-body");
-            placeholder.Add(body);
-
-            var actionRow = new VisualElement();
-            actionRow.AddToClassList("yucp-installer-placeholder-actions");
-
-            var openButton = new Button(OpenUnityPackageForImport)
-            {
-                text = "Open Package"
-            };
-            openButton.AddToClassList("yucp-cta-button");
-            actionRow.Add(openButton);
-
-            var settingsButton = new Button(() => SettingsService.OpenProjectSettings("Project/YUCP Package Manager"))
-            {
-                text = "Settings"
-            };
-            settingsButton.AddToClassList("yucp-cta-cancel");
-            actionRow.Add(settingsButton);
-
-            placeholder.Add(actionRow);
-            _currentViewContainer.Add(placeholder);
-        }
-
-        private static void OpenUnityPackageForImport()
-        {
-            string packagePath = EditorUtility.OpenFilePanel("Open Unity Package", string.Empty, "unitypackage");
-            if (string.IsNullOrWhiteSpace(packagePath))
-            {
-                return;
-            }
-
-            AssetDatabase.ImportPackage(packagePath, true);
         }
 
         private bool RegisterPackageAfterImport()
