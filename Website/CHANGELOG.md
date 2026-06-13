@@ -1,8 +1,11 @@
 # Changelog
 
-## [2026-06-12]
+## [2026-06-13]
 
 ### com.yucp.importer
+- Bumped the package to `0.1.11` and made the importer a downloadable `.unitypackage` installer: on first load (or from **Tools -> YUCP -> Add My Repository to VCC**) it authorizes the signed-in account with the server and registers the private VPM repository the account owns in VRChat Creator Companion.
+- Added `BackstageRepositoryProvisioningService` to call `GET /api/backstage/repos/access` with the Unity OAuth bearer token and resolve the per-account `vcc://vpm/addRepo` link.
+- Added `ServerAuthorizedRepositoryInstaller` to drive sign-in -> authorize -> add-to-VCC, with a one-time per-project prompt and a clipboard fallback when the `vcc://` handler is unavailable.
 - Introduced `AliasMetadataEnrichmentService` to enhance package metadata during the alias installation process.
 - Significant improvements to `UpdateDeliveryService` and `AliasPackageAutoInstaller` for more robust package handling.
 - Refactored the `PackageManagerWindow` user interface and associated styles.
