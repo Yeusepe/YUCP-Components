@@ -112,6 +112,53 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 !string.IsNullOrWhiteSpace(aliasPackage.aliasId);
         }
 
+        /// <summary>
+        /// True when any registered package declares a server-authorized YUCP alias contract. That contract is a
+        /// product (.unitypackage) install stating the importer is present to service it — i.e. the importer is in
+        /// product-service mode, not acting as the standalone "add my repository to VCC" installer. Uses the same
+        /// alias detection as the install flow so the two stay in lock-step.
+        /// </summary>
+        internal static bool AnyServerAuthorizedAliasPackageRegistered()
+        {
+            try
+            {
+                foreach (PackageInfo package in PackageInfo.GetAllRegisteredPackages())
+                {
+                    if (package == null || string.IsNullOrWhiteSpace(package.resolvedPath))
+                    {
+                        continue;
+                    }
+
+                    string packageJsonPath = Path.Combine(package.resolvedPath, "package.json");
+                    if (!File.Exists(packageJsonPath))
+                    {
+                        continue;
+                    }
+
+                    string packageJson;
+                    try
+                    {
+                        packageJson = File.ReadAllText(packageJsonPath);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (TryBuildAliasPackageMetadata(package.name, packageJson, out _, out _))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"{LogPrefix} Failed to scan for server-authorized alias packages: {ex.Message}");
+            }
+
+            return false;
+        }
+
         internal static string BuildSessionKey(PackageMetadata metadata)
         {
             AliasPackageContract aliasPackage = metadata?.aliasPackage;

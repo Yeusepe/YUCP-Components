@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-06-15]
+
+### com.yucp.importer
+- Improved `AliasPackageAutoInstaller` and `ServerAuthorizedRepositoryInstaller` to ensure more robust handling of automatic package aliases and repository provisioning.
+
 ## [2026-06-13]
 
 ### com.yucp.importer

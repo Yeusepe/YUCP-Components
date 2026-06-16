@@ -38,6 +38,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static void MaybePromptFirstRun()
         {
+            // The repo-onboarding bootstraps a user into the YUCP VCC repository, so it only belongs to the
+            // standalone installer the user deliberately added. When a server-authorized alias package is
+            // present, the importer is here to service that product (a .unitypackage install) — the product's
+            // alias contract is the authoritative statement of intent — so this prompt must stay silent.
+            // Checked before the first-run flag so product-service mode never consumes the one-time offer.
+            if (AliasPackageAutoInstaller.AnyServerAuthorizedAliasPackageRegistered())
+            {
+                return;
+            }
+
             string promptKey = FirstRunPromptKeyPrefix + ResolveProjectIdentity();
             if (EditorPrefs.GetBool(promptKey, false))
             {
