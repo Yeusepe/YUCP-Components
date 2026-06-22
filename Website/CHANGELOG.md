@@ -39,8 +39,8 @@
 ### com.yucp.importer
 - Bumped the package to `0.1.9` so VPM alias shims require the importer build that detects installed alias packages and starts the authorized install flow.
 - Added `AliasPackageAutoInstaller` to automatically handle package aliases.
-- Added `AuthorizedVpmPackageInstaller` for secure VPM package installation.
-- Improved `UpdateDeliveryService` and `PackageMetadataExtractor` for more reliable updates.
+- Added`AuthorizedVpmPackageInstaller` for secure VPM package installation.
+- Improved `UpdateDeliveryService` and `PackageMetadataExtractor` for morereliable updates.
 - Refactored `PackageManagerWindow` and `InstalledPackagesView` for better performance and UI consistency.
 - Enhanced `YucpDisabledFileResolver` for improved file conflict management.
 - Updated `CreatorIdentityOAuthService`.
@@ -52,3 +52,4 @@
 
 ### General
 - Added local Git hooks (`commit-msg`, `pre-commit`) to ensure code quality and consistency.
+Error: timed out waiting for response
