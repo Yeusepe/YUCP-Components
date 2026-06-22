@@ -4,49 +4,49 @@ using System.Collections.Generic;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
-    public static class VerificationIntentServiceTestHooks
+    internal static class VerificationIntentServiceTestHooks
     {
-        public static Action<string> OpenUrlHandler;
+        internal static Action<string> OpenUrlHandler;
 
-        public static void Reset()
+        internal static void Reset()
         {
             OpenUrlHandler = null;
         }
     }
 
-    public static class ProtectedAssetUnlockServiceTestHooks
+    internal static class ProtectedAssetUnlockServiceTestHooks
     {
-        public static Func<string, InstalledPackageInfo> InstalledPackageResolver;
+        internal static Func<string, InstalledPackageInfo> InstalledPackageResolver;
 
-        public static void Reset()
+        internal static void Reset()
         {
             InstalledPackageResolver = null;
         }
     }
 
-    public static class CouplingImportGuardTestHooks
+    internal static class CouplingImportGuardTestHooks
     {
-        public static Func<string, IReadOnlyList<string>, (bool success, string error)> TryApplyCoupling;
+        internal static Func<string, IReadOnlyList<string>, (bool success, string error)> TryApplyCoupling;
 
-        public static void Reset()
+        internal static void Reset()
         {
             TryApplyCoupling = null;
         }
     }
 
-    public static class CouplingRuntimeBootstrapServiceTestHooks
+    internal static class CouplingRuntimeBootstrapServiceTestHooks
     {
-        public static Func<string, string> GetLicenseToken;
-        public static Func<string> GetProjectId;
-        public static Func<string> GetMachineFingerprint;
-        public static Func<string> GetServerUrl;
-        public static Func<(bool success, string error)> ValidateRuntime;
-        public static Func<(bool success, string error)> RepairRuntimeRegistration;
-        public static Func<string, string, string, string, (bool success, string runtimePackageToken, string runtimePackageSha256, long expiresAt, string error)> RequestRuntimePackageToken;
-        public static Func<string, string, string, (bool success, byte[] packageZipBytes, string error)> DownloadRuntimePackage;
-        public static Func<byte[], string, string, (bool success, string error)> InstallRuntimePackage;
+        internal static Func<string, string> GetLicenseToken;
+        internal static Func<string> GetProjectId;
+        internal static Func<string> GetMachineFingerprint;
+        internal static Func<string> GetServerUrl;
+        internal static Func<(bool success, string error)> ValidateRuntime;
+        internal static Func<(bool success, string error)> RepairRuntimeRegistration;
+        internal static Func<string, string, string, string, (bool success, string runtimePackageToken, string runtimePackageSha256, long expiresAt, string error)> RequestRuntimePackageToken;
+        internal static Func<string, string, string, (bool success, byte[] packageZipBytes, string error)> DownloadRuntimePackage;
+        internal static Func<byte[], string, string, (bool success, string error)> InstallRuntimePackage;
 
-        public static void Reset()
+        internal static void Reset()
         {
             GetLicenseToken = null;
             GetProjectId = null;
@@ -60,26 +60,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
     }
 
-    public static class ServerAuthorizedPackageDownloadBridgeTestHooks
+    internal static class ServerAuthorizedPackageDownloadBridgeTestHooks
     {
-        public static Func<string, string> GetLicenseToken;
-        public static Func<string> GetMachineFingerprint;
+        internal static Func<string, string> GetLicenseToken;
+        internal static Func<string> GetMachineFingerprint;
 
-        public static void Reset()
+        internal static void Reset()
         {
             GetLicenseToken = null;
             GetMachineFingerprint = null;
         }
     }
 
-    public static class ProtectedInstallFinalizationCoordinatorTestHooks
+    internal static class ProtectedInstallFinalizationCoordinatorTestHooks
     {
-        public static Func<IReadOnlyList<string>, (bool success, IReadOnlyList<string> createdAssetPaths, string error)> TryMaterializePatchAssets;
-        public static Func<bool> TryReleaseRuntimeResources;
-        public static Func<IReadOnlyList<string>, (bool success, string error)> TryRollbackImportedAssets;
-        public static IProtectedPayloadBrokerBridge BrokerBridgeOverride;
+        internal static Func<IReadOnlyList<string>, (bool success, IReadOnlyList<string> createdAssetPaths, string error)> TryMaterializePatchAssets;
+        internal static Func<bool> TryReleaseRuntimeResources;
+        internal static Func<IReadOnlyList<string>, (bool success, string error)> TryRollbackImportedAssets;
+        internal static IProtectedPayloadBrokerBridge BrokerBridgeOverride;
 
-        public static void Reset()
+        internal static void Reset()
         {
             TryMaterializePatchAssets = null;
             TryReleaseRuntimeResources = null;
@@ -88,20 +88,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
     }
 
-    public static class UpdateDeliveryServiceTestHooks
+    internal static class UpdateDeliveryServiceTestHooks
     {
-        public static Action<UpdateDeliveryService.AliasInstallPlan> ApplyAuthorizedInstallPlanHandler;
+        internal static Action<UpdateDeliveryService.AliasInstallPlan> ApplyAuthorizedInstallPlanHandler;
         internal static Func<
             string,
             string,
             UpdateDeliveryService.AliasInstallPlanPackage,
             string,
             AuthorizedVpmPackageInstaller.AuthorizedPackageInstallResult> AuthorizedPackageInstallerHandler;
-        public static Func<string, PackageMetadata> InstalledPackageMetadataLoader;
-        public static Action<InstalledPackageInfo> PersistInstallStateHandler;
-        public static Action<InstalledPackageInfo> RegisterInstalledPackageHandler;
+        internal static Func<string, PackageMetadata> InstalledPackageMetadataLoader;
+        internal static Action<InstalledPackageInfo> PersistInstallStateHandler;
+        internal static Action<InstalledPackageInfo> RegisterInstalledPackageHandler;
 
-        public static void Reset()
+        internal static void Reset()
         {
             ApplyAuthorizedInstallPlanHandler = null;
             AuthorizedPackageInstallerHandler = null;

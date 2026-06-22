@@ -320,7 +320,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
 
                 string resultText = File.ReadAllText(resultPath);
-                if (process.ExitCode != 0 || resultText.IndexOf("status=ok", StringComparison.OrdinalIgnoreCase) < 0)
+                if (process.ExitCode != 0 || !IsCouplingResultSuccessful(resultText))
                 {
                     error = $"Coupling runtime failed: {resultText}";
                     return false;
@@ -352,6 +352,36 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     Debug.LogWarning($"[YUCP Coupling] Failed to clean up temp runtime files: {ex.Message}");
                 }
             }
+        }
+
+        // The native runtime writes a structured result:
+        //   "status=ok\ncode=0\napplied=..\nskipped=..\nfailed=N\n"
+        // Success requires an EXACT status token AND an explicit zero failure count, parsed line by
+        // line so a loose substring (or any attacker-influenced text in the result file) can never be
+        // read as success. Missing or malformed fields fail closed.
+        internal static bool IsCouplingResultSuccessful(string resultText)
+        {
+            if (string.IsNullOrEmpty(resultText)) return false;
+
+            bool statusOk = false;
+            bool sawFailed = false;
+            bool failedZero = false;
+            foreach (string rawLine in resultText.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                if (line.StartsWith("status=", StringComparison.OrdinalIgnoreCase))
+                {
+                    statusOk = string.Equals(
+                        line.Substring("status=".Length).Trim(), "ok", StringComparison.OrdinalIgnoreCase);
+                }
+                else if (line.StartsWith("failed=", StringComparison.OrdinalIgnoreCase))
+                {
+                    sawFailed = true;
+                    failedZero = line.Substring("failed=".Length).Trim() == "0";
+                }
+            }
+
+            return statusOk && sawFailed && failedZero;
         }
 
         private static string NormalizeAssetPath(string path)

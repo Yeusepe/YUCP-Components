@@ -34,3 +34,7 @@ desktop.ini
 /ProjectSettings
 Packages/com.yucp.components/wiki.meta
 .antigravitycli/
+
+# Importer tests live dev-only (Assets/YUCP_ImporterDevTests); keep out of open source
+Packages/com.yucp.importer/Editor/Tests/
+Packages/com.yucp.importer/Editor/Tests.meta

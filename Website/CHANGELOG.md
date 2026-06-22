@@ -1,13 +1,11 @@
-# Changelog
-
-## [2026-06-15]
-
-### com.yucp.importer
-- Improved `AliasPackageAutoInstaller` and `ServerAuthorizedRepositoryInstaller` to ensure more robust handling of automatic package aliases and repository provisioning.
-
-## [2026-06-13]
-
-### com.yucp.importer
+# Changelog## [2026-06-22]### com.yucp.importer
+- Added `AttestationClient` and `AttestationConfig` for package attestation and integrity verification.
+- Removed `BackstageRepositoryProvisioningService` and `ServerAuthorizedRepositoryInstaller`, superseded by the new attestation flow.
+- Updated `CouplingRuntimeService` and `ExecutionIntegrityTestHooks`.
+- Removed the bundled editor test suite; tests are now maintained outside the shipped package.### com.yucp.components
+- Updated package metadata.### General
+- Streamlined local git hooks and added `agy-print.js` helper.## [2026-06-15]### com.yucp.importer
+- Improved `AliasPackageAutoInstaller` and `ServerAuthorizedRepositoryInstaller` to ensure more robust handling of automatic package aliases and repository provisioning.## [2026-06-13]### com.yucp.importer
 - Bumped the package to `0.1.11` and made the importer a downloadable `.unitypackage` installer: on first load (or from **Tools -> YUCP -> Add My Repository to VCC**) it authorizes the signed-in account with the server and registers the private VPM repository the account owns in VRChat Creator Companion.
 - Added `BackstageRepositoryProvisioningService` to call `GET /api/backstage/repos/access` with the Unity OAuth bearer token and resolve the per-account `vcc://vpm/addRepo` link.
 - Added `ServerAuthorizedRepositoryInstaller` to drive sign-in -> authorize -> add-to-VCC, with a one-time per-project prompt and a clipboard fallback when the `vcc://` handler is unavailable.
@@ -15,11 +13,7 @@
 - Significant improvements to `UpdateDeliveryService` and `AliasPackageAutoInstaller` for more robust package handling.
 - Refactored the `PackageManagerWindow` user interface and associated styles.
 - Added `CouplingImportGuard` and updated `CreatorIdentityOAuthService` logic.
-- Added comprehensive unit tests for alias removal, metadata enrichment, and protected payload decryption.
-
-## [2026-06-11]
-
-### com.yucp.importer
+- Added comprehensive unit tests for alias removal, metadata enrichment, and protected payload decryption.## [2026-06-11]### com.yucp.importer
 - Introduced `YucpEditorDialog` for improved user interactions within the package manager.
 - Significant refactor of the `PackageManagerWindow` UI, consolidating views and updating styles.
 - Enhanced reliability of core installation services, including update delivery and automatic package alias handling.
