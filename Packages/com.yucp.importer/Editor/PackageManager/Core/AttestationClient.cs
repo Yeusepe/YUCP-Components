@@ -9,22 +9,16 @@ using UnityEngine.Networking;
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
     /// <summary>
-    /// Client side of the hardware-attested anti-ripper identity. Runs at protected unlock time:
-    /// requests a challenge from the closed coupling-service, invokes the installed native collector
-    /// (which reads the HWID constellation + TPM and seals everything to the server attestation key),
-    /// submits the sealed blob, and reports whether this buyer resolves to a blocked identity.
-    ///
-    /// This managed code is deliberately thin: it never sees raw identifiers (the native binary seals
-    /// them) and it makes no trust decision of its own. The verdict comes from the closed service.
+    /// Managed seam for the unlock-time identity check: gets a challenge from the service, hands it to
+    /// the native collector, submits the result, and surfaces the service's allow/block verdict. Makes
+    /// no decision of its own and handles no raw identifiers.
     /// </summary>
     internal static class AttestationClient
     {
         private const int RequestTimeoutSeconds = 30;
         private const int SealBufferCapacity = 64 * 1024;
 
-        // Pinned P-256 server attestation public key (SPKI, base64). In the shipping runtime this is
-        // compiled into the obfuscated native binary; the managed side passes it through so the native
-        // collector seals to it. Resolved from settings so it is not hard-coded in open source.
+        // Public key material, resolved from settings rather than hard-coded.
         private static string ResolveServerAttestationKey()
         {
             return TrustedAttestationKey.SpkiBase64;
@@ -66,9 +60,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return outcome;
             }
 
-            // All identity/HWID/VRChat collection happens inside the obfuscated native collector so
-            // managed code never sees plaintext identifiers. C# only forwards the managed-side claims
-            // it legitimately holds (the license subject and auth user id from the verified token).
+            // Managed side forwards only the claims it already holds from the verified token.
             string extrasJson = BuildExtrasJson(licenseSubject, authUserId);
 
             if (!NativeAttestationCollector.TryCollect(serverKey, nonce, correlationId, extrasJson,
@@ -183,9 +175,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     }
 
     /// <summary>
-    /// Invokes the installed native collector export (YucpCollectAttestation) by dynamically loading
-    /// the active runtime DLL. The native binary performs all hardware reads, the TPM attestation, and
-    /// the channel sealing; this managed seam only marshals strings in and the sealed JSON out.
+    /// Marshals strings into the installed native collector and the result back out. All processing
+    /// happens in the native binary; this seam only moves bytes.
     /// </summary>
     internal static class NativeAttestationCollector
     {
@@ -226,7 +217,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             try
             {
-                IntPtr proc = GetProcAddress(module, "YucpCollectAttestation");
+                IntPtr proc = GetProcAddress(module, "xg_0201");
                 if (proc == IntPtr.Zero)
                 {
                     error = "The native attestation entry point is missing.";

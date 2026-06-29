@@ -384,10 +384,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
 
         /// <summary>
-        /// Applies the per-buyer coupling watermark for a freshly installed alias/VPM package.
-        /// The minted license token is cached first so coupling can authorize itself, then
-        /// coupling runs fail-closed: any failure rolls back every package installed so far in
-        /// this plan and rethrows, leaving the project clean.
+        /// Runs the per-buyer protection step for a freshly installed alias/VPM package. Caches the
+        /// minted token first (the step authorizes against it), then runs transactionally: any failure
+        /// rolls back every package installed so far in this plan and rethrows, leaving the project clean.
         /// </summary>
         private static void ApplyPerBuyerCoupling(
             string projectDir,
@@ -421,8 +420,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
 
         /// <summary>
-        /// Resolves the project-relative files installed for a package, used both as coupling
-        /// candidates (coupling itself filters to .png/.fbx) and as the rollback file set.
+        /// Resolves the project-relative files installed for a package, used as both the
+        /// protection-step inputs and the rollback file set.
         /// </summary>
         private static IReadOnlyList<string> CollectCouplingFiles(
             string projectDir,

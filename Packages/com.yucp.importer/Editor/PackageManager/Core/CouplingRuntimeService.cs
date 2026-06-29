@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -13,7 +12,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal static class CouplingRuntimeService
     {
         private const int RequestTimeoutSeconds = 30;
-        private const int RuntimeTimeoutMilliseconds = 300000;
+
+        private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
+
+        private static bool IsImageExtension(string extension)
+        {
+            foreach (string ext in ImageExtensions)
+            {
+                if (string.Equals(extension, ext, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         public static bool TryApplyCoupling(string packageId, IReadOnlyList<string> installedFiles, out string error)
         {
@@ -92,7 +104,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
 
                 string extension = Path.GetExtension(assetPath);
-                if (!string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase) &&
+                if (!IsImageExtension(extension) &&
                     !string.Equals(extension, ".fbx", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
@@ -244,29 +256,40 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             error = null;
 
-            var tokenByAssetPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var jobByAssetPath = new Dictionary<string, CouplingJobEntry>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in jobEntries)
             {
-                if (entry == null || string.IsNullOrEmpty(entry.assetPath) || string.IsNullOrEmpty(entry.tokenHex))
+                // The server-issued seed is required to place a v2 mark; entries without one are skipped.
+                if (entry == null || string.IsNullOrEmpty(entry.assetPath) ||
+                    string.IsNullOrEmpty(entry.tokenHex) || string.IsNullOrEmpty(entry.seedHex))
                 {
                     continue;
                 }
 
-                tokenByAssetPath[NormalizeAssetPath(entry.assetPath)] = entry.tokenHex;
+                jobByAssetPath[NormalizeAssetPath(entry.assetPath)] = entry;
             }
 
-            var manifestLines = new List<string>();
+            var work = new List<CouplingApply>();
             foreach (var candidate in candidates)
             {
-                if (!tokenByAssetPath.TryGetValue(candidate.assetPath, out string tokenHex))
+                if (!jobByAssetPath.TryGetValue(candidate.assetPath, out CouplingJobEntry entry))
                 {
                     continue;
                 }
 
-                manifestLines.Add($"FILE|{candidate.fullPath}|{tokenHex}");
+                // Candidates are already restricted to image/.fbx in CollectCandidates, so a
+                // non-image entry here is always .fbx.
+                bool isImage = IsImageExtension(Path.GetExtension(candidate.assetPath));
+                work.Add(new CouplingApply
+                {
+                    fullPath = candidate.fullPath,
+                    tokenHex = entry.tokenHex,
+                    seedHex = entry.seedHex,
+                    isImage = isImage,
+                });
             }
 
-            if (manifestLines.Count == 0)
+            if (work.Count == 0)
             {
                 return true;
             }
@@ -275,71 +298,69 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             Directory.CreateDirectory(tempRoot);
 
             string runtimePath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.dll");
-            string manifestPath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.dat");
-            string resultPath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.dat");
+            IntPtr module = IntPtr.Zero;
+            FileStream lockedRuntime = null;
 
             try
             {
-                manifestLines.Insert(0, $"RESULT|{resultPath}");
+                // Write the verified bytes to an unpredictable per-process path, then pin them with a
+                // READ-ONLY lock (deny writers, allow the loader to map the image) for the whole mapped
+                // lifetime. A writable lock makes LoadLibrary fail with ERROR_SHARING_VIOLATION (win32 32),
+                // which previously broke coupling on every install. Released in finally.
+                File.WriteAllBytes(runtimePath, runtimeBytes);
+                lockedRuntime = new FileStream(
+                    runtimePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
 
-                using var runtimeLock = RuntimeExecutionSecurityUtility.CreateLockedArtifactFile(runtimePath, runtimeBytes);
-                using var manifestLock = RuntimeExecutionSecurityUtility.CreateLockedTextFile(
-                    manifestPath,
-                    string.Join(Environment.NewLine, manifestLines),
-                    new UTF8Encoding(false));
-
-                string launchRuntimePath = GetShortPathIfAvailable(runtimePath);
-                string launchManifestPath = GetShortPathIfAvailable(manifestPath);
-                var startInfo = CreateRuntimeHostProcessStartInfo(launchRuntimePath, launchManifestPath);
-
-                using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null)
+                module = LoadLibrary(runtimePath);
+                if (module == IntPtr.Zero)
                 {
-                    error = "Could not start the coupling runtime process.";
+                    error = "The package protection step could not be completed on this machine.";
                     return false;
                 }
 
-                if (!process.WaitForExit(RuntimeTimeoutMilliseconds))
+                IntPtr imageProc = GetProcAddress(module, "xg_0122");
+                IntPtr fbxProc = GetProcAddress(module, "xg_0124");
+                if (imageProc == IntPtr.Zero || fbxProc == IntPtr.Zero)
                 {
-                    try
+                    error = "The package protection step could not be completed on this machine.";
+                    return false;
+                }
+
+                var applyImage = Marshal.GetDelegateForFunctionPointer<CouplingApplyDelegate>(imageProc);
+                var applyFbx = Marshal.GetDelegateForFunctionPointer<CouplingApplyDelegate>(fbxProc);
+
+                int failed = 0;
+                foreach (var item in work)
+                {
+                    CouplingApplyDelegate apply = item.isImage ? applyImage : applyFbx;
+                    if (apply(Utf8Z(item.fullPath), Utf8Z(item.tokenHex), Utf8Z(item.seedHex)) < 0)
                     {
-                        process.Kill();
+                        failed++;
                     }
-                    catch
-                    {
-                    }
-
-                    error = "Coupling runtime timed out.";
-                    return false;
                 }
 
-                if (!File.Exists(resultPath))
+                if (failed > 0)
                 {
-                    error = $"Coupling runtime exited with code {process.ExitCode} without producing a result file.";
-                    return false;
-                }
-
-                string resultText = File.ReadAllText(resultPath);
-                if (process.ExitCode != 0 || !IsCouplingResultSuccessful(resultText))
-                {
-                    error = $"Coupling runtime failed: {resultText}";
+                    error = "The package protection step could not be completed on this machine.";
                     return false;
                 }
 
                 return true;
             }
-            catch (InvalidOperationException ex)
+            catch (Exception)
             {
-                error = $"Could not prepare the coupling runtime launch: {ex.Message}";
-                return false;
-            }
-            catch (Win32Exception ex)
-            {
-                error = $"Could not start the coupling runtime process: {ex.Message}";
+                error = "The package protection step could not be completed on this machine.";
                 return false;
             }
             finally
             {
+                if (module != IntPtr.Zero)
+                {
+                    FreeLibrary(module);
+                }
+
+                lockedRuntime?.Dispose();
+
                 try
                 {
                     if (Directory.Exists(tempRoot))
@@ -347,41 +368,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         Directory.Delete(tempRoot, true);
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Debug.LogWarning($"[YUCP Coupling] Failed to clean up temp runtime files: {ex.Message}");
+                    // Best-effort temp cleanup.
                 }
             }
         }
 
-        // The native runtime writes a structured result:
-        //   "status=ok\ncode=0\napplied=..\nskipped=..\nfailed=N\n"
-        // Success requires an EXACT status token AND an explicit zero failure count, parsed line by
-        // line so a loose substring (or any attacker-influenced text in the result file) can never be
-        // read as success. Missing or malformed fields fail closed.
-        internal static bool IsCouplingResultSuccessful(string resultText)
+        private static byte[] Utf8Z(string value)
         {
-            if (string.IsNullOrEmpty(resultText)) return false;
-
-            bool statusOk = false;
-            bool sawFailed = false;
-            bool failedZero = false;
-            foreach (string rawLine in resultText.Split('\n'))
-            {
-                string line = rawLine.Trim();
-                if (line.StartsWith("status=", StringComparison.OrdinalIgnoreCase))
-                {
-                    statusOk = string.Equals(
-                        line.Substring("status=".Length).Trim(), "ok", StringComparison.OrdinalIgnoreCase);
-                }
-                else if (line.StartsWith("failed=", StringComparison.OrdinalIgnoreCase))
-                {
-                    sawFailed = true;
-                    failedZero = line.Substring("failed=".Length).Trim() == "0";
-                }
-            }
-
-            return statusOk && sawFailed && failedZero;
+            return Encoding.UTF8.GetBytes((value ?? string.Empty) + "\0");
         }
 
         private static string NormalizeAssetPath(string path)
@@ -396,38 +392,28 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return RuntimeExecutionSecurityUtility.ComputeSha256Hex(data);
         }
 
-        private static System.Diagnostics.ProcessStartInfo CreateRuntimeHostProcessStartInfo(string runtimePath, string manifestPath)
-        {
-            string rundll32Path = RuntimeExecutionSecurityUtility.ResolveWindowsSystemExecutablePath("rundll32.exe");
-            if (string.IsNullOrWhiteSpace(rundll32Path))
-            {
-                throw new InvalidOperationException("Could not locate rundll32.exe in the Windows system directory.");
-            }
-
-            return new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = rundll32Path,
-                Arguments = $"\"{runtimePath}\",EntryPoint \"{manifestPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
-            };
-        }
-
-        private static string GetShortPathIfAvailable(string path)
-        {
-            if (string.IsNullOrEmpty(path))
-            {
-                return path;
-            }
-
-            var builder = new StringBuilder(512);
-            uint result = GetShortPathName(path, builder, (uint)builder.Capacity);
-            return result > 0 && result < builder.Capacity ? builder.ToString() : path;
-        }
+        // Native entry signature: (UTF-8 path, UTF-8 token, UTF-8 per-job seed) -> status int
+        // (negative = failure). The seed (not a baked key) is what places the mark.
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int CouplingApplyDelegate(byte[] filePathUtf8, byte[] tokenHexUtf8, byte[] seedHexUtf8);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
+        private static extern IntPtr LoadLibrary(string lpFileName);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+        private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FreeLibrary(IntPtr hModule);
+
+        private sealed class CouplingApply
+        {
+            public string fullPath;
+            public string tokenHex;
+            public string seedHex;
+            public bool isImage;
+        }
 
         [Serializable]
         private class CouplingJobRequest
@@ -456,6 +442,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             public string assetPath;
             public string tokenHex;
+            public string seedHex;
         }
 
         private sealed class CouplingCandidate

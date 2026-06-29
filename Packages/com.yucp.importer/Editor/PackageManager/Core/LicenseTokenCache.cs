@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using UnityEditor;
@@ -9,21 +10,10 @@ using UnityEngine;
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
     /// <summary>
-    /// Stores and retrieves license verification tokens for YUCP packages.
-    ///
-    /// Two-tier caching:
-    ///   1. SessionState (in-memory, per-Unity-session) — instant, no I/O.
-    ///   2. Disk cache (AES-256-CBC + HMAC-SHA256 authenticated) at
-    ///      ~/.unitysign/licenses/{packageId_safe}.dat — survives Editor restarts,
-    ///      valid for up to 30 days.
-    ///
-    /// The disk key and MAC key are derived from machine properties, making the
-    /// encrypted blob non-transferable to other machines without re-verification.
-    ///
-    /// Security note: a local attacker who knows the derivation formula CAN derive
-    /// the keys since all inputs (machine name, username) are accessible to any
-    /// process on the machine.  The practical protection is against cross-machine
-    /// license sharing, not against a fully compromised local environment.
+    /// Two-tier cache for license verification tokens: an in-session memory tier and a
+    /// disk tier under ~/.unitysign/licenses, valid for up to 30 days. The disk blob is
+    /// sealed per-user so it is not transferable to another machine or user. Package and
+    /// machine claims are re-validated after every read.
     /// </summary>
     internal static class LicenseTokenCache
     {
@@ -49,86 +39,94 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return SessionKeyPrefix + packageId;
         }
 
-        // ── Key derivation ───────────────────────────────────────────────────
+        // ── At-rest protection (Windows DPAPI, per-user) ─────────────────────
+        // The blob is sealed to the current Windows user via crypt32 DPAPI, so it can only be
+        // unsealed by the same user on the same machine, and the key is not re-derivable from
+        // public machine properties. DPAPI also authenticates: tampering fails the unseal.
 
-        private static byte[] DeriveKey(string salt)
+        private static readonly byte[] DpapiEntropy = Encoding.UTF8.GetBytes("YUCP.License.Cache.v2");
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct DataBlob
         {
-            string material = $"{Environment.MachineName}|{Environment.UserName}|{salt}";
-            using var sha256 = SHA256.Create();
-            return sha256.ComputeHash(Encoding.UTF8.GetBytes(material));
+            public int cbData;
+            public IntPtr pbData;
         }
 
-        private static byte[] EncKey => DeriveKey("YUCP_LICENSE_ENC");
-        private static byte[] MacKey => DeriveKey("YUCP_LICENSE_MAC");
+        [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CryptProtectData(ref DataBlob pDataIn, string szDescription, ref DataBlob pEntropy, IntPtr pvReserved, IntPtr pPromptStruct, int dwFlags, ref DataBlob pDataOut);
 
-        // ── Encryption helpers (AES-256-CBC + HMAC-SHA256) ──────────────────
+        [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CryptUnprotectData(ref DataBlob pDataIn, IntPtr ppszDescription, ref DataBlob pEntropy, IntPtr pvReserved, IntPtr pPromptStruct, int dwFlags, ref DataBlob pDataOut);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr LocalFree(IntPtr hMem);
+
+        private const int CRYPTPROTECT_UI_FORBIDDEN = 0x1;
+
+        private static DataBlob ToBlob(byte[] data)
+        {
+            var blob = new DataBlob { cbData = data?.Length ?? 0, pbData = IntPtr.Zero };
+            if (data != null && data.Length > 0)
+            {
+                blob.pbData = Marshal.AllocHGlobal(data.Length);
+                Marshal.Copy(data, 0, blob.pbData, data.Length);
+            }
+            return blob;
+        }
+
+        private static byte[] FromBlob(DataBlob blob)
+        {
+            if (blob.pbData == IntPtr.Zero || blob.cbData <= 0) return Array.Empty<byte>();
+            byte[] data = new byte[blob.cbData];
+            Marshal.Copy(blob.pbData, data, 0, blob.cbData);
+            return data;
+        }
 
         private static byte[] Encrypt(string plaintext)
         {
-            byte[] data = Encoding.UTF8.GetBytes(plaintext);
-
-            using var aes = Aes.Create();
-            aes.Key = EncKey;
-            aes.Mode = CipherMode.CBC;
-            aes.GenerateIV();
-
-            byte[] cipher;
-            using (var encryptor = aes.CreateEncryptor())
-            using (var ms = new MemoryStream())
+            DataBlob inBlob = ToBlob(Encoding.UTF8.GetBytes(plaintext));
+            DataBlob entropy = ToBlob(DpapiEntropy);
+            var outBlob = new DataBlob();
+            try
             {
-                ms.Write(aes.IV, 0, aes.IV.Length);
-                using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
-                    cs.Write(data, 0, data.Length);
-                cipher = ms.ToArray(); // IV (16) + ciphertext
+                if (!CryptProtectData(ref inBlob, null, ref entropy, IntPtr.Zero, IntPtr.Zero, CRYPTPROTECT_UI_FORBIDDEN, ref outBlob))
+                    throw new CryptographicException("DPAPI protect failed.");
+                return FromBlob(outBlob);
             }
-
-            // Prepend HMAC-SHA256 over the IV+ciphertext for integrity
-            using var hmac = new HMACSHA256(MacKey);
-            byte[] tag = hmac.ComputeHash(cipher);
-
-            var result = new byte[tag.Length + cipher.Length]; // 32 + (16 + ct)
-            Buffer.BlockCopy(tag, 0, result, 0, tag.Length);
-            Buffer.BlockCopy(cipher, 0, result, tag.Length, cipher.Length);
-            return result;
+            finally
+            {
+                if (inBlob.pbData != IntPtr.Zero) Marshal.FreeHGlobal(inBlob.pbData);
+                if (entropy.pbData != IntPtr.Zero) Marshal.FreeHGlobal(entropy.pbData);
+                if (outBlob.pbData != IntPtr.Zero) LocalFree(outBlob.pbData);
+            }
         }
 
         private static string Decrypt(byte[] blob)
         {
-            if (blob == null || blob.Length < 32 + 16 + 1) return null;
+            if (blob == null || blob.Length == 0) return null;
 
-            // Verify HMAC
-            byte[] storedTag = new byte[32];
-            Buffer.BlockCopy(blob, 0, storedTag, 0, 32);
-            byte[] cipher = new byte[blob.Length - 32];
-            Buffer.BlockCopy(blob, 32, cipher, 0, cipher.Length);
-
-            using var hmac = new HMACSHA256(MacKey);
-            byte[] expectedTag = hmac.ComputeHash(cipher);
-            if (!CryptographicEqual(storedTag, expectedTag)) return null; // tampered
-
-            // Decrypt
-            byte[] iv = new byte[16];
-            Buffer.BlockCopy(cipher, 0, iv, 0, 16);
-
-            using var aes = Aes.Create();
-            aes.Key = EncKey;
-            aes.Mode = CipherMode.CBC;
-            aes.IV = iv;
-
-            using var decryptor = aes.CreateDecryptor();
-            using var ms = new MemoryStream(cipher, 16, cipher.Length - 16);
-            using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
-            using var result = new MemoryStream();
-            cs.CopyTo(result);
-            return Encoding.UTF8.GetString(result.ToArray());
-        }
-
-        private static bool CryptographicEqual(byte[] a, byte[] b)
-        {
-            if (a.Length != b.Length) return false;
-            int diff = 0;
-            for (int i = 0; i < a.Length; i++) diff |= a[i] ^ b[i];
-            return diff == 0;
+            DataBlob inBlob = ToBlob(blob);
+            DataBlob entropy = ToBlob(DpapiEntropy);
+            var outBlob = new DataBlob();
+            try
+            {
+                if (!CryptUnprotectData(ref inBlob, IntPtr.Zero, ref entropy, IntPtr.Zero, IntPtr.Zero, CRYPTPROTECT_UI_FORBIDDEN, ref outBlob))
+                    return null; // tampered, wrong user/machine, or legacy/foreign format
+                return Encoding.UTF8.GetString(FromBlob(outBlob));
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                if (inBlob.pbData != IntPtr.Zero) Marshal.FreeHGlobal(inBlob.pbData);
+                if (entropy.pbData != IntPtr.Zero) Marshal.FreeHGlobal(entropy.pbData);
+                if (outBlob.pbData != IntPtr.Zero) LocalFree(outBlob.pbData);
+            }
         }
 
         // ── Public API ───────────────────────────────────────────────────────

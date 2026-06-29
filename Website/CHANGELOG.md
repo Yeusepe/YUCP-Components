@@ -1,4 +1,7 @@
-# Changelog## [2026-06-22]### com.yucp.importer
+# Changelog## [2026-06-29]### com.yucp.importer
+- Refined `AttestationClient` attestation flow.
+- Updated `CouplingRuntimeService` and `LicenseTokenCache` internals.
+- Minor improvements to `UpdateDeliveryService`.## [2026-06-22]### com.yucp.importer
 - Added `AttestationClient` and `AttestationConfig` for package attestation and integrity verification.
 - Removed `BackstageRepositoryProvisioningService` and `ServerAuthorizedRepositoryInstaller`, superseded by the new attestation flow.
 - Updated `CouplingRuntimeService` and `ExecutionIntegrityTestHooks`.
@@ -13,7 +16,11 @@
 - Significant improvements to `UpdateDeliveryService` and `AliasPackageAutoInstaller` for more robust package handling.
 - Refactored the `PackageManagerWindow` user interface and associated styles.
 - Added `CouplingImportGuard` and updated `CreatorIdentityOAuthService` logic.
-- Added comprehensive unit tests for alias removal, metadata enrichment, and protected payload decryption.## [2026-06-11]### com.yucp.importer
+- Added comprehensive unit tests for alias removal, metadata enrichment, and protected payload decryption.
+
+## [2026-06-11]
+
+### com.yucp.importer
 - Introduced `YucpEditorDialog` for improved user interactions within the package manager.
 - Significant refactor of the `PackageManagerWindow` UI, consolidating views and updating styles.
 - Enhanced reliability of core installation services, including update delivery and automatic package alias handling.
@@ -39,8 +46,8 @@
 ### com.yucp.importer
 - Bumped the package to `0.1.9` so VPM alias shims require the importer build that detects installed alias packages and starts the authorized install flow.
 - Added `AliasPackageAutoInstaller` to automatically handle package aliases.
-- Added`AuthorizedVpmPackageInstaller` for secure VPM package installation.
-- Improved `UpdateDeliveryService` and `PackageMetadataExtractor` for morereliable updates.
+- Added `AuthorizedVpmPackageInstaller` for secure VPM package installation.
+- Improved `UpdateDeliveryService` and `PackageMetadataExtractor` for more reliable updates.
 - Refactored `PackageManagerWindow` and `InstalledPackagesView` for better performance and UI consistency.
 - Enhanced `YucpDisabledFileResolver` for improved file conflict management.
 - Updated `CreatorIdentityOAuthService`.
@@ -52,4 +59,3 @@
 
 ### General
 - Added local Git hooks (`commit-msg`, `pre-commit`) to ensure code quality and consistency.
-Error: timed out waiting for response
