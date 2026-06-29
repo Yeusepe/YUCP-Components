@@ -1,7 +1,6 @@
 # Changelog## [2026-06-29]### com.yucp.importer
 - Refined `AttestationClient` attestation flow.
-- Updated `CouplingRuntimeService` and `LicenseTokenCache` internals.
-- Minor improvements to `UpdateDeliveryService`.## [2026-06-22]### com.yucp.importer
+- Expanded `CouplingRuntimeService` internals for improved reliability.## [2026-06-22]### com.yucp.importer
 - Added `AttestationClient` and `AttestationConfig` for package attestation and integrity verification.
 - Removed `BackstageRepositoryProvisioningService` and `ServerAuthorizedRepositoryInstaller`, superseded by the new attestation flow.
 - Updated `CouplingRuntimeService` and `ExecutionIntegrityTestHooks`.

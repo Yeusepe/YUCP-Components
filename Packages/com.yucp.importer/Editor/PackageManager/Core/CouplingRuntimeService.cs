@@ -259,11 +259,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             var jobByAssetPath = new Dictionary<string, CouplingJobEntry>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in jobEntries)
             {
-                // The server-issued seed is required to place a v2 mark; entries without one are skipped.
-                if (entry == null || string.IsNullOrEmpty(entry.assetPath) ||
-                    string.IsNullOrEmpty(entry.tokenHex) || string.IsNullOrEmpty(entry.seedHex))
+                if (entry == null || string.IsNullOrEmpty(entry.assetPath))
                 {
                     continue;
+                }
+
+                if (string.IsNullOrEmpty(entry.tokenHex) || string.IsNullOrEmpty(entry.seedHex))
+                {
+                    error = "The package protection step could not be completed on this machine.";
+                    return false;
                 }
 
                 jobByAssetPath[NormalizeAssetPath(entry.assetPath)] = entry;
@@ -277,8 +281,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     continue;
                 }
 
-                // Candidates are already restricted to image/.fbx in CollectCandidates, so a
-                // non-image entry here is always .fbx.
                 bool isImage = IsImageExtension(Path.GetExtension(candidate.assetPath));
                 work.Add(new CouplingApply
                 {
@@ -303,15 +305,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             try
             {
-                // Write the verified bytes to an unpredictable per-process path, then pin them with a
-                // READ-ONLY lock (deny writers, allow the loader to map the image) for the whole mapped
-                // lifetime. A writable lock makes LoadLibrary fail with ERROR_SHARING_VIOLATION (win32 32),
-                // which previously broke coupling on every install. Released in finally.
                 File.WriteAllBytes(runtimePath, runtimeBytes);
                 lockedRuntime = new FileStream(
                     runtimePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+                if (!LockedMatches(lockedRuntime, runtimeBytes))
+                {
+                    error = "The package protection step could not be completed on this machine.";
+                    return false;
+                }
 
-                module = LoadLibrary(runtimePath);
+                module = LoadLibraryEx(
+                    runtimePath, IntPtr.Zero, LoadLibrarySearchDllLoadDir | LoadLibrarySearchSystem32);
                 if (module == IntPtr.Zero)
                 {
                     error = "The package protection step could not be completed on this machine.";
@@ -380,6 +384,37 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return Encoding.UTF8.GetBytes((value ?? string.Empty) + "\0");
         }
 
+        private static bool LockedMatches(FileStream stream, byte[] expected)
+        {
+            if (stream.Length != expected.Length)
+            {
+                return false;
+            }
+
+            stream.Position = 0;
+            var actual = new byte[expected.Length];
+            int offset = 0;
+            while (offset < actual.Length)
+            {
+                int read = stream.Read(actual, offset, actual.Length - offset);
+                if (read <= 0)
+                {
+                    return false;
+                }
+                offset += read;
+            }
+
+            for (int i = 0; i < actual.Length; i++)
+            {
+                if (actual[i] != expected[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private static string NormalizeAssetPath(string path)
         {
             return string.IsNullOrWhiteSpace(path)
@@ -392,13 +427,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return RuntimeExecutionSecurityUtility.ComputeSha256Hex(data);
         }
 
-        // Native entry signature: (UTF-8 path, UTF-8 token, UTF-8 per-job seed) -> status int
-        // (negative = failure). The seed (not a baked key) is what places the mark.
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int CouplingApplyDelegate(byte[] filePathUtf8, byte[] tokenHexUtf8, byte[] seedHexUtf8);
 
+        private const uint LoadLibrarySearchDllLoadDir = 0x00000100;
+        private const uint LoadLibrarySearchSystem32 = 0x00000800;
+
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr LoadLibrary(string lpFileName);
+        private static extern IntPtr LoadLibraryEx(string lpFileName, IntPtr hFile, uint dwFlags);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
         private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);

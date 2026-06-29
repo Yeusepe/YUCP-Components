@@ -11,14 +11,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     /// <summary>
     /// Managed seam for the unlock-time identity check: gets a challenge from the service, hands it to
     /// the native collector, submits the result, and surfaces the service's allow/block verdict. Makes
-    /// no decision of its own and handles no raw identifiers.
+    /// no decision of its own; it forwards the licenseSubject/authUserId claims it already holds but no
+    /// raw device or hardware identifiers (those are gathered inside the native collector).
     /// </summary>
     internal static class AttestationClient
     {
         private const int RequestTimeoutSeconds = 30;
         private const int SealBufferCapacity = 64 * 1024;
 
-        // Public key material, resolved from settings rather than hard-coded.
+        // Attestation public key supplied by the TrustedAttestationKey provider.
         private static string ResolveServerAttestationKey()
         {
             return TrustedAttestationKey.SpkiBase64;
