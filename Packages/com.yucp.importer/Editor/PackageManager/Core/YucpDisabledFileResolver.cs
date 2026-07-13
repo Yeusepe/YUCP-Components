@@ -13,22 +13,24 @@ namespace YUCP.Importer.Editor.PackageManager
     /// Resolves "*.yucp_disabled" files created by YUCP exports into their enabled counterparts.
     /// This runs as part of the import flow so it works even when Package Guardian is disabled.
     /// </summary>
-    // Public because Package Guardian lives in a separate Editor assembly (separate .asmdef),
-    // but we need ONE shared resolver implementation that both PackageManager and PackageGuardian can call.
+    // Package Guardian has an independent resolver because its package cannot depend on the importer.
+    // Keep this resolver's pending state scoped so a domain reload cannot start both implementations.
     public static class YucpDisabledFileResolver
     {
         private const string DisabledSuffix = ".yucp_disabled";
-        private const string PendingKey = "YUCP.PackageManager.ResolveYucpDisabled.Pending";
-        private const string PendingStartTicksKey = "YUCP.PackageManager.ResolveYucpDisabled.StartTicksUtc";
-        private const string PendingTimeoutSecondsKey = "YUCP.PackageManager.ResolveYucpDisabled.TimeoutSeconds";
+        private const string PendingKey = "YUCP.Importer.ResolveYucpDisabled.Pending";
+        private const string PendingStartTicksKey = "YUCP.Importer.ResolveYucpDisabled.StartTicksUtc";
+        private const string PendingTimeoutSecondsKey = "YUCP.Importer.ResolveYucpDisabled.TimeoutSeconds";
         private const string VerboseKey = "YUCP.PackageManager.ResolveYucpDisabled.Verbose";
+        private const double ScanIntervalSeconds = 0.5;
+        private const double VerboseStatusIntervalSeconds = 5.0;
         private static bool _isRunning;
         private static bool _compilationHooked;
 
         private static bool IsVerbose()
         {
-            try { return EditorPrefs.GetBool(VerboseKey, true); }
-            catch { return true; }
+            try { return EditorPrefs.GetBool(VerboseKey, false); }
+            catch { return false; }
         }
 
         private static void Log(string message)
@@ -116,7 +118,8 @@ namespace YUCP.Importer.Editor.PackageManager
                         return;
                     }
 
-                    Log($"compilationFinished: pending resolve detected -> scheduling resolve (timeoutSeconds={timeoutSeconds:0.###})");
+                    if (IsVerbose())
+                        Log($"compilationFinished: pending resolve detected -> scheduling resolve (timeoutSeconds={timeoutSeconds:0.###})");
                     ScheduleResolveAfterImport(timeoutSeconds);
                 }
                 catch (Exception ex)
@@ -175,18 +178,16 @@ namespace YUCP.Importer.Editor.PackageManager
             // Otherwise a long compile would consume the whole timeout and we'd never attempt resolution.
             double remainingReadySeconds = timeoutSeconds;
             double lastTime = EditorApplication.timeSinceStartup;
+            double nextScanTime = lastTime;
+            double nextVerboseStatusTime = lastTime + VerboseStatusIntervalSeconds;
 
             // Avoid multiple concurrent schedules.
             bool isSubscribed = false;
-            bool everSawDisabledFiles = false;
             bool loggedSkipState = false;
-            double lastVerboseTickLog = 0;
-            int tickCount = 0;
+            int scanCount = 0;
 
             void Tick()
             {
-                tickCount++;
-
                 double now = EditorApplication.timeSinceStartup;
                 double dt = Math.Max(0, now - lastTime);
                 lastTime = now;
@@ -194,11 +195,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 // Wait for Unity to be in a stable state
                 if (EditorApplication.isCompiling || EditorApplication.isUpdating)
                 {
-                    if (!loggedSkipState)
+                    if (!loggedSkipState && IsVerbose())
                     {
-                        loggedSkipState = true;
-                        Log($"Tick skipped: isCompiling={EditorApplication.isCompiling}, isUpdating={EditorApplication.isUpdating}");
+                        Log($"Paused while Unity is busy: isCompiling={EditorApplication.isCompiling}, isUpdating={EditorApplication.isUpdating}");
                     }
+                    loggedSkipState = true;
                     return;
                 }
 
@@ -208,30 +209,31 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (remainingReadySeconds <= 0)
                 {
                     if (isSubscribed) EditorApplication.update -= Tick;
-                    if (!everSawDisabledFiles)
-                    {
-                        LogWarning($"No .yucp_disabled files were found to resolve before timeout. roots={DescribeScanRootsSanitized()}");
-                    }
+                    if (IsVerbose())
+                        Log($"Stopped waiting: no .yucp_disabled files appeared within {timeoutSeconds:0.###} ready seconds (scans={scanCount}).");
                     ClearPending();
                     _isRunning = false;
                     return;
                 }
 
-                if (IsVerbose())
+                // EditorApplication.update can run many times per second. Recursive scans of Assets and
+                // Packages are intentionally much less frequent.
+                if (now < nextScanTime)
+                    return;
+
+                nextScanTime = now + ScanIntervalSeconds;
+                scanCount++;
+
+                if (IsVerbose() && now >= nextVerboseStatusTime)
                 {
-                    // Throttle verbose tick logs to ~2/sec
-                    if (EditorApplication.timeSinceStartup - lastVerboseTickLog > 0.5)
-                    {
-                        lastVerboseTickLog = EditorApplication.timeSinceStartup;
-                        Log($"Tick: remainingReadySeconds={remainingReadySeconds:0.###} everSaw={everSawDisabledFiles} ticks={tickCount}");
-                    }
+                    nextVerboseStatusTime = now + VerboseStatusIntervalSeconds;
+                    Log($"Waiting for .yucp_disabled files: remainingReadySeconds={remainingReadySeconds:0.###}, scans={scanCount}");
                 }
 
                 if (!TryResolveAll(out var stats))
                     return; // keep polling (DirectVpmInstaller may not have moved files yet)
 
-                everSawDisabledFiles = true;
-                Log($"Resolved .yucp_disabled files: enabled={stats.enabled}, updated={stats.updated}, duplicatesDeleted={stats.duplicatesDeleted}, rejected={stats.rejected} (ticks={tickCount})");
+                Log($"Resolved .yucp_disabled files: enabled={stats.enabled}, updated={stats.updated}, duplicatesDeleted={stats.duplicatesDeleted}, rejected={stats.rejected} (scans={scanCount})");
                 if (stats.rejected > 0)
                 {
                     LogWarning($"{stats.rejected} incoming .yucp_disabled file(s) were rejected because an enabled file already existed and the resolver could not classify the incoming file as a newer update. Rejected files are renamed to .incoming for inspection.");
@@ -259,7 +261,8 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 if (isSubscribed) return;
                 isSubscribed = true;
-                Log($"Waiting for .yucp_disabled files to land (post-install), then resolving... timeoutSeconds={timeoutSeconds:0.###}");
+                if (IsVerbose())
+                    Log($"Waiting for .yucp_disabled files to land (post-install). timeoutSeconds={timeoutSeconds:0.###}");
                 EditorApplication.update += Tick;
             };
         }
@@ -439,21 +442,6 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             return true;
-        }
-
-        private static string DescribeScanRootsSanitized()
-        {
-            try
-            {
-                string projectRoot = GetProjectRoot();
-                string packagesPath = Path.Combine(projectRoot, "Packages");
-                string assetsPath = Path.Combine(projectRoot, "Assets");
-                return $"projectRoot='{SanitizePath(projectRoot)}', PackagesExists={Directory.Exists(packagesPath)}, AssetsExists={Directory.Exists(assetsPath)}";
-            }
-            catch (Exception ex)
-            {
-                return $"<failed to describe roots: {ex.Message}>";
-            }
         }
 
         private static string GetProjectRoot()

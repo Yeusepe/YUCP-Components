@@ -16,11 +16,14 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
     public static class YucpDisabledFileResolver
     {
         private const string DisabledSuffix = ".yucp_disabled";
-        // Preserve the existing preference keys so pending resolves survive the migration.
+        // Package Guardian retains the legacy keys for compatibility. The importer uses scoped keys,
+        // preventing both resolver implementations from resuming the same operation after a reload.
         private const string PendingKey = "YUCP.PackageManager.ResolveYucpDisabled.Pending";
         private const string PendingStartTicksKey = "YUCP.PackageManager.ResolveYucpDisabled.StartTicksUtc";
         private const string PendingTimeoutSecondsKey = "YUCP.PackageManager.ResolveYucpDisabled.TimeoutSeconds";
         private const string VerboseKey = "YUCP.PackageManager.ResolveYucpDisabled.Verbose";
+        private const double ScanIntervalSeconds = 0.5;
+        private const double VerboseStatusIntervalSeconds = 5.0;
         private static bool _isRunning;
         private static bool _compilationHooked;
 
@@ -106,7 +109,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                         return;
                     }
 
-                    Log($"compilationFinished: pending resolve detected -> scheduling resolve (timeoutSeconds={timeoutSeconds:0.###})");
+                    if (IsVerbose())
+                        Log($"compilationFinished: pending resolve detected -> scheduling resolve (timeoutSeconds={timeoutSeconds:0.###})");
                     ScheduleResolveAfterImport(timeoutSeconds);
                 }
                 catch (Exception ex)
@@ -154,27 +158,25 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
 
             double remainingReadySeconds = timeoutSeconds;
             double lastTime = EditorApplication.timeSinceStartup;
+            double nextScanTime = lastTime;
+            double nextVerboseStatusTime = lastTime + VerboseStatusIntervalSeconds;
             bool isSubscribed = false;
-            bool everSawDisabledFiles = false;
             bool loggedSkipState = false;
-            double lastVerboseTickLog = 0;
-            int tickCount = 0;
+            int scanCount = 0;
 
             void Tick()
             {
-                tickCount++;
-
                 double now = EditorApplication.timeSinceStartup;
                 double dt = Math.Max(0, now - lastTime);
                 lastTime = now;
 
                 if (EditorApplication.isCompiling || EditorApplication.isUpdating)
                 {
-                    if (!loggedSkipState)
+                    if (!loggedSkipState && IsVerbose())
                     {
-                        loggedSkipState = true;
-                        Log($"Tick skipped: isCompiling={EditorApplication.isCompiling}, isUpdating={EditorApplication.isUpdating}");
+                        Log($"Paused while Unity is busy: isCompiling={EditorApplication.isCompiling}, isUpdating={EditorApplication.isUpdating}");
                     }
+                    loggedSkipState = true;
                     return;
                 }
 
@@ -184,24 +186,31 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 if (remainingReadySeconds <= 0)
                 {
                     if (isSubscribed) EditorApplication.update -= Tick;
-                    if (!everSawDisabledFiles)
-                        Log("No .yucp_disabled files were found to resolve (timeout).");
+                    if (IsVerbose())
+                        Log($"Stopped waiting: no .yucp_disabled files appeared within {timeoutSeconds:0.###} ready seconds (scans={scanCount}).");
                     ClearPending();
                     _isRunning = false;
                     return;
                 }
 
-                if (IsVerbose() && EditorApplication.timeSinceStartup - lastVerboseTickLog > 0.5)
+                // EditorApplication.update can run many times per second. Recursive scans of Assets and
+                // Packages are intentionally much less frequent.
+                if (now < nextScanTime)
+                    return;
+
+                nextScanTime = now + ScanIntervalSeconds;
+                scanCount++;
+
+                if (IsVerbose() && now >= nextVerboseStatusTime)
                 {
-                    lastVerboseTickLog = EditorApplication.timeSinceStartup;
-                    Log($"Tick: remainingReadySeconds={remainingReadySeconds:0.###} everSaw={everSawDisabledFiles} ticks={tickCount}");
+                    nextVerboseStatusTime = now + VerboseStatusIntervalSeconds;
+                    Log($"Waiting for .yucp_disabled files: remainingReadySeconds={remainingReadySeconds:0.###}, scans={scanCount}");
                 }
 
                 if (!TryResolveAll(out var stats))
                     return;
 
-                everSawDisabledFiles = true;
-                Log($"Resolved .yucp_disabled files: enabled={stats.enabled}, updated={stats.updated}, duplicatesDeleted={stats.duplicatesDeleted}, rejected={stats.rejected} (ticks={tickCount})");
+                Log($"Resolved .yucp_disabled files: enabled={stats.enabled}, updated={stats.updated}, duplicatesDeleted={stats.duplicatesDeleted}, rejected={stats.rejected} (scans={scanCount})");
 
                 try
                 {
@@ -224,7 +233,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             {
                 if (isSubscribed) return;
                 isSubscribed = true;
-                Log($"Waiting for .yucp_disabled files to land (post-install), then resolving... timeoutSeconds={timeoutSeconds:0.###}");
+                if (IsVerbose())
+                    Log($"Waiting for .yucp_disabled files to land (post-install). timeoutSeconds={timeoutSeconds:0.###}");
                 EditorApplication.update += Tick;
             };
         }
