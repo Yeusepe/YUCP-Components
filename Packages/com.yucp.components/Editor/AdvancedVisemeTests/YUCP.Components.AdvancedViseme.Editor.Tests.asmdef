@@ -1,0 +1,25 @@
+{
+    "name": "com.yucp.components.AdvancedViseme.Editor.Tests",
+    "rootNamespace": "YUCP.Components.Editor.Tests",
+    "references": [
+        "com.yucp.components.Runtime",
+        "com.yucp.components.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [
+        "VRCSDKBase.dll",
+        "VRCSDK3A.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}

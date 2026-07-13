@@ -32,6 +32,29 @@ namespace YUCP.Components.Editor.Utils
             "vrc.v_u"     // U
         };
 
+        // Oculus LipSync calls its final three vowel shapes ih/oh/ou. Some avatar
+        // tools shorten those names to i/o/u, so resolution must accept both
+        // conventions. The first entry remains the historical YUCP fallback to
+        // avoid changing callers of GetStandardVisemeNames().
+        private static readonly string[][] StandardVisemeNameCandidates =
+        {
+            new[] { "vrc.v_sil", "sil", "silence" },
+            new[] { "vrc.v_pp", "PP", "pp" },
+            new[] { "vrc.v_ff", "FF", "ff" },
+            new[] { "vrc.v_th", "TH", "th" },
+            new[] { "vrc.v_dd", "DD", "dd" },
+            new[] { "vrc.v_kk", "kk", "KK" },
+            new[] { "vrc.v_ch", "CH", "ch" },
+            new[] { "vrc.v_ss", "SS", "ss" },
+            new[] { "vrc.v_nn", "nn", "NN" },
+            new[] { "vrc.v_rr", "RR", "rr" },
+            new[] { "vrc.v_aa", "aa", "AA", "ah" },
+            new[] { "vrc.v_e", "E", "e", "eh" },
+            new[] { "vrc.v_i", "vrc.v_ih", "I", "i", "ih" },
+            new[] { "vrc.v_o", "vrc.v_oh", "O", "o", "oh" },
+            new[] { "vrc.v_u", "vrc.v_ou", "U", "u", "ou" }
+        };
+
         // Alternative common naming patterns
         private static readonly Dictionary<string, string[]> VisemeAliases = new Dictionary<string, string[]>
         {
@@ -165,6 +188,21 @@ namespace YUCP.Components.Editor.Utils
         public static string[] GetStandardVisemeNames()
         {
             return (string[])StandardVisemeNames.Clone();
+        }
+
+        /// <summary>
+        /// Get compatible blendshape-name candidates for an Oculus viseme index.
+        /// This includes both the Oculus ih/oh/ou convention and the commonly
+        /// shortened i/o/u convention used by some avatar tools.
+        /// </summary>
+        public static string[] GetVisemeNameCandidates(int visemeIndex)
+        {
+            if (visemeIndex < 0 || visemeIndex >= StandardVisemeNameCandidates.Length)
+            {
+                return new string[0];
+            }
+
+            return (string[])StandardVisemeNameCandidates[visemeIndex].Clone();
         }
 
         /// <summary>

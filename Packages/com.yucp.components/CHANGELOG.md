@@ -5,6 +5,7 @@ All notable changes to YUCP Components will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Viseme Test Emulator component with microphone selection, automatic Play Mode execution, continuous 15-weight Oculus descriptor output, dominant `Viseme`/continuous `Voice` parameter driving, Mouth & Jaw Tracking Control suppression, Gesture Manager integration, manual testing, and automatic Oculus LipSync plugin support.
 - Custom Object Sync grouping system: add a Group ID field per component and automatically merge matching components into a single VRLabs Custom Object Sync rig to reduce parameter usage.
 - Group-aware editing: changing the settings on any component automatically propagates the new values to every member of the same group, keeping builds consistent.
 - Parameter budget now reflects the actual number of objects in the current group and surfaces the calculated sync cost plus group size summary.
@@ -18,6 +19,22 @@ All notable changes to YUCP Components will be documented in this file.
 
 ### Removed
 - Auto Grip Generator component, editor tooling, and preprocessing pipeline.
+
+## [0.3.38] - 2026-07-12
+
+### Added
+- Advanced Viseme Reconstructor component with a frame-rate-correct, two-pole continuous viseme observer and 15 reusable soft viseme outputs.
+- Unified jaw, lip, and tongue articulation outputs, signed motion velocity, speech onset/release, and smoothly fused VRCFaceTracking Unified Expressions v2 input.
+- Adaptive VRCFaceTracking binary encoding with 25-bit Balanced8 and 39-bit Quality12 defaults, optional uniform 4-bit or full-float precision, build-time validation, and a manual tracking fallback toggle.
+- Generic VRCFaceTracking installation discovery across descriptor, VRCFury, and Modular Avatar controller/parameter references, with decoded-proxy preference, partial-channel speech fallback, and custom pose extraction from tailored template clips.
+- Nonnegative mesh-basis calibration with generated residual blendshapes, preserving authored Oculus viseme vertices, normals, and tangents exactly after decomposition.
+- Reusable reconstruction profiles, a standard YUCP UI Toolkit inspector, automatic rig mapping, calibration diagnostics, VRCFury public-API controller injection, and Editor tests for observer, inspector, and residual math.
+
+### Fixed
+- Replaced the invalid integer-driven viseme BlendTrees with a 15-state integer decoder and internal Float driver, allowing all Oculus viseme indices to reconstruct correctly after VRCFury merging.
+- Added compatible `ih`/`oh`/`ou` mesh-name resolution alongside shortened `i`/`o`/`u` names, including recovery from invalid Avatar Descriptor entries.
+- Preserved built-in and VRCFaceTracking input parameter names as VRCFury globals so external tracking and OSC data reach the generated controller.
+
 ## [0.3.0] - 2024-10-31
 
 ### Added

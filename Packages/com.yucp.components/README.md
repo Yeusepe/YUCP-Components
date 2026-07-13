@@ -25,6 +25,14 @@ Advanced VRChat avatar components with VRCFury integration and Pakacage Guardian
   - Poiyomi and FastFur UV support with multi-clothing coordination
   - Layered clothing optimization
 
+### Facial Animation
+- **Viseme Test Emulator** - Preview the avatar descriptor's real VRChat lip-sync behavior in Unity from a selected microphone or 15 manual viseme buttons. It starts automatically with Play Mode, applies all 15 continuous Oculus weights to descriptor blendshapes while publishing the dominant `Viseme` and continuous `Voice`, and honors Mouth & Jaw Animator Tracking Control just like VRChat. It also supports jaw flaps, `Viseme Parameter Only`, Gesture Manager, and automatic restoration when stopped. If the licensed Oculus LipSync Unity plugin is installed, Auto uses it directly; otherwise a local real-time classifier is used.
+- **Advanced Viseme Reconstructor** - Converts VRChat's hard Oculus viseme index into 15 continuous, simplex-preserving weights.
+  - Publishes reusable jaw, lip, tongue, velocity, energy, onset, and release Animator parameters.
+  - Smoothly fuses VRCFaceTracking Unified Expressions v2 data with an automatic audio-viseme fallback.
+  - Uses VRCFaceTracking binary parameters by default: Balanced8 costs up to 25 synced bits and Quality12 up to 39 bits.
+  - Can decompose authored visemes into a shared tracking basis plus exact residual blendshapes without modifying the source mesh.
+
 ## Installation
 
 ### Via VCC (Recommended)
@@ -78,6 +86,21 @@ Access Package Manager via `Tools > YUCP > Package Manager`:
 4. No manual setup needed - VRCFury handles all integration
 
 For `Blendshape Markdown`, add the component to the renderer you want to organize, configure heading rules such as `# Title`, `==Body/Head==`, or `|---Section---|`, and then use the native `SkinnedMeshRenderer` inspector to browse the grouped foldouts.
+
+For `Advanced Viseme Reconstructor`, add the component anywhere under the avatar descriptor, assign the face renderer or use the descriptor renderer, and optionally create a reusable reconstruction profile. The default `Auto` input mode reuses a compatible decoded/proxy Unified Expressions stream from existing VRCFury or Modular Avatar installations. When none is found it generates the optimized Balanced8 inputs and a `YUCP/Face Tracking` toggle. Use `Outputs Only` to consume the generated `YUCP/AdvancedViseme/...` parameters without changing the avatar's mouth configuration.
+
+The component cannot recover the original Oculus classifier weights because VRChat exposes only the winning `Viseme` index. Instead, it publishes an interruptible, frame-rate-correct continuous estimate. With the default prefix, the unsynced global output contract is:
+
+- `YUCP/AdvancedViseme/Viseme/{sil,PP,FF,TH,DD,kk,CH,SS,nn,RR,aa,E,I,O,U}` for the normalized 15-weight reconstruction.
+- `YUCP/AdvancedViseme/Articulation/{JawOpen,LipClose,MouthOpen,LipFunnel,LipPucker,LipSuck,SmileSad,LipBite,TongueOut}` for the lower-face basis.
+- `YUCP/AdvancedViseme/Velocity/...` for signed articulator velocity and `Speech/{Energy,Onset,Release,TrackingBlend}` for speech-state signals.
+- Quality12 additionally publishes `Articulation/{JawX,JawZ,MouthX,TongueY}` and their velocity parameters.
+
+`Phonetic Assist` preserves bilabial closure, labiodental contact, and sibilant jaw limits while tracking is blended in. `Tracker Authoritative` follows calibrated tracking directly. Tracking confidence fades through startup and loss instead of switching controllers. When the face mesh contains compatible articulator shapes, build-time nonnegative decomposition creates residual shapes on a generated mesh clone so every authored viseme and convex viseme blend remains equal to the source pose within floating-point tolerance. The source mesh is never modified.
+
+Tracking encoding defaults to `Adaptive Binary`: 2-4 magnitude bits are allocated per channel according to perceptual importance, plus sign bits only for signed channels. `Uniform 4 Bit Binary` uses 35 bits for Balanced8 or 55 bits for Quality12. `Full Float` remains available for maximum input precision at the original 66/98-bit cost. Binary inputs follow VRCFaceTracking's `Parameter1`, `Parameter2`, `Parameter4`, and `ParameterNegative` naming and are decoded into smooth local float parameters by the generated FX controller.
+
+Existing-installation compatibility is capability-based rather than template-specific. The builder scans parameter assets and Animator controllers referenced anywhere under the avatar, ranks `/v2/` float sources by semantic channel coverage, prefers controller-only decoded/proxy outputs over raw OSC inputs, and permits an explicit prefix when several candidates tie. Missing channels fall back to reconstructed speech. For tailored rigs, YUCP can extract positive and negative lower-face poses from parameter-driven animation clips, retain explicit profile overrides, and rebind matching custom blendshape curves to the selected face renderer. Its lower-face controller is appended after discovered template controllers so their eye and brow animation remains intact.
 
 ## Documentation
 

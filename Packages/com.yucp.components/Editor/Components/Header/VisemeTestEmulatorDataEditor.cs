@@ -1,0 +1,276 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEditor;
+using UnityEditor.UIElements;
+using UnityEngine;
+using UnityEngine.UIElements;
+using VRC.SDK3.Avatars.Components;
+using VRC.SDKBase;
+using YUCP.UI.DesignSystem.Utilities;
+
+namespace YUCP.Components.Editor
+{
+    [CustomEditor(typeof(VisemeTestEmulatorData))]
+    public sealed class VisemeTestEmulatorDataEditor : UnityEditor.Editor
+    {
+        private VisemeTestEmulatorData data;
+        private SerializedProperty inputProp;
+        private SerializedProperty microphoneProp;
+        private SerializedProperty backendProp;
+        private SerializedProperty gainProp;
+        private SerializedProperty gateProp;
+        private SerializedProperty manualVisemeProp;
+        private SerializedProperty manualVoiceProp;
+        private SerializedProperty gestureManagerProp;
+        private SerializedProperty animatorProp;
+        private SerializedProperty startWithPlayModeProp;
+        private PopupField<string> microphonePopup;
+        private VisualElement microphoneContainer;
+        private VisualElement microphonePickerRoot;
+        private VisualElement manualContainer;
+        private VisualElement validation;
+        private Button previewButton;
+        private ProgressBar voiceMeter;
+        private Label liveLabel;
+        private int previousInput;
+        private int previousBackend;
+        private string previousMicrophone;
+
+        private void OnEnable()
+        {
+            data = (VisemeTestEmulatorData)target;
+            inputProp = serializedObject.FindProperty("input");
+            microphoneProp = serializedObject.FindProperty("microphoneDevice");
+            backendProp = serializedObject.FindProperty("analysisBackend");
+            gainProp = serializedObject.FindProperty("microphoneGain");
+            gateProp = serializedObject.FindProperty("noiseGate");
+            manualVisemeProp = serializedObject.FindProperty("manualViseme");
+            manualVoiceProp = serializedObject.FindProperty("manualVoice");
+            gestureManagerProp = serializedObject.FindProperty("driveGestureManager");
+            animatorProp = serializedObject.FindProperty("driveAnimator");
+            startWithPlayModeProp = serializedObject.FindProperty("startWithPlayMode");
+        }
+
+        public override VisualElement CreateInspectorGUI()
+        {
+            serializedObject.Update();
+            var root = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
+            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Viseme Test Emulator"));
+
+            var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(VisemeTestEmulatorData));
+            if (supportBanner != null) root.Add(supportBanner);
+
+            validation = new VisualElement();
+            root.Add(validation);
+
+            var sourceCard = YUCPUIToolkitHelper.CreateCard("Input", "Talk into a microphone or choose a viseme.");
+            var source = YUCPUIToolkitHelper.GetCardContent(sourceCard);
+            source.Add(YUCPUIToolkitHelper.CreateField(inputProp, "Source"));
+
+            microphoneContainer = new VisualElement();
+            microphonePickerRoot = new VisualElement();
+            microphoneContainer.Add(microphonePickerRoot);
+            BuildMicrophonePicker();
+            microphoneContainer.Add(YUCPUIToolkitHelper.CreateField(backendProp, "Classifier"));
+            source.Add(microphoneContainer);
+            root.Add(sourceCard);
+
+            var previewCard = YUCPUIToolkitHelper.CreateCard("Preview", "Applies the avatar descriptor exactly as VRChat does.");
+            var preview = YUCPUIToolkitHelper.GetCardContent(previewCard);
+            previewButton = YUCPUIToolkitHelper.CreateButton("Start Preview", TogglePreview, YUCPUIToolkitHelper.ButtonVariant.Primary);
+            previewButton.style.height = 30;
+            preview.Add(previewButton);
+
+            liveLabel = new Label("Stopped");
+            liveLabel.style.marginTop = 5;
+            liveLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+            preview.Add(liveLabel);
+
+            voiceMeter = new ProgressBar { title = "Voice", lowValue = 0f, highValue = 1f, value = 0f };
+            voiceMeter.style.marginTop = 4;
+            preview.Add(voiceMeter);
+
+            manualContainer = BuildManualControls();
+            preview.Add(manualContainer);
+            root.Add(previewCard);
+
+            var advanced = YUCPUIToolkitHelper.CreateFoldout("Advanced", false);
+            advanced.Add(YUCPUIToolkitHelper.CreateField(gainProp, "Microphone Gain"));
+            advanced.Add(YUCPUIToolkitHelper.CreateField(gateProp, "Noise Gate"));
+            advanced.Add(YUCPUIToolkitHelper.CreateField(gestureManagerProp, "Gesture Manager"));
+            advanced.Add(YUCPUIToolkitHelper.CreateField(animatorProp, "Animator Parameters"));
+            advanced.Add(YUCPUIToolkitHelper.CreateField(startWithPlayModeProp, "Start With Play Mode"));
+            root.Add(advanced);
+
+            previousInput = inputProp.enumValueIndex;
+            previousBackend = backendProp.enumValueIndex;
+            previousMicrophone = microphoneProp.stringValue;
+            UpdateUI();
+
+            root.schedule.Execute(() =>
+            {
+                if (target == null) return;
+                serializedObject.UpdateIfRequiredOrScript();
+                if (previousInput != inputProp.enumValueIndex || previousBackend != backendProp.enumValueIndex ||
+                    previousMicrophone != microphoneProp.stringValue)
+                {
+                    previousInput = inputProp.enumValueIndex;
+                    previousBackend = backendProp.enumValueIndex;
+                    previousMicrophone = microphoneProp.stringValue;
+                    VisemeTestPreviewSession.Restart(data);
+                }
+                VisemeTestPreviewSession.ApplyManual(data);
+                UpdateUI();
+            }).Every(75);
+            return root;
+        }
+
+        private void BuildMicrophonePicker()
+        {
+            microphonePickerRoot.Clear();
+            var devices = new List<string> { "System Default" };
+            devices.AddRange(Microphone.devices.Where(device => !string.IsNullOrWhiteSpace(device)));
+            var selected = string.IsNullOrEmpty(microphoneProp.stringValue) ? "System Default" : microphoneProp.stringValue;
+            if (!devices.Contains(selected))
+            {
+                selected += " (missing)";
+                devices.Add(selected);
+            }
+
+            microphonePopup = new PopupField<string>("Microphone", devices,
+                Mathf.Max(0, devices.IndexOf(selected)));
+            microphonePopup.RegisterValueChangedCallback(evt =>
+            {
+                serializedObject.Update();
+                microphoneProp.stringValue = evt.newValue == "System Default" ? string.Empty : evt.newValue.Replace(" (missing)", string.Empty);
+                serializedObject.ApplyModifiedProperties();
+            });
+            microphonePickerRoot.Add(microphonePopup);
+
+            var refresh = YUCPUIToolkitHelper.CreateButton("Refresh Microphones", () =>
+            {
+                serializedObject.Update();
+                BuildMicrophonePicker();
+            }, YUCPUIToolkitHelper.ButtonVariant.Ghost);
+            refresh.style.marginTop = 3;
+            microphonePickerRoot.Add(refresh);
+        }
+
+        private VisualElement BuildManualControls()
+        {
+            var container = new VisualElement();
+            container.style.marginTop = 8;
+            container.Add(YUCPUIToolkitHelper.CreateField(manualVoiceProp, "Voice"));
+
+            for (var rowIndex = 0; rowIndex < 3; rowIndex++)
+            {
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                for (var column = 0; column < 5; column++)
+                {
+                    var index = rowIndex * 5 + column;
+                    var captured = index;
+                    var button = YUCPUIToolkitHelper.CreateButton(
+                        VisemeTestMath.VisemeNames[index],
+                        () =>
+                        {
+                            serializedObject.Update();
+                            manualVisemeProp.intValue = captured;
+                            serializedObject.ApplyModifiedProperties();
+                            VisemeTestPreviewSession.ApplyManual(data);
+                        },
+                        YUCPUIToolkitHelper.ButtonVariant.Secondary);
+                    button.style.flexGrow = 1;
+                    button.style.marginLeft = column == 0 ? 0 : 2;
+                    button.style.marginBottom = 2;
+                    row.Add(button);
+                }
+                container.Add(row);
+            }
+            return container;
+        }
+
+        private void TogglePreview()
+        {
+            if (VisemeTestPreviewSession.IsRunning(data))
+            {
+                VisemeTestPreviewSession.Stop(data);
+                UpdateUI();
+                return;
+            }
+
+            serializedObject.ApplyModifiedProperties();
+            if (!VisemeTestPreviewSession.Start(data, out var error))
+                EditorUtility.DisplayDialog("Viseme preview could not start", error, "OK");
+            UpdateUI();
+        }
+
+        private void UpdateUI()
+        {
+            if (data == null) return;
+            var microphoneMode = inputProp.enumValueIndex == (int)VisemeTestInput.Microphone;
+            microphoneContainer.style.display = microphoneMode ? DisplayStyle.Flex : DisplayStyle.None;
+            manualContainer.style.display = microphoneMode ? DisplayStyle.None : DisplayStyle.Flex;
+
+            validation.Clear();
+            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+            if (descriptor == null)
+            {
+                validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "Place this component on or below a VRChat Avatar Descriptor.",
+                    YUCPUIToolkitHelper.MessageType.Error));
+            }
+            else
+            {
+                var message = ValidateDescriptor(descriptor);
+                if (!string.IsNullOrEmpty(message))
+                    validation.Add(YUCPUIToolkitHelper.CreateHelpBox(message, YUCPUIToolkitHelper.MessageType.Warning));
+            }
+
+            if (microphoneMode && backendProp.enumValueIndex != (int)VisemeTestAnalysisBackend.BuiltIn)
+                validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    VisemeTestPreviewSession.ExactBackendStatus(),
+                    YUCPUIToolkitHelper.MessageType.Info));
+
+            var running = VisemeTestPreviewSession.IsRunning(data);
+            previewButton.text = running ? "Stop & Restore" : "Start Preview";
+            var state = VisemeTestPreviewSession.GetState(data);
+            if (state == null)
+            {
+                liveLabel.text = "Stopped";
+                voiceMeter.value = 0f;
+                voiceMeter.title = "Voice";
+            }
+            else
+            {
+                liveLabel.text = $"{VisemeTestMath.VisemeNames[state.currentViseme]}  ·  {state.engineName}";
+                voiceMeter.value = state.currentVoice;
+                voiceMeter.title = $"Voice {state.currentVoice:0.00}";
+            }
+        }
+
+        private static string ValidateDescriptor(VRCAvatarDescriptor descriptor)
+        {
+            switch (descriptor.lipSync)
+            {
+                case VRC_AvatarDescriptor.LipSyncStyle.VisemeBlendShape:
+                    if (descriptor.VisemeSkinnedMesh == null) return "The descriptor has no viseme renderer.";
+                    if (descriptor.VisemeBlendShapes == null || descriptor.VisemeBlendShapes.Length < 15)
+                        return "The descriptor does not contain all 15 Oculus viseme mappings.";
+                    break;
+                case VRC_AvatarDescriptor.LipSyncStyle.JawFlapBlendShape:
+                    if (descriptor.VisemeSkinnedMesh == null || string.IsNullOrEmpty(descriptor.MouthOpenBlendShapeName))
+                        return "The descriptor's jaw-flap blendshape is not configured.";
+                    break;
+                case VRC_AvatarDescriptor.LipSyncStyle.JawFlapBone:
+                    if (descriptor.lipSyncJawBone == null) return "The descriptor's jaw bone is not configured.";
+                    break;
+                case VRC_AvatarDescriptor.LipSyncStyle.Default:
+                    return "Lip Sync is still set to Default. Run Auto Detect on the Avatar Descriptor first.";
+            }
+            return string.Empty;
+        }
+    }
+}
