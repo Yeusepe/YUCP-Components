@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Rendering;
 using YUCP.Components;
 
 namespace YUCP.Components.Editor.MeshUtils
@@ -87,19 +88,13 @@ namespace YUCP.Components.Editor.MeshUtils
             var baseTangents = baseMesh.tangents;
             var baseColors = baseMesh.colors;
 
-            var baseUv0 = new List<Vector2>();
-            baseMesh.GetUVs(0, baseUv0);
-            var baseUv1 = new List<Vector2>();
-            baseMesh.GetUVs(1, baseUv1);
+            var baseUvs = ReadAllUvs(baseMesh, baseV);
 
             var attVertsLocal = attachmentMesh.vertices;
             var attNormalsLocal = attachmentMesh.normals;
             var attTangentsLocal = attachmentMesh.tangents;
             var attColors = attachmentMesh.colors;
-            var attUv0 = new List<Vector2>();
-            attachmentMesh.GetUVs(0, attUv0);
-            var attUv1 = new List<Vector2>();
-            attachmentMesh.GetUVs(1, attUv1);
+            var attUvs = ReadAllUvs(attachmentMesh, attV);
 
             var verts = new Vector3[totalV];
             var normals = new Vector3[totalV];
@@ -144,34 +139,12 @@ namespace YUCP.Components.Editor.MeshUtils
                 }
             }
 
-            // UVs
-            var uv0 = new List<Vector2>(totalV);
-            var uv1 = new List<Vector2>(totalV);
-
-            // Base UV0
-            if (baseUv0.Count == baseV) uv0.AddRange(baseUv0);
-            else
+            var combinedUvs = new List<Vector4>[8];
+            for (int channel = 0; channel < 8; channel++)
             {
-                uv0.AddRange(new Vector2[baseV]);
-            }
-            // Attachment UV0
-            if (attUv0.Count == attV) uv0.AddRange(attUv0);
-            else
-            {
-                uv0.AddRange(new Vector2[attV]);
-            }
-
-            // Base UV1
-            if (baseUv1.Count == baseV) uv1.AddRange(baseUv1);
-            else
-            {
-                uv1.AddRange(new Vector2[baseV]);
-            }
-            // Attachment UV1
-            if (attUv1.Count == attV) uv1.AddRange(attUv1);
-            else
-            {
-                uv1.AddRange(new Vector2[attV]);
+                combinedUvs[channel] = new List<Vector4>(totalV);
+                combinedUvs[channel].AddRange(baseUvs[channel]);
+                combinedUvs[channel].AddRange(attUvs[channel]);
             }
 
             // --- Bone weights ---
@@ -195,12 +168,16 @@ namespace YUCP.Components.Editor.MeshUtils
             // --- Submeshes / triangles ---
             var merged = new Mesh();
             merged.name = $"{baseMesh.name}_YUCP_Merged_{attachmentMesh.name}";
+            merged.indexFormat = baseMesh.indexFormat == IndexFormat.UInt32 ||
+                                 attachmentMesh.indexFormat == IndexFormat.UInt32 ||
+                                 totalV > ushort.MaxValue
+                ? IndexFormat.UInt32
+                : IndexFormat.UInt16;
             merged.vertices = verts;
             merged.normals = normals;
             merged.tangents = tangents;
             if (colors != null) merged.colors = colors;
-            merged.SetUVs(0, uv0);
-            merged.SetUVs(1, uv1);
+            for (int channel = 0; channel < 8; channel++) merged.SetUVs(channel, combinedUvs[channel]);
 
             merged.bindposes = baseMesh.bindposes;
             merged.boneWeights = outBoneWeights;
@@ -353,6 +330,22 @@ namespace YUCP.Components.Editor.MeshUtils
         private static BoneWeight DefaultBoneWeight()
         {
             return new BoneWeight { boneIndex0 = 0, weight0 = 1f };
+        }
+
+        private static List<Vector4>[] ReadAllUvs(Mesh mesh, int vertexCount)
+        {
+            var result = new List<Vector4>[8];
+            for (int channel = 0; channel < 8; channel++)
+            {
+                result[channel] = new List<Vector4>();
+                mesh.GetUVs(channel, result[channel]);
+                if (result[channel].Count != vertexCount)
+                {
+                    result[channel].Clear();
+                    for (int i = 0; i < vertexCount; i++) result[channel].Add(Vector4.zero);
+                }
+            }
+            return result;
         }
     }
 }

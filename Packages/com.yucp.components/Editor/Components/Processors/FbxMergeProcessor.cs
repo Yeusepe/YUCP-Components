@@ -690,7 +690,7 @@ namespace YUCP.Components.Editor
             return paths;
         }
 
-        private static bool TryInjectIntoVRCFuryToggles(
+        internal static bool TryInjectIntoVRCFuryToggles(
             GameObject attachmentObject,
             GameObject avatarRoot,
             SkinnedMeshRenderer baseRenderer,

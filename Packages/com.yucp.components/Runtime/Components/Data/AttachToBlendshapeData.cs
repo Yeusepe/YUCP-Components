@@ -34,6 +34,12 @@ namespace YUCP.Components
         SmoothDiffusion
     }
 
+    public enum AttachToBlendshapeVisibilityMode
+    {
+        SizeBlendshape = 0,
+        UVDiscard = 1
+    }
+
     public enum BlendshapeTrackingMode
     {
         All,
@@ -247,6 +253,28 @@ namespace YUCP.Components
         [Tooltip("Disable the original attachment renderer when merging into the base mesh to prevent double-rendering.")]
         public bool disableOriginalRendererOnMerge = true;
 
+        [Header("Merged Visibility")]
+        [Tooltip("How the appended attachment geometry is hidden after it becomes part of the base renderer.")]
+        public AttachToBlendshapeVisibilityMode visibilityMode = AttachToBlendshapeVisibilityMode.SizeBlendshape;
+
+        [Tooltip("Automatically select a UV channel for UV discard data.")]
+        public bool autoDetectUVChannel = true;
+
+        [Tooltip("UV channel used when automatic selection is disabled.")]
+        [Range(0, 7)]
+        public int uvChannel = 1;
+
+        [Tooltip("UV discard tile row used by this attachment.")]
+        [Range(0, 3)]
+        public int uvDiscardRow = 3;
+
+        [Tooltip("UV discard tile column used by this attachment.")]
+        [Range(0, 3)]
+        public int uvDiscardColumn = 3;
+
+        [Tooltip("Remap existing attachment blendshape, material, transform, renderer, and object visibility animations to the merged renderer.")]
+        public bool remapVisibilityAnimations = true;
+
         [Header("Advanced Options")]
         [Tooltip("Enable debug logging during build.")]
         public bool debugMode = false;
@@ -269,6 +297,12 @@ namespace YUCP.Components
 
         [Tooltip("Output mode that was used at build time (read-only)")]
         [SerializeField] private AttachToBlendshapeOutputMode appliedOutputMode = AttachToBlendshapeOutputMode.Auto;
+
+        [SerializeField] private AttachToBlendshapeVisibilityMode appliedVisibilityMode = AttachToBlendshapeVisibilityMode.SizeBlendshape;
+        [SerializeField] private string generatedVisibilityBlendshape = "";
+        [SerializeField] private int generatedBlendshapeCount = 0;
+        [SerializeField] private int remappedCurveCount = 0;
+        [SerializeField] private List<string> buildWarnings = new List<string>();
 
         // Preview data (not serialized)
         [System.NonSerialized] public SurfaceCluster previewCluster;
@@ -296,12 +330,25 @@ namespace YUCP.Components
         [System.NonSerialized] public Mesh previewOriginalMesh; // Original mesh before blendshape transfer (for restoration)
         [System.NonSerialized] public Mesh previewWorkingMesh; // Working mesh copy with transferred blendshapes
         [System.NonSerialized] public Mesh previewOriginalTargetMesh; // Original target mesh (before any transfers) for categorization
+        [System.NonSerialized] public bool previewUsesMergedMesh;
+        [System.NonSerialized] public Mesh previewOriginalBaseMesh;
+        [System.NonSerialized] public Material[] previewOriginalBaseMaterials;
+        [System.NonSerialized] public Material[] previewOriginalAttachmentMaterials;
+        [System.NonSerialized] public Material[] previewMergedMaterials;
+        [System.NonSerialized] public SkinnedMeshRenderer previewMergedSourceSkinnedRenderer;
+        [System.NonSerialized] public MeshRenderer previewMergedSourceMeshRenderer;
+        [System.NonSerialized] public bool previewMergedSourceRendererEnabled;
 
         public SurfaceCluster DetectedCluster => detectedCluster;
         public List<string> TrackedBlendshapes => trackedBlendshapes;
         public int TransferredBlendshapeCount => transferredBlendshapeCount;
         public string SelectedBonePath => selectedBonePath;
         public AttachToBlendshapeOutputMode AppliedOutputMode => appliedOutputMode;
+        public AttachToBlendshapeVisibilityMode AppliedVisibilityMode => appliedVisibilityMode;
+        public string GeneratedVisibilityBlendshape => generatedVisibilityBlendshape;
+        public int GeneratedBlendshapeCount => generatedBlendshapeCount;
+        public int RemappedCurveCount => remappedCurveCount;
+        public IReadOnlyList<string> BuildWarnings => buildWarnings;
 
         public int PreprocessOrder => 0;
         public bool OnPreprocess() => true;
@@ -311,13 +358,23 @@ namespace YUCP.Components
             List<string> blendshapes,
             int transferredCount,
             string bonePath,
-            AttachToBlendshapeOutputMode outputModeUsed = AttachToBlendshapeOutputMode.Auto)
+            AttachToBlendshapeOutputMode outputModeUsed = AttachToBlendshapeOutputMode.Auto,
+            AttachToBlendshapeVisibilityMode visibilityModeUsed = AttachToBlendshapeVisibilityMode.SizeBlendshape,
+            string visibilityBlendshapeName = "",
+            int actualGeneratedBlendshapeCount = 0,
+            int curvesRemapped = 0,
+            List<string> warnings = null)
         {
             detectedCluster = cluster;
             trackedBlendshapes = new List<string>(blendshapes);
             transferredBlendshapeCount = transferredCount;
             selectedBonePath = bonePath;
             appliedOutputMode = outputModeUsed;
+            appliedVisibilityMode = visibilityModeUsed;
+            generatedVisibilityBlendshape = visibilityBlendshapeName ?? "";
+            generatedBlendshapeCount = actualGeneratedBlendshapeCount;
+            remappedCurveCount = curvesRemapped;
+            buildWarnings = warnings != null ? new List<string>(warnings) : new List<string>();
         }
 
         private void Reset()
@@ -343,6 +400,12 @@ namespace YUCP.Components
             autoAvoidMergeIfMaterialAnimation = true;
             preserveToggleStyleTransformAnimationsOnMerge = true;
             disableOriginalRendererOnMerge = true;
+            visibilityMode = AttachToBlendshapeVisibilityMode.SizeBlendshape;
+            autoDetectUVChannel = true;
+            uvChannel = 1;
+            uvDiscardRow = 3;
+            uvDiscardColumn = 3;
+            remapVisibilityAnimations = true;
         }
 
         private void Awake()

@@ -126,6 +126,12 @@ namespace YUCP.Components.Editor.MeshUtils
                 return false;
             }
 
+            if (!targetMesh.isReadable)
+            {
+                Debug.LogError($"[BlendshapeTransfer] Target mesh '{targetMesh.name}' is not readable. Enable Read/Write on its importer.", data);
+                return false;
+            }
+
             // Store the original target mesh BEFORE any modifications (for categorization in preview)
             if (data.previewOriginalTargetMesh == null)
             {
@@ -155,18 +161,10 @@ namespace YUCP.Components.Editor.MeshUtils
                 
                 if (removedCount > 0)
                 {
-                    // Create a fresh mesh without the blendshapes we're about to transfer
-                    Mesh cleanMesh = new Mesh();
-                    cleanMesh.name = workingMesh.name;
-                    cleanMesh.vertices = workingMesh.vertices;
-                    cleanMesh.triangles = workingMesh.triangles;
-                    cleanMesh.normals = workingMesh.normals;
-                    cleanMesh.uv = workingMesh.uv;
-                    cleanMesh.tangents = workingMesh.tangents;
-                    cleanMesh.colors = workingMesh.colors;
-                    cleanMesh.bounds = workingMesh.bounds;
-                    
-                    // Copy only blendshapes that we're NOT transferring
+                    // Keep geometry/skinning/submeshes/vertex streams intact. Clear only the
+                    // blendshape table on this already-cloned mesh, then restore shapes that
+                    // are not being regenerated.
+                    var preserved = new List<(string name, float weight, Vector3[] dv, Vector3[] dn, Vector3[] dt)>();
                     for (int i = 0; i < workingMesh.blendShapeCount; i++)
                     {
                         string existingName = workingMesh.GetBlendShapeName(i);
@@ -180,13 +178,16 @@ namespace YUCP.Components.Editor.MeshUtils
                                 Vector3[] frameNormals = new Vector3[workingMesh.vertexCount];
                                 Vector3[] frameTangents = new Vector3[workingMesh.vertexCount];
                                 workingMesh.GetBlendShapeFrameVertices(i, f, frameDeltas, frameNormals, frameTangents);
-                                cleanMesh.AddBlendShapeFrame(existingName, frameWeight, frameDeltas, frameNormals, frameTangents);
+                                preserved.Add((existingName, frameWeight, frameDeltas, frameNormals, frameTangents));
                             }
                         }
                     }
-                    
-                    UnityEngine.Object.DestroyImmediate(workingMesh);
-                    workingMesh = cleanMesh;
+
+                    workingMesh.ClearBlendShapes();
+                    foreach (var frame in preserved)
+                    {
+                        workingMesh.AddBlendShapeFrame(frame.name, frame.weight, frame.dv, frame.dn, frame.dt);
+                    }
                     
                     if (data.debugMode)
                     {
@@ -195,41 +196,6 @@ namespace YUCP.Components.Editor.MeshUtils
                 }
             }
             
-            // Ensure mesh is readable/writable (important for Unity primitives)
-            if (!workingMesh.isReadable)
-            {
-                Debug.LogWarning($"[BlendshapeTransfer] Target mesh '{targetMesh.name}' is not readable. Creating a new readable copy.", data);
-                // Create a new mesh with the same data
-                Mesh newMesh = new Mesh();
-                newMesh.name = workingMesh.name;
-                newMesh.vertices = workingMesh.vertices;
-                newMesh.triangles = workingMesh.triangles;
-                newMesh.normals = workingMesh.normals;
-                newMesh.uv = workingMesh.uv;
-                newMesh.tangents = workingMesh.tangents;
-                newMesh.colors = workingMesh.colors;
-                newMesh.bounds = workingMesh.bounds;
-                
-                // Copy blendshapes
-                for (int i = 0; i < workingMesh.blendShapeCount; i++)
-                {
-                    string name = workingMesh.GetBlendShapeName(i);
-                    int frameCount = workingMesh.GetBlendShapeFrameCount(i);
-                    for (int f = 0; f < frameCount; f++)
-                    {
-                        float weight = workingMesh.GetBlendShapeFrameWeight(i, f);
-                        Vector3[] deltas = new Vector3[workingMesh.vertexCount];
-                        Vector3[] normals = new Vector3[workingMesh.vertexCount];
-                        Vector3[] tangents = new Vector3[workingMesh.vertexCount];
-                        workingMesh.GetBlendShapeFrameVertices(i, f, deltas, normals, tangents);
-                        newMesh.AddBlendShapeFrame(name, weight, deltas, normals, tangents);
-                    }
-                }
-                
-                UnityEngine.Object.DestroyImmediate(workingMesh);
-                workingMesh = newMesh;
-            }
-
             try
             {
                 // Get base state (all blendshapes at 0)

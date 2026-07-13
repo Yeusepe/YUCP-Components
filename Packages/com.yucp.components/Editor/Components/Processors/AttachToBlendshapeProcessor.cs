@@ -22,10 +22,25 @@ namespace YUCP.Components.Editor
     /// </summary>
     public class AttachToBlendshapeProcessor : IVRCSDKPreprocessAvatarCallback
     {
-        public int callbackOrder => int.MinValue + 10;
+        // Run after AutoBodyHider, AutoUVDiscard, and UVDiscardToggle so their replacement
+        // body mesh becomes the immutable base for attachment generation.
+        public int callbackOrder => int.MinValue + 110;
 
         private const string KeepAliveLayerName = "[YUCP] Keep Blendshapes (Optimizer Guard)";
         private const string KeepAliveStateName = "Keep (Not Used)";
+
+        private sealed class BuildWorkItem
+        {
+            public AttachToBlendshapeData data;
+            public SurfaceCluster cluster;
+            public List<string> trackedBlendshapes;
+            public AttachToBlendshapeOutputMode outputMode;
+            public Mesh attachmentMesh;
+            public Transform attachmentTransform;
+            public Material[] attachmentMaterials;
+            public SkinnedMeshRenderer attachmentSmr;
+            public MeshRenderer attachmentMr;
+        }
 
         private static void EnsureSingleBoneSkinning(
             SkinnedMeshRenderer renderer,
@@ -79,50 +94,285 @@ namespace YUCP.Components.Editor
                 return true;
             }
 
-            var progressWindow = YUCPProgressWindow.Create();
-            progressWindow.Progress(0, "Processing blendshape attachments...");
-
             try
             {
                 var animator = avatarRoot.GetComponentInChildren<Animator>();
                 if (animator == null)
                 {
                     Debug.LogError("[AttachToBlendshapeProcessor] No Animator found on avatar");
-                    progressWindow.CloseWindow();
-                    return true;
+                    return false;
                 }
 
-                for (int i = 0; i < dataList.Length; i++)
+                var workItems = new List<BuildWorkItem>();
+                foreach (var data in dataList)
                 {
-                    var data = dataList[i];
-
                     if (!ValidateData(data))
                     {
                         Debug.LogError($"[AttachToBlendshapeProcessor] Validation failed for '{data.name}'", data);
-                        continue;
+                        return false;
                     }
 
-                    try
+                    var cluster = SurfaceClusterDetector.DetectCluster(
+                        data.targetMesh,
+                        data.transform.position,
+                        data.clusterTriangleCount,
+                        data.searchRadius,
+                        data.manualTriangleIndex,
+                        DetermineClusterSeedBlendshapes(data, avatarRoot));
+                    if (cluster == null)
                     {
-                        ProcessAttachment(data, avatarRoot, animator);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"[AttachToBlendshapeProcessor] Error processing '{data.name}': {ex.Message}", data);
-                        Debug.LogException(ex);
+                        Debug.LogError($"[AttachToBlendshapeProcessor] Failed to detect surface cluster for '{data.name}'", data);
+                        return false;
                     }
 
-                    float progress = (float)(i + 1) / dataList.Length;
-                    progressWindow.Progress(progress, $"Processed blendshape attachment {i + 1}/{dataList.Length}");
+                    var tracked = DetermineBlendshapesToTrack(data, avatarRoot, cluster);
+                    if (tracked.Count == 0)
+                    {
+                        Debug.LogError($"[AttachToBlendshapeProcessor] No blendshapes were selected for '{data.name}'", data);
+                        return false;
+                    }
+
+                    if (!TryGetTargetMeshToModify(data, out var attachmentMesh, out var attachmentTransform,
+                            out var attachmentMaterials, out var attachmentSmr, out var attachmentMr))
+                    {
+                        Debug.LogError($"[AttachToBlendshapeProcessor] Could not resolve attachment mesh for '{data.name}'", data);
+                        return false;
+                    }
+
+                    if (attachmentTransform == data.targetMesh.transform)
+                    {
+                        Debug.LogError($"[AttachToBlendshapeProcessor] Attachment target for '{data.name}' resolves to the base renderer.", data);
+                        return false;
+                    }
+
+                    workItems.Add(new BuildWorkItem
+                    {
+                        data = data,
+                        cluster = cluster,
+                        trackedBlendshapes = tracked,
+                        outputMode = ResolveOutputMode(data, avatarRoot, tracked),
+                        attachmentMesh = attachmentMesh,
+                        attachmentTransform = attachmentTransform,
+                        attachmentMaterials = attachmentMaterials,
+                        attachmentSmr = attachmentSmr,
+                        attachmentMr = attachmentMr
+                    });
                 }
 
-                progressWindow.CloseWindow();
+                foreach (var linked in workItems.Where(i => i.outputMode == AttachToBlendshapeOutputMode.LinkedRendererBake))
+                {
+                    if (!ProcessLinkedRenderer(linked, avatarRoot, animator)) return false;
+                }
+
+                foreach (var group in workItems
+                             .Where(i => i.outputMode == AttachToBlendshapeOutputMode.MergeIntoBaseMesh)
+                             .GroupBy(i => i.data.targetMesh))
+                {
+                    if (!ProcessMergedGroup(group.Key, group.ToList(), avatarRoot, animator)) return false;
+                }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[AttachToBlendshapeProcessor] Fatal error: {ex.Message}");
-                progressWindow.CloseWindow();
+                Debug.LogException(ex);
                 return false;
+            }
+
+            return true;
+        }
+
+        private bool ProcessLinkedRenderer(BuildWorkItem item, GameObject avatarRoot, Animator animator)
+        {
+            string bonePath = item.data.attachToClosestBone ? AttachToClosestBone(item.data, animator) : "";
+            if (!BlendshapeTransfer.TransferBlendshapes(
+                    item.data.targetMesh,
+                    item.data.targetMeshToModify,
+                    item.trackedBlendshapes,
+                    item.cluster,
+                    item.data))
+            {
+                return false;
+            }
+
+            if (!CreateTransformBlendshapesAndLink(item.data, item.trackedBlendshapes, avatarRoot))
+            {
+                Debug.LogError($"[AttachToBlendshapeProcessor] Linked renderer generation failed for '{item.data.name}'.", item.data);
+                return false;
+            }
+
+            TryGetTargetMeshToModify(item.data, out var generatedMesh, out _, out _, out _, out _);
+
+            item.data.SetBuildStats(
+                item.cluster,
+                item.trackedBlendshapes,
+                item.trackedBlendshapes.Count,
+                bonePath,
+                AttachToBlendshapeOutputMode.LinkedRendererBake,
+                item.data.visibilityMode,
+                "",
+                generatedMesh != null ? generatedMesh.blendShapeCount : 0);
+            return true;
+        }
+
+        private bool ProcessMergedGroup(
+            SkinnedMeshRenderer baseRenderer,
+            List<BuildWorkItem> items,
+            GameObject avatarRoot,
+            Animator animator)
+        {
+            Mesh baseMesh = baseRenderer != null ? baseRenderer.sharedMesh : null;
+            var inputs = new List<AttachToBlendshapeMergedMeshBuilder.AttachmentInput>();
+            foreach (var item in items)
+            {
+                inputs.Add(new AttachToBlendshapeMergedMeshBuilder.AttachmentInput
+                {
+                    data = item.data,
+                    mesh = item.attachmentMesh,
+                    transform = item.attachmentTransform,
+                    materials = item.attachmentMaterials,
+                    skinnedRenderer = item.attachmentSmr,
+                    meshRenderer = item.attachmentMr,
+                    cluster = item.cluster,
+                    trackedBlendshapes = new HashSet<string>(item.trackedBlendshapes, StringComparer.Ordinal),
+                    displayName = item.attachmentTransform.name,
+                    animationPath = AnimationUtility.CalculateTransformPath(item.attachmentTransform, avatarRoot.transform)
+                });
+            }
+
+            var build = AttachToBlendshapeMergedMeshBuilder.Build(baseRenderer, baseMesh, inputs);
+            if (!build.success)
+            {
+                bool mustFail = items.Any(i => ContainsVisemes(i.trackedBlendshapes) ||
+                                               i.data.outputMode == AttachToBlendshapeOutputMode.MergeIntoBaseMesh);
+                Debug.LogError($"[AttachToBlendshapeProcessor] Merge failed for '{baseRenderer?.name}': {build.error}", baseRenderer);
+                if (mustFail) return false;
+
+                // Only non-viseme Auto items may use the linked fallback, and the failed builder
+                // has not changed any renderer or animation state.
+                foreach (var item in items)
+                {
+                    if (!ProcessLinkedRenderer(item, avatarRoot, animator)) return false;
+                }
+                return true;
+            }
+
+            // Commit only after geometry, blendshapes, materials, and visibility all validated.
+            baseRenderer.sharedMesh = build.mesh;
+            baseRenderer.sharedMaterials = build.materials;
+            EditorUtility.SetDirty(baseRenderer);
+
+            foreach (var attachment in build.attachments)
+            {
+                var item = items.First(i => i.data == attachment.input.data);
+                if (!string.IsNullOrEmpty(attachment.visibilityBlendshapeName) && attachment.defaultHidden)
+                {
+                    int index = build.mesh.GetBlendShapeIndex(attachment.visibilityBlendshapeName);
+                    if (index >= 0) baseRenderer.SetBlendShapeWeight(index, 100f);
+                }
+
+                int remapped = 0;
+                var warnings = new List<string>(build.warnings);
+                if (item.data.remapVisibilityAnimations)
+                {
+                    var paths = new HashSet<string>();
+                    string rendererPath = AnimationUtility.CalculateTransformPath(item.attachmentTransform, avatarRoot.transform);
+                    if (!string.IsNullOrEmpty(rendererPath)) paths.Add(rendererPath);
+
+                    foreach (string path in paths)
+                    {
+                        var remap = FbxMergeAnimationRemapper.RemapAllAnimations(new FbxMergeAnimationRemapper.RemapContext
+                        {
+                            avatarRoot = avatarRoot,
+                            attachmentPath = path,
+                            baseRendererPath = AnimationUtility.CalculateTransformPath(baseRenderer.transform, avatarRoot.transform),
+                            attachmentName = item.attachmentTransform.name,
+                            attachmentTransform = item.attachmentTransform,
+                            baseRenderer = baseRenderer,
+                            mergedMesh = build.mesh,
+                            attachmentVertexStart = attachment.vertexStart,
+                            attachmentVertexCount = attachment.vertexCount,
+                            baseMaterialOffset = attachment.materialStart,
+                            attachmentBlendshapeNameMap = attachment.attachmentBlendshapeNameMap,
+                            uvDiscardMaterialIndices = attachment.uvDiscardMaterialIndices,
+                            uvDiscardTilePropertyName = FbxMergeToggleUvDiscardMapper.GetTilePropertyName(item.data.uvDiscardRow, item.data.uvDiscardColumn),
+                            remapBlendshapeAnimations = true,
+                            remapMaterialAnimations = true,
+                            remapRendererAndObjectOffToUvDiscard = true,
+                            useScaleToZeroFallback = item.data.visibilityMode == AttachToBlendshapeVisibilityMode.SizeBlendshape,
+                            scaleToZeroBlendshapeName = attachment.visibilityBlendshapeName,
+                            debugMode = item.data.debugMode,
+                            logContext = item.data
+                        });
+                        remapped += remap.remappedCurveCount;
+                        warnings.AddRange(remap.warnings);
+                    }
+
+                    // Parent GameObjects are commonly the object toggled by wardrobes. Convert
+                    // those active-state curves too, without attempting to retarget their transforms.
+                    Transform ancestor = item.attachmentTransform.parent;
+                    while (ancestor != null && ancestor != avatarRoot.transform)
+                    {
+                        string path = AnimationUtility.CalculateTransformPath(ancestor, avatarRoot.transform);
+                        if (!string.IsNullOrEmpty(path) && !paths.Contains(path))
+                        {
+                            var remap = FbxMergeAnimationRemapper.RemapAllAnimations(new FbxMergeAnimationRemapper.RemapContext
+                            {
+                                avatarRoot = avatarRoot,
+                                attachmentPath = path,
+                                baseRendererPath = AnimationUtility.CalculateTransformPath(baseRenderer.transform, avatarRoot.transform),
+                                attachmentName = item.attachmentTransform.name,
+                                attachmentTransform = null,
+                                baseRenderer = baseRenderer,
+                                mergedMesh = build.mesh,
+                                attachmentVertexStart = attachment.vertexStart,
+                                attachmentVertexCount = attachment.vertexCount,
+                                baseMaterialOffset = attachment.materialStart,
+                                attachmentBlendshapeNameMap = attachment.attachmentBlendshapeNameMap,
+                                uvDiscardMaterialIndices = attachment.uvDiscardMaterialIndices,
+                                uvDiscardTilePropertyName = FbxMergeToggleUvDiscardMapper.GetTilePropertyName(item.data.uvDiscardRow, item.data.uvDiscardColumn),
+                                remapRendererAndObjectOffToUvDiscard = true,
+                                useScaleToZeroFallback = item.data.visibilityMode == AttachToBlendshapeVisibilityMode.SizeBlendshape,
+                                scaleToZeroBlendshapeName = attachment.visibilityBlendshapeName,
+                                isAncestorPath = true,
+                                debugMode = item.data.debugMode,
+                                logContext = item.data
+                            });
+                            remapped += remap.remappedCurveCount;
+                            warnings.AddRange(remap.warnings);
+                        }
+                        ancestor = ancestor.parent;
+                    }
+
+                    FbxMergeProcessor.TryInjectIntoVRCFuryToggles(
+                        item.attachmentTransform.gameObject,
+                        avatarRoot,
+                        baseRenderer,
+                        attachment.uvDiscardMaterialIndices,
+                        FbxMergeToggleUvDiscardMapper.GetTilePropertyName(item.data.uvDiscardRow, item.data.uvDiscardColumn),
+                        item.data.visibilityMode == AttachToBlendshapeVisibilityMode.SizeBlendshape,
+                        attachment.visibilityBlendshapeName,
+                        item.data.debugMode,
+                        item.data,
+                        warnings);
+                }
+
+                if (item.data.disableOriginalRendererOnMerge)
+                {
+                    if (item.attachmentSmr != null) item.attachmentSmr.enabled = false;
+                    if (item.attachmentMr != null) item.attachmentMr.enabled = false;
+                }
+
+                item.data.SetBuildStats(
+                    item.cluster,
+                    item.trackedBlendshapes,
+                    item.trackedBlendshapes.Count,
+                    "",
+                    AttachToBlendshapeOutputMode.MergeIntoBaseMesh,
+                    item.data.visibilityMode,
+                    attachment.visibilityBlendshapeName,
+                    build.mesh.blendShapeCount,
+                    remapped,
+                    warnings);
             }
 
             return true;
@@ -158,7 +408,7 @@ namespace YUCP.Components.Editor
             return true;
         }
 
-        private AttachToBlendshapeOutputMode ResolveOutputMode(
+        internal AttachToBlendshapeOutputMode ResolveOutputMode(
             AttachToBlendshapeData data,
             GameObject avatarRoot,
             List<string> trackedBlendshapes)
@@ -261,6 +511,42 @@ namespace YUCP.Components.Editor
             }
 
             return AttachToBlendshapeOutputMode.LinkedRendererBake;
+        }
+
+        internal static List<string> DetermineClusterSeedBlendshapes(AttachToBlendshapeData data, GameObject avatarRoot)
+        {
+            if (data == null || data.targetMesh == null || data.targetMesh.sharedMesh == null)
+                return new List<string>();
+            switch (data.trackingMode)
+            {
+                case BlendshapeTrackingMode.Specific:
+                    return (data.specificBlendshapes ?? new List<string>())
+                        .Where(name => data.targetMesh.sharedMesh.GetBlendShapeIndex(name) >= 0)
+                        .ToList();
+                case BlendshapeTrackingMode.VisemsOnly:
+                    return VRChatVisemeDetector.GetVisemeBlendshapes(data.targetMesh, avatarRoot);
+                case BlendshapeTrackingMode.All:
+                    return PoseSampler.GetAllBlendshapeNames(data.targetMesh.sharedMesh);
+                case BlendshapeTrackingMode.Smart:
+                    var all = PoseSampler.GetAllBlendshapeNames(data.targetMesh.sharedMesh);
+                    var facial = all.Where(IsLikelyRuntimeFacialBlendshape).ToList();
+                    return facial.Count > 0 ? facial : all;
+                default:
+                    return new List<string>();
+            }
+        }
+
+        private static bool IsLikelyRuntimeFacialBlendshape(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            if (VRChatVisemeDetector.IsVisemeBlendshape(name)) return true;
+            string value = name.ToLowerInvariant().Replace("_", string.Empty).Replace("-", string.Empty).Replace(".", string.Empty);
+            string[] runtimePrefixes =
+            {
+                "jaw", "mouth", "lip", "tongue", "brow", "eyeblink", "eyelook",
+                "eyesquint", "eyewide", "cheekpuff", "cheeksquint", "nosesneer"
+            };
+            return runtimePrefixes.Any(value.StartsWith);
         }
 
         private static bool ContainsVisemes(List<string> blendshapes)
@@ -454,7 +740,7 @@ namespace YUCP.Components.Editor
             return true;
         }
 
-        private static bool TryGetTargetMeshToModify(
+        internal static bool TryGetTargetMeshToModify(
             AttachToBlendshapeData data,
             out Mesh mesh,
             out Transform meshTransform,
@@ -1119,106 +1405,61 @@ namespace YUCP.Components.Editor
         /// Each frame we compute v' = R(w) * v + T(w) (about the object pivot/origin, like Preview),
         /// then delta = v' - v and store that as the frame.
         /// </summary>
-        private void CreateTransformBlendshapesAndLink(AttachToBlendshapeData data, List<string> blendshapesToTrack, GameObject avatarRoot)
+        private bool CreateTransformBlendshapesAndLink(AttachToBlendshapeData data, List<string> blendshapesToTrack, GameObject avatarRoot)
         {
-            // Ensure the attached object is rendered by a SkinnedMeshRenderer so blendshapes can drive it.
-            SkinnedMeshRenderer targetMeshRenderer = data.transform.GetComponent<SkinnedMeshRenderer>();
-            Mesh targetMesh = null;
+            // Resolve the exact object selected in targetMeshToModify. The old implementation
+            // incorrectly generated the final mesh on the component GameObject instead.
+            if (!TryGetTargetMeshToModify(data, out var resolvedMesh, out var resolvedTransform,
+                    out var resolvedMaterials, out var targetMeshRenderer, out var resolvedMeshRenderer))
+            {
+                Debug.LogError($"[AttachToBlendshapeProcessor] Could not resolve linked target for '{data.name}'.", data);
+                return false;
+            }
 
-            if (targetMeshRenderer == null) {
-                var meshFilter = data.transform.GetComponent<MeshFilter>();
-                var meshRenderer = data.transform.GetComponent<MeshRenderer>();
-                if (meshFilter == null || meshFilter.sharedMesh == null) {
-                    Debug.LogError($"[AttachToBlendshapeProcessor] Target object '{data.transform.name}' has no mesh to bake transform blendshapes into (needs MeshFilter or SkinnedMeshRenderer).", data);
-                    return;
+            Mesh targetMesh = resolvedMesh;
+            if (targetMeshRenderer == null)
+            {
+                var meshFilter = resolvedTransform.GetComponent<MeshFilter>();
+                if (meshFilter == null || meshFilter.sharedMesh == null)
+                {
+                    Debug.LogError($"[AttachToBlendshapeProcessor] Resolved target '{resolvedTransform.name}' has no usable mesh.", data);
+                    return false;
                 }
 
-                // Convert MeshFilter/MeshRenderer -> SkinnedMeshRenderer (so blendshapes can apply).
-                targetMeshRenderer = data.transform.gameObject.AddComponent<SkinnedMeshRenderer>();
+                targetMeshRenderer = resolvedTransform.gameObject.AddComponent<SkinnedMeshRenderer>();
                 targetMeshRenderer.sharedMesh = meshFilter.sharedMesh;
-                if (meshRenderer != null) {
-                    targetMeshRenderer.sharedMaterials = meshRenderer.sharedMaterials;
-                    meshRenderer.enabled = false; // prevent double-render
-                }
-
-                // Minimal skinning setup will be created on the copied mesh below.
+                targetMeshRenderer.sharedMaterials = resolvedMaterials;
+                if (resolvedMeshRenderer != null) resolvedMeshRenderer.enabled = false;
             }
 
             targetMesh = targetMeshRenderer.sharedMesh;
             if (targetMesh == null) {
                 Debug.LogError($"[AttachToBlendshapeProcessor] Target SkinnedMeshRenderer '{targetMeshRenderer.name}' has no mesh", data);
-                return;
+                return false;
             }
 
-            // Always work on a copy so we don't permanently mutate an imported/asset mesh and so repeated builds don't stack shapes.
-            // (Unity doesn't allow removing blendshapes from a Mesh, so we replace the mesh each build.)
-            var targetMeshCopy = UnityEngine.Object.Instantiate(targetMesh);
-            targetMeshCopy.name = $"{targetMesh.name}_YUCP_AttachToBlendshape";
-            targetMeshRenderer.sharedMesh = targetMeshCopy;
-            targetMesh = targetMeshCopy;
-            EnsureSingleBoneSkinning(targetMeshRenderer, targetMeshCopy, data.transform, data);
+            // BlendshapeTransfer already produced the one preserved working copy. Do not clone
+            // it again or create a redundant second family of transform blendshapes.
+            targetMeshRenderer.sharedMesh = targetMesh;
+            EnsureSingleBoneSkinning(targetMeshRenderer, targetMesh, resolvedTransform, data);
 
             // Get base mesh path for VRCFury
             string baseMeshName = data.targetMesh.transform.name;
 
-            // Create blendshapes on target mesh that represent the solved rigid motion
+            // The transferred shapes themselves contain the solved motion. Link base names to
+            // those exact names instead of generating _YUCP_Transform_* duplicates.
             Dictionary<string, string> blendshapeMappings = new Dictionary<string, string>();
-
-            // Cache base vertices once; each frame uses deltas against this base.
-            Vector3[] baseVertices;
-            try
-            {
-                baseVertices = targetMesh.vertices;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError(
-                    $"[AttachToBlendshapeProcessor] Cannot read vertices from mesh '{targetMesh.name}'. " +
-                    $"Enable Read/Write on the mesh import settings (or provide a readable mesh). Error: {ex.Message}",
-                    data);
-                return;
-            }
-            int vertexCount = baseVertices.Length;
-            float maxTranslation = 0f;
-
             foreach (string blendshapeName in blendshapesToTrack)
             {
-                var samples = BlendshapeTransfer.GetTransformSamples(blendshapeName);
-                if (samples.Count == 0)
-                    continue;
-
-                // Create a blendshape name for the transform
-                string transformBlendshapeName = $"_YUCP_Transform_{blendshapeName}";
-                blendshapeMappings[blendshapeName] = transformBlendshapeName;
-
-                // Use the exact sampled weights from the solver (matches Preview sampling density).
-                var sortedSamples = samples.OrderBy(s => s.blendshapeWeight).ToList();
-
-                foreach (var sample in sortedSamples) {
-                    // Build deltaVertices for this frame: delta = (R * v + T) - v
-                    // This simulates changing the object transform about its pivot (origin), like Preview does.
-                    var deltaVertices = new Vector3[vertexCount];
-                    var rot = sample.rotationDelta;
-                    var pos = sample.positionDelta;
-                    maxTranslation = Mathf.Max(maxTranslation, pos.magnitude);
-
-                    for (int i = 0; i < vertexCount; i++) {
-                        var v = baseVertices[i];
-                        var v2 = (rot * v) + pos;
-                        deltaVertices[i] = v2 - v;
-                    }
-
-                    // Add blendshape frame at the sampled weight.
-                    targetMesh.AddBlendShapeFrame(transformBlendshapeName, sample.blendshapeWeight, deltaVertices, null, null);
-                }
+                if (targetMesh.GetBlendShapeIndex(blendshapeName) >= 0)
+                    blendshapeMappings[blendshapeName] = blendshapeName;
             }
 
             // Ensure bounds won't cull the mesh when vertices translate due to blendshape frames.
             // SkinnedMeshRenderer uses localBounds for culling.
             targetMesh.RecalculateBounds();
             var b = targetMesh.bounds;
-            var expand = maxTranslation * 2f + 0.05f;
-            b.extents += new Vector3(expand, expand, expand);
+            b.Expand(0.1f);
             targetMeshRenderer.localBounds = b;
 
             // Get or create VRCFury component on avatar root
@@ -1226,7 +1467,7 @@ namespace YUCP.Components.Editor
             if (vrcFuryType == null)
             {
                 Debug.LogError($"[AttachToBlendshapeProcessor] Could not find VRCFury type", data);
-                return;
+                return false;
             }
             
             var vrcFury = avatarRoot.GetComponent(vrcFuryType);
@@ -1241,12 +1482,13 @@ namespace YUCP.Components.Editor
             // VRCFury's Blendshape Optimizer bakes any blendshape that is not animated by clips.
             // Our BlendShapeLink drives weights at runtime (not via animation curves), so the optimizer would bake them away.
             // Add a zero-weight Animator layer containing a never-used clip that "animates" these weights, so the optimizer keeps them.
-            EnsureBlendshapesSurviveVrcFuryOptimizer(avatarRoot, targetMeshRenderer, blendshapesToTrack, blendshapeMappings.Values, data);
+            EnsureBlendshapesSurviveVrcFuryOptimizer(avatarRoot, targetMeshRenderer, blendshapesToTrack, Array.Empty<string>(), data);
 
             if (data.debugMode)
             {
                 Debug.Log($"[AttachToBlendshapeProcessor] Created {blendshapeMappings.Count} transform blendshapes (multi-frame deltas) and linked them via VRCFury BlendShapeLink", data);
             }
+            return blendshapeMappings.Count > 0;
         }
 
         private void EnsureBlendshapesSurviveVrcFuryOptimizer(

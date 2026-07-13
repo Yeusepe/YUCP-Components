@@ -66,8 +66,12 @@ namespace YUCP.Components.Resources
             SaveFoldoutStates();
             if (data != null)
             {
-                RestorePreviewBlendshapes();
-                RestorePreviewTransform();
+                if (data.previewGenerated) ClearPreview();
+                else
+                {
+                    RestorePreviewBlendshapes();
+                    RestorePreviewTransform();
+                }
             }
             ReleasePreviewBakeMesh();
         }
@@ -254,6 +258,14 @@ namespace YUCP.Components.Resources
             outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoAvoidMergeIfMaterialAnimation"), "Auto: Avoid Merge if Material Animations"));
             outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("preserveToggleStyleTransformAnimationsOnMerge"), "Merge: Preserve Toggle-Style Transform Animations"));
             outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("disableOriginalRendererOnMerge"), "Merge: Disable Original Renderer"));
+
+            YUCPUIToolkitHelper.AddSpacing(outputContent, 6);
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("visibilityMode"), "Merged Visibility"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("remapVisibilityAnimations"), "Remap Existing Visibility Animations"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoDetectUVChannel"), "UV: Auto Detect Channel"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvChannel"), "UV: Channel"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvDiscardRow"), "UV: Tile Row"));
+            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvDiscardColumn"), "UV: Tile Column"));
 
             root.Add(outputCard);
             
@@ -567,6 +579,33 @@ namespace YUCP.Components.Resources
             transferredLabel.style.fontSize = 11;
             transferredLabel.style.marginBottom = 2;
             content.Add(transferredLabel);
+
+            var generatedLabel = new Label($"Generated Mesh Blendshapes: {data.GeneratedBlendshapeCount}");
+            generatedLabel.SetEnabled(false);
+            generatedLabel.style.fontSize = 11;
+            generatedLabel.style.marginBottom = 2;
+            content.Add(generatedLabel);
+
+            var outputLabel = new Label($"Output: {data.AppliedOutputMode} / {data.AppliedVisibilityMode}");
+            outputLabel.SetEnabled(false);
+            outputLabel.style.fontSize = 11;
+            outputLabel.style.marginBottom = 2;
+            content.Add(outputLabel);
+
+            if (!string.IsNullOrEmpty(data.GeneratedVisibilityBlendshape))
+            {
+                var visibilityLabel = new Label($"Visibility Blendshape: {data.GeneratedVisibilityBlendshape}");
+                visibilityLabel.SetEnabled(false);
+                visibilityLabel.style.fontSize = 11;
+                visibilityLabel.style.marginBottom = 2;
+                content.Add(visibilityLabel);
+            }
+
+            var remapLabel = new Label($"Remapped Curves: {data.RemappedCurveCount}");
+            remapLabel.SetEnabled(false);
+            remapLabel.style.fontSize = 11;
+            remapLabel.style.marginBottom = 2;
+            content.Add(remapLabel);
             
             var boneLabel = new Label($"Selected Bone: {(string.IsNullOrEmpty(data.SelectedBonePath) ? "None" : data.SelectedBonePath)}");
             boneLabel.SetEnabled(false);
@@ -689,68 +728,10 @@ namespace YUCP.Components.Resources
         private void UpdatePreviewTools(VisualElement container)
         {
             if (container == null) return;
-            
+            var previewData = CreatePreviewToolsData();
+
             if (previewToolsInstance == null)
             {
-                // Get target mesh for categorization - use the WORKING mesh (after transfer) to check which blendshapes exist
-                // This allows us to categorize blendshapes that affect both meshes vs only body
-                Mesh targetMeshForPreview = data.previewWorkingMesh; // Use working mesh (after transfer)
-                
-                // Fallback to original mesh if working mesh not available yet
-                if (targetMeshForPreview == null)
-                {
-                    targetMeshForPreview = data.previewOriginalTargetMesh;
-                    
-                    // Fallback to current mesh if original not stored yet
-                    if (targetMeshForPreview == null)
-                    {
-                        if (data.targetMeshToModify is SkinnedMeshRenderer smr)
-                        {
-                            targetMeshForPreview = smr.sharedMesh;
-                        }
-                        else if (data.targetMeshToModify is MeshFilter mf)
-                        {
-                            targetMeshForPreview = mf.sharedMesh;
-                        }
-                        else if (data.targetMeshToModify is GameObject go)
-                        {
-                            var meshFilter = go.GetComponent<MeshFilter>();
-                            if (meshFilter != null)
-                            {
-                                targetMeshForPreview = meshFilter.sharedMesh;
-                            }
-                            else
-                            {
-                                var skinnedMesh = go.GetComponent<SkinnedMeshRenderer>();
-                                if (skinnedMesh != null)
-                                {
-                                    targetMeshForPreview = skinnedMesh.sharedMesh;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Get source body mesh for categorization
-                Mesh sourceMeshForPreview = null;
-                if (data.targetMesh != null)
-                {
-                    sourceMeshForPreview = data.targetMesh.sharedMesh;
-                }
-                
-                var previewData = new YUCPPreviewTools.AttachToBlendshapePreviewData
-                {
-                    previewGenerated = data.previewGenerated,
-                    clusterTriangleCount = data.previewCluster?.anchors.Count ?? 0,
-                    clusterCenter = data.previewCluster?.centerPosition ?? Vector3.zero,
-                    blendshapes = data.previewBlendshapes,
-                    blendshapeWeights = data.previewBlendshapeWeights,
-                    originalWeights = data.previewOriginalWeights,
-                    targetMesh = targetMeshForPreview, // Working mesh (after transfer)
-                    sourceMesh = sourceMeshForPreview,
-                    originalTargetMesh = data.previewOriginalTargetMesh // Original mesh (before transfer)
-                };
-                
                 // Use single toggle button like AutoBodyHider
                 previewToolsInstance = YUCPUIToolkitHelper.CreatePreviewTools(
                     previewData,
@@ -774,9 +755,37 @@ namespace YUCP.Components.Resources
                 
                 container.Add(previewToolsInstance);
             }
-            
-            // Only update Data when preview state changes
-            // For weight updates, the sliders update themselves via the setWeight callback
+            else
+            {
+                // GeneratePreview replaces the list and dictionaries. Push the new object
+                // into the preview control so its slider panel is rebuilt immediately.
+                previewToolsInstance.Data = previewData;
+            }
+        }
+
+        private YUCPPreviewTools.AttachToBlendshapePreviewData CreatePreviewToolsData()
+        {
+            Mesh targetMeshForPreview = data.previewWorkingMesh ?? data.previewOriginalTargetMesh;
+            if (targetMeshForPreview == null)
+            {
+                if (data.targetMeshToModify is SkinnedMeshRenderer smr) targetMeshForPreview = smr.sharedMesh;
+                else if (data.targetMeshToModify is MeshFilter mf) targetMeshForPreview = mf.sharedMesh;
+                else if (data.targetMeshToModify is GameObject go)
+                    targetMeshForPreview = go.GetComponent<MeshFilter>()?.sharedMesh ?? go.GetComponent<SkinnedMeshRenderer>()?.sharedMesh;
+            }
+
+            return new YUCPPreviewTools.AttachToBlendshapePreviewData
+            {
+                previewGenerated = data.previewGenerated,
+                clusterTriangleCount = data.previewCluster?.anchors.Count ?? 0,
+                clusterCenter = data.previewCluster?.centerPosition ?? Vector3.zero,
+                blendshapes = data.previewBlendshapes,
+                blendshapeWeights = data.previewBlendshapeWeights,
+                originalWeights = data.previewOriginalWeights,
+                targetMesh = targetMeshForPreview,
+                sourceMesh = data.targetMesh != null ? data.targetMesh.sharedMesh : null,
+                originalTargetMesh = data.previewOriginalTargetMesh
+            };
         }
 
         public override void OnInspectorGUI()
@@ -843,6 +852,16 @@ namespace YUCP.Components.Resources
 
             // Store the weight
             data.previewBlendshapeWeights[name] = value;
+
+            // Merge preview geometry is already part of the base renderer. Applying the
+            // weight there is sufficient; the legacy linked preview must not run as well.
+            if (data.previewUsesMergedMesh)
+            {
+                EditorUtility.SetDirty(data.targetMesh);
+                SceneView.RepaintAll();
+                EditorApplication.QueuePlayerLoopUpdate();
+                return;
+            }
             
             // Apply weight to target mesh directly (the one we transferred blendshapes to)
             SkinnedMeshRenderer targetSkinnedMesh = null;
@@ -1100,6 +1119,11 @@ namespace YUCP.Components.Resources
 
         private void UpdatePreviewAttachmentPose()
         {
+            if (data != null && data.previewUsesMergedMesh)
+            {
+                return;
+            }
+
             if (data == null ||
                 !data.previewGenerated ||
                 data.previewCluster == null ||
@@ -1533,19 +1557,27 @@ namespace YUCP.Components.Resources
 
             try
             {
+                CleanupOrphanedLegacyPreviewRenderer();
+
                 if (!ValidateData())
                 {
                     EditorUtility.DisplayDialog("Validation Failed", GetValidationError(), "OK");
                     return;
                 }
 
-                // Detect cluster
+                GameObject avatarRoot = null;
+                var avatarDescriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
+                if (avatarDescriptor != null) avatarRoot = avatarDescriptor.gameObject;
+
+                // Detect a connected patch, preferring nearby surfaces that actually
+                // respond to the shapes this component can track.
                 data.previewCluster = SurfaceClusterDetector.DetectCluster(
                     data.targetMesh,
                     data.transform.position,
                     data.clusterTriangleCount,
                     data.searchRadius,
-                    data.manualTriangleIndex);
+                    data.manualTriangleIndex,
+                    AttachToBlendshapeProcessor.DetermineClusterSeedBlendshapes(data, avatarRoot));
 
                 if (data.previewCluster == null)
                 {
@@ -1554,13 +1586,6 @@ namespace YUCP.Components.Resources
                 }
 
                 // Determine blendshapes
-                GameObject avatarRoot = null;
-                var avatarDescriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
-                if (avatarDescriptor != null)
-                {
-                    avatarRoot = avatarDescriptor.gameObject;
-                }
-
                 switch (data.trackingMode)
                 {
                     case BlendshapeTrackingMode.All:
@@ -1588,6 +1613,21 @@ namespace YUCP.Components.Resources
                 }
 
                 CapturePreviewBlendshapeWeights();
+
+                var processor = new AttachToBlendshapeProcessor();
+                AttachToBlendshapeOutputMode previewOutputMode = processor.ResolveOutputMode(
+                    data, avatarRoot, data.previewBlendshapes);
+                if (previewOutputMode == AttachToBlendshapeOutputMode.MergeIntoBaseMesh)
+                {
+                    if (!GenerateMergedPreview(avatarRoot)) return;
+
+                    data.previewGenerated = true;
+                    data.showPreview = true;
+                    SceneView.RepaintAll();
+                    Repaint();
+                    Debug.Log($"[AttachToBlendshape Preview] Generated merged preview: {data.previewBlendshapes.Count} tracked blendshapes, {data.previewCluster.anchors.Count} triangles", data);
+                    return;
+                }
 
                 // Actually transfer blendshapes to target mesh for preview
                 Debug.Log($"[AttachToBlendshape Preview] Transferring {data.previewBlendshapes.Count} blendshapes to target mesh...", data);
@@ -1624,9 +1664,160 @@ namespace YUCP.Components.Resources
             }
         }
 
+        private void CleanupOrphanedLegacyPreviewRenderer()
+        {
+            GameObject targetObject = null;
+            if (data.targetMeshToModify is MeshFilter filter) targetObject = filter.gameObject;
+            else if (data.targetMeshToModify is GameObject go) targetObject = go;
+            else if (data.targetMeshToModify == null && data.GetComponent<MeshFilter>() != null) targetObject = data.gameObject;
+            if (targetObject == null || targetObject.GetComponent<MeshFilter>() == null) return;
+
+            MeshRenderer meshRenderer = targetObject.GetComponent<MeshRenderer>();
+            foreach (SkinnedMeshRenderer candidate in targetObject.GetComponents<SkinnedMeshRenderer>())
+            {
+                Mesh candidateMesh = candidate.sharedMesh;
+                Material[] legacyMaterials = candidate.sharedMaterials;
+                bool legacyWorkingMesh = candidateMesh != null &&
+                                         candidateMesh.name.EndsWith("_Blendshapes", StringComparison.Ordinal);
+                bool unskinnedTemporaryRenderer = candidate.rootBone == null &&
+                                                  (candidate.bones == null || candidate.bones.Length == 0);
+                if (!legacyWorkingMesh || !unskinnedTemporaryRenderer) continue;
+
+                candidate.sharedMesh = null;
+                if (Application.isPlaying) UnityEngine.Object.Destroy(candidate);
+                else UnityEngine.Object.DestroyImmediate(candidate);
+                if (candidateMesh != null && !AssetDatabase.Contains(candidateMesh))
+                {
+                    if (Application.isPlaying) UnityEngine.Object.Destroy(candidateMesh);
+                    else UnityEngine.Object.DestroyImmediate(candidateMesh);
+                }
+                if (meshRenderer == null)
+                {
+                    meshRenderer = targetObject.AddComponent<MeshRenderer>();
+                    meshRenderer.sharedMaterials = legacyMaterials ?? Array.Empty<Material>();
+                }
+                meshRenderer.enabled = true;
+                Debug.Log("[AttachToBlendshape Preview] Removed an orphaned legacy temporary renderer.", data);
+            }
+        }
+
+        private bool GenerateMergedPreview(GameObject avatarRoot)
+        {
+            if (!AttachToBlendshapeProcessor.TryGetTargetMeshToModify(
+                    data,
+                    out Mesh attachmentMesh,
+                    out Transform attachmentTransform,
+                    out Material[] attachmentMaterials,
+                    out SkinnedMeshRenderer attachmentSmr,
+                    out MeshRenderer attachmentMr))
+            {
+                EditorUtility.DisplayDialog("Preview Failed", "Could not resolve the attachment mesh.", "OK");
+                return false;
+            }
+
+            if (attachmentTransform == data.targetMesh.transform)
+            {
+                EditorUtility.DisplayDialog("Preview Failed", "The attachment target resolves to the base renderer.", "OK");
+                return false;
+            }
+
+            string animationPath = avatarRoot != null
+                ? AnimationUtility.CalculateTransformPath(attachmentTransform, avatarRoot.transform)
+                : attachmentTransform.name;
+            var input = new AttachToBlendshapeMergedMeshBuilder.AttachmentInput
+            {
+                data = data,
+                mesh = attachmentMesh,
+                transform = attachmentTransform,
+                materials = attachmentMaterials,
+                skinnedRenderer = attachmentSmr,
+                meshRenderer = attachmentMr,
+                cluster = data.previewCluster,
+                trackedBlendshapes = new HashSet<string>(data.previewBlendshapes, StringComparer.Ordinal),
+                displayName = attachmentTransform.name,
+                animationPath = animationPath
+            };
+
+            Mesh originalBaseMesh = data.targetMesh.sharedMesh;
+            Material[] originalBaseMaterials = data.targetMesh.sharedMaterials;
+            var originalWeights = new Dictionary<string, float>(StringComparer.Ordinal);
+            for (int i = 0; i < originalBaseMesh.blendShapeCount; i++)
+                originalWeights[originalBaseMesh.GetBlendShapeName(i)] = data.targetMesh.GetBlendShapeWeight(i);
+
+            var result = AttachToBlendshapeMergedMeshBuilder.Build(
+                data.targetMesh, originalBaseMesh, new[] { input });
+            if (!result.success)
+            {
+                EditorUtility.DisplayDialog("Preview Failed", result.error ?? "Merged mesh generation failed.", "OK");
+                return false;
+            }
+
+            // Commit only after the complete merged mesh and material set exists.
+            data.previewUsesMergedMesh = true;
+            data.previewOriginalBaseMesh = originalBaseMesh;
+            data.previewOriginalBaseMaterials = originalBaseMaterials;
+            data.previewOriginalAttachmentMaterials = attachmentMaterials;
+            data.previewMergedMaterials = result.materials;
+            data.previewOriginalMesh = attachmentMesh;
+            data.previewOriginalTargetMesh = attachmentMesh;
+            data.previewWorkingMesh = result.mesh;
+            data.previewMergedSourceSkinnedRenderer = attachmentSmr;
+            data.previewMergedSourceMeshRenderer = attachmentMr;
+            data.previewMergedSourceRendererEnabled = attachmentSmr != null
+                ? attachmentSmr.enabled
+                : attachmentMr != null && attachmentMr.enabled;
+
+            try
+            {
+                data.targetMesh.sharedMesh = result.mesh;
+                data.targetMesh.sharedMaterials = result.materials;
+                foreach (var pair in originalWeights)
+                {
+                    int index = result.mesh.GetBlendShapeIndex(pair.Key);
+                    if (index >= 0) data.targetMesh.SetBlendShapeWeight(index, pair.Value);
+                }
+
+                var attachmentResult = result.attachments.FirstOrDefault();
+                if (attachmentResult != null && attachmentResult.defaultHidden &&
+                    !string.IsNullOrEmpty(attachmentResult.visibilityBlendshapeName))
+                {
+                    int visibilityIndex = result.mesh.GetBlendShapeIndex(attachmentResult.visibilityBlendshapeName);
+                    if (visibilityIndex >= 0) data.targetMesh.SetBlendShapeWeight(visibilityIndex, 100f);
+                }
+
+                if (attachmentSmr != null)
+                {
+                    attachmentSmr.enabled = false;
+                }
+                else if (attachmentMr != null)
+                {
+                    attachmentMr.enabled = false;
+                }
+            }
+            catch
+            {
+                ClearMergedPreview();
+                throw;
+            }
+
+            EditorUtility.SetDirty(data.targetMesh);
+            return true;
+        }
+
         private void ClearPreview()
         {
             RestorePreviewBlendshapes();
+
+            if (data.previewUsesMergedMesh)
+            {
+                ClearMergedPreview();
+                RestorePreviewTransform();
+                ResetPreviewState();
+                SceneView.RepaintAll();
+                Repaint();
+                Debug.Log("[AttachToBlendshape Preview] Merged preview cleared and original renderers restored", data);
+                return;
+            }
             
             // Restore original mesh (revert from copy to original, like VRCFury)
             // Find the target mesh component (same logic as BlendshapeTransfer uses)
@@ -1831,6 +2022,72 @@ namespace YUCP.Components.Resources
             Repaint();
 
             Debug.Log("[AttachToBlendshape Preview] Preview cleared and original mesh restored");
+        }
+
+        private void ClearMergedPreview()
+        {
+            Mesh generatedMesh = data.previewWorkingMesh;
+            Material[] generatedMaterials = data.previewMergedMaterials ?? Array.Empty<Material>();
+
+            if (data.targetMesh != null)
+            {
+                if (data.previewOriginalBaseMesh != null)
+                    data.targetMesh.sharedMesh = data.previewOriginalBaseMesh;
+                if (data.previewOriginalBaseMaterials != null)
+                    data.targetMesh.sharedMaterials = data.previewOriginalBaseMaterials;
+                EditorUtility.SetDirty(data.targetMesh);
+            }
+
+            if (data.previewMergedSourceSkinnedRenderer != null)
+                data.previewMergedSourceSkinnedRenderer.enabled = data.previewMergedSourceRendererEnabled;
+            if (data.previewMergedSourceMeshRenderer != null)
+                data.previewMergedSourceMeshRenderer.enabled = data.previewMergedSourceRendererEnabled;
+
+            var originalMaterials = new HashSet<Material>();
+            if (data.previewOriginalBaseMaterials != null)
+                foreach (Material material in data.previewOriginalBaseMaterials) if (material != null) originalMaterials.Add(material);
+            if (data.previewOriginalAttachmentMaterials != null)
+                foreach (Material material in data.previewOriginalAttachmentMaterials) if (material != null) originalMaterials.Add(material);
+            var destroyedMaterials = new HashSet<Material>();
+            foreach (Material material in generatedMaterials)
+            {
+                if (material == null || originalMaterials.Contains(material) || !destroyedMaterials.Add(material)) continue;
+                if (Application.isPlaying) UnityEngine.Object.Destroy(material);
+                else UnityEngine.Object.DestroyImmediate(material);
+            }
+
+            if (generatedMesh != null && generatedMesh != data.previewOriginalBaseMesh)
+            {
+                if (Application.isPlaying) UnityEngine.Object.Destroy(generatedMesh);
+                else UnityEngine.Object.DestroyImmediate(generatedMesh);
+            }
+
+            data.previewUsesMergedMesh = false;
+            data.previewOriginalBaseMesh = null;
+            data.previewOriginalBaseMaterials = null;
+            data.previewOriginalAttachmentMaterials = null;
+            data.previewMergedMaterials = null;
+            data.previewMergedSourceSkinnedRenderer = null;
+            data.previewMergedSourceMeshRenderer = null;
+            data.previewWorkingMesh = null;
+            data.previewOriginalMesh = null;
+            data.previewOriginalTargetMesh = null;
+        }
+
+        private void ResetPreviewState()
+        {
+            data.previewCluster = null;
+            data.previewBlendshapes?.Clear();
+            data.previewBlendshapeWeights?.Clear();
+            data.previewOriginalWeights?.Clear();
+            data.previewBaseCaptured = false;
+            data.previewOriginalTransformCaptured = false;
+            data.previewHasLastTangent = false;
+            data.previewHasBaseSolver = false;
+            data.previewPositionOffset = Vector3.zero;
+            data.previewRotationOffset = Quaternion.identity;
+            data.previewGenerated = false;
+            data.showPreview = false;
         }
 
         private bool ValidateData()
