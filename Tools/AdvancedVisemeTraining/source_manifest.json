@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "dataset": {
+    "title": "SPIRE EMA Corpus",
+    "repository": "SpireLab/SPIRE_EMA_CORPUS",
+    "repositoryRevision": "55f21628de95514e3ff22eaccc75e1547d181297",
+    "datasetCardUrl": "https://huggingface.co/datasets/SpireLab/SPIRE_EMA_CORPUS",
+    "processedArchive": "processed.zip",
+    "processedArchiveBytes": 3086792402,
+    "processedArchiveSha256": "ea1c3440af2b69cef0765b97e1e533ea72dae6029c49a175e1a93761c4236d04",
+    "license": "CC-BY-4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "citation": "Bandekar, J., Udupa, S., and Ghosh, P. K. (2024). Articulatory synthesis using representations learnt through phonetic label-aware contrastive loss. Proc. Interspeech 2024, 427-431.",
+    "paperDoi": "10.21437/Interspeech.2024-1756",
+    "paperUrl": "https://www.isca-archive.org/interspeech_2024/bandekar24_interspeech.html",
+    "sampleRateHz": 100.0,
+    "sampleRateSource": "Verified from processed frame counts against paired WAV duration (approximately 100 frames/s). The 62.5 Hz in Bandekar et al. section 3.4 describes a later synthesis/vocoder downsampling step, not the published processed .pt trajectory rate.",
+    "sensorOrder": [
+      "UpperLipX",
+      "UpperLipY",
+      "LowerLipX",
+      "LowerLipY",
+      "JawX",
+      "JawY",
+      "TongueTipX",
+      "TongueTipY",
+      "TongueBodyX",
+      "TongueBodyY",
+      "TongueDorsumX",
+      "TongueDorsumY"
+    ]
+  },
+  "subset": {
+    "description": "All splits are speaker- and sentence-disjoint. Fit uses prompt ordinals 0-63, held-out evaluation uses 64-95, and development uses 96-111.",
+    "promptPermutation": {
+      "modulus": 460,
+      "multiplier": 137,
+      "offset": 41
+    },
+    "splits": [
+      {
+        "name": "fit",
+        "speakers": [1, 2, 3, 4, 5, 6],
+        "promptOrdinalStart": 0,
+        "promptOrdinalCount": 64
+      },
+      {
+        "name": "development",
+        "speakers": [7, 8],
+        "promptOrdinalStart": 96,
+        "promptOrdinalCount": 16
+      },
+      {
+        "name": "heldout",
+        "speakers": [9, 10, 11, 12],
+        "promptOrdinalStart": 64,
+        "promptOrdinalCount": 32
+      }
+    ]
+  },
+  "derivation": {
+    "visemeOrder": ["sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"],
+    "articulatorGroups": {
+      "Jaw": [4, 5],
+      "Lips": [0, 1, 2, 3],
+      "TongueTip": [6, 7],
+      "TongueBody": [8, 9, 10, 11]
+    },
+    "maximumTransitionWindowFrames": 14,
+    "minimumDirectTransitionSamples": 12,
+    "decayFrameCandidates": [2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0],
+    "priorStrengthCandidates": [4.0, 8.0, 16.0, 32.0],
+    "labelSemantics": "The corpus phones are Kaldi forced-aligned ARPAbet labels. Their deterministic mapping is a training surrogate for the hidden Oculus/VRChat classifier output, not a claim that VRChat emits phonemes or follows this mapping exactly."
+  }
+}

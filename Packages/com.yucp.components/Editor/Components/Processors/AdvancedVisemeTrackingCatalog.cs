@@ -13,14 +13,21 @@ namespace YUCP.Components.Editor
     {
         public string prefix;
         public string activeParameter;
+        public AnimatorControllerParameterType? activeAnimatorType;
+        public float activeAnimatorDefault;
         public bool quality;
+        public bool fullTongue;
         public int coverage;
         public int controllerOnlyCoverage;
+        public int poseCoverage;
         public readonly Dictionary<AdvancedVisemeArticulator, string> parameters =
             new Dictionary<AdvancedVisemeArticulator, string>();
+        public readonly Dictionary<string, string> auxiliaryParameters =
+            new Dictionary<string, string>(StringComparer.Ordinal);
 
         public string Summary =>
             $"reused '{(string.IsNullOrEmpty(prefix) ? "v2" : prefix + "/v2")}' ({coverage} channels" +
+            (poseCoverage > 0 ? $", {poseCoverage} rig-mapped" : string.Empty) +
             (controllerOnlyCoverage > 0 ? $", {controllerOnlyCoverage} proxy" : string.Empty) + ")";
     }
 
@@ -28,14 +35,31 @@ namespace YUCP.Components.Editor
     {
         public AnimationClip positive;
         public AnimationClip negative;
+        public float positiveThreshold = 1f;
+        public float negativeThreshold = -1f;
     }
 
     internal sealed class AdvancedVisemeTrackingCatalog
     {
+        private readonly struct PoseTreeCandidate
+        {
+            public readonly BlendTree tree;
+            public readonly int structuralCost;
+
+            public PoseTreeCandidate(BlendTree tree, int structuralCost)
+            {
+                this.tree = tree;
+                this.structuralCost = structuralCost;
+            }
+        }
+
         internal sealed class Entry
         {
             public VRCExpressionParameters.Parameter expression;
+            public bool expressionTypeConflict;
             public AnimatorControllerParameterType? animatorType;
+            public float animatorDefault;
+            public bool animatorTypeConflict;
         }
 
         private static readonly AdvancedVisemeArticulator[] Balanced =
@@ -52,6 +76,16 @@ namespace YUCP.Components.Editor
             AdvancedVisemeArticulator.MouthX, AdvancedVisemeArticulator.TongueY
         };
 
+        private static readonly AdvancedVisemeArticulator[] FullTongue =
+        {
+            AdvancedVisemeArticulator.TongueX,
+            AdvancedVisemeArticulator.TongueRoll,
+            AdvancedVisemeArticulator.TongueArchY,
+            AdvancedVisemeArticulator.TongueShape,
+            AdvancedVisemeArticulator.TongueTwistRight,
+            AdvancedVisemeArticulator.TongueTwistLeft
+        };
+
         private readonly Dictionary<string, Entry> entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
         private readonly HashSet<UnityEngine.Object> visitedAssets = new HashSet<UnityEngine.Object>();
         private readonly HashSet<AnimatorController> controllers = new HashSet<AnimatorController>();
@@ -59,7 +93,7 @@ namespace YUCP.Components.Editor
         public IReadOnlyDictionary<string, Entry> Entries => entries;
 
         public Dictionary<string, VRCExpressionParameters.Parameter> ExpressionParameters => entries
-            .Where(pair => pair.Value.expression != null)
+            .Where(pair => pair.Value.expression != null && !pair.Value.expressionTypeConflict)
             .ToDictionary(pair => pair.Key, pair => pair.Value.expression, StringComparer.Ordinal);
 
         public string DependencyFingerprint
@@ -124,11 +158,15 @@ namespace YUCP.Components.Editor
 
             foreach (var pair in entries)
             {
-                if (pair.Value.animatorType != AnimatorControllerParameterType.Float) continue;
+                if (pair.Value.expressionTypeConflict ||
+                    (pair.Value.expression != null &&
+                     pair.Value.expression.valueType != VRCExpressionParameters.ValueType.Float) ||
+                    pair.Value.animatorTypeConflict ||
+                    pair.Value.animatorType != AnimatorControllerParameterType.Float) continue;
                 if (!TrySplitV2(pair.Key, out var prefix, out var suffix)) continue;
                 if (hasExplicitPrefix && !string.Equals(prefix, requestedPrefix, StringComparison.Ordinal)) continue;
 
-                foreach (var articulator in Balanced.Concat(Quality))
+                foreach (var articulator in Balanced.Concat(Quality).Concat(FullTongue))
                 {
                     var binding = profile.FindBinding(articulator);
                     if (!SuffixAliases(articulator, binding?.trackingParameter).Contains(suffix, StringComparer.Ordinal)) continue;
@@ -147,15 +185,30 @@ namespace YUCP.Components.Editor
             foreach (var candidate in candidates.Values)
             {
                 candidate.quality = Quality.Count(candidate.parameters.ContainsKey) >= 2;
-                candidate.activeParameter = FindActiveParameter();
+                candidate.fullTongue = FullTongue.Count(candidate.parameters.ContainsKey) >= 2;
+                AddAuxiliaryParameter(candidate, "SoftPalateClose");
+                candidate.activeParameter = FindActiveParameter(
+                    candidate.prefix,
+                    out var activeAnimatorType,
+                    out var activeAnimatorDefault);
+                candidate.activeAnimatorType = activeAnimatorType;
+                candidate.activeAnimatorDefault = activeAnimatorDefault;
+                candidate.poseCoverage = candidate.parameters.Count(pair =>
+                    FindPose(pair.Value, candidate.activeParameter) != null);
             }
 
             var viable = candidates.Values.Where(candidate =>
-                Balanced.Count(candidate.parameters.ContainsKey) >= 4).ToArray();
+                (Balanced.Count(candidate.parameters.ContainsKey) >= 4 ||
+                 HasApertureBasis(candidate)) &&
+                !string.IsNullOrEmpty(candidate.activeParameter)).ToArray();
             if (viable.Length == 0)
             {
-                if (hasExplicitPrefix)
-                    error = $"No compatible decoded Unified Expressions float channels were found under '{requestedPrefix}/v2'.";
+                if (candidates.Count > 0 || hasExplicitPrefix)
+                {
+                    error = hasExplicitPrefix
+                        ? $"No compatible decoded Unified Expressions source with a tracking-active signal was found under '{requestedPrefix}/v2'."
+                        : "Compatible Unified Expressions channels were found, but none had an unambiguous tracking-active signal.";
+                }
                 return null;
             }
 
@@ -163,15 +216,42 @@ namespace YUCP.Components.Editor
             var best = viable.Where(candidate => Score(candidate) == bestScore).ToArray();
             if (best.Length != 1)
             {
-                error = "Multiple compatible VRCFaceTracking float/proxy prefixes have equal coverage. Select Existing Prefix explicitly.";
+                error = "Multiple compatible VRCFaceTracking sources have equal channel and rig-pose coverage. Select Existing Prefix explicitly.";
                 return null;
             }
             return best[0];
         }
 
+        private static bool HasApertureBasis(AdvancedVisemeTrackingResolution candidate)
+        {
+            return candidate.parameters.ContainsKey(AdvancedVisemeArticulator.JawOpen) &&
+                   candidate.parameters.ContainsKey(AdvancedVisemeArticulator.LipClose) &&
+                   candidate.parameters.ContainsKey(AdvancedVisemeArticulator.MouthOpen);
+        }
+
+        private void AddAuxiliaryParameter(
+            AdvancedVisemeTrackingResolution resolution,
+            string suffix)
+        {
+            var matches = entries.Where(pair =>
+                !pair.Value.expressionTypeConflict &&
+                (pair.Value.expression == null ||
+                 pair.Value.expression.valueType == VRCExpressionParameters.ValueType.Float) &&
+                !pair.Value.animatorTypeConflict &&
+                pair.Value.animatorType == AnimatorControllerParameterType.Float &&
+                TrySplitV2(pair.Key, out var prefix, out var candidateSuffix) &&
+                string.Equals(prefix, resolution.prefix, StringComparison.Ordinal) &&
+                string.Equals(candidateSuffix, suffix, StringComparison.Ordinal))
+                .Select(pair => pair.Key)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (matches.Length == 1) resolution.auxiliaryParameters[suffix] = matches[0];
+        }
+
         public bool HasAnimatorFloat(string name)
         {
             return !string.IsNullOrEmpty(name) && entries.TryGetValue(name, out var entry) &&
+                   !entry.animatorTypeConflict &&
                    entry.animatorType == AnimatorControllerParameterType.Float;
         }
 
@@ -182,7 +262,7 @@ namespace YUCP.Components.Editor
             if (resolution == null) return output;
             foreach (var pair in resolution.parameters)
             {
-                var pose = FindPose(pair.Value);
+                var pose = FindPose(pair.Value, resolution.activeParameter);
                 if (pose != null && (pose.positive != null || pose.negative != null)) output[pair.Key] = pose;
             }
             return output;
@@ -190,140 +270,413 @@ namespace YUCP.Components.Editor
 
         private static int Score(AdvancedVisemeTrackingResolution candidate)
         {
-            return candidate.coverage * 100 + candidate.controllerOnlyCoverage * 20;
+            // A source that is structurally connected to the avatar's final rig is
+            // more useful than an equally complete raw or smoothed bus. This is a
+            // topology test, not a prefix-name preference, so tailored templates
+            // and future VRCFT layouts resolve the same way.
+            return candidate.poseCoverage * 100000 + candidate.coverage * 100 +
+                   candidate.controllerOnlyCoverage;
         }
 
-        private string FindActiveParameter()
+        private string FindActiveParameter(
+            string sourcePrefix,
+            out AnimatorControllerParameterType? animatorType,
+            out float animatorDefault)
         {
-            foreach (var name in new[] { "LipTrackingActive", "ExpressionTrackingActive" })
+            animatorType = null;
+            animatorDefault = 0f;
+            var normalizedPrefix = (sourcePrefix ?? string.Empty).Trim().Trim('/');
+            var candidates = new List<(string name, Entry entry, int score)>();
+            foreach (var pair in entries)
             {
-                if (!entries.TryGetValue(name, out var entry)) continue;
-                if (entry.animatorType == AnimatorControllerParameterType.Float ||
-                    entry.animatorType == AnimatorControllerParameterType.Bool ||
-                    entry.expression?.valueType == VRCExpressionParameters.ValueType.Bool)
-                    return name;
+                var expression = pair.Value.expression;
+                if (pair.Value.expressionTypeConflict || pair.Value.animatorTypeConflict ||
+                    expression == null || expression.valueType != VRCExpressionParameters.ValueType.Bool) continue;
+                if (pair.Value.animatorType.HasValue &&
+                    pair.Value.animatorType != AnimatorControllerParameterType.Float &&
+                    pair.Value.animatorType != AnimatorControllerParameterType.Bool)
+                    continue;
+
+                var isExpression = HasSuffix(pair.Key, "ExpressionTrackingActive");
+                var isLip = HasSuffix(pair.Key, "LipTrackingActive");
+                if (!isExpression && !isLip) continue;
+
+                var expectedPrefix = string.IsNullOrEmpty(normalizedPrefix)
+                    ? string.Empty
+                    : normalizedPrefix + "/";
+                var exactForSource = string.Equals(
+                    pair.Key,
+                    expectedPrefix + (isExpression ? "ExpressionTrackingActive" : "LipTrackingActive"),
+                    StringComparison.Ordinal);
+                var root = pair.Key.IndexOf('/') < 0;
+                // VRCFT accepts suffix-compatible active parameters, but pairing a
+                // source with another installation's prefixed gate can make a
+                // perfectly valid tailored template appear permanently disabled.
+                // Only the source's own gate or the documented root aliases are
+                // unambiguous enough to reuse automatically.
+                if (!exactForSource && !root) continue;
+                var score = exactForSource ? 300 : 200;
+                if (isExpression) score += 1; // Modern alias when both equivalent declarations exist.
+                if (pair.Value.animatorType.HasValue) score += 10;
+                candidates.Add((pair.Key, pair.Value, score));
             }
-            return "LipTrackingActive";
+
+            if (candidates.Count == 0) return null;
+            var bestScore = candidates.Max(candidate => candidate.score);
+            var best = candidates.Where(candidate => candidate.score == bestScore).ToArray();
+            if (best.Length != 1) return null;
+
+            animatorType = best[0].entry.animatorType;
+            animatorDefault = best[0].entry.animatorType.HasValue
+                ? best[0].entry.animatorDefault
+                : Mathf.Clamp01(best[0].entry.expression.defaultValue);
+            return best[0].name;
         }
 
-        private AdvancedVisemeExternalPose FindPose(string parameter)
+        private static bool HasSuffix(string parameter, string suffix)
+        {
+            return string.Equals(parameter, suffix, StringComparison.Ordinal) ||
+                   parameter.EndsWith("/" + suffix, StringComparison.Ordinal);
+        }
+
+        private AdvancedVisemeExternalPose FindPose(string parameter, string activeParameter)
         {
             AdvancedVisemeExternalPose best = null;
-            var bestScore = 0;
+            var bestScore = int.MinValue;
+            string bestSignature = null;
+            var ambiguous = false;
             foreach (var controller in controllers)
             {
-                foreach (var tree in EnumerateBlendTrees(controller))
+                foreach (var reachable in EnumerateBlendTrees(controller, activeParameter))
                 {
-                    var candidate = PoseFromTree(tree, parameter);
+                    var candidate = PoseFromTree(reachable.tree, parameter);
                     if (candidate == null) continue;
-                    var score = (candidate.positive != null ? 1 : 0) + (candidate.negative != null ? 1 : 0);
-                    if (score <= bestScore) continue;
-                    best = candidate;
-                    bestScore = score;
+                    var directions = (candidate.positive != null ? 1 : 0) +
+                                     (candidate.negative != null ? 1 : 0);
+                    var score = directions * 10000 - reachable.structuralCost * 100 +
+                                PoseNameAffinity(parameter, candidate);
+                    var signature = PoseSignature(candidate);
+                    if (score > bestScore)
+                    {
+                        best = candidate;
+                        bestScore = score;
+                        bestSignature = signature;
+                        ambiguous = false;
+                    }
+                    else if (score == bestScore &&
+                             !string.Equals(signature, bestSignature, StringComparison.Ordinal))
+                    {
+                        ambiguous = true;
+                    }
+                }
+            }
+            return ambiguous ? null : best;
+        }
+
+        private static int PoseNameAffinity(string parameter, AdvancedVisemeExternalPose pose)
+        {
+            var suffix = parameter?.Split('/').LastOrDefault();
+            var normalizedSuffix = NormalizeName(suffix);
+            if (string.IsNullOrEmpty(normalizedSuffix)) return 0;
+            var best = 0;
+            foreach (var clip in new[] { pose.positive, pose.negative })
+            {
+                if (clip == null) continue;
+                foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+                {
+                    var shape = binding.propertyName.StartsWith("blendShape.", StringComparison.Ordinal)
+                        ? binding.propertyName.Substring("blendShape.".Length)
+                        : binding.propertyName;
+                    var normalizedShape = NormalizeName(shape);
+                    if (string.Equals(normalizedShape, normalizedSuffix, StringComparison.Ordinal))
+                        best = Mathf.Max(best, 20);
+                    else if (normalizedShape.Contains(normalizedSuffix) ||
+                             normalizedSuffix.Contains(normalizedShape))
+                        best = Mathf.Max(best, 10);
                 }
             }
             return best;
         }
 
-        private static AdvancedVisemeExternalPose PoseFromTree(BlendTree tree, string parameter)
+        private static string NormalizeName(string value)
+        {
+            return new string((value ?? string.Empty)
+                .Where(char.IsLetterOrDigit)
+                .Select(char.ToLowerInvariant)
+                .ToArray());
+        }
+
+        private static string PoseSignature(AdvancedVisemeExternalPose pose)
+        {
+            string ClipSignature(AnimationClip clip)
+            {
+                if (clip == null) return "-";
+                return string.Join(";", AnimationUtility.GetCurveBindings(clip)
+                    .OrderBy(CurveBindingKey, StringComparer.Ordinal)
+                    .Select(binding =>
+                    {
+                        var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                        var value = curve != null && curve.length > 0 ? curve.keys[0].value : 0f;
+                        return CurveBindingKey(binding) + "=" + value.ToString("R");
+                    }));
+            }
+
+            return ClipSignature(pose.positive) + "|" + ClipSignature(pose.negative) + "|" +
+                   pose.positiveThreshold.ToString("R") + "|" + pose.negativeThreshold.ToString("R");
+        }
+
+        internal static AdvancedVisemeExternalPose PoseFromTree(BlendTree tree, string parameter)
         {
             if (tree == null) return null;
-            AnimationClip positive = null;
-            AnimationClip negative = null;
             switch (tree.blendType)
             {
                 case BlendTreeType.Simple1D when tree.blendParameter == parameter:
-                {
-                    var positiveChild = tree.children.Where(child => child.threshold > 0f)
-                        .OrderByDescending(child => child.threshold).FirstOrDefault();
-                    var negativeChild = tree.children.Where(child => child.threshold < 0f)
-                        .OrderBy(child => child.threshold).FirstOrDefault();
-                    positive = FirstBlendshapeClip(positiveChild.motion);
-                    negative = FirstBlendshapeClip(negativeChild.motion);
-                    break;
-                }
+                    return PoseFromUnitOneDimensionalTree(tree);
                 case BlendTreeType.Direct:
-                    positive = tree.children
-                        .Where(child => child.directBlendParameter == parameter)
-                        .Select(child => FirstBlendshapeClip(child.motion))
-                        .FirstOrDefault(clip => clip != null);
-                    break;
-                case BlendTreeType.FreeformCartesian2D:
-                case BlendTreeType.SimpleDirectional2D:
-                case BlendTreeType.FreeformDirectional2D:
-                    if (tree.blendParameter == parameter)
-                    {
-                        positive = tree.children.Where(child => child.position.x > 0f)
-                            .OrderByDescending(child => child.position.x)
-                            .Select(child => FirstBlendshapeClip(child.motion)).FirstOrDefault(clip => clip != null);
-                        negative = tree.children.Where(child => child.position.x < 0f)
-                            .OrderBy(child => child.position.x)
-                            .Select(child => FirstBlendshapeClip(child.motion)).FirstOrDefault(clip => clip != null);
-                    }
-                    else if (tree.blendParameterY == parameter)
-                    {
-                        positive = tree.children.Where(child => child.position.y > 0f)
-                            .OrderByDescending(child => child.position.y)
-                            .Select(child => FirstBlendshapeClip(child.motion)).FirstOrDefault(clip => clip != null);
-                        negative = tree.children.Where(child => child.position.y < 0f)
-                            .OrderBy(child => child.position.y)
-                            .Select(child => FirstBlendshapeClip(child.motion)).FirstOrDefault(clip => clip != null);
-                    }
-                    break;
+                    return PoseFromDirectTree(tree, parameter);
+                default:
+                    // 2D and nested/arbitrary trees couple the requested parameter
+                    // to other coordinates. Sampling a convenient child is not an
+                    // invertible unit parameter-to-pose mapping.
+                    return null;
             }
-            return positive == null && negative == null
-                ? null
-                : new AdvancedVisemeExternalPose { positive = positive, negative = negative };
         }
 
-        private static AnimationClip FirstBlendshapeClip(Motion motion)
+        private static AdvancedVisemeExternalPose PoseFromUnitOneDimensionalTree(BlendTree tree)
         {
-            if (motion is AnimationClip clip)
+            var children = tree.children;
+            if (children == null || children.Length == 0) return null;
+            ChildMotion? neutral = null;
+            ChildMotion? positive = null;
+            ChildMotion? negative = null;
+            foreach (var child in children)
             {
-                return AnimationUtility.GetCurveBindings(clip).Any(binding =>
-                    binding.type == typeof(SkinnedMeshRenderer) &&
-                    binding.propertyName.StartsWith("blendShape.", StringComparison.Ordinal))
-                    ? clip
-                    : null;
-            }
-            if (motion is BlendTree tree)
-            {
-                foreach (var child in tree.children)
+                if (Mathf.Approximately(child.threshold, 0f))
                 {
-                    var nested = FirstBlendshapeClip(child.motion);
-                    if (nested != null) return nested;
+                    if (neutral.HasValue) return null;
+                    neutral = child;
+                }
+                else if (child.threshold > 0f && IsFinite(child.threshold))
+                {
+                    if (positive.HasValue) return null;
+                    positive = child;
+                }
+                else if (child.threshold < 0f && IsFinite(child.threshold))
+                {
+                    if (negative.HasValue) return null;
+                    negative = child;
+                }
+                else
+                {
+                    // NaN/Infinity and duplicate zero thresholds are not an
+                    // invertible parameter-to-pose mapping.
+                    return null;
                 }
             }
-            return null;
+
+            if (!neutral.HasValue || !positive.HasValue ||
+                !IsStaticZeroBlendshapeMotion(neutral.Value.motion) ||
+                !TryGetStaticBlendshapePose(positive.Value.motion, out var positiveClip))
+                return null;
+
+            AnimationClip negativeClip = null;
+            if (negative.HasValue &&
+                !TryGetStaticBlendshapePose(negative.Value.motion, out negativeClip))
+                return null;
+
+            return new AdvancedVisemeExternalPose
+            {
+                positive = positiveClip,
+                negative = negativeClip,
+                positiveThreshold = positive.Value.threshold,
+                negativeThreshold = negative?.threshold ?? -positive.Value.threshold
+            };
         }
 
-        private static IEnumerable<BlendTree> EnumerateBlendTrees(AnimatorController controller)
+        private static bool IsFinite(float value)
         {
-            var seen = new HashSet<BlendTree>();
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private static AdvancedVisemeExternalPose PoseFromDirectTree(BlendTree tree, string parameter)
+        {
+            if (DirectTreeNormalizesBlendValues(tree)) return null;
+            var children = tree.children;
+            if (children == null || children.Length == 0) return null;
+            var matching = children.Where(child =>
+                string.Equals(child.directBlendParameter, parameter, StringComparison.Ordinal)).ToArray();
+            if (matching.Length != 1) return null;
+
+            // A Direct tree is a separable linear sum only when every child is a
+            // static blendshape pose (or an empty safety clip). Rejecting the
+            // entire tree prevents a bone/material or nested nonlinear sibling
+            // from being silently ignored while taking ownership of the mouth.
+            foreach (var child in children)
+            {
+                if (child.motion == null) continue;
+                if (!(child.motion is AnimationClip clip) ||
+                    !IsStaticBlendshapeClip(clip, allowEmpty: true, requireZero: false))
+                    return null;
+            }
+
+            if (!TryGetStaticBlendshapePose(matching[0].motion, out var positive)) return null;
+            var ownedBindings = new HashSet<string>(AnimationUtility.GetCurveBindings(positive)
+                .Select(CurveBindingKey), StringComparer.Ordinal);
+            foreach (var sibling in children)
+            {
+                if (string.Equals(sibling.directBlendParameter, parameter, StringComparison.Ordinal) ||
+                    !(sibling.motion is AnimationClip siblingClip))
+                    continue;
+                if (AnimationUtility.GetCurveBindings(siblingClip)
+                    .Select(CurveBindingKey).Any(ownedBindings.Contains))
+                    return null;
+            }
+            return new AdvancedVisemeExternalPose { positive = positive };
+        }
+
+        private static string CurveBindingKey(EditorCurveBinding binding)
+        {
+            return binding.path + "\u001f" + binding.type.AssemblyQualifiedName + "\u001f" + binding.propertyName;
+        }
+
+        internal static bool DirectTreeNormalizesBlendValues(BlendTree tree)
+        {
+            if (tree == null) return false;
+            // Unity 2022 serializes this Direct BlendTree option but does not
+            // expose it through the public BlendTree API.
+            var serialized = new SerializedObject(tree);
+            var property = serialized.FindProperty("m_NormalizedBlendValues");
+            return property != null && property.boolValue;
+        }
+
+        private static bool TryGetStaticBlendshapePose(Motion motion, out AnimationClip clip)
+        {
+            clip = motion as AnimationClip;
+            return clip != null && IsStaticBlendshapeClip(clip, allowEmpty: false, requireZero: false);
+        }
+
+        private static bool IsStaticZeroBlendshapeMotion(Motion motion)
+        {
+            if (motion == null) return true;
+            return motion is AnimationClip clip &&
+                   IsStaticBlendshapeClip(clip, allowEmpty: true, requireZero: true);
+        }
+
+        private static bool IsStaticBlendshapeClip(
+            AnimationClip clip,
+            bool allowEmpty,
+            bool requireZero)
+        {
+            if (clip == null || AnimationUtility.GetObjectReferenceCurveBindings(clip).Length != 0)
+                return false;
+            var bindings = AnimationUtility.GetCurveBindings(clip);
+            if (bindings.Length == 0) return allowEmpty;
+            foreach (var binding in bindings)
+            {
+                if (binding.type != typeof(SkinnedMeshRenderer) ||
+                    !binding.propertyName.StartsWith("blendShape.", StringComparison.Ordinal))
+                    return false;
+                var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                if (!IsStaticCurve(curve, requireZero)) return false;
+            }
+            return true;
+        }
+
+        private static bool IsStaticCurve(AnimationCurve curve, bool requireZero)
+        {
+            if (curve == null || curve.length == 0) return false;
+            var keys = curve.keys;
+            var value = keys[0].value;
+            if (float.IsNaN(value) || float.IsInfinity(value) ||
+                requireZero && !Mathf.Approximately(value, 0f))
+                return false;
+            foreach (var key in keys)
+            {
+                if (float.IsNaN(key.value) || float.IsInfinity(key.value) ||
+                    !Mathf.Approximately(key.value, value))
+                    return false;
+                if (keys.Length > 1 &&
+                    (!IsConstantTangent(key.inTangent) || !IsConstantTangent(key.outTangent)))
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool IsConstantTangent(float tangent)
+        {
+            return float.IsInfinity(tangent) || Mathf.Approximately(tangent, 0f);
+        }
+
+        private IEnumerable<PoseTreeCandidate> EnumerateBlendTrees(
+            AnimatorController controller,
+            string activeParameter)
+        {
+            var seen = new Dictionary<BlendTree, int>();
             foreach (var layer in controller.layers)
-            foreach (var tree in EnumerateBlendTrees(layer.stateMachine, seen))
+            foreach (var tree in EnumerateBlendTrees(layer.stateMachine, seen, activeParameter))
                 yield return tree;
         }
 
-        private static IEnumerable<BlendTree> EnumerateBlendTrees(
+        private IEnumerable<PoseTreeCandidate> EnumerateBlendTrees(
             AnimatorStateMachine stateMachine,
-            HashSet<BlendTree> seen)
+            Dictionary<BlendTree, int> seen,
+            string activeParameter)
         {
             foreach (var state in stateMachine.states)
-            foreach (var tree in EnumerateBlendTrees(state.state.motion, seen))
-                yield return tree;
+            {
+                if (!(state.state.motion is BlendTree tree)) continue;
+                foreach (var reachable in EnumerateBlendTrees(tree, seen, activeParameter, 0))
+                    yield return reachable;
+            }
             foreach (var child in stateMachine.stateMachines)
-            foreach (var tree in EnumerateBlendTrees(child.stateMachine, seen))
+            foreach (var tree in EnumerateBlendTrees(child.stateMachine, seen, activeParameter))
                 yield return tree;
         }
 
-        private static IEnumerable<BlendTree> EnumerateBlendTrees(Motion motion, HashSet<BlendTree> seen)
+        private IEnumerable<PoseTreeCandidate> EnumerateBlendTrees(
+            BlendTree tree,
+            Dictionary<BlendTree, int> seen,
+            string activeParameter,
+            int structuralCost)
         {
-            if (!(motion is BlendTree tree) || !seen.Add(tree)) yield break;
-            yield return tree;
+            if (tree == null || seen.TryGetValue(tree, out var previousCost) && previousCost <= structuralCost)
+                yield break;
+            seen[tree] = structuralCost;
+            yield return new PoseTreeCandidate(tree, structuralCost);
+
             foreach (var child in tree.children)
-            foreach (var nested in EnumerateBlendTrees(child.motion, seen))
-                yield return nested;
+            {
+                if (!(child.motion is BlendTree nested)) continue;
+                var factorable = tree.blendType == BlendTreeType.Direct &&
+                                 !DirectTreeNormalizesBlendValues(tree) &&
+                                 IsSafeAncestorWeight(child.directBlendParameter, activeParameter);
+                // A non-factorable parent is a selector or coupled helper. Its
+                // static child can still be an exact rig basis, but rank it below
+                // mappings reached through only identity/activity gates. Requiring
+                // PoseFromTree itself to be static and separable prevents animator,
+                // material, bone, and nonlinear motions from leaking through.
+                var childCost = structuralCost + (factorable ? 0 : 1);
+                foreach (var reachable in EnumerateBlendTrees(
+                             nested, seen, activeParameter, childCost))
+                    yield return reachable;
+            }
+        }
+
+        private bool IsSafeAncestorWeight(string parameter, string activeParameter)
+        {
+            if (!string.IsNullOrEmpty(activeParameter) &&
+                string.Equals(parameter, activeParameter, StringComparison.Ordinal))
+                return true;
+
+            // Some controller generators use a private, unwired Float initialized
+            // to one as their Direct-tree identity weight. It has no network source
+            // and therefore cannot be another face channel.
+            return !string.IsNullOrEmpty(parameter) &&
+                   entries.TryGetValue(parameter, out var entry) &&
+                   entry.expression == null &&
+                   !entry.animatorTypeConflict &&
+                   entry.animatorType == AnimatorControllerParameterType.Float &&
+                   Mathf.Approximately(entry.animatorDefault, 1f);
         }
 
         private static IEnumerable<string> SuffixAliases(AdvancedVisemeArticulator articulator, string configured)
@@ -353,6 +706,15 @@ namespace YUCP.Components.Editor
                     break;
                 case AdvancedVisemeArticulator.MouthX: yield return "MouthX"; break;
                 case AdvancedVisemeArticulator.TongueY: yield return "TongueY"; break;
+                case AdvancedVisemeArticulator.TongueX: yield return "TongueX"; break;
+                case AdvancedVisemeArticulator.TongueRoll: yield return "TongueRoll"; break;
+                case AdvancedVisemeArticulator.TongueArchY:
+                    yield return "TongueArchY";
+                    yield return "TongueBend";
+                    break;
+                case AdvancedVisemeArticulator.TongueShape: yield return "TongueShape"; break;
+                case AdvancedVisemeArticulator.TongueTwistRight: yield return "TongueTwistRight"; break;
+                case AdvancedVisemeArticulator.TongueTwistLeft: yield return "TongueTwistLeft"; break;
             }
         }
 
@@ -384,13 +746,33 @@ namespace YUCP.Components.Editor
                     foreach (var parameter in parameters.parameters)
                     {
                         if (parameter == null || string.IsNullOrEmpty(parameter.name)) continue;
-                        GetOrCreateEntry(parameter.name).expression = parameter;
+                        var entry = GetOrCreateEntry(parameter.name);
+                        if (entry.expression != null && entry.expression.valueType != parameter.valueType)
+                        {
+                            entry.expressionTypeConflict = true;
+                            continue;
+                        }
+                        if (!entry.expressionTypeConflict) entry.expression = parameter;
                     }
                     return;
                 case AnimatorController controller:
                     controllers.Add(controller);
                     foreach (var parameter in controller.parameters)
-                        GetOrCreateEntry(parameter.name).animatorType = parameter.type;
+                    {
+                        var entry = GetOrCreateEntry(parameter.name);
+                        if (entry.animatorType.HasValue && entry.animatorType != parameter.type)
+                        {
+                            entry.animatorTypeConflict = true;
+                            continue;
+                        }
+                        if (entry.animatorTypeConflict) continue;
+                        entry.animatorType = parameter.type;
+                        entry.animatorDefault = parameter.type == AnimatorControllerParameterType.Bool
+                            ? (parameter.defaultBool ? 1f : 0f)
+                            : parameter.type == AnimatorControllerParameterType.Int
+                                ? parameter.defaultInt
+                                : parameter.defaultFloat;
+                    }
                     return;
                 case AnimatorOverrideController overrides:
                     Visit(overrides.runtimeAnimatorController);

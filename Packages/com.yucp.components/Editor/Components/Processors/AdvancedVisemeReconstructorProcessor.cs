@@ -40,6 +40,16 @@ namespace YUCP.Components.Editor
             AdvancedVisemeArticulator.TongueY
         };
 
+        private static readonly AdvancedVisemeArticulator[] FullTongueExtraArticulators =
+        {
+            AdvancedVisemeArticulator.TongueX,
+            AdvancedVisemeArticulator.TongueRoll,
+            AdvancedVisemeArticulator.TongueArchY,
+            AdvancedVisemeArticulator.TongueShape,
+            AdvancedVisemeArticulator.TongueTwistRight,
+            AdvancedVisemeArticulator.TongueTwistLeft
+        };
+
         public int callbackOrder => int.MinValue + 190;
 
         public bool OnPreprocessAvatar(GameObject avatarRoot)
@@ -117,7 +127,10 @@ namespace YUCP.Components.Editor
                 var reuseExistingTracking = false;
                 var trackingPrefix = component.NormalizedPrefix;
                 var trackingActiveParameter = "LipTrackingActive";
+                AnimatorControllerParameterType? trackingActiveAnimatorType = null;
+                var trackingActiveDefault = 0f;
                 Dictionary<AdvancedVisemeArticulator, string> trackingParameterNames = null;
+                Dictionary<string, string> auxiliaryTrackingParameterNames = null;
                 AdvancedVisemeTrackingResolution trackingResolution = null;
 
                 if (trackingEnabled && (component.trackingInputs == AdvancedVisemeTrackingInputs.Auto ||
@@ -127,12 +140,17 @@ namespace YUCP.Components.Editor
                     if (trackingResolution != null)
                     {
                         reuseExistingTracking = true;
-                        effectiveTrackingInputs = trackingResolution.quality
-                            ? AdvancedVisemeTrackingInputs.Quality12
-                            : AdvancedVisemeTrackingInputs.Balanced8;
+                        effectiveTrackingInputs = trackingResolution.fullTongue
+                            ? AdvancedVisemeTrackingInputs.FullTongue18
+                            : trackingResolution.quality
+                                ? AdvancedVisemeTrackingInputs.Quality12
+                                : AdvancedVisemeTrackingInputs.Balanced8;
                         trackingPrefix = trackingResolution.prefix;
                         trackingActiveParameter = trackingResolution.activeParameter;
+                        trackingActiveAnimatorType = trackingResolution.activeAnimatorType;
+                        trackingActiveDefault = trackingResolution.activeAnimatorDefault;
                         trackingParameterNames = trackingResolution.parameters;
+                        auxiliaryTrackingParameterNames = trackingResolution.auxiliaryParameters;
                     }
                     else if (component.trackingInputs == AdvancedVisemeTrackingInputs.ReuseExisting)
                     {
@@ -140,9 +158,19 @@ namespace YUCP.Components.Editor
                     }
                     else
                     {
-                        effectiveTrackingInputs = AdvancedVisemeTrackingInputs.Balanced8;
+                        // Auto may legitimately find no face-tracking installation,
+                        // in which case speech-only fallback is safe. It must not,
+                        // however, silently take lower-face ownership after finding
+                        // an ambiguous or malformed installation: the generated
+                        // Override layer would then hide the working template.
+                        if (ownsMouth && !string.IsNullOrEmpty(resolutionError))
+                            return Fail(component, resolutionError);
+                        effectiveTrackingInputs = AdvancedVisemeTrackingInputs.Disabled;
                     }
                 }
+
+                trackingEnabled = ShouldEnableTracking(
+                    component.trackingInputs, trackingResolution != null);
 
                 if (trackingEnabled && !ValidateTrackingParameters(
                         component, profile, trackingPrefix, existing, effectiveTrackingInputs,
@@ -157,6 +185,16 @@ namespace YUCP.Components.Editor
                 var resolvedBlendShapes = sourceMesh != null
                     ? ResolveArticulatorBlendShapes(sourceMesh, profile)
                     : new Dictionary<AdvancedVisemeArticulator, string>();
+                var duplicateBlendShape = resolvedBlendShapes
+                    .GroupBy(pair => pair.Value, StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault(group => group.Count() > 1);
+                if (duplicateBlendShape != null &&
+                    component.mouthOwnership == AdvancedVisemeMouthOwnership.DriveLowerFace)
+                {
+                    return Fail(component,
+                        $"Blendshape '{duplicateBlendShape.Key}' is mapped to multiple articulators " +
+                        $"({string.Join(", ", duplicateBlendShape.Select(pair => pair.Key))}). Give each driven articulator a unique shape or animation override.");
+                }
                 var hasArticulatorAnimation = profile.articulatorBindings.Any(b =>
                     b != null && (b.animationOverride != null || b.negativeAnimationOverride != null)) ||
                     externalPoses.Count > 0;
@@ -178,17 +216,57 @@ namespace YUCP.Components.Editor
                     ? BuildCalibrationBasis(sourceMesh, resolvedBlendShapes)
                     : new List<AdvancedVisemeMeshCalibrator.BasisInput>();
                 var hasVisemeOverrides = profile.visemePoses.Any(p => p != null && p.animationOverride != null);
-                if (component.mouthOwnership == AdvancedVisemeMouthOwnership.DriveLowerFace && basis.Count > 0 &&
-                    !hasVisemeOverrides && externalPoses.Count == 0)
+                var hasArticulatorOverrides = profile.articulatorBindings.Any(binding =>
+                    binding != null &&
+                    (binding.animationOverride != null || binding.negativeAnimationOverride != null));
+                if (component.mouthOwnership == AdvancedVisemeMouthOwnership.DriveLowerFace && sourceMesh != null &&
+                    !hasVisemeOverrides && !hasArticulatorOverrides)
                 {
                     var indices = visemeNames.Select(name => string.IsNullOrEmpty(name) ? -1 : sourceMesh.GetBlendShapeIndex(name)).ToArray();
-                    calibration = AdvancedVisemeMeshCalibrator.Build(sourceMesh, indices, basis);
-                    if (!calibration.success)
+                    if (reuseExistingTracking)
                     {
-                        Debug.LogWarning($"[YUCP Advanced Viseme] Residual calibration was unavailable: {calibration.error}. Falling back to direct viseme poses.", component);
+                        var poseBasis = new List<AdvancedVisemeMeshCalibrator.PoseBasisInput>();
+                        foreach (var pair in externalPoses.OrderBy(pair => (int)pair.Key))
+                        {
+                            if (pair.Value?.positive != null)
+                                poseBasis.Add(new AdvancedVisemeMeshCalibrator.PoseBasisInput(
+                                    pair.Key, 1, pair.Value.positive, rendererPath));
+                            if (pair.Value?.negative != null)
+                                poseBasis.Add(new AdvancedVisemeMeshCalibrator.PoseBasisInput(
+                                    pair.Key, -1, pair.Value.negative, rendererPath));
+                        }
+
+                        if (poseBasis.Count > 0)
+                        {
+                            try
+                            {
+                                calibration = AdvancedVisemeMeshCalibrator.BuildFromPoses(
+                                    sourceMesh, indices, poseBasis);
+                            }
+                            catch (Exception exception)
+                            {
+                                Debug.LogWarning(
+                                    $"[YUCP Advanced Viseme] Tailored tracking residual calibration was unavailable: " +
+                                    $"{exception.Message}. Falling back to direct viseme poses.", component);
+                                calibration = null;
+                            }
+                        }
+                    }
+                    else if (basis.Count > 0)
+                    {
+                        calibration = AdvancedVisemeMeshCalibrator.Build(sourceMesh, indices, basis);
+                    }
+
+                    if (calibration != null && !calibration.success)
+                    {
+                        var source = reuseExistingTracking ? "Tailored tracking residual" : "Residual";
+                        Debug.LogWarning(
+                            $"[YUCP Advanced Viseme] {source} calibration was unavailable: " +
+                            $"{calibration.error}. Falling back to direct viseme poses.", component);
                         calibration = null;
                     }
-                    else
+
+                    if (calibration != null)
                     {
                         profile.SetDiagnostics(calibration.fitRms, calibration.fitMaximum);
                         if (AssetDatabase.Contains(profile)) EditorUtility.SetDirty(profile);
@@ -211,7 +289,10 @@ namespace YUCP.Components.Editor
                     effectiveTrackingInputs = effectiveTrackingInputs,
                     reuseExistingTracking = reuseExistingTracking,
                     trackingActiveParameter = trackingActiveParameter,
+                    trackingActiveAnimatorType = trackingActiveAnimatorType,
+                    trackingActiveDefault = trackingActiveDefault,
                     trackingParameterNames = trackingParameterNames,
+                    auxiliaryTrackingParameterNames = auxiliaryTrackingParameterNames,
                     sourceVisemeBlendShapes = visemeNames,
                     calibration = calibration,
                     calibrationBasis = basis,
@@ -221,6 +302,8 @@ namespace YUCP.Components.Editor
                     trackingEnabled = trackingEnabled,
                     existingExpressionParameters = new HashSet<string>(existing.Keys, StringComparer.Ordinal)
                 };
+                if (!ValidateTuningParameters(request, existing, out var tuningError))
+                    return Fail(component, tuningError);
                 var built = AdvancedVisemeAnimatorBuilder.Build(request);
 
                 var controllerHost = new GameObject("__YUCP Advanced Viseme Controller");
@@ -233,7 +316,14 @@ namespace YUCP.Components.Editor
                 foreach (var global in built.globalParameters.Concat(built.externalParameters).Distinct())
                     fullController.AddGlobalParam(global);
 
-                if (trackingEnabled && component.createFaceTrackingToggle)
+                if (built.tuningParameters.Count > 0)
+                {
+                    var tuningMenu = AdvancedVisemeRuntimeMenuBuilder.Build(
+                        folder + "/TuningMenu.asset", built.tuningParameters);
+                    fullController.AddMenu(tuningMenu, component.tuningMenuPath);
+                }
+
+                if (ShouldCreateTrackingToggle(component, trackingEnabled))
                 {
                     var toggle = FuryComponents.CreateToggle(avatarRoot);
                     toggle.SetMenuPath(component.faceTrackingMenuPath);
@@ -248,10 +338,15 @@ namespace YUCP.Components.Editor
                     component, profile, trackingPrefix, existing, effectiveTrackingInputs,
                     reuseExistingTracking, trackingActiveParameter);
                 var calibrationText = calibration != null
-                    ? $", residual fit RMS {calibration.fitRms:G4} (exact after residual)"
+                    ? component.reconstructionMode == AdvancedVisemeReconstructionMode.Normal
+                        ? $", residual fit RMS {calibration.fitRms:G4} (exact convex reconstruction)"
+                        : $", residual fit RMS {calibration.fitRms:G4} (exact Beta endpoints)"
                     : ", direct-pose fallback";
                 var trackingText = trackingResolution != null ? $", {trackingResolution.Summary}" : string.Empty;
-                component.SetBuildSummary($"Built {built.globalParameters.Distinct().Count()} reusable outputs, +{trackingBits} synced bits{trackingText}{calibrationText}");
+                var tuningText = built.tuningParameters.Count > 0
+                    ? $", {built.tuningParameters.Count} saved local sliders (0 synced bits)"
+                    : string.Empty;
+                component.SetBuildSummary($"Built {built.globalParameters.Distinct().Count()} reusable outputs, +{trackingBits} synced bits{tuningText}{trackingText}{calibrationText}");
                 EditorUtility.SetDirty(component);
                 EditorUtility.SetDirty(descriptor);
                 AssetDatabase.SaveAssets();
@@ -286,9 +381,7 @@ namespace YUCP.Components.Editor
             out string error)
         {
             error = null;
-            var required = effectiveInputs == AdvancedVisemeTrackingInputs.Quality12
-                ? BalancedArticulators.Concat(QualityExtraArticulators)
-                : BalancedArticulators.AsEnumerable();
+            var required = EnabledTrackingArticulators(effectiveInputs);
             foreach (var articulator in required)
             {
                 if (reuseExisting)
@@ -333,7 +426,10 @@ namespace YUCP.Components.Editor
             }
 
             var manual = component.NormalizedPrefix + "/FaceTrackingEnabled";
-            if (component.createFaceTrackingToggle && existing.TryGetValue(manual, out var manualParameter) && manualParameter.valueType != VRCExpressionParameters.ValueType.Bool)
+            if (component.trackingInputs != AdvancedVisemeTrackingInputs.Auto &&
+                component.createFaceTrackingToggle &&
+                existing.TryGetValue(manual, out var manualParameter) &&
+                manualParameter.valueType != VRCExpressionParameters.ValueType.Bool)
             {
                 error = $"Existing parameter '{manual}' must be a Bool.";
                 return false;
@@ -350,6 +446,44 @@ namespace YUCP.Components.Editor
             return true;
         }
 
+        private static bool ValidateTuningParameters(
+            AdvancedVisemeAnimatorBuilder.Request request,
+            IReadOnlyDictionary<string, VRCExpressionParameters.Parameter> existing,
+            out string error)
+        {
+            error = null;
+            if (!request.component.createTuningMenu) return true;
+            foreach (var control in AdvancedVisemeTuning.Controls)
+            {
+                if ((request.component.tuningMenuSections &
+                     AdvancedVisemeTuning.Section(control)) == 0 ||
+                    !AdvancedVisemeAnimatorBuilder.IsTuningControlRelevant(request, control))
+                    continue;
+                var name = request.component.TuningParameterName(control);
+                if (!existing.TryGetValue(name, out var parameter)) continue;
+                if (parameter.valueType != VRCExpressionParameters.ValueType.Float)
+                {
+                    error = $"Existing tuning parameter '{name}' must be Float, but is " +
+                            $"{parameter.valueType}. Change its type or use another parameter prefix.";
+                    return false;
+                }
+                if (parameter.networkSynced)
+                {
+                    error = $"Existing tuning parameter '{name}' is synced. Tuning sliders are " +
+                            "local-only by design; make it unsynced or use another parameter prefix.";
+                    return false;
+                }
+                if (parameter.saved != request.component.saveTuningValues)
+                {
+                    error = $"Existing tuning parameter '{name}' has Saved=" +
+                            $"{parameter.saved}, but this component requests Saved=" +
+                            $"{request.component.saveTuningValues}. Match the setting or use another prefix.";
+                    return false;
+                }
+            }
+            return true;
+        }
+
         private static int IncrementalTrackingBits(
             AdvancedVisemeReconstructorData component,
             VisemeReconstructionProfile profile,
@@ -359,13 +493,11 @@ namespace YUCP.Components.Editor
             bool reuseExisting,
             string activeParameter)
         {
-            if (component.trackingInputs == AdvancedVisemeTrackingInputs.Disabled) return 0;
+            if (effectiveInputs == AdvancedVisemeTrackingInputs.Disabled) return 0;
             var bits = 0;
             if (!reuseExisting)
             {
-                var required = effectiveInputs == AdvancedVisemeTrackingInputs.Quality12
-                    ? BalancedArticulators.Concat(QualityExtraArticulators)
-                    : BalancedArticulators.AsEnumerable();
+                var required = EnabledTrackingArticulators(effectiveInputs);
                 foreach (var articulator in required)
                 {
                     var suffix = profile.FindBinding(articulator)?.trackingParameter;
@@ -379,9 +511,23 @@ namespace YUCP.Components.Editor
                     else if (!existing.ContainsKey(name)) bits += 8;
                 }
             }
-            if (!existing.ContainsKey(activeParameter)) bits += 1;
-            if (component.createFaceTrackingToggle && !existing.ContainsKey(component.NormalizedPrefix + "/FaceTrackingEnabled")) bits += 1;
+            if (component.trackingInputs != AdvancedVisemeTrackingInputs.Auto)
+            {
+                if (!existing.ContainsKey(activeParameter)) bits += 1;
+                if (component.createFaceTrackingToggle &&
+                    !existing.ContainsKey(component.NormalizedPrefix + "/FaceTrackingEnabled")) bits += 1;
+            }
             return bits;
+        }
+
+        internal static bool ShouldCreateTrackingToggle(
+            AdvancedVisemeReconstructorData component,
+            bool trackingEnabled)
+        {
+            return trackingEnabled &&
+                   component != null &&
+                   component.trackingInputs != AdvancedVisemeTrackingInputs.Auto &&
+                   component.createFaceTrackingToggle;
         }
 
         private static int ParameterBits(VRCExpressionParameters.Parameter parameter)
@@ -455,6 +601,34 @@ namespace YUCP.Components.Editor
             }
         }
 
+        internal static bool ShouldEnableTracking(
+            AdvancedVisemeTrackingInputs mode,
+            bool compatibleExistingSource)
+        {
+            return mode != AdvancedVisemeTrackingInputs.Disabled &&
+                   (mode != AdvancedVisemeTrackingInputs.Auto || compatibleExistingSource);
+        }
+
+        private static IEnumerable<AdvancedVisemeArticulator> EnabledTrackingArticulators(
+            AdvancedVisemeTrackingInputs mode)
+        {
+            if (mode == AdvancedVisemeTrackingInputs.Disabled ||
+                mode == AdvancedVisemeTrackingInputs.Auto ||
+                mode == AdvancedVisemeTrackingInputs.ReuseExisting)
+                yield break;
+
+            foreach (var articulator in BalancedArticulators) yield return articulator;
+            if (mode == AdvancedVisemeTrackingInputs.Quality12 ||
+                mode == AdvancedVisemeTrackingInputs.FullTongue18)
+            {
+                foreach (var articulator in QualityExtraArticulators) yield return articulator;
+            }
+            if (mode == AdvancedVisemeTrackingInputs.FullTongue18)
+            {
+                foreach (var articulator in FullTongueExtraArticulators) yield return articulator;
+            }
+        }
+
         private static string FindBlendShape(Mesh mesh, params string[] candidates)
         {
             if (mesh == null) return null;
@@ -523,7 +697,24 @@ namespace YUCP.Components.Editor
                     ? mesh.GetInstanceID().ToString()
                     : AssetDatabase.GetAssetDependencyHash(meshPath).ToString();
             var profileJson = EditorJsonUtility.ToJson(profile);
-            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{component.createFaceTrackingToggle}|{component.faceTrackingMenuPath}|{component.existingTrackingPrefix}";
+            var coarticulationDependency = component.reconstructionMode ==
+                                           AdvancedVisemeReconstructionMode.BetaCoarticulation
+                ? AdvancedVisemeCoarticulationModel.ModelVersion + ":" +
+                  AdvancedVisemeCoarticulationModel.ContentSha256 + ":tongue:" +
+                  AdvancedVisemeVisibleTongueResidual.ModelVersion + ":" +
+                  AdvancedVisemeVisibleTongueResidual.BalancedContentSha256 + ":" +
+                  AdvancedVisemeVisibleTongueResidual.QualityContentSha256 + ":phone:" +
+                  AdvancedVisemeHiddenPhonePosterior.ModelVersion + ":" +
+                  AdvancedVisemeHiddenPhonePosterior.ContentSha256
+                : "normal";
+            var toggleDependency = component.trackingInputs == AdvancedVisemeTrackingInputs.Auto
+                ? "auto-reuse"
+                : component.createFaceTrackingToggle + ":" + component.faceTrackingMenuPath;
+            var tuningDependency = component.createTuningMenu + ":" +
+                                   component.tuningMenuPath + ":" +
+                                   component.saveTuningValues + ":" +
+                                   component.tuningMenuSections;
+            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|{component.existingTrackingPrefix}";
             return Hash128.Compute(settings).ToString();
         }
 

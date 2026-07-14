@@ -5,7 +5,6 @@ All notable changes to YUCP Components will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Viseme Test Emulator component with microphone selection, automatic Play Mode execution, continuous 15-weight Oculus descriptor output, dominant `Viseme`/continuous `Voice` parameter driving, Mouth & Jaw Tracking Control suppression, Gesture Manager integration, manual testing, and automatic Oculus LipSync plugin support.
 - Custom Object Sync grouping system: add a Group ID field per component and automatically merge matching components into a single VRLabs Custom Object Sync rig to reduce parameter usage.
 - Group-aware editing: changing the settings on any component automatically propagates the new values to every member of the same group, keeping builds consistent.
 - Parameter budget now reflects the actual number of objects in the current group and surfaces the calculated sync cost plus group size summary.
@@ -19,6 +18,50 @@ All notable changes to YUCP Components will be documented in this file.
 
 ### Removed
 - Auto Grip Generator component, editor tooling, and preprocessing pipeline.
+
+## [0.3.39] - 2026-07-13
+
+### Added
+- Viseme Test Emulator component with microphone selection, automatic Play Mode execution, continuous 15-weight Oculus descriptor output, dominant `Viseme`/continuous `Voice` parameter driving, Mouth & Jaw Tracking Control suppression, Gesture Manager integration, manual testing, and automatic Oculus LipSync plugin support.
+- Full Unified Expressions tongue reconstruction and tracking (`TongueX`, `TongueY`, roll, arch, shape, and independent twists), including an optimized 57-bit FullTongue18 preset and automatic zero-cost reuse when a compatible VRCFT template already provides the channels.
+- Reusable speech evidence outputs for vowel, bilabial, labiodental, sibilant, coronal, dorsal, rhotic, tongue-contact, M-compatible (`PP` = `p`/`b`/`m`), and N-compatible (`nn` = `n`/`l`) confidence. M and N are evidence signals, not phoneme classifiers.
+- Separate Normal and Beta Coarticulation reconstruction modes. Beta uses a reproducibly trained, frame-rate-correct SPIRE EMA transition model with independent jaw, lip, tongue-tip, and tongue-body context; Normal remains the default and does not build the experimental graph.
+- Separate SPIRE-trained Balanced and Quality visible-face tongue estimators for Beta mode. They infer only bounded tongue-tip advance and height through authored headroom, add no synced parameters, and automatically yield to native tongue motion.
+- Confidence-gated Beta hidden-phone inference for the ambiguous `/m/` versus `/n,l/` case. Aperture, Balanced, and Quality models combine the actual Oculus winner history with tracked face dynamics, expose local `Speech/Hypothesis/{M,N,Confidence}` outputs, and only condition unobserved tongue priors.
+- Zero-cost, exact-prefix reuse of an existing Float `SoftPalateClose` channel as optional oral-evidence confidence; no channel is generated or synced for it.
+- A build-only complement-space `PP - nn` residual morph for calibrated meshes. Beta can transfer inferred interior/tongue detail while remaining orthogonal to every driven jaw/lip articulator axis; source meshes and parameter budgets are unchanged.
+- Reproducible, pinned corpus-training tooling, held-out metrics, generated coefficient provenance, and CC BY 4.0 third-party notices.
+- Saved, local radial-puppet tuning menus for speech, tracking, phonetics, and the full synthesized tongue rig. The component can expose only the selected groups, and every generated tuning parameter is unsynced (zero synced bits).
+- Adaptive soft speech hangover with a causal leaky talkspurt-history observer, an unsynced `Speech/Talking` output, and a local `Silence Stability` slider. Established speech earns more protection from brief `sil` gaps; its existing viseme identity and pose gain are retained without amplifying quiet speech; real non-silence visemes still interrupt immediately; and `Voice` alone can never pin an old mouth pose.
+
+### Changed
+- Advanced Viseme Reconstructor now uses a progressive YUCP inspector with inline motion/profile sliders, selectable runtime-menu groups, mapping coverage, focused viseme and articulator editors, fit analysis, safe missing-only auto-mapping, and an integrated Viseme Test Emulator shortcut.
+- Runtime tuning is wired into the observer and fusion graph: users can adjust frame-rate-correct speech/tracking response, voice sensitivity, quiet motion, remote trust, residual contradiction handling, phonetic assists, hidden-phone inference, authored detail, and each synthesized tongue axis without weakening exact settled local tracking authority.
+- Advanced Viseme Reconstructor now gives settled active local measurements exact precedence on every measured visible axis. Compatible tailored VRCFT poses are calibrated as composite geometric axes, while the orthogonal authored viseme residual preserves tongue, teeth, interior-mouth, and other non-conflicting motion instead of erasing the entire viseme.
+- Reused and generated VRCFT streams now pass through one One-Euro-inspired adaptive fast/slow observer (not an exact 1€ implementation) that suppresses stationary OSC/quantization jitter without restoring the former post-speech lag. Generic post-fusion mouth clamps no longer alter tailored template coordinates.
+- Beta Coarticulation continuously mixes both axes of its trained transition table instead of hard-switching destination columns when VRChat changes the winning index.
+- Direct-pose fallback now applies per-articulator corrections, so local/remote reliability, phonetic constraints, and inferred tongue motion affect the visible mesh without additive overextension.
+- Auto tracking is now strictly reuse-only: it adds no synced parameters or duplicate menu toggle and falls back to speech reconstruction when no compatible installation is present. Full reconstructed articulation outputs no longer depend on the selected measurement preset.
+
+### Fixed
+- Reused face-tracking templates no longer suppress every authored viseme at full local tracking authority. The output decomposes `R = V - U C` into tracking-parallel conflict and orthogonal detail, then reconstructs `U z + d(R_perp + r R_parallel)p`. Exact tracked jaw/lip coordinates are preserved while tongue, teeth, and interior-mouth detail cannot be erased by ordinary face movement.
+- Partial custom face-tracking templates no longer fabricate missing `/v2/` channels and pull those articulators toward zero.
+- Custom-prefixed VRCFT tracking-active parameters are paired with their own source; both existing Float Animator gates and genuine Bool gates are supported without controller type conflicts.
+- Activity gates from unrelated prefixes and conflicting Animator parameter declarations are rejected instead of being paired by traversal order.
+- Authored non-neutral `sil` poses now participate in articulation, direct output, and residual reconstruction like the other 14 visemes.
+- Reused-template ownership now accepts only complete, static, unit, separable target-face blendshape poses and rejects normalized, nested, 2D, shared-binding, bone, material, and cross-renderer mappings.
+- Beta tongue inference now observes unfiltered calibrated tracking exactly once, uses an unscaled phonetic center, and applies phonetic tracking confidence once instead of squaring vowel attenuation.
+- Quiet-speech Beta conditioning now uses speech presence for posterior authority and applies expressive gain once, avoiding squared voice attenuation. Tailored templates with only jaw/open/closed mouth semantics can use the Aperture posterior without fabricated protrusion channels.
+- Hidden-phone training now reproduces the exact Beta group-center/common-fast observer, uses occurrence-count reliability rather than class-balanced pseudo-counts, and applies a model-specific empirical support gate before changing tongue priors.
+- Hidden-phone eligibility now keeps every forced-phone occurrence in its denominator, so vowels, silence, stops, and unrelated consonants make the posterior abstain instead of inheriting confidence from a decaying `PP/nn` tail.
+- Conservative generated factor envelopes prevent Animator BlendTree intermediate clipping while remaining algebraically equivalent to the trained model through the final output clamp.
+- Articulator clip overrides no longer enter residual mode and then disappear from the generated output.
+- Profile migration preserves authored `TongueY` values and intentionally removed bindings instead of restoring defaults on every validation pass.
+- Duplicate articulator mappings to one driven blendshape now fail clearly instead of summing the same shape past its authored range.
+- Voice-assisted speech activity no longer flickers the full reconstruction on transient `sil` frames, phonetic constraints use monotone soft projections, filtered strong visible contradictions fade only the tracker-parallel part of calibrated residual correctives, and unsupported tongue noise must be sustained before native capability latches.
+- Short microphone-threshold crossings and VRChat `sil` gaps no longer collapse the viseme simplex for a frame. Confirmed speech earns a bounded release hold that grows with the talkspurt and always converges back to the authored silence pose.
+- Coupled viseme and calibrated-residual fading no longer waits for an unrelated all-seven-channel ownership test, so a locally tracked `aa` cannot move an already measured aperture merely because another visible channel is absent.
+- PP, FF, and sibilant projections now yield on locally measured target axes while remaining available for missing measurements and conservative remote fusion. One-sided signed templates keep their unsupported direction neutral, while distinct positive/negative poses are corrected as independent rays so Smile-to-Sad crossings cannot stack both shapes.
 
 ## [0.3.38] - 2026-07-12
 

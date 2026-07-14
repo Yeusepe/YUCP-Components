@@ -1,0 +1,673 @@
+{
+  "contentSha256": "0bcc06e661ed1b7e4e45a03a6051a3fcb51c65077d3326a4c85948f2cad8f5d8",
+  "description": "Dimensionless Beta-only three-input visible-face residual inference for TongueOut and TongueY.",
+  "evaluation": {
+    "heldoutAxisImprovementPercent": [
+      9.913648303992783,
+      13.340006080922183
+    ],
+    "heldoutEvaluationFrames": 25329,
+    "heldoutImprovementPercent": 11.689541896776701,
+    "heldoutSpeakerImprovementPercent": {
+      "TongueOut": [
+        7.536994422700527,
+        14.358472871566896,
+        8.555714395550428,
+        10.883014747272135
+      ],
+      "TongueY": [
+        10.725182030517233,
+        11.55858007556132,
+        7.993413723560727,
+        24.121977794507742
+      ]
+    },
+    "heldoutWithReliabilityPercent": 11.662735770866862,
+    "metric": "Relative reduction in viseme-only residual MSE; higher is better.",
+    "runtimeOutputHeldoutImprovementPercent": {
+      "TongueOut": 9.913648303992783,
+      "TongueY": 13.340006080922183
+    },
+    "sensitivityResampling": {
+      "heldoutSpeakers": [
+        9,
+        10,
+        11,
+        12
+      ],
+      "resamples": 100000,
+      "seed": 20260713
+    },
+    "speakerLosoImprovementPercent": 9.900605995910283,
+    "speakerLosoWithReliabilityPercent": 10.328123441115943,
+    "splitPolicy": "Fit speakers 1-6, development speakers 7-8, and held-out speakers 9-12; prompt ranges are disjoint exactly as pinned in source_manifest.json.",
+    "stratifiedUtteranceBootstrap95Percent": {
+      "TongueOut": {
+        "lower": 5.730481223591603,
+        "median": 9.904205363324936,
+        "upper": 13.850308906645477
+      },
+      "TongueY": {
+        "lower": 10.684804208780502,
+        "median": 13.34599967073181,
+        "upper": 15.895384989855215
+      }
+    },
+    "wholeSpeakerCluster95Percent": {
+      "TongueOut": {
+        "lower": 7.98804642706421,
+        "median": 9.913648303993316,
+        "upper": 12.601549537416757
+      },
+      "TongueY": {
+        "lower": 9.2318322218357,
+        "median": 13.340006080922706,
+        "upper": 20.271144234034555
+      }
+    }
+  },
+  "featureOrder": [
+    "current[3]",
+    "current-fast[3]",
+    "fast-slow[3]"
+  ],
+  "limitations": [
+    "This is a bounded estimate from visible motion, not measured tongue tracking.",
+    "Balanced has no jaw-advance measurement and is less accurate than Quality.",
+    "The held-out gains remain modest and are estimates from only four held-out speakers.",
+    "The corpus is midsagittal and cannot support lateral, roll, or twist inference.",
+    "The estimator must remain gated to Beta mode and yield to measured tongue tracking.",
+    "EMA geometry and Unified Expressions are not paired domains; the semantic mapping is not VRCFT-validated."
+  ],
+  "model": {
+    "featureAbsP99": [
+      1.0,
+      1.0,
+      1.0,
+      0.3302732,
+      0.36849543,
+      0.251901879,
+      0.231838513,
+      0.245380813,
+      0.181397675
+    ],
+    "featureAbsP995": [
+      1.0,
+      1.0,
+      1.0,
+      0.37478875,
+      0.414346974,
+      0.284286081,
+      0.257909416,
+      0.269640154,
+      0.205588442
+    ],
+    "formula": "h=x*visibleProjection; t=sum_v p[v]*(visemeBias[v]+h*visemeMix[v]); y=t*outputProjection; y*=sum_v p[v]*visemeReliability[v]",
+    "outputProjection": [
+      [
+        0.707605171,
+        0.70660804
+      ],
+      [
+        -0.70660804,
+        0.707605171
+      ]
+    ],
+    "visemeBias": [
+      [
+        0.021204426,
+        -0.017262782
+      ],
+      [
+        -0.074393578,
+        -0.098786834
+      ],
+      [
+        -0.065368759,
+        -0.07788132
+      ],
+      [
+        0.150585341,
+        -0.125909346
+      ],
+      [
+        0.101581223,
+        0.121576791
+      ],
+      [
+        0.065006158,
+        -0.046702954
+      ],
+      [
+        0.082412944,
+        -0.042204177
+      ],
+      [
+        0.107013629,
+        -0.099888267
+      ],
+      [
+        0.134349856,
+        0.025882679
+      ],
+      [
+        -0.041560737,
+        0.060303805
+      ],
+      [
+        -0.010505556,
+        -0.005317225
+      ],
+      [
+        0.095805138,
+        -0.01986848
+      ],
+      [
+        0.100725447,
+        -0.0446033
+      ],
+      [
+        -0.214500673,
+        -0.011551946
+      ],
+      [
+        -0.111858261,
+        -0.026362208
+      ]
+    ],
+    "visemeMix": [
+      [
+        [
+          0.213001251,
+          -0.004420158
+        ],
+        [
+          0.008586486,
+          -0.046375689
+        ],
+        [
+          -0.036262532,
+          -0.007411091
+        ],
+        [
+          -0.023695788,
+          0.008275385
+        ]
+      ],
+      [
+        [
+          0.084192946,
+          -0.011563512
+        ],
+        [
+          0.043993883,
+          -0.039688428
+        ],
+        [
+          0.05106341,
+          -0.008761039
+        ],
+        [
+          -0.023130918,
+          -0.015753185
+        ]
+      ],
+      [
+        [
+          0.177517376,
+          -0.057945134
+        ],
+        [
+          0.070402063,
+          -0.055048564
+        ],
+        [
+          0.00941602,
+          -0.006529854
+        ],
+        [
+          -0.003782754,
+          0.011733688
+        ]
+      ],
+      [
+        [
+          0.116793565,
+          -0.052701689
+        ],
+        [
+          0.029843086,
+          -0.110118554
+        ],
+        [
+          0.094204454,
+          -0.069421281
+        ],
+        [
+          0.019123968,
+          -0.03851238
+        ]
+      ],
+      [
+        [
+          0.08342002,
+          0.000682833
+        ],
+        [
+          -0.020644542,
+          -0.117050575
+        ],
+        [
+          0.107397028,
+          0.075640862
+        ],
+        [
+          -0.025147036,
+          0.047998326
+        ]
+      ],
+      [
+        [
+          0.209851191,
+          -0.026697021
+        ],
+        [
+          -0.03750707,
+          -0.095814802
+        ],
+        [
+          0.005307787,
+          -0.030739776
+        ],
+        [
+          -0.014636015,
+          0.002860704
+        ]
+      ],
+      [
+        [
+          0.066398594,
+          -0.138291555
+        ],
+        [
+          0.027484441,
+          -0.036381164
+        ],
+        [
+          0.009694195,
+          0.120932325
+        ],
+        [
+          -0.03574658,
+          -0.005761992
+        ]
+      ],
+      [
+        [
+          0.104307642,
+          -0.03751535
+        ],
+        [
+          0.021936046,
+          -0.097912945
+        ],
+        [
+          0.02818839,
+          -0.029378651
+        ],
+        [
+          -0.024725912,
+          -0.024522839
+        ]
+      ],
+      [
+        [
+          0.129629879,
+          -0.0601043
+        ],
+        [
+          -0.013838084,
+          -0.067223849
+        ],
+        [
+          0.077055301,
+          0.118155725
+        ],
+        [
+          0.004099033,
+          -0.015935555
+        ]
+      ],
+      [
+        [
+          0.122019865,
+          -0.062746379
+        ],
+        [
+          -0.012613427,
+          -0.057935253
+        ],
+        [
+          0.042733698,
+          0.027828075
+        ],
+        [
+          0.04261808,
+          -0.004996837
+        ]
+      ],
+      [
+        [
+          0.237445715,
+          -0.0200542
+        ],
+        [
+          -0.045297298,
+          -0.07249588
+        ],
+        [
+          -0.037388435,
+          -0.008772486
+        ],
+        [
+          -0.058569993,
+          0.019414545
+        ]
+      ],
+      [
+        [
+          0.060200225,
+          0.019560465
+        ],
+        [
+          -0.009775424,
+          -0.051497231
+        ],
+        [
+          0.025930434,
+          -0.046682998
+        ],
+        [
+          -0.037682951,
+          -0.015857473
+        ]
+      ],
+      [
+        [
+          0.128922156,
+          -0.038986643
+        ],
+        [
+          -0.011102831,
+          -0.080871958
+        ],
+        [
+          0.002132399,
+          0.011114952
+        ],
+        [
+          -0.012626045,
+          -0.022508454
+        ]
+      ],
+      [
+        [
+          0.184251187,
+          0.076917939
+        ],
+        [
+          -0.090337112,
+          -0.133268299
+        ],
+        [
+          -0.034771569,
+          0.008294936
+        ],
+        [
+          0.117756736,
+          -0.022968399
+        ]
+      ],
+      [
+        [
+          0.125424105,
+          0.035873031
+        ],
+        [
+          -0.007853137,
+          -0.116015925
+        ],
+        [
+          -0.037158557,
+          -0.001151419
+        ],
+        [
+          0.033167423,
+          -0.030154339
+        ]
+      ]
+    ],
+    "visemeReliability": [
+      0.849820361,
+      1.0,
+      0.985879951,
+      0.836861938,
+      0.904108326,
+      0.845137662,
+      0.387835222,
+      0.746908612,
+      0.848992185,
+      1.0,
+      1.0,
+      0.497590952,
+      0.775301849,
+      1.0,
+      1.0
+    ],
+    "visibleProjection": [
+      [
+        -1.15254248,
+        -0.587638401,
+        2.160535127,
+        0.907044079
+      ],
+      [
+        0.992081678,
+        -2.184084172,
+        0.328184065,
+        -1.016922248
+      ],
+      [
+        -1.605938036,
+        -1.103557608,
+        -1.318263437,
+        0.340644283
+      ],
+      [
+        -1.675882296,
+        2.20555085,
+        -0.555408625,
+        -2.855722108
+      ],
+      [
+        2.558641209,
+        -0.18022331,
+        -1.736928014,
+        3.735262002
+      ],
+      [
+        -0.715124121,
+        0.151411939,
+        0.078490007,
+        -5.547667145
+      ],
+      [
+        -3.858158151,
+        2.224511155,
+        1.073819989,
+        -5.837874135
+      ],
+      [
+        2.132907553,
+        -1.099475571,
+        -1.135266221,
+        2.326295139
+      ],
+      [
+        0.172311537,
+        1.652030815,
+        -1.060030102,
+        3.015326138
+      ]
+    ]
+  },
+  "modelVersion": 2,
+  "provenance": {
+    "dataset": {
+      "citation": "Bandekar, J., Udupa, S., and Ghosh, P. K. (2024). Articulatory synthesis using representations learnt through phonetic label-aware contrastive loss. Proc. Interspeech 2024, 427-431.",
+      "datasetCardUrl": "https://huggingface.co/datasets/SpireLab/SPIRE_EMA_CORPUS",
+      "license": "CC-BY-4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "paperDoi": "10.21437/Interspeech.2024-1756",
+      "paperUrl": "https://www.isca-archive.org/interspeech_2024/bandekar24_interspeech.html",
+      "processedArchive": "processed.zip",
+      "processedArchiveBytes": 3086792402,
+      "processedArchiveSha256": "ea1c3440af2b69cef0765b97e1e533ea72dae6029c49a175e1a93761c4236d04",
+      "repository": "SpireLab/SPIRE_EMA_CORPUS",
+      "repositoryRevision": "55f21628de95514e3ff22eaccc75e1547d181297",
+      "sampleRateHz": 100.0,
+      "sampleRateSource": "Verified from processed frame counts against paired WAV duration (approximately 100 frames/s). The 62.5 Hz in Bandekar et al. section 3.4 describes a later synthesis/vocoder downsampling step, not the published processed .pt trajectory rate.",
+      "sensorOrder": [
+        "UpperLipX",
+        "UpperLipY",
+        "LowerLipX",
+        "LowerLipY",
+        "JawX",
+        "JawY",
+        "TongueTipX",
+        "TongueTipY",
+        "TongueBodyX",
+        "TongueBodyY",
+        "TongueDorsumX",
+        "TongueDorsumY"
+      ],
+      "title": "SPIRE EMA Corpus"
+    },
+    "licenseNotice": "Derived from the SPIRE EMA Corpus, CC BY 4.0; Bandekar, Udupa, and Ghosh (2024).",
+    "selectedEntryCount": 544,
+    "selectionContentSha256": "81b64a8ba071f2a8fe675f9b40947053c01d2d047b3766f43876912b1cfa20ab",
+    "subset": {
+      "description": "All splits are speaker- and sentence-disjoint. Fit uses prompt ordinals 0-63, held-out evaluation uses 64-95, and development uses 96-111.",
+      "promptPermutation": {
+        "modulus": 460,
+        "multiplier": 137,
+        "offset": 41
+      },
+      "splits": [
+        {
+          "name": "fit",
+          "promptOrdinalCount": 64,
+          "promptOrdinalStart": 0,
+          "speakers": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ]
+        },
+        {
+          "name": "development",
+          "promptOrdinalCount": 16,
+          "promptOrdinalStart": 96,
+          "speakers": [
+            7,
+            8
+          ]
+        },
+        {
+          "name": "heldout",
+          "promptOrdinalCount": 32,
+          "promptOrdinalStart": 64,
+          "speakers": [
+            9,
+            10,
+            11,
+            12
+          ]
+        }
+      ]
+    },
+    "trainedModelContentSha256": "c1d330639540c2d65c359762656fd5a9f6d669f7100f0437c43b3f3b02d2c93c"
+  },
+  "runtimeOutputs": [
+    "TongueOut",
+    "TongueY"
+  ],
+  "runtimeProjection": {
+    "TongueOut": "TongueTipAdvanceRelativeToLips",
+    "TongueY": "TongueTipHeightRelativeToJaw",
+    "reason": "Balanced is independently fitted without jaw advance; it is not the Quality model with a zero-filled input."
+  },
+  "runtimeSourceTargetIndices": [
+    0,
+    1
+  ],
+  "schemaVersion": 1,
+  "transform": {
+    "calibration": "clip((axis-q01)/(q99-q01),0,1)",
+    "calibrationQuantiles": [
+      0.01,
+      0.99
+    ],
+    "features": [
+      "current[3]",
+      "current-fast[3]",
+      "fast-slow[3]"
+    ],
+    "geometry": {
+      "JawAdvance": "JawX-UpperLipX",
+      "JawOpen": "UpperLipY-JawY",
+      "LipAperture": "UpperLipY-LowerLipY",
+      "LipProtrusion": "mean(UpperLipX,LowerLipX)",
+      "TongueTipAdvanceRelativeToLips": "TongueTipX-mean(UpperLipX,LowerLipX)",
+      "TongueTipHeightRelativeToJaw": "TongueTipY-JawY",
+      "source": "ema_trimmed (18-D head-corrected EMA coordinates)"
+    },
+    "headroomFloor": 0.075,
+    "observerInput": "One 24 ms two-pole observer begins from unfiltered calibrated visible semantics after viseme-center headroom normalization.",
+    "observerResponseSeconds": 0.024,
+    "residual": "delta=normalized-trainVisemeMedian; delta/max(delta>=0 ? 1-center : center,0.075), clamped [-1,1]",
+    "runtimeCalibration": "Use tracker calibration for visible ranges and authored profile headroom for target ranges; corpus target calibration is evaluation-only.",
+    "runtimeSemanticMapping": {
+      "JawOpen": "calibrated Unified Expressions JawOpen",
+      "LipAperture": "calibrated MouthOpen opposed by MouthClosed",
+      "LipProtrusion": "calibrated max(LipFunnel,LipPucker) opposed by LipSuck",
+      "validationStatus": "Semantic proxy only: SPIRE EMA and Unified Expressions are unpaired domains."
+    },
+    "sourceSampleRateHz": 100.0
+  },
+  "visemeOrder": [
+    "sil",
+    "PP",
+    "FF",
+    "TH",
+    "DD",
+    "kk",
+    "CH",
+    "SS",
+    "nn",
+    "RR",
+    "aa",
+    "E",
+    "I",
+    "O",
+    "U"
+  ],
+  "visibleAxes": [
+    "JawOpen",
+    "LipAperture",
+    "LipProtrusion"
+  ]
+}

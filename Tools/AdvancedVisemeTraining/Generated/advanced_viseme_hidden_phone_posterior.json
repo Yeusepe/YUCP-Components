@@ -1,0 +1,4870 @@
+{
+  "analysis": {
+    "betaRuntimeParity": {
+      "clockHz": 100.0,
+      "commonFastObservation": "meanRetention=mean_g(r_g); commonFast=fast+clamp(1-meanRetention,0,1)*(raw-fast); generated biases/reliabilities are simplex-mixed with commonFast",
+      "contextObserver": "for each group g, a_g=1-exp(-dt/decay_g); context_g+=a_g*(raw-context_g)",
+      "decaySeconds": [
+        0.05,
+        0.06,
+        0.05,
+        0.06
+      ],
+      "groupOrder": [
+        "Jaw",
+        "Lips",
+        "TongueTip",
+        "TongueBody"
+      ],
+      "groupSlow": "lead_g=clamp(1-r_g,0,1); groupSlow_g=slow+lead_g*(fast-slow); Jaw axes use Jaw group and lip axes use Lips group",
+      "resetSimplex": "raw/viseme-fast/viseme-slow/context start at sil=1 and all other weights=0; visible residual observer poles start at 0",
+      "retention": "r_g = sum_previous sum_current context_g[previous] * R_g[previous,current] * fast[current]",
+      "strength": 1.0,
+      "visemeObserver": "a=1-exp(-dt/0.024); fast+=a*(raw-fast); slow+=a*(fast-slow)"
+    },
+    "bufferSamples": 1024,
+    "bufferSeconds": 0.021333333333333333,
+    "emaTrim": "begin_end is applied in the original synchronized 100 Hz/audio clock before pairing after resampling.",
+    "provider": "Enhanced",
+    "providerValue": 1,
+    "resampling": "deterministic linear interpolation 16 kHz -> 48 kHz",
+    "sampleRateHz": 48000,
+    "sourceAudio": "16 kHz mono PCM16",
+    "timing": "Oculus result is timestamped at DSP-buffer completion minus reported frameDelay; each EMA frame uses only the newest result already available.",
+    "visemeSmoothing": 70
+  },
+  "contentSha256": "718707ccdc47a9d3324d2141f56ffc212f77a67e757ae5895b61d2b704dad1b6",
+  "hardCenterParityControl": {
+    "Aperture": {
+      "crossDomainMinusExact": {
+        "accuracy": 0.0016055247856718857,
+        "brier": 0.0005874534428503553,
+        "ece10": 0.0016580910470948389,
+        "f1M": 0.0016445443823377426,
+        "nll": 0.0013380539733136299
+      },
+      "exactBetaRuntimeCenter": {
+        "accuracy": 0.9240176894613814,
+        "brier": 0.05702691227666895,
+        "ece10": 0.030150822829987173,
+        "f1M": 0.9242245947197727,
+        "nll": 0.202006041483591
+      },
+      "exactMinusHard": {
+        "accuracy": -0.0012056468857939429,
+        "brier": 1.797764636600474e-05,
+        "ece10": -0.005620378292195288,
+        "f1M": -0.0009829416289507398,
+        "nll": 0.0003165008046111528
+      },
+      "hardCenterModelAppliedToExactBetaFeatures": {
+        "accuracy": 0.9256232142470533,
+        "brier": 0.057614365719519306,
+        "ece10": 0.03180891387708201,
+        "f1M": 0.9258691391021104,
+        "nll": 0.20334409545690463
+      },
+      "hardWinnerCenterControl": {
+        "accuracy": 0.9252233363471754,
+        "brier": 0.057008934630302946,
+        "ece10": 0.03577120112218246,
+        "f1M": 0.9252075363487234,
+        "nll": 0.20168954067897985
+      }
+    },
+    "Balanced": {
+      "crossDomainMinusExact": {
+        "accuracy": 0.0015849874025184452,
+        "brier": 0.00041524290347235565,
+        "ece10": -0.0006545410161929235,
+        "f1M": 0.0017257006606470338,
+        "nll": 0.0007011807161982631
+      },
+      "exactBetaRuntimeCenter": {
+        "accuracy": 0.9227479777417857,
+        "brier": 0.056923752576813536,
+        "ece10": 0.03211423147843197,
+        "f1M": 0.9229461330934522,
+        "nll": 0.20239223909804435
+      },
+      "exactMinusHard": {
+        "accuracy": -0.0017302356727666446,
+        "brier": 0.00019652004936182577,
+        "ece10": -0.0021318097405459285,
+        "f1M": -0.0016717871482168079,
+        "nll": 0.000871230142733409
+      },
+      "hardCenterModelAppliedToExactBetaFeatures": {
+        "accuracy": 0.9243329651443042,
+        "brier": 0.05733899548028589,
+        "ece10": 0.031459690462239044,
+        "f1M": 0.9246718337540992,
+        "nll": 0.20309341981424262
+      },
+      "hardWinnerCenterControl": {
+        "accuracy": 0.9244782134145524,
+        "brier": 0.05672723252745171,
+        "ece10": 0.034246041218977896,
+        "f1M": 0.924617920241669,
+        "nll": 0.20152100895531094
+      }
+    },
+    "Quality": {
+      "crossDomainMinusExact": {
+        "accuracy": 0.0007835910864161244,
+        "brier": 0.00021339959658461805,
+        "ece10": -0.0013546661679821326,
+        "f1M": 0.0009050025723545962,
+        "nll": 2.6656225411869627e-05
+      },
+      "exactBetaRuntimeCenter": {
+        "accuracy": 0.9167920559402758,
+        "brier": 0.06045171698384397,
+        "ece10": 0.02951798050504737,
+        "f1M": 0.9168129403617055,
+        "nll": 0.2128387795933106
+      },
+      "exactMinusHard": {
+        "accuracy": -0.004182608327345072,
+        "brier": 0.0004985827809725896,
+        "ece10": -0.005740112052138743,
+        "f1M": -0.004101574734255764,
+        "nll": 0.0018652933759197576
+      },
+      "hardCenterModelAppliedToExactBetaFeatures": {
+        "accuracy": 0.9175756470266919,
+        "brier": 0.060665116580428585,
+        "ece10": 0.02816331433706524,
+        "f1M": 0.9177179429340601,
+        "nll": 0.21286543581872247
+      },
+      "hardWinnerCenterControl": {
+        "accuracy": 0.9209746642676209,
+        "brier": 0.05995313420287138,
+        "ece10": 0.035258092557186115,
+        "f1M": 0.9209145150959612,
+        "nll": 0.21097348621739084
+      }
+    },
+    "description": "The in-domain control changes only the visible speech center from exact Beta group-slow trajectories to the former hard-winner center; both use Beta common.fast observation mixing. The cross-domain row then applies the hard-center-trained emitted coefficients directly to exact-Beta heldout features, quantifying the actual former train/runtime mismatch."
+  },
+  "limitations": [
+    "The corpus supplies EMA and forced phone labels, not Unified Expressions; runtime channel calibration is a domain-transfer proxy.",
+    "A closed mouth is evidence for bilabial place, not proof of /m/: /p/ and /b/ share closure, so Reliability must gate any correction.",
+    "The hard Oculus winner and visible face cannot guarantee recovery of a phone distinction that was discarded; outputs are calibrated compatibility posteriors, never measurements.",
+    "Only causal current and observer-history features are used; there is no future-phone lookahead."
+  ],
+  "modelVersion": 1,
+  "models": {
+    "Aperture": {
+      "bias": [
+        -0.4655542215957915,
+        -0.5024789396054896,
+        -2.3466789522116165,
+        -1.1154871710325276,
+        -2.438826961130249,
+        -2.678627585136733,
+        -1.8585912965115698,
+        -1.2768344672947625,
+        -3.4477119471284743,
+        -3.007338496203796,
+        -2.544588526809284,
+        -2.5220261376303093,
+        -2.42690450014715,
+        -3.0807245948863238,
+        -3.0736983519936074
+      ],
+      "coefficient": [
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ],
+        [
+          -2.2829999536359913,
+          -3.2655151810284044,
+          0.13873986304299504,
+          0.04402990667652103,
+          -0.14273331375406131,
+          -0.26871605790169556
+        ]
+      ],
+      "conservativeLogitBound": 10.184665364543415,
+      "development": {
+        "byOculusWinner": {
+          "CH": {
+            "accuracy": 1.0,
+            "brier": 0.00030711038784996816,
+            "ece10": 0.017339277404926644,
+            "f1M": 0.0,
+            "frames": 3,
+            "nll": 0.01749470904847319,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "DD": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.015223805697843394,
+            "ece10": 0.07515066182433977,
+            "f1M": 1.0,
+            "frames": 34,
+            "nll": 0.0851141205093435,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "E": {
+            "accuracy": 0.9536150445556137,
+            "brier": 0.042284213547722424,
+            "ece10": 0.09689450713400233,
+            "f1M": 0.9596728964254491,
+            "frames": 73,
+            "nll": 0.17638427555375139,
+            "precisionM": 0.9934259113010293,
+            "recallM": 0.9281381241250583
+          },
+          "FF": {
+            "accuracy": 1.0,
+            "brier": 0.006287407041428444,
+            "ece10": 0.06578481058869537,
+            "f1M": 1.0,
+            "frames": 9,
+            "nll": 0.06914972554968962,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "I": {
+            "accuracy": 0.9390395736709336,
+            "brier": 0.03873726107214611,
+            "ece10": 0.11320099723004035,
+            "f1M": 0.9304784821001385,
+            "frames": 93,
+            "nll": 0.1648187965093844,
+            "precisionM": 0.9885207583571403,
+            "recallM": 0.8788742429640185
+          },
+          "O": {
+            "accuracy": 1.0,
+            "brier": 0.010228075334968017,
+            "ece10": 0.07736013797707897,
+            "f1M": 0.0,
+            "frames": 41,
+            "nll": 0.08318298179365562,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "PP": {
+            "accuracy": 0.9399495305113894,
+            "brier": 0.03852031043224901,
+            "ece10": 0.05523677357923118,
+            "f1M": 0.9634872077319234,
+            "frames": 109,
+            "nll": 0.13498803389235997,
+            "precisionM": 0.9725577066184179,
+            "recallM": 0.9545843363638489
+          },
+          "RR": {
+            "accuracy": 1.0,
+            "brier": 0.02028583718453547,
+            "ece10": 0.08948530683536997,
+            "f1M": 0.0,
+            "frames": 8,
+            "nll": 0.10218788055841958,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "SS": {
+            "accuracy": 0.6086956521739131,
+            "brier": 0.18814936154019096,
+            "ece10": 0.32409136480881695,
+            "f1M": 0.0,
+            "frames": 12,
+            "nll": 0.5126960497128671,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "TH": {
+            "accuracy": 0.9999999999999999,
+            "brier": 0.0060269975483982965,
+            "ece10": 0.06566863760198899,
+            "f1M": 1.0,
+            "frames": 10,
+            "nll": 0.06893352430401063,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "U": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.004682035471197721,
+            "ece10": 0.03463992872253283,
+            "f1M": 0.0,
+            "frames": 34,
+            "nll": 0.03752084278974369,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "aa": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.016804818439132164,
+            "ece10": 0.10304081270213465,
+            "f1M": 1.0,
+            "frames": 58,
+            "nll": 0.11282139755177303,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "kk": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.01414463821986335,
+            "ece10": 0.1123894708243407,
+            "f1M": 1.0,
+            "frames": 15,
+            "nll": 0.12013352862059727,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "nn": {
+            "accuracy": 0.8680305099468091,
+            "brier": 0.08774622698220083,
+            "ece10": 0.15590405569066504,
+            "f1M": 0.0,
+            "frames": 227,
+            "nll": 0.2592056587792443,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "sil": {
+            "accuracy": 1.0,
+            "brier": 0.041160824073817846,
+            "ece10": 0.1641551591093567,
+            "f1M": 0.0,
+            "frames": 12,
+            "nll": 0.1907821941997333,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          }
+        },
+        "crossConfusion": {
+          "mAsNnMeanPosterior": null,
+          "mAsNnPredictedMAt050": 0,
+          "mFramesEmittedAsNn": 0,
+          "nlFramesEmittedAsPp": 45
+        },
+        "eligibilityReliability": {
+          "accuracy": 0.8883248730964466,
+          "brier": 0.09332241220144516,
+          "byHardOculusWinner": {
+            "CH": {
+              "accuracy": 0.9827932646985891,
+              "brier": 0.019773935151167966,
+              "ece10": 0.053327083109246005,
+              "empiricalEligibilityRate": 0.017206735301410724,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 19.37225903079967,
+              "frames": 262,
+              "meanPredictedEligibility": 0.07053381841065672,
+              "nll": 0.1176340547191845,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "DD": {
+              "accuracy": 0.9539918264221444,
+              "brier": 0.043928786654173574,
+              "ece10": 0.0037885624824927078,
+              "empiricalEligibilityRate": 0.04600817357785568,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 99.37316929656545,
+              "frames": 865,
+              "meanPredictedEligibility": 0.04979673606034839,
+              "nll": 0.18685056877046805,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "E": {
+              "accuracy": 0.721878210461824,
+              "brier": 0.20725416944780864,
+              "ece10": 0.08589677404935657,
+              "empiricalEligibilityRate": 0.27812178953817585,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 40.70265903686956,
+              "frames": 385,
+              "meanPredictedEligibility": 0.1922250154888193,
+              "nll": 0.60983230219804,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "FF": {
+              "accuracy": 0.9724844845890036,
+              "brier": 0.03045314199907416,
+              "ece10": 0.06498822924378393,
+              "empiricalEligibilityRate": 0.0275155154109965,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 34.968811580576286,
+              "frames": 276,
+              "meanPredictedEligibility": 0.08871079902263106,
+              "nll": 0.15663113933281197,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "I": {
+              "accuracy": 0.8646093283676846,
+              "brier": 0.11708985903467367,
+              "ece10": 0.004232829888391743,
+              "empiricalEligibilityRate": 0.13539067163231544,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 83.02010971777315,
+              "frames": 859,
+              "meanPredictedEligibility": 0.1311578417439237,
+              "nll": 0.3966353063172954,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "O": {
+              "accuracy": 0.9301400513231878,
+              "brier": 0.07352404014724963,
+              "ece10": 0.09439270792311144,
+              "empiricalEligibilityRate": 0.06985994867681233,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 55.90768751887947,
+              "frames": 558,
+              "meanPredictedEligibility": 0.16425265659992372,
+              "nll": 0.29171733065440947,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "PP": {
+              "accuracy": 0.8504997970437898,
+              "brier": 0.13138703439797422,
+              "ece10": 0.07935920016323875,
+              "empiricalEligibilityRate": 0.14950020295621017,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 80.8023490441447,
+              "frames": 678,
+              "meanPredictedEligibility": 0.20929191753722004,
+              "nll": 0.43555080011733927,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "RR": {
+              "accuracy": 0.9334595510026913,
+              "brier": 0.06336063510439349,
+              "ece10": 0.016570770329898437,
+              "empiricalEligibilityRate": 0.06654044899730872,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 15.565183303108999,
+              "frames": 128,
+              "meanPredictedEligibility": 0.08311121932720715,
+              "nll": 0.2528959087966726,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "SS": {
+              "accuracy": 0.9710241615525257,
+              "brier": 0.028348452175197485,
+              "ece10": 0.003619211334890963,
+              "empiricalEligibilityRate": 0.02897583844747428,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 50.39776374252773,
+              "frames": 556,
+              "meanPredictedEligibility": 0.03259504978236524,
+              "nll": 0.1341554580218987,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "TH": {
+              "accuracy": 0.9562088117845107,
+              "brier": 0.04229470599659234,
+              "ece10": 0.0017978491445849384,
+              "empiricalEligibilityRate": 0.0437911882154894,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 26.64158508158508,
+              "frames": 175,
+              "meanPredictedEligibility": 0.041993339070904454,
+              "nll": 0.18479633422752587,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "U": {
+              "accuracy": 0.9044248917526638,
+              "brier": 0.08598939485303661,
+              "ece10": 0.03295509583194654,
+              "empiricalEligibilityRate": 0.09557510824733609,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 40.63805942079936,
+              "frames": 379,
+              "meanPredictedEligibility": 0.09656994407066011,
+              "nll": 0.3126525963526381,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "aa": {
+              "accuracy": 0.84097102138571,
+              "brier": 0.13481965195258389,
+              "ece10": 0.028320908208234276,
+              "empiricalEligibilityRate": 0.15902897861428994,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 54.08491239153004,
+              "frames": 508,
+              "meanPredictedEligibility": 0.18734988682252426,
+              "nll": 0.4417097571073271,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "kk": {
+              "accuracy": 0.9722415604419482,
+              "brier": 0.029087184431119212,
+              "ece10": 0.04374966059734725,
+              "empiricalEligibilityRate": 0.027758439558051764,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 74.1516225733331,
+              "frames": 667,
+              "meanPredictedEligibility": 0.07150810015539903,
+              "nll": 0.1463965433182857,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "nn": {
+              "accuracy": 0.7018593923805131,
+              "brier": 0.21137145742385727,
+              "ece10": 0.1297043315287529,
+              "empiricalEligibilityRate": 0.298140607619487,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 80.65644942862434,
+              "frames": 657,
+              "meanPredictedEligibility": 0.29844558574418784,
+              "nll": 0.6143836929900622,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "sil": {
+              "accuracy": 0.9579620579506716,
+              "brier": 0.04123898084186092,
+              "ece10": 0.031126760997566186,
+              "empiricalEligibilityRate": 0.04203794204932841,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 31.71737883288305,
+              "frames": 489,
+              "meanPredictedEligibility": 0.0731647030468946,
+              "nll": 0.18268811649772448,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            }
+          },
+          "ece10": 0.020343887737256705,
+          "empiricalEligibilityRate": 0.1116751269035533,
+          "f1M": 0.0,
+          "frames": 7442,
+          "globalPriorBaseline": {
+            "accuracy": 0.8883248730964466,
+            "brier": 0.09960215492037364,
+            "ece10": 0.019959007634275393,
+            "f1M": 0.0,
+            "frames": 7442,
+            "nll": 0.35182696538020425,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "meanPredictedEligibility": 0.13201901464081,
+          "nll": 0.3223317080569238,
+          "occurrences": 788,
+          "precisionM": 0.0,
+          "recallM": 0.0,
+          "relativeBrierImprovementOverGlobalPrior": 0.06304826159583375,
+          "relativeNllImprovementOverGlobalPrior": 0.08383455569247286,
+          "trainingGlobalPrior": 0.1316341345378287
+        },
+        "model": {
+          "accuracy": 0.9455505369721056,
+          "brier": 0.04092509425151618,
+          "ece10": 0.05838158920987726,
+          "f1M": 0.9461094225502377,
+          "frames": 738,
+          "nll": 0.15627527604886465,
+          "precisionM": 0.9364969378093269,
+          "recallM": 0.9559212845977553,
+          "relativeBrierImprovementOverOculusObservation": 0.7909570312063995,
+          "relativeNllImprovementOverOculusObservation": 0.7302277094791515,
+          "reliableCoverageAt025": 0.16699279750750337
+        },
+        "oculusObservationBaseline": {
+          "accuracy": 0.6682135482074207,
+          "brier": 0.19577359854625745,
+          "ece10": 0.13350701813248958,
+          "f1M": 0.5840049707149618,
+          "frames": 738,
+          "nll": 0.5792858701208508,
+          "precisionM": 0.7826423811517966,
+          "recallM": 0.4657866643160761
+        }
+      },
+      "developmentFactorCalibration": {
+        "faceLogLikelihoodScale": 1.587514561677592,
+        "intercept": 0.05550979487467782,
+        "oculusLogLikelihoodScale": 1.179290151798431
+      },
+      "expertAudit": {
+        "byViseme": {
+          "CH": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 23.548504273504264,
+              "ineligible": 339.37718166882894
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 24.548504273504264,
+              "betaIneligible": 340.37718166882894,
+              "effectiveOccurrenceSupport": 362.9256859423332,
+              "mean": 0.06726987224841033
+            },
+            "eligibilityPosteriorAlpha": [
+              340.37718166882894,
+              24.548504273504264
+            ],
+            "fractionalOccurrenceCounts": [
+              17.1514985014985,
+              6.397005772005771,
+              12.496053946053944,
+              326.88112772277503
+            ],
+            "mVsNlLogLikelihoodRatio": 0.3284655210373156,
+            "rawFrameCounts": [
+              124,
+              58,
+              86,
+              3022
+            ],
+            "reliability": 0.06726987224841033
+          },
+          "DD": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 69.51148010486243,
+              "ineligible": 1458.4354980056003
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 70.51148010486243,
+              "betaIneligible": 1459.4354980056003,
+              "effectiveOccurrenceSupport": 1527.9469781104626,
+              "mean": 0.046087531864631374
+            },
+            "eligibilityPosteriorAlpha": [
+              1459.4354980056003,
+              70.51148010486243
+            ],
+            "fractionalOccurrenceCounts": [
+              56.24809904148139,
+              13.263381063381063,
+              41.34036869563185,
+              1417.0951293099683
+            ],
+            "mVsNlLogLikelihoodRatio": -0.1635556017828938,
+            "rawFrameCounts": [
+              393,
+              100,
+              309,
+              11818
+            ],
+            "reliability": 0.046087531864631374
+          },
+          "E": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 135.64299019693755,
+              "ineligible": 544.9573064303734
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 136.64299019693755,
+              "betaIneligible": 545.9573064303734,
+              "effectiveOccurrenceSupport": 680.6002966273109,
+              "mean": 0.20018009202762257
+            },
+            "eligibilityPosteriorAlpha": [
+              545.9573064303734,
+              136.64299019693755
+            ],
+            "fractionalOccurrenceCounts": [
+              110.70702908202911,
+              24.93596111490849,
+              13.9328999947421,
+              531.0244064356314
+            ],
+            "mVsNlLogLikelihoodRatio": -0.2341058191091222,
+            "rawFrameCounts": [
+              789,
+              203,
+              130,
+              5181
+            ],
+            "reliability": 0.20018009202762257
+          },
+          "FF": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 37.511122047886765,
+              "ineligible": 429.33503232370276
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 38.511122047886765,
+              "betaIneligible": 430.33503232370276,
+              "effectiveOccurrenceSupport": 466.84615437158953,
+              "mean": 0.08214021100269989
+            },
+            "eligibilityPosteriorAlpha": [
+              430.33503232370276,
+              38.511122047886765
+            ],
+            "fractionalOccurrenceCounts": [
+              30.125840662605366,
+              7.3852813852813854,
+              12.230633255633256,
+              417.10439906806937
+            ],
+            "mVsNlLogLikelihoodRatio": -0.08541706329166172,
+            "rawFrameCounts": [
+              213,
+              54,
+              107,
+              3516
+            ],
+            "reliability": 0.08214021100269989
+          },
+          "I": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 185.56463268096246,
+              "ineligible": 1223.3809642873296
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 186.56463268096246,
+              "betaIneligible": 1224.3809642873296,
+              "effectiveOccurrenceSupport": 1408.945596968292,
+              "mean": 0.13222666634477978
+            },
+            "eligibilityPosteriorAlpha": [
+              1224.3809642873296,
+              186.56463268096246
+            ],
+            "fractionalOccurrenceCounts": [
+              148.85007373629503,
+              36.7145589446673,
+              24.250746329693694,
+              1199.1302179576364
+            ],
+            "mVsNlLogLikelihoodRatio": -0.15344573953659474,
+            "rawFrameCounts": [
+              1149,
+              332,
+              199,
+              11880
+            ],
+            "reliability": 0.13222666634477978
+          },
+          "O": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 90.20055026672675,
+              "ineligible": 490.88510940574395
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 91.20055026672675,
+              "betaIneligible": 491.88510940574395,
+              "effectiveOccurrenceSupport": 581.0856596724707,
+              "mean": 0.15641020963876162
+            },
+            "eligibilityPosteriorAlpha": [
+              491.88510940574395,
+              91.20055026672675
+            ],
+            "fractionalOccurrenceCounts": [
+              79.55491257108903,
+              10.645637695637694,
+              24.69563492063492,
+              466.1894744851092
+            ],
+            "mVsNlLogLikelihoodRatio": -0.7078640849642156,
+            "rawFrameCounts": [
+              782,
+              93,
+              188,
+              5006
+            ],
+            "reliability": 0.15641020963876162
+          },
+          "PP": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 237.46400212704395,
+              "ineligible": 907.4768412558042
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 238.46400212704395,
+              "betaIneligible": 908.4768412558042,
+              "effectiveOccurrenceSupport": 1144.940843382848,
+              "mean": 0.20791307895506242
+            },
+            "eligibilityPosteriorAlpha": [
+              908.4768412558042,
+              238.46400212704395
+            ],
+            "fractionalOccurrenceCounts": [
+              103.70968104393027,
+              133.7543210831137,
+              262.47773638470227,
+              644.9991048711007
+            ],
+            "mVsNlLogLikelihoodRatio": 1.478405045960841,
+            "rawFrameCounts": [
+              674,
+              1329,
+              2183,
+              5374
+            ],
+            "reliability": 0.20791307895506242
+          },
+          "RR": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 27.746410533910534,
+              "ineligible": 345.7229821471849
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 28.746410533910534,
+              "betaIneligible": 346.7229821471849,
+              "effectiveOccurrenceSupport": 373.4693926810954,
+              "mean": 0.07656126196769991
+            },
+            "eligibilityPosteriorAlpha": [
+              346.7229821471849,
+              28.746410533910534
+            ],
+            "fractionalOccurrenceCounts": [
+              24.780140692640693,
+              2.966269841269842,
+              3.6879120879120877,
+              342.03507005927275
+            ],
+            "mVsNlLogLikelihoodRatio": -0.6456350410172166,
+            "rawFrameCounts": [
+              171,
+              22,
+              28,
+              2836
+            ],
+            "reliability": 0.07656126196769991
+          },
+          "SS": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 35.85104617604616,
+              "ineligible": 1262.275034562669
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 36.85104617604616,
+              "betaIneligible": 1263.275034562669,
+              "effectiveOccurrenceSupport": 1298.126080738715,
+              "mean": 0.028344209628582997
+            },
+            "eligibilityPosteriorAlpha": [
+              1263.275034562669,
+              36.85104617604616
+            ],
+            "fractionalOccurrenceCounts": [
+              21.700649350649357,
+              14.150396825396825,
+              48.153013653013645,
+              1214.122020909655
+            ],
+            "mVsNlLogLikelihoodRatio": 0.8217765423577443,
+            "rawFrameCounts": [
+              159,
+              111,
+              315,
+              12260
+            ],
+            "reliability": 0.028344209628582997
+          },
+          "TH": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 10.254362304362305,
+              "ineligible": 282.48156493256084
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 11.254362304362305,
+              "betaIneligible": 283.48156493256084,
+              "effectiveOccurrenceSupport": 292.73592723692315,
+              "mean": 0.03818456205820982
+            },
+            "eligibilityPosteriorAlpha": [
+              283.48156493256084,
+              11.254362304362305
+            ],
+            "fractionalOccurrenceCounts": [
+              5.941988566988567,
+              4.312373737373738,
+              5.549595944990682,
+              276.9319689875702
+            ],
+            "mVsNlLogLikelihoodRatio": 0.9585938438642295,
+            "rawFrameCounts": [
+              56,
+              40,
+              52,
+              2128
+            ],
+            "reliability": 0.03818456205820982
+          },
+          "U": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 52.65195988222305,
+              "ineligible": 515.0929230267017
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 53.65195988222305,
+              "betaIneligible": 516.0929230267017,
+              "effectiveOccurrenceSupport": 567.7448829089248,
+              "mean": 0.0941683927169197
+            },
+            "eligibilityPosteriorAlpha": [
+              516.0929230267017,
+              53.65195988222305
+            ],
+            "fractionalOccurrenceCounts": [
+              46.71298423798424,
+              5.938975644238803,
+              23.49129187805658,
+              491.6016311486453
+            ],
+            "mVsNlLogLikelihoodRatio": -0.7019060576865339,
+            "rawFrameCounts": [
+              380,
+              61,
+              209,
+              4610
+            ],
+            "reliability": 0.0941683927169197
+          },
+          "aa": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 238.4302744340284,
+              "ineligible": 1018.1945117035688
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 239.4302744340284,
+              "betaIneligible": 1019.1945117035688,
+              "effectiveOccurrenceSupport": 1256.624786137597,
+              "mean": 0.19023165368352526
+            },
+            "eligibilityPosteriorAlpha": [
+              1019.1945117035688,
+              239.4302744340284
+            ],
+            "fractionalOccurrenceCounts": [
+              194.82543793066245,
+              43.6048365033659,
+              74.10694444444444,
+              944.0875672591246
+            ],
+            "mVsNlLogLikelihoodRatio": -0.2532379971779094,
+            "rawFrameCounts": [
+              1519,
+              378,
+              628,
+              9653
+            ],
+            "reliability": 0.19023165368352526
+          },
+          "kk": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 73.62057150365972,
+              "ineligible": 1068.152863994149
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 74.62057150365972,
+              "betaIneligible": 1069.152863994149,
+              "effectiveOccurrenceSupport": 1141.7734354978086,
+              "mean": 0.06524069294473721
+            },
+            "eligibilityPosteriorAlpha": [
+              1069.152863994149,
+              74.62057150365972
+            ],
+            "fractionalOccurrenceCounts": [
+              61.84399807708631,
+              11.776573426573426,
+              28.478769841269845,
+              1039.674094152879
+            ],
+            "mVsNlLogLikelihoodRatio": -0.36689879399117703,
+            "rawFrameCounts": [
+              434,
+              110,
+              204,
+              8897
+            ],
+            "reliability": 0.06524069294473721
+          },
+          "nn": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 462.50371203331906,
+              "ineligible": 1055.0707781049227
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 463.50371203331906,
+              "betaIneligible": 1056.0707781049227,
+              "effectiveOccurrenceSupport": 1517.5744901382418,
+              "mean": 0.30502204073664874
+            },
+            "eligibilityPosteriorAlpha": [
+              1056.0707781049227,
+              463.50371203331906
+            ],
+            "fractionalOccurrenceCounts": [
+              419.0208703480004,
+              43.482841685318455,
+              36.053189904350894,
+              1019.0175882005725
+            ],
+            "mVsNlLogLikelihoodRatio": -1.0190575191521385,
+            "rawFrameCounts": [
+              3850,
+              340,
+              237,
+              8045
+            ],
+            "reliability": 0.30502204073664874
+          },
+          "sil": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 39.49838143452694,
+              "ineligible": 525.1614081508558
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 40.49838143452694,
+              "betaIneligible": 526.1614081508558,
+              "effectiveOccurrenceSupport": 564.6597895853827,
+              "mean": 0.07146859928804734
+            },
+            "eligibilityPosteriorAlpha": [
+              526.1614081508558,
+              40.49838143452694
+            ],
+            "fractionalOccurrenceCounts": [
+              16.82679615705932,
+              22.671585277467628,
+              41.055208718869714,
+              484.10619943198606
+            ],
+            "mVsNlLogLikelihoodRatio": 1.5097160154905938,
+            "rawFrameCounts": [
+              172,
+              259,
+              430,
+              6161
+            ],
+            "reliability": 0.07146859928804734
+          }
+        },
+        "eligibilityBetaPrior": {
+          "alphaEligible": 1.0,
+          "betaIneligible": 1.0
+        },
+        "eligibilityDefinition": "M or N/L forced-phone occurrence; P/B stops and every other forced phone are ineligible",
+        "fractionalOccurrenceCountOrder": [
+          "NL",
+          "M",
+          "Stop",
+          "Other"
+        ],
+        "globalEligibilityRate": 0.13044137721826185,
+        "globalFractionalOccurrenceCounts": [
+          1338.0000000000002,
+          382.0,
+          652.0,
+          10813.999999999996
+        ],
+        "minimumPerWinnerFractionalOccurrenceSupport": 292.73592723692315
+      },
+      "featureAbsP995": [
+        1.0,
+        1.0,
+        0.5084896231572102,
+        0.5412291008579783,
+        0.35966620995339615,
+        0.38444756313106987
+      ],
+      "featureAxes": [
+        "JawOpen",
+        "LipAperture"
+      ],
+      "featureCount": 6,
+      "featureSafeBound": [
+        1.0,
+        1.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0
+      ],
+      "featureStages": [
+        "current",
+        "current-fast",
+        "fast-slow"
+      ],
+      "heldout": {
+        "byOculusWinner": {
+          "CH": {
+            "accuracy": 0.8983685617752092,
+            "brier": 0.06768271644351512,
+            "ece10": 0.08194836664533307,
+            "f1M": 0.9133756366368874,
+            "frames": 51,
+            "nll": 0.21054837167018312,
+            "precisionM": 0.8405624495754735,
+            "recallM": 1.0
+          },
+          "DD": {
+            "accuracy": 0.9324885691599789,
+            "brier": 0.05592323677057092,
+            "ece10": 0.08323443106409663,
+            "f1M": 0.6065252854812399,
+            "frames": 128,
+            "nll": 0.18022939853489467,
+            "precisionM": 0.6229892761394101,
+            "recallM": 0.5909090909090908
+          },
+          "E": {
+            "accuracy": 0.9278125947175542,
+            "brier": 0.049530985224405445,
+            "ece10": 0.07718390887272052,
+            "f1M": 0.8645026707544485,
+            "frames": 213,
+            "nll": 0.1753840874015023,
+            "precisionM": 0.7748002946008725,
+            "recallM": 0.9776951672862453
+          },
+          "FF": {
+            "accuracy": 0.9142973099482943,
+            "brier": 0.08764223144418506,
+            "ece10": 0.1428213573571687,
+            "f1M": 0.7374392220421393,
+            "frames": 56,
+            "nll": 0.3761842008517301,
+            "precisionM": 0.7081712062256809,
+            "recallM": 0.7692307692307693
+          },
+          "I": {
+            "accuracy": 0.925602575265972,
+            "brier": 0.04565513080379488,
+            "ece10": 0.11858279983421065,
+            "f1M": 0.8598119370423271,
+            "frames": 203,
+            "nll": 0.15910324895334735,
+            "precisionM": 0.7540965959702789,
+            "recallM": 1.0
+          },
+          "O": {
+            "accuracy": 0.8260671043305362,
+            "brier": 0.10324560514215575,
+            "ece10": 0.1747471413508213,
+            "f1M": 0.6747967479674797,
+            "frames": 74,
+            "nll": 0.2823260847272094,
+            "precisionM": 1.0,
+            "recallM": 0.5092024539877301
+          },
+          "PP": {
+            "accuracy": 0.9372090997655598,
+            "brier": 0.047000501993397434,
+            "ece10": 0.02193741977996957,
+            "f1M": 0.9615470728652198,
+            "frames": 363,
+            "nll": 0.17906789689617297,
+            "precisionM": 0.9535954625884254,
+            "recallM": 0.9696324081291526
+          },
+          "RR": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.029228754203482674,
+            "ece10": 0.1389873888874613,
+            "f1M": 1.0,
+            "frames": 35,
+            "nll": 0.15695013731425733,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "SS": {
+            "accuracy": 0.9318592307871307,
+            "brier": 0.049895863391418896,
+            "ece10": 0.07986472648132698,
+            "f1M": 0.9358284738462846,
+            "frames": 61,
+            "nll": 0.1740733692185938,
+            "precisionM": 0.9195720644873225,
+            "recallM": 0.9526699961582789
+          },
+          "TH": {
+            "accuracy": 0.9073747445994798,
+            "brier": 0.092135759421419,
+            "ece10": 0.18603529901176152,
+            "f1M": 0.6666666666666666,
+            "frames": 23,
+            "nll": 0.27224071225491364,
+            "precisionM": 1.0,
+            "recallM": 0.5
+          },
+          "U": {
+            "accuracy": 0.8653665838305427,
+            "brier": 0.10075240016362193,
+            "ece10": 0.15223616793378686,
+            "f1M": 0.8899594958901629,
+            "frames": 116,
+            "nll": 0.3319903233760374,
+            "precisionM": 0.9668586781893621,
+            "recallM": 0.8243914555389965
+          },
+          "aa": {
+            "accuracy": 0.9201119391924052,
+            "brier": 0.061725638281940914,
+            "ece10": 0.046132228604793254,
+            "f1M": 0.9300830960753549,
+            "frames": 640,
+            "nll": 0.2196392793736916,
+            "precisionM": 0.9322520704814988,
+            "recallM": 0.9279241908987091
+          },
+          "kk": {
+            "accuracy": 0.9720081533899031,
+            "brier": 0.03788921552655845,
+            "ece10": 0.09677864408383492,
+            "f1M": 0.9673287025725156,
+            "frames": 184,
+            "nll": 0.1544008203065504,
+            "precisionM": 1.0,
+            "recallM": 0.9367246915666723
+          },
+          "nn": {
+            "accuracy": 0.9134645912211117,
+            "brier": 0.06280128820977834,
+            "ece10": 0.021058742730068664,
+            "f1M": 0.7983932142585188,
+            "frames": 638,
+            "nll": 0.2154538005452853,
+            "precisionM": 0.7908722145727393,
+            "recallM": 0.8060586330380549
+          },
+          "sil": {
+            "accuracy": 0.9495253294916384,
+            "brier": 0.027255946033055353,
+            "ece10": 0.05866403555981016,
+            "f1M": 0.9712659563286136,
+            "frames": 109,
+            "nll": 0.10532659421439167,
+            "precisionM": 0.9618338267949667,
+            "recallM": 0.9808849084347012
+          }
+        },
+        "crossConfusion": {
+          "mAsNnMeanPosterior": 0.6675355110793698,
+          "mAsNnPredictedMAt050": 40,
+          "mFramesEmittedAsNn": 50,
+          "nlFramesEmittedAsPp": 109
+        },
+        "eligibilityReliability": {
+          "accuracy": 0.8645627876397108,
+          "brier": 0.11270350316234656,
+          "byHardOculusWinner": {
+            "CH": {
+              "accuracy": 0.9323784805588655,
+              "brier": 0.06312546096989659,
+              "ece10": 0.0017142793447677274,
+              "empiricalEligibilityRate": 0.06762151944113454,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 116.36658487443859,
+              "frames": 991,
+              "meanPredictedEligibility": 0.06933579878590226,
+              "nll": 0.24797391584938375,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "DD": {
+              "accuracy": 0.9508535970898226,
+              "brier": 0.0468224059197096,
+              "ece10": 0.001692970998334938,
+              "empiricalEligibilityRate": 0.04914640291017751,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 372.79653976089486,
+              "frames": 2945,
+              "meanPredictedEligibility": 0.050839373908512446,
+              "nll": 0.19686763014650277,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "E": {
+              "accuracy": 0.7349178040042847,
+              "brier": 0.1999035754435814,
+              "ece10": 0.09083735796123459,
+              "empiricalEligibilityRate": 0.2650821959957155,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 134.4122825618923,
+              "frames": 1150,
+              "meanPredictedEligibility": 0.19692128535324138,
+              "nll": 0.5933393683331017,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "FF": {
+              "accuracy": 0.9431247479328098,
+              "brier": 0.054624817857114066,
+              "ece10": 0.027818261406080718,
+              "empiricalEligibilityRate": 0.05687525206719015,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 135.77965905353676,
+              "frames": 974,
+              "meanPredictedEligibility": 0.08469351347327085,
+              "nll": 0.22511557884291453,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "I": {
+              "accuracy": 0.8907207381851027,
+              "brier": 0.0979772824435921,
+              "ece10": 0.02248678062968712,
+              "empiricalEligibilityRate": 0.1092792618148974,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 287.78070918806986,
+              "frames": 2587,
+              "meanPredictedEligibility": 0.1317660424445845,
+              "nll": 0.3478702898398337,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "O": {
+              "accuracy": 0.9106738757600051,
+              "brier": 0.08594029994213248,
+              "ece10": 0.06625172617147371,
+              "empiricalEligibilityRate": 0.08932612423999495,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 152.4576656249331,
+              "frames": 1399,
+              "meanPredictedEligibility": 0.15557785041146865,
+              "nll": 0.32091292452145104,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "PP": {
+              "accuracy": 0.7970516988454549,
+              "brier": 0.16199023547624852,
+              "ece10": 0.005886450122424121,
+              "empiricalEligibilityRate": 0.20294830115454504,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 262.19475980713025,
+              "frames": 1926,
+              "meanPredictedEligibility": 0.2044652926706157,
+              "nll": 0.5051690920269786,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "RR": {
+              "accuracy": 0.8884578400092061,
+              "brier": 0.09977731016591376,
+              "ece10": 0.03010396151458916,
+              "empiricalEligibilityRate": 0.11154215999079395,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 56.82953324027493,
+              "frames": 411,
+              "meanPredictedEligibility": 0.0814381984762048,
+              "nll": 0.35401774191089247,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "SS": {
+              "accuracy": 0.9540727550279191,
+              "brier": 0.044299869084026514,
+              "ece10": 0.013426120082630902,
+              "empiricalEligibilityRate": 0.04592724497208092,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 197.42103145679278,
+              "frames": 1736,
+              "meanPredictedEligibility": 0.03250112488945002,
+              "nll": 0.19348104361009139,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "TH": {
+              "accuracy": 0.9371362832700862,
+              "brier": 0.059681965602688625,
+              "ece10": 0.019201935363673216,
+              "empiricalEligibilityRate": 0.06286371672991364,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 42.58001446867546,
+              "frames": 327,
+              "meanPredictedEligibility": 0.04366178136624044,
+              "nll": 0.24322278565760586,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "U": {
+              "accuracy": 0.9072732819349258,
+              "brier": 0.08411216447890585,
+              "ece10": 0.005010483287093757,
+              "empiricalEligibilityRate": 0.0927267180650741,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 167.25102437848466,
+              "frames": 1492,
+              "meanPredictedEligibility": 0.09475907858538093,
+              "nll": 0.3087572952046544,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "aa": {
+              "accuracy": 0.7570474931317406,
+              "brier": 0.18731561070355485,
+              "ece10": 0.05672113415297575,
+              "empiricalEligibilityRate": 0.24295250686825964,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 390.80145917928655,
+              "frames": 3298,
+              "meanPredictedEligibility": 0.1862715735422277,
+              "nll": 0.5649460221092069,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "kk": {
+              "accuracy": 0.8995829325758927,
+              "brier": 0.09164739664014258,
+              "ece10": 0.032774460059608455,
+              "empiricalEligibilityRate": 0.1004170674241072,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 266.169827334688,
+              "frames": 2151,
+              "meanPredictedEligibility": 0.0688596548166865,
+              "nll": 0.33530440407448575,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "nn": {
+              "accuracy": 0.7635722392501945,
+              "brier": 0.18632117981937996,
+              "ece10": 0.1241613665033066,
+              "empiricalEligibilityRate": 0.23642776074980568,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 335.47708902293243,
+              "frames": 2610,
+              "meanPredictedEligibility": 0.29740094496403807,
+              "nll": 0.5612305608716992,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "sil": {
+              "accuracy": 0.9224118036492788,
+              "brier": 0.07161016033367362,
+              "ece10": 0.006128203698437805,
+              "empiricalEligibilityRate": 0.07758819635072114,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 123.68182004796925,
+              "frames": 1332,
+              "meanPredictedEligibility": 0.07164037797151085,
+              "nll": 0.27313136053812237,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            }
+          },
+          "ece10": 0.021486833903925903,
+          "empiricalEligibilityRate": 0.1354372123602893,
+          "f1M": 0.0,
+          "frames": 25329,
+          "globalPriorBaseline": {
+            "accuracy": 0.8645627876397108,
+            "brier": 0.1171189322371295,
+            "ece10": 0.004995835142027449,
+            "f1M": 0.0,
+            "frames": 25329,
+            "nll": 0.3967022939854107,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "meanPredictedEligibility": 0.13436734103108017,
+          "nll": 0.37687628692661407,
+          "occurrences": 3042,
+          "precisionM": 0.0,
+          "recallM": 0.0,
+          "relativeBrierImprovementOverGlobalPrior": 0.03770038703770854,
+          "relativeNllImprovementOverGlobalPrior": 0.04997704162387764,
+          "trainingGlobalPrior": 0.13044137721826185
+        },
+        "model": {
+          "accuracy": 0.9240176894613814,
+          "brier": 0.05702691227666895,
+          "ece10": 0.030150822829987173,
+          "f1M": 0.9242245947197727,
+          "frames": 2894,
+          "nll": 0.202006041483591,
+          "precisionM": 0.9217146997617831,
+          "recallM": 0.9267481962481963,
+          "relativeBrierImprovementOverOculusObservation": 0.7446361463019849,
+          "relativeNllImprovementOverOculusObservation": 0.6831359902895164,
+          "reliableCoverageAt025": 0.1482079198112182
+        },
+        "oculusObservationBaseline": {
+          "accuracy": 0.643671765666251,
+          "brier": 0.22331630514985534,
+          "ece10": 0.05380821212579376,
+          "f1M": 0.5403584291873644,
+          "frames": 2894,
+          "nll": 0.6375165222082575,
+          "precisionM": 0.7610024809295686,
+          "recallM": 0.41890241702741704
+        }
+      },
+      "kind": "Aperture",
+      "reliability": [
+        0.07146859928804734,
+        0.20791307895506242,
+        0.08214021100269989,
+        0.03818456205820982,
+        0.046087531864631374,
+        0.06524069294473721,
+        0.06726987224841033,
+        0.028344209628582997,
+        0.30502204073664874,
+        0.07656126196769991,
+        0.19023165368352526,
+        0.20018009202762257,
+        0.13222666634477978,
+        0.15641020963876162,
+        0.0941683927169197
+      ],
+      "selectedRidge": 0.05
+    },
+    "Balanced": {
+      "bias": [
+        -0.5073546562641187,
+        -0.5438995140209877,
+        -2.3691274580287356,
+        -1.150601469480936,
+        -2.460327501252509,
+        -2.6976611944177145,
+        -1.8860609672905508,
+        -1.3102889175965888,
+        -3.4588336590155127,
+        -3.022990516768168,
+        -2.5650010527978173,
+        -2.542670772496579,
+        -2.4485276916879584,
+        -3.0956216614929604,
+        -3.0886677005443057
+      ],
+      "coefficient": [
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ],
+        [
+          -2.3213050223994824,
+          -3.3004802619693967,
+          -0.1305425027325495,
+          0.11775283266634888,
+          0.02543692779864946,
+          -0.33884432834779765,
+          -0.16063749174965194,
+          -0.28601153977952554,
+          -0.24565593197536778
+        ]
+      ],
+      "conservativeLogitBound": 11.559839550751624,
+      "development": {
+        "byOculusWinner": {
+          "CH": {
+            "accuracy": 1.0,
+            "brier": 0.0003380691641318569,
+            "ece10": 0.018190268455120985,
+            "f1M": 0.0,
+            "frames": 3,
+            "nll": 0.0183614724463796,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "DD": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.014672681577014077,
+            "ece10": 0.07265864489261659,
+            "f1M": 1.0,
+            "frames": 34,
+            "nll": 0.08225436553336912,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "E": {
+            "accuracy": 0.9536150445556137,
+            "brier": 0.043044508587445796,
+            "ece10": 0.10639480983262416,
+            "f1M": 0.9596728964254491,
+            "frames": 73,
+            "nll": 0.17990794214221928,
+            "precisionM": 0.9934259113010293,
+            "recallM": 0.9281381241250583
+          },
+          "FF": {
+            "accuracy": 1.0,
+            "brier": 0.008065487023763519,
+            "ece10": 0.07425611711166472,
+            "f1M": 1.0,
+            "frames": 9,
+            "nll": 0.07861389083627734,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "I": {
+            "accuracy": 0.9390395736709336,
+            "brier": 0.03756086260723216,
+            "ece10": 0.11143819070963067,
+            "f1M": 0.9304784821001385,
+            "frames": 93,
+            "nll": 0.16195529446705748,
+            "precisionM": 0.9885207583571403,
+            "recallM": 0.8788742429640185
+          },
+          "O": {
+            "accuracy": 1.0,
+            "brier": 0.01063392411421696,
+            "ece10": 0.078733783169886,
+            "f1M": 0.0,
+            "frames": 41,
+            "nll": 0.08480497667552188,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "PP": {
+            "accuracy": 0.9477165652210855,
+            "brier": 0.03732666714669095,
+            "ece10": 0.05765412912774197,
+            "f1M": 0.9683592648078279,
+            "frames": 109,
+            "nll": 0.13202337566125566,
+            "precisionM": 0.9728168753978081,
+            "recallM": 0.9639423189286466
+          },
+          "RR": {
+            "accuracy": 1.0,
+            "brier": 0.020856556273135127,
+            "ece10": 0.0905157114716601,
+            "f1M": 0.0,
+            "frames": 8,
+            "nll": 0.10362978374414014,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "SS": {
+            "accuracy": 0.6086956521739131,
+            "brier": 0.18193250587718868,
+            "ece10": 0.32010200290930513,
+            "f1M": 0.0,
+            "frames": 12,
+            "nll": 0.49883412822149154,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "TH": {
+            "accuracy": 0.9999999999999999,
+            "brier": 0.005265559087666985,
+            "ece10": 0.06158187029783199,
+            "f1M": 1.0,
+            "frames": 10,
+            "nll": 0.06441844678835296,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "U": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.005187356358647293,
+            "ece10": 0.03572514473647922,
+            "f1M": 0.0,
+            "frames": 34,
+            "nll": 0.038974650721889686,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "aa": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.01583290566094759,
+            "ece10": 0.10071969769051045,
+            "f1M": 1.0,
+            "frames": 58,
+            "nll": 0.10987895558981112,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "kk": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.01211636652166097,
+            "ece10": 0.10414128532222192,
+            "f1M": 1.0,
+            "frames": 15,
+            "nll": 0.11072666226304267,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "nn": {
+            "accuracy": 0.8648316412401271,
+            "brier": 0.08815204613361818,
+            "ece10": 0.15634576880352,
+            "f1M": 0.0,
+            "frames": 227,
+            "nll": 0.2586724748629051,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "sil": {
+            "accuracy": 1.0,
+            "brier": 0.04137426861448708,
+            "ece10": 0.16589373268046265,
+            "f1M": 0.0,
+            "frames": 12,
+            "nll": 0.1925509308873152,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          }
+        },
+        "crossConfusion": {
+          "mAsNnMeanPosterior": null,
+          "mAsNnPredictedMAt050": 0,
+          "mFramesEmittedAsNn": 0,
+          "nlFramesEmittedAsPp": 45
+        },
+        "eligibilityReliability": {
+          "accuracy": 0.8883248730964466,
+          "brier": 0.09332241220144516,
+          "byHardOculusWinner": {
+            "CH": {
+              "accuracy": 0.9827932646985891,
+              "brier": 0.019773935151167966,
+              "ece10": 0.053327083109246005,
+              "empiricalEligibilityRate": 0.017206735301410724,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 19.37225903079967,
+              "frames": 262,
+              "meanPredictedEligibility": 0.07053381841065672,
+              "nll": 0.1176340547191845,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "DD": {
+              "accuracy": 0.9539918264221444,
+              "brier": 0.043928786654173574,
+              "ece10": 0.0037885624824927078,
+              "empiricalEligibilityRate": 0.04600817357785568,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 99.37316929656545,
+              "frames": 865,
+              "meanPredictedEligibility": 0.04979673606034839,
+              "nll": 0.18685056877046805,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "E": {
+              "accuracy": 0.721878210461824,
+              "brier": 0.20725416944780864,
+              "ece10": 0.08589677404935657,
+              "empiricalEligibilityRate": 0.27812178953817585,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 40.70265903686956,
+              "frames": 385,
+              "meanPredictedEligibility": 0.1922250154888193,
+              "nll": 0.60983230219804,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "FF": {
+              "accuracy": 0.9724844845890036,
+              "brier": 0.03045314199907416,
+              "ece10": 0.06498822924378393,
+              "empiricalEligibilityRate": 0.0275155154109965,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 34.968811580576286,
+              "frames": 276,
+              "meanPredictedEligibility": 0.08871079902263106,
+              "nll": 0.15663113933281197,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "I": {
+              "accuracy": 0.8646093283676846,
+              "brier": 0.11708985903467367,
+              "ece10": 0.004232829888391743,
+              "empiricalEligibilityRate": 0.13539067163231544,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 83.02010971777315,
+              "frames": 859,
+              "meanPredictedEligibility": 0.1311578417439237,
+              "nll": 0.3966353063172954,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "O": {
+              "accuracy": 0.9301400513231878,
+              "brier": 0.07352404014724963,
+              "ece10": 0.09439270792311144,
+              "empiricalEligibilityRate": 0.06985994867681233,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 55.90768751887947,
+              "frames": 558,
+              "meanPredictedEligibility": 0.16425265659992372,
+              "nll": 0.29171733065440947,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "PP": {
+              "accuracy": 0.8504997970437898,
+              "brier": 0.13138703439797422,
+              "ece10": 0.07935920016323875,
+              "empiricalEligibilityRate": 0.14950020295621017,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 80.8023490441447,
+              "frames": 678,
+              "meanPredictedEligibility": 0.20929191753722004,
+              "nll": 0.43555080011733927,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "RR": {
+              "accuracy": 0.9334595510026913,
+              "brier": 0.06336063510439349,
+              "ece10": 0.016570770329898437,
+              "empiricalEligibilityRate": 0.06654044899730872,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 15.565183303108999,
+              "frames": 128,
+              "meanPredictedEligibility": 0.08311121932720715,
+              "nll": 0.2528959087966726,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "SS": {
+              "accuracy": 0.9710241615525257,
+              "brier": 0.028348452175197485,
+              "ece10": 0.003619211334890963,
+              "empiricalEligibilityRate": 0.02897583844747428,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 50.39776374252773,
+              "frames": 556,
+              "meanPredictedEligibility": 0.03259504978236524,
+              "nll": 0.1341554580218987,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "TH": {
+              "accuracy": 0.9562088117845107,
+              "brier": 0.04229470599659234,
+              "ece10": 0.0017978491445849384,
+              "empiricalEligibilityRate": 0.0437911882154894,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 26.64158508158508,
+              "frames": 175,
+              "meanPredictedEligibility": 0.041993339070904454,
+              "nll": 0.18479633422752587,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "U": {
+              "accuracy": 0.9044248917526638,
+              "brier": 0.08598939485303661,
+              "ece10": 0.03295509583194654,
+              "empiricalEligibilityRate": 0.09557510824733609,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 40.63805942079936,
+              "frames": 379,
+              "meanPredictedEligibility": 0.09656994407066011,
+              "nll": 0.3126525963526381,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "aa": {
+              "accuracy": 0.84097102138571,
+              "brier": 0.13481965195258389,
+              "ece10": 0.028320908208234276,
+              "empiricalEligibilityRate": 0.15902897861428994,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 54.08491239153004,
+              "frames": 508,
+              "meanPredictedEligibility": 0.18734988682252426,
+              "nll": 0.4417097571073271,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "kk": {
+              "accuracy": 0.9722415604419482,
+              "brier": 0.029087184431119212,
+              "ece10": 0.04374966059734725,
+              "empiricalEligibilityRate": 0.027758439558051764,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 74.1516225733331,
+              "frames": 667,
+              "meanPredictedEligibility": 0.07150810015539903,
+              "nll": 0.1463965433182857,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "nn": {
+              "accuracy": 0.7018593923805131,
+              "brier": 0.21137145742385727,
+              "ece10": 0.1297043315287529,
+              "empiricalEligibilityRate": 0.298140607619487,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 80.65644942862434,
+              "frames": 657,
+              "meanPredictedEligibility": 0.29844558574418784,
+              "nll": 0.6143836929900622,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "sil": {
+              "accuracy": 0.9579620579506716,
+              "brier": 0.04123898084186092,
+              "ece10": 0.031126760997566186,
+              "empiricalEligibilityRate": 0.04203794204932841,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 31.71737883288305,
+              "frames": 489,
+              "meanPredictedEligibility": 0.0731647030468946,
+              "nll": 0.18268811649772448,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            }
+          },
+          "ece10": 0.020343887737256705,
+          "empiricalEligibilityRate": 0.1116751269035533,
+          "f1M": 0.0,
+          "frames": 7442,
+          "globalPriorBaseline": {
+            "accuracy": 0.8883248730964466,
+            "brier": 0.09960215492037364,
+            "ece10": 0.019959007634275393,
+            "f1M": 0.0,
+            "frames": 7442,
+            "nll": 0.35182696538020425,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "meanPredictedEligibility": 0.13201901464081,
+          "nll": 0.3223317080569238,
+          "occurrences": 788,
+          "precisionM": 0.0,
+          "recallM": 0.0,
+          "relativeBrierImprovementOverGlobalPrior": 0.06304826159583375,
+          "relativeNllImprovementOverGlobalPrior": 0.08383455569247286,
+          "trainingGlobalPrior": 0.1316341345378287
+        },
+        "model": {
+          "accuracy": 0.9468545842320353,
+          "brier": 0.04044110084413977,
+          "ece10": 0.06106709401590174,
+          "f1M": 0.9475233037435302,
+          "frames": 738,
+          "nll": 0.15479922971922006,
+          "precisionM": 0.9357489378168268,
+          "recallM": 0.9595977551859906,
+          "relativeBrierImprovementOverOculusObservation": 0.7935406205868389,
+          "relativeNllImprovementOverOculusObservation": 0.7328703115670044,
+          "reliableCoverageAt025": 0.16699279750750337
+        },
+        "oculusObservationBaseline": {
+          "accuracy": 0.6682135482074207,
+          "brier": 0.19587921342730624,
+          "ece10": 0.13318600567056868,
+          "f1M": 0.5840049707149618,
+          "frames": 738,
+          "nll": 0.5794909230317488,
+          "precisionM": 0.7826423811517966,
+          "recallM": 0.4657866643160761
+        }
+      },
+      "developmentFactorCalibration": {
+        "faceLogLikelihoodScale": 1.6033921686271053,
+        "intercept": 0.05559019281723437,
+        "oculusLogLikelihoodScale": 1.167158293266614
+      },
+      "expertAudit": {
+        "byViseme": {
+          "CH": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 23.548504273504264,
+              "ineligible": 339.37718166882894
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 24.548504273504264,
+              "betaIneligible": 340.37718166882894,
+              "effectiveOccurrenceSupport": 362.9256859423332,
+              "mean": 0.06726987224841033
+            },
+            "eligibilityPosteriorAlpha": [
+              340.37718166882894,
+              24.548504273504264
+            ],
+            "fractionalOccurrenceCounts": [
+              17.1514985014985,
+              6.397005772005771,
+              12.496053946053944,
+              326.88112772277503
+            ],
+            "mVsNlLogLikelihoodRatio": 0.3284655210373156,
+            "rawFrameCounts": [
+              124,
+              58,
+              86,
+              3022
+            ],
+            "reliability": 0.06726987224841033
+          },
+          "DD": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 69.51148010486243,
+              "ineligible": 1458.4354980056003
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 70.51148010486243,
+              "betaIneligible": 1459.4354980056003,
+              "effectiveOccurrenceSupport": 1527.9469781104626,
+              "mean": 0.046087531864631374
+            },
+            "eligibilityPosteriorAlpha": [
+              1459.4354980056003,
+              70.51148010486243
+            ],
+            "fractionalOccurrenceCounts": [
+              56.24809904148139,
+              13.263381063381063,
+              41.34036869563185,
+              1417.0951293099683
+            ],
+            "mVsNlLogLikelihoodRatio": -0.1635556017828938,
+            "rawFrameCounts": [
+              393,
+              100,
+              309,
+              11818
+            ],
+            "reliability": 0.046087531864631374
+          },
+          "E": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 135.64299019693755,
+              "ineligible": 544.9573064303734
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 136.64299019693755,
+              "betaIneligible": 545.9573064303734,
+              "effectiveOccurrenceSupport": 680.6002966273109,
+              "mean": 0.20018009202762257
+            },
+            "eligibilityPosteriorAlpha": [
+              545.9573064303734,
+              136.64299019693755
+            ],
+            "fractionalOccurrenceCounts": [
+              110.70702908202911,
+              24.93596111490849,
+              13.9328999947421,
+              531.0244064356314
+            ],
+            "mVsNlLogLikelihoodRatio": -0.2341058191091222,
+            "rawFrameCounts": [
+              789,
+              203,
+              130,
+              5181
+            ],
+            "reliability": 0.20018009202762257
+          },
+          "FF": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 37.511122047886765,
+              "ineligible": 429.33503232370276
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 38.511122047886765,
+              "betaIneligible": 430.33503232370276,
+              "effectiveOccurrenceSupport": 466.84615437158953,
+              "mean": 0.08214021100269989
+            },
+            "eligibilityPosteriorAlpha": [
+              430.33503232370276,
+              38.511122047886765
+            ],
+            "fractionalOccurrenceCounts": [
+              30.125840662605366,
+              7.3852813852813854,
+              12.230633255633256,
+              417.10439906806937
+            ],
+            "mVsNlLogLikelihoodRatio": -0.08541706329166172,
+            "rawFrameCounts": [
+              213,
+              54,
+              107,
+              3516
+            ],
+            "reliability": 0.08214021100269989
+          },
+          "I": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 185.56463268096246,
+              "ineligible": 1223.3809642873296
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 186.56463268096246,
+              "betaIneligible": 1224.3809642873296,
+              "effectiveOccurrenceSupport": 1408.945596968292,
+              "mean": 0.13222666634477978
+            },
+            "eligibilityPosteriorAlpha": [
+              1224.3809642873296,
+              186.56463268096246
+            ],
+            "fractionalOccurrenceCounts": [
+              148.85007373629503,
+              36.7145589446673,
+              24.250746329693694,
+              1199.1302179576364
+            ],
+            "mVsNlLogLikelihoodRatio": -0.15344573953659474,
+            "rawFrameCounts": [
+              1149,
+              332,
+              199,
+              11880
+            ],
+            "reliability": 0.13222666634477978
+          },
+          "O": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 90.20055026672675,
+              "ineligible": 490.88510940574395
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 91.20055026672675,
+              "betaIneligible": 491.88510940574395,
+              "effectiveOccurrenceSupport": 581.0856596724707,
+              "mean": 0.15641020963876162
+            },
+            "eligibilityPosteriorAlpha": [
+              491.88510940574395,
+              91.20055026672675
+            ],
+            "fractionalOccurrenceCounts": [
+              79.55491257108903,
+              10.645637695637694,
+              24.69563492063492,
+              466.1894744851092
+            ],
+            "mVsNlLogLikelihoodRatio": -0.7078640849642156,
+            "rawFrameCounts": [
+              782,
+              93,
+              188,
+              5006
+            ],
+            "reliability": 0.15641020963876162
+          },
+          "PP": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 237.46400212704395,
+              "ineligible": 907.4768412558042
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 238.46400212704395,
+              "betaIneligible": 908.4768412558042,
+              "effectiveOccurrenceSupport": 1144.940843382848,
+              "mean": 0.20791307895506242
+            },
+            "eligibilityPosteriorAlpha": [
+              908.4768412558042,
+              238.46400212704395
+            ],
+            "fractionalOccurrenceCounts": [
+              103.70968104393027,
+              133.7543210831137,
+              262.47773638470227,
+              644.9991048711007
+            ],
+            "mVsNlLogLikelihoodRatio": 1.478405045960841,
+            "rawFrameCounts": [
+              674,
+              1329,
+              2183,
+              5374
+            ],
+            "reliability": 0.20791307895506242
+          },
+          "RR": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 27.746410533910534,
+              "ineligible": 345.7229821471849
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 28.746410533910534,
+              "betaIneligible": 346.7229821471849,
+              "effectiveOccurrenceSupport": 373.4693926810954,
+              "mean": 0.07656126196769991
+            },
+            "eligibilityPosteriorAlpha": [
+              346.7229821471849,
+              28.746410533910534
+            ],
+            "fractionalOccurrenceCounts": [
+              24.780140692640693,
+              2.966269841269842,
+              3.6879120879120877,
+              342.03507005927275
+            ],
+            "mVsNlLogLikelihoodRatio": -0.6456350410172166,
+            "rawFrameCounts": [
+              171,
+              22,
+              28,
+              2836
+            ],
+            "reliability": 0.07656126196769991
+          },
+          "SS": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 35.85104617604616,
+              "ineligible": 1262.275034562669
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 36.85104617604616,
+              "betaIneligible": 1263.275034562669,
+              "effectiveOccurrenceSupport": 1298.126080738715,
+              "mean": 0.028344209628582997
+            },
+            "eligibilityPosteriorAlpha": [
+              1263.275034562669,
+              36.85104617604616
+            ],
+            "fractionalOccurrenceCounts": [
+              21.700649350649357,
+              14.150396825396825,
+              48.153013653013645,
+              1214.122020909655
+            ],
+            "mVsNlLogLikelihoodRatio": 0.8217765423577443,
+            "rawFrameCounts": [
+              159,
+              111,
+              315,
+              12260
+            ],
+            "reliability": 0.028344209628582997
+          },
+          "TH": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 10.254362304362305,
+              "ineligible": 282.48156493256084
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 11.254362304362305,
+              "betaIneligible": 283.48156493256084,
+              "effectiveOccurrenceSupport": 292.73592723692315,
+              "mean": 0.03818456205820982
+            },
+            "eligibilityPosteriorAlpha": [
+              283.48156493256084,
+              11.254362304362305
+            ],
+            "fractionalOccurrenceCounts": [
+              5.941988566988567,
+              4.312373737373738,
+              5.549595944990682,
+              276.9319689875702
+            ],
+            "mVsNlLogLikelihoodRatio": 0.9585938438642295,
+            "rawFrameCounts": [
+              56,
+              40,
+              52,
+              2128
+            ],
+            "reliability": 0.03818456205820982
+          },
+          "U": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 52.65195988222305,
+              "ineligible": 515.0929230267017
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 53.65195988222305,
+              "betaIneligible": 516.0929230267017,
+              "effectiveOccurrenceSupport": 567.7448829089248,
+              "mean": 0.0941683927169197
+            },
+            "eligibilityPosteriorAlpha": [
+              516.0929230267017,
+              53.65195988222305
+            ],
+            "fractionalOccurrenceCounts": [
+              46.71298423798424,
+              5.938975644238803,
+              23.49129187805658,
+              491.6016311486453
+            ],
+            "mVsNlLogLikelihoodRatio": -0.7019060576865339,
+            "rawFrameCounts": [
+              380,
+              61,
+              209,
+              4610
+            ],
+            "reliability": 0.0941683927169197
+          },
+          "aa": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 238.4302744340284,
+              "ineligible": 1018.1945117035688
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 239.4302744340284,
+              "betaIneligible": 1019.1945117035688,
+              "effectiveOccurrenceSupport": 1256.624786137597,
+              "mean": 0.19023165368352526
+            },
+            "eligibilityPosteriorAlpha": [
+              1019.1945117035688,
+              239.4302744340284
+            ],
+            "fractionalOccurrenceCounts": [
+              194.82543793066245,
+              43.6048365033659,
+              74.10694444444444,
+              944.0875672591246
+            ],
+            "mVsNlLogLikelihoodRatio": -0.2532379971779094,
+            "rawFrameCounts": [
+              1519,
+              378,
+              628,
+              9653
+            ],
+            "reliability": 0.19023165368352526
+          },
+          "kk": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 73.62057150365972,
+              "ineligible": 1068.152863994149
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 74.62057150365972,
+              "betaIneligible": 1069.152863994149,
+              "effectiveOccurrenceSupport": 1141.7734354978086,
+              "mean": 0.06524069294473721
+            },
+            "eligibilityPosteriorAlpha": [
+              1069.152863994149,
+              74.62057150365972
+            ],
+            "fractionalOccurrenceCounts": [
+              61.84399807708631,
+              11.776573426573426,
+              28.478769841269845,
+              1039.674094152879
+            ],
+            "mVsNlLogLikelihoodRatio": -0.36689879399117703,
+            "rawFrameCounts": [
+              434,
+              110,
+              204,
+              8897
+            ],
+            "reliability": 0.06524069294473721
+          },
+          "nn": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 462.50371203331906,
+              "ineligible": 1055.0707781049227
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 463.50371203331906,
+              "betaIneligible": 1056.0707781049227,
+              "effectiveOccurrenceSupport": 1517.5744901382418,
+              "mean": 0.30502204073664874
+            },
+            "eligibilityPosteriorAlpha": [
+              1056.0707781049227,
+              463.50371203331906
+            ],
+            "fractionalOccurrenceCounts": [
+              419.0208703480004,
+              43.482841685318455,
+              36.053189904350894,
+              1019.0175882005725
+            ],
+            "mVsNlLogLikelihoodRatio": -1.0190575191521385,
+            "rawFrameCounts": [
+              3850,
+              340,
+              237,
+              8045
+            ],
+            "reliability": 0.30502204073664874
+          },
+          "sil": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 39.49838143452694,
+              "ineligible": 525.1614081508558
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 40.49838143452694,
+              "betaIneligible": 526.1614081508558,
+              "effectiveOccurrenceSupport": 564.6597895853827,
+              "mean": 0.07146859928804734
+            },
+            "eligibilityPosteriorAlpha": [
+              526.1614081508558,
+              40.49838143452694
+            ],
+            "fractionalOccurrenceCounts": [
+              16.82679615705932,
+              22.671585277467628,
+              41.055208718869714,
+              484.10619943198606
+            ],
+            "mVsNlLogLikelihoodRatio": 1.5097160154905938,
+            "rawFrameCounts": [
+              172,
+              259,
+              430,
+              6161
+            ],
+            "reliability": 0.07146859928804734
+          }
+        },
+        "eligibilityBetaPrior": {
+          "alphaEligible": 1.0,
+          "betaIneligible": 1.0
+        },
+        "eligibilityDefinition": "M or N/L forced-phone occurrence; P/B stops and every other forced phone are ineligible",
+        "fractionalOccurrenceCountOrder": [
+          "NL",
+          "M",
+          "Stop",
+          "Other"
+        ],
+        "globalEligibilityRate": 0.13044137721826185,
+        "globalFractionalOccurrenceCounts": [
+          1338.0000000000002,
+          382.0,
+          652.0,
+          10813.999999999996
+        ],
+        "minimumPerWinnerFractionalOccurrenceSupport": 292.73592723692315
+      },
+      "featureAbsP995": [
+        1.0,
+        1.0,
+        1.0,
+        0.5084896231572102,
+        0.5412291008579783,
+        0.36504402915679274,
+        0.35966620995339615,
+        0.38444756313106987,
+        0.26148664141450395
+      ],
+      "featureAxes": [
+        "JawOpen",
+        "LipAperture",
+        "LipProtrusion"
+      ],
+      "featureCount": 9,
+      "featureSafeBound": [
+        1.0,
+        1.0,
+        1.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0
+      ],
+      "featureStages": [
+        "current",
+        "current-fast",
+        "fast-slow"
+      ],
+      "heldout": {
+        "byOculusWinner": {
+          "CH": {
+            "accuracy": 0.8983685617752092,
+            "brier": 0.0684329537135498,
+            "ece10": 0.08117813299756194,
+            "f1M": 0.9133756366368874,
+            "frames": 51,
+            "nll": 0.2123051180821779,
+            "precisionM": 0.8405624495754735,
+            "recallM": 1.0
+          },
+          "DD": {
+            "accuracy": 0.9260742368351427,
+            "brier": 0.05784641534363859,
+            "ece10": 0.08607167132129337,
+            "f1M": 0.5846678023850085,
+            "frames": 128,
+            "nll": 0.18431491722586194,
+            "precisionM": 0.5785569790964261,
+            "recallM": 0.5909090909090908
+          },
+          "E": {
+            "accuracy": 0.9173052607086327,
+            "brier": 0.048715859526340735,
+            "ece10": 0.08495870510266106,
+            "f1M": 0.8416572626148638,
+            "frames": 213,
+            "nll": 0.174270968533546,
+            "precisionM": 0.7665472484876961,
+            "recallM": 0.9330855018587361
+          },
+          "FF": {
+            "accuracy": 0.9142973099482943,
+            "brier": 0.0888605631827229,
+            "ece10": 0.12090058749553693,
+            "f1M": 0.7374392220421393,
+            "frames": 56,
+            "nll": 0.3805345425837902,
+            "precisionM": 0.7081712062256809,
+            "recallM": 0.7692307692307693
+          },
+          "I": {
+            "accuracy": 0.9300806692308109,
+            "brier": 0.046096168509704424,
+            "ece10": 0.11854020727813543,
+            "f1M": 0.8671288853680084,
+            "frames": 203,
+            "nll": 0.1593209755818314,
+            "precisionM": 0.7654258937034436,
+            "recallM": 1.0
+          },
+          "O": {
+            "accuracy": 0.8260671043305362,
+            "brier": 0.09783683345206232,
+            "ece10": 0.1694509926038859,
+            "f1M": 0.6747967479674797,
+            "frames": 74,
+            "nll": 0.26841761659577207,
+            "precisionM": 1.0,
+            "recallM": 0.5092024539877301
+          },
+          "PP": {
+            "accuracy": 0.9372090997655598,
+            "brier": 0.046208093156691755,
+            "ece10": 0.021165498901575087,
+            "f1M": 0.9615470728652198,
+            "frames": 363,
+            "nll": 0.1779843534309923,
+            "precisionM": 0.9535954625884254,
+            "recallM": 0.9696324081291526
+          },
+          "RR": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.027561826586794673,
+            "ece10": 0.13536411224450548,
+            "f1M": 1.0,
+            "frames": 35,
+            "nll": 0.1522185290420668,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "SS": {
+            "accuracy": 0.9318592307871307,
+            "brier": 0.04818378242213931,
+            "ece10": 0.08325511576982048,
+            "f1M": 0.9358284738462846,
+            "frames": 61,
+            "nll": 0.16804101121529172,
+            "precisionM": 0.9195720644873225,
+            "recallM": 0.9526699961582789
+          },
+          "TH": {
+            "accuracy": 0.9073747445994798,
+            "brier": 0.089931891163184,
+            "ece10": 0.18176276878272335,
+            "f1M": 0.6666666666666666,
+            "frames": 23,
+            "nll": 0.2651062909948793,
+            "precisionM": 1.0,
+            "recallM": 0.5
+          },
+          "U": {
+            "accuracy": 0.8582574275975465,
+            "brier": 0.10057330040828791,
+            "ece10": 0.1489221290789615,
+            "f1M": 0.8848182092708176,
+            "frames": 116,
+            "nll": 0.32991908891571603,
+            "precisionM": 0.9548040239328852,
+            "recallM": 0.8243914555389965
+          },
+          "aa": {
+            "accuracy": 0.9201119391924052,
+            "brier": 0.06205926881604933,
+            "ece10": 0.0500957881097311,
+            "f1M": 0.9300830960753549,
+            "frames": 640,
+            "nll": 0.22147915946716684,
+            "precisionM": 0.9322520704814988,
+            "recallM": 0.9279241908987091
+          },
+          "kk": {
+            "accuracy": 0.9720081533899031,
+            "brier": 0.036995144197367935,
+            "ece10": 0.09560190208270357,
+            "f1M": 0.9673287025725156,
+            "frames": 184,
+            "nll": 0.15192168280965776,
+            "precisionM": 1.0,
+            "recallM": 0.9367246915666723
+          },
+          "nn": {
+            "accuracy": 0.9107994557826066,
+            "brier": 0.06395944166414931,
+            "ece10": 0.0240229298401129,
+            "f1M": 0.7934664796920852,
+            "frames": 638,
+            "nll": 0.22023605997961654,
+            "precisionM": 0.7812617011059659,
+            "recallM": 0.8060586330380549
+          },
+          "sil": {
+            "accuracy": 0.9520327646882782,
+            "brier": 0.028066924943295733,
+            "ece10": 0.06574691105270612,
+            "f1M": 0.9726543464163977,
+            "frames": 109,
+            "nll": 0.10995892862069773,
+            "precisionM": 0.964560759611122,
+            "recallM": 0.9808849084347012
+          }
+        },
+        "crossConfusion": {
+          "mAsNnMeanPosterior": 0.6719200850897606,
+          "mAsNnPredictedMAt050": 40,
+          "mFramesEmittedAsNn": 50,
+          "nlFramesEmittedAsPp": 109
+        },
+        "eligibilityReliability": {
+          "accuracy": 0.8645627876397108,
+          "brier": 0.11270350316234656,
+          "byHardOculusWinner": {
+            "CH": {
+              "accuracy": 0.9323784805588655,
+              "brier": 0.06312546096989659,
+              "ece10": 0.0017142793447677274,
+              "empiricalEligibilityRate": 0.06762151944113454,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 116.36658487443859,
+              "frames": 991,
+              "meanPredictedEligibility": 0.06933579878590226,
+              "nll": 0.24797391584938375,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "DD": {
+              "accuracy": 0.9508535970898226,
+              "brier": 0.0468224059197096,
+              "ece10": 0.001692970998334938,
+              "empiricalEligibilityRate": 0.04914640291017751,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 372.79653976089486,
+              "frames": 2945,
+              "meanPredictedEligibility": 0.050839373908512446,
+              "nll": 0.19686763014650277,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "E": {
+              "accuracy": 0.7349178040042847,
+              "brier": 0.1999035754435814,
+              "ece10": 0.09083735796123459,
+              "empiricalEligibilityRate": 0.2650821959957155,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 134.4122825618923,
+              "frames": 1150,
+              "meanPredictedEligibility": 0.19692128535324138,
+              "nll": 0.5933393683331017,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "FF": {
+              "accuracy": 0.9431247479328098,
+              "brier": 0.054624817857114066,
+              "ece10": 0.027818261406080718,
+              "empiricalEligibilityRate": 0.05687525206719015,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 135.77965905353676,
+              "frames": 974,
+              "meanPredictedEligibility": 0.08469351347327085,
+              "nll": 0.22511557884291453,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "I": {
+              "accuracy": 0.8907207381851027,
+              "brier": 0.0979772824435921,
+              "ece10": 0.02248678062968712,
+              "empiricalEligibilityRate": 0.1092792618148974,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 287.78070918806986,
+              "frames": 2587,
+              "meanPredictedEligibility": 0.1317660424445845,
+              "nll": 0.3478702898398337,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "O": {
+              "accuracy": 0.9106738757600051,
+              "brier": 0.08594029994213248,
+              "ece10": 0.06625172617147371,
+              "empiricalEligibilityRate": 0.08932612423999495,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 152.4576656249331,
+              "frames": 1399,
+              "meanPredictedEligibility": 0.15557785041146865,
+              "nll": 0.32091292452145104,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "PP": {
+              "accuracy": 0.7970516988454549,
+              "brier": 0.16199023547624852,
+              "ece10": 0.005886450122424121,
+              "empiricalEligibilityRate": 0.20294830115454504,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 262.19475980713025,
+              "frames": 1926,
+              "meanPredictedEligibility": 0.2044652926706157,
+              "nll": 0.5051690920269786,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "RR": {
+              "accuracy": 0.8884578400092061,
+              "brier": 0.09977731016591376,
+              "ece10": 0.03010396151458916,
+              "empiricalEligibilityRate": 0.11154215999079395,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 56.82953324027493,
+              "frames": 411,
+              "meanPredictedEligibility": 0.0814381984762048,
+              "nll": 0.35401774191089247,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "SS": {
+              "accuracy": 0.9540727550279191,
+              "brier": 0.044299869084026514,
+              "ece10": 0.013426120082630902,
+              "empiricalEligibilityRate": 0.04592724497208092,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 197.42103145679278,
+              "frames": 1736,
+              "meanPredictedEligibility": 0.03250112488945002,
+              "nll": 0.19348104361009139,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "TH": {
+              "accuracy": 0.9371362832700862,
+              "brier": 0.059681965602688625,
+              "ece10": 0.019201935363673216,
+              "empiricalEligibilityRate": 0.06286371672991364,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 42.58001446867546,
+              "frames": 327,
+              "meanPredictedEligibility": 0.04366178136624044,
+              "nll": 0.24322278565760586,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "U": {
+              "accuracy": 0.9072732819349258,
+              "brier": 0.08411216447890585,
+              "ece10": 0.005010483287093757,
+              "empiricalEligibilityRate": 0.0927267180650741,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 167.25102437848466,
+              "frames": 1492,
+              "meanPredictedEligibility": 0.09475907858538093,
+              "nll": 0.3087572952046544,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "aa": {
+              "accuracy": 0.7570474931317406,
+              "brier": 0.18731561070355485,
+              "ece10": 0.05672113415297575,
+              "empiricalEligibilityRate": 0.24295250686825964,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 390.80145917928655,
+              "frames": 3298,
+              "meanPredictedEligibility": 0.1862715735422277,
+              "nll": 0.5649460221092069,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "kk": {
+              "accuracy": 0.8995829325758927,
+              "brier": 0.09164739664014258,
+              "ece10": 0.032774460059608455,
+              "empiricalEligibilityRate": 0.1004170674241072,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 266.169827334688,
+              "frames": 2151,
+              "meanPredictedEligibility": 0.0688596548166865,
+              "nll": 0.33530440407448575,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "nn": {
+              "accuracy": 0.7635722392501945,
+              "brier": 0.18632117981937996,
+              "ece10": 0.1241613665033066,
+              "empiricalEligibilityRate": 0.23642776074980568,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 335.47708902293243,
+              "frames": 2610,
+              "meanPredictedEligibility": 0.29740094496403807,
+              "nll": 0.5612305608716992,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "sil": {
+              "accuracy": 0.9224118036492788,
+              "brier": 0.07161016033367362,
+              "ece10": 0.006128203698437805,
+              "empiricalEligibilityRate": 0.07758819635072114,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 123.68182004796925,
+              "frames": 1332,
+              "meanPredictedEligibility": 0.07164037797151085,
+              "nll": 0.27313136053812237,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            }
+          },
+          "ece10": 0.021486833903925903,
+          "empiricalEligibilityRate": 0.1354372123602893,
+          "f1M": 0.0,
+          "frames": 25329,
+          "globalPriorBaseline": {
+            "accuracy": 0.8645627876397108,
+            "brier": 0.1171189322371295,
+            "ece10": 0.004995835142027449,
+            "f1M": 0.0,
+            "frames": 25329,
+            "nll": 0.3967022939854107,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "meanPredictedEligibility": 0.13436734103108017,
+          "nll": 0.37687628692661407,
+          "occurrences": 3042,
+          "precisionM": 0.0,
+          "recallM": 0.0,
+          "relativeBrierImprovementOverGlobalPrior": 0.03770038703770854,
+          "relativeNllImprovementOverGlobalPrior": 0.04997704162387764,
+          "trainingGlobalPrior": 0.13044137721826185
+        },
+        "model": {
+          "accuracy": 0.9227479777417857,
+          "brier": 0.056923752576813536,
+          "ece10": 0.03211423147843197,
+          "f1M": 0.9229461330934522,
+          "frames": 2894,
+          "nll": 0.20239223909804435,
+          "precisionM": 0.9205847864675801,
+          "recallM": 0.9253196248196248,
+          "relativeBrierImprovementOverOculusObservation": 0.7449495732260525,
+          "relativeNllImprovementOverOculusObservation": 0.6823520295330369,
+          "reliableCoverageAt025": 0.1482079198112182
+        },
+        "oculusObservationBaseline": {
+          "accuracy": 0.643671765666251,
+          "brier": 0.22318626671919015,
+          "ece10": 0.05358923940124705,
+          "f1M": 0.5403584291873644,
+          "frames": 2894,
+          "nll": 0.637158924077225,
+          "precisionM": 0.7610024809295686,
+          "recallM": 0.41890241702741704
+        }
+      },
+      "kind": "Balanced",
+      "reliability": [
+        0.07146859928804734,
+        0.20791307895506242,
+        0.08214021100269989,
+        0.03818456205820982,
+        0.046087531864631374,
+        0.06524069294473721,
+        0.06726987224841033,
+        0.028344209628582997,
+        0.30502204073664874,
+        0.07656126196769991,
+        0.19023165368352526,
+        0.20018009202762257,
+        0.13222666634477978,
+        0.15641020963876162,
+        0.0941683927169197
+      ],
+      "selectedRidge": 0.05
+    },
+    "Quality": {
+      "bias": [
+        -0.6814265746216248,
+        -0.7165509433294395,
+        -2.470832755223594,
+        -1.2996705526901247,
+        -2.5584878766546892,
+        -2.786596471329821,
+        -2.006542932453964,
+        -1.4531509915234087,
+        -3.518182361597616,
+        -3.0992803281318886,
+        -2.659092794667888,
+        -2.637630486513135,
+        -2.5471467225972657,
+        -3.169088319285028,
+        -3.162404656977042
+      ],
+      "coefficient": [
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ],
+        [
+          -2.1986602347408644,
+          0.6837796258214676,
+          -3.1680220867944646,
+          -0.13075952999568347,
+          0.11481869320094336,
+          -0.06873922918503318,
+          0.02280540800371042,
+          -0.33893593893198315,
+          -0.14812667393706438,
+          0.05951622812939738,
+          -0.27294551017079466,
+          -0.24884425105106847
+        ]
+      ],
+      "conservativeLogitBound": 12.248867704170088,
+      "development": {
+        "byOculusWinner": {
+          "CH": {
+            "accuracy": 1.0,
+            "brier": 0.00041034137653025646,
+            "ece10": 0.019962041527743526,
+            "f1M": 0.0,
+            "frames": 3,
+            "nll": 0.02017015046436582,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "DD": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.014283908158087942,
+            "ece10": 0.06799186500418801,
+            "f1M": 1.0,
+            "frames": 34,
+            "nll": 0.07744870829370389,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "E": {
+            "accuracy": 0.9536150445556137,
+            "brier": 0.0425908059607073,
+            "ece10": 0.09223141172714469,
+            "f1M": 0.9596728964254491,
+            "frames": 73,
+            "nll": 0.18191879063767186,
+            "precisionM": 0.9934259113010293,
+            "recallM": 0.9281381241250583
+          },
+          "FF": {
+            "accuracy": 1.0,
+            "brier": 0.008675073034341008,
+            "ece10": 0.07735253735720754,
+            "f1M": 1.0,
+            "frames": 9,
+            "nll": 0.08205329009742045,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "I": {
+            "accuracy": 0.9692681710706584,
+            "brier": 0.038534376687394394,
+            "ece10": 0.09914141012437688,
+            "f1M": 0.9665856102923468,
+            "frames": 93,
+            "nll": 0.1609213663164314,
+            "precisionM": 0.975735236452043,
+            "recallM": 0.9576059850374065
+          },
+          "O": {
+            "accuracy": 1.0,
+            "brier": 0.00821309782093865,
+            "ece10": 0.06816001348882558,
+            "f1M": 0.0,
+            "frames": 41,
+            "nll": 0.07278388794192779,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "PP": {
+            "accuracy": 0.9477165652210855,
+            "brier": 0.035773210841059104,
+            "ece10": 0.052959389193654796,
+            "f1M": 0.9683592648078279,
+            "frames": 109,
+            "nll": 0.1278490142688736,
+            "precisionM": 0.9728168753978081,
+            "recallM": 0.9639423189286466
+          },
+          "RR": {
+            "accuracy": 1.0,
+            "brier": 0.019897022190460665,
+            "ece10": 0.08745560946577505,
+            "f1M": 0.0,
+            "frames": 8,
+            "nll": 0.09991393636499779,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "SS": {
+            "accuracy": 0.6086956521739131,
+            "brier": 0.1635472857742919,
+            "ece10": 0.31825601583560026,
+            "f1M": 0.0,
+            "frames": 12,
+            "nll": 0.46743733689509875,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "TH": {
+            "accuracy": 0.9999999999999999,
+            "brier": 0.003146222613985099,
+            "ece10": 0.04727369538187817,
+            "f1M": 1.0,
+            "frames": 10,
+            "nll": 0.048940327414023974,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "U": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.004846949729286166,
+            "ece10": 0.036637620633385375,
+            "f1M": 0.0,
+            "frames": 34,
+            "nll": 0.03953431251526596,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "aa": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.012577857620335394,
+            "ece10": 0.08580990076632758,
+            "f1M": 1.0,
+            "frames": 58,
+            "nll": 0.09319484816374364,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "kk": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.0075937732666865486,
+            "ece10": 0.08069095432822,
+            "f1M": 1.0,
+            "frames": 15,
+            "nll": 0.0847562252870972,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "nn": {
+            "accuracy": 0.8711849499214538,
+            "brier": 0.08380206445108163,
+            "ece10": 0.15067440648970978,
+            "f1M": 0.0,
+            "frames": 227,
+            "nll": 0.24671362066966174,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "sil": {
+            "accuracy": 1.0,
+            "brier": 0.03527091198221423,
+            "ece10": 0.1548103185874784,
+            "f1M": 0.0,
+            "frames": 12,
+            "nll": 0.17703745554865463,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          }
+        },
+        "crossConfusion": {
+          "mAsNnMeanPosterior": null,
+          "mAsNnPredictedMAt050": 0,
+          "mFramesEmittedAsNn": 0,
+          "nlFramesEmittedAsPp": 45
+        },
+        "eligibilityReliability": {
+          "accuracy": 0.8883248730964466,
+          "brier": 0.09332241220144516,
+          "byHardOculusWinner": {
+            "CH": {
+              "accuracy": 0.9827932646985891,
+              "brier": 0.019773935151167966,
+              "ece10": 0.053327083109246005,
+              "empiricalEligibilityRate": 0.017206735301410724,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 19.37225903079967,
+              "frames": 262,
+              "meanPredictedEligibility": 0.07053381841065672,
+              "nll": 0.1176340547191845,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "DD": {
+              "accuracy": 0.9539918264221444,
+              "brier": 0.043928786654173574,
+              "ece10": 0.0037885624824927078,
+              "empiricalEligibilityRate": 0.04600817357785568,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 99.37316929656545,
+              "frames": 865,
+              "meanPredictedEligibility": 0.04979673606034839,
+              "nll": 0.18685056877046805,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "E": {
+              "accuracy": 0.721878210461824,
+              "brier": 0.20725416944780864,
+              "ece10": 0.08589677404935657,
+              "empiricalEligibilityRate": 0.27812178953817585,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 40.70265903686956,
+              "frames": 385,
+              "meanPredictedEligibility": 0.1922250154888193,
+              "nll": 0.60983230219804,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "FF": {
+              "accuracy": 0.9724844845890036,
+              "brier": 0.03045314199907416,
+              "ece10": 0.06498822924378393,
+              "empiricalEligibilityRate": 0.0275155154109965,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 34.968811580576286,
+              "frames": 276,
+              "meanPredictedEligibility": 0.08871079902263106,
+              "nll": 0.15663113933281197,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "I": {
+              "accuracy": 0.8646093283676846,
+              "brier": 0.11708985903467367,
+              "ece10": 0.004232829888391743,
+              "empiricalEligibilityRate": 0.13539067163231544,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 83.02010971777315,
+              "frames": 859,
+              "meanPredictedEligibility": 0.1311578417439237,
+              "nll": 0.3966353063172954,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "O": {
+              "accuracy": 0.9301400513231878,
+              "brier": 0.07352404014724963,
+              "ece10": 0.09439270792311144,
+              "empiricalEligibilityRate": 0.06985994867681233,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 55.90768751887947,
+              "frames": 558,
+              "meanPredictedEligibility": 0.16425265659992372,
+              "nll": 0.29171733065440947,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "PP": {
+              "accuracy": 0.8504997970437898,
+              "brier": 0.13138703439797422,
+              "ece10": 0.07935920016323875,
+              "empiricalEligibilityRate": 0.14950020295621017,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 80.8023490441447,
+              "frames": 678,
+              "meanPredictedEligibility": 0.20929191753722004,
+              "nll": 0.43555080011733927,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "RR": {
+              "accuracy": 0.9334595510026913,
+              "brier": 0.06336063510439349,
+              "ece10": 0.016570770329898437,
+              "empiricalEligibilityRate": 0.06654044899730872,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 15.565183303108999,
+              "frames": 128,
+              "meanPredictedEligibility": 0.08311121932720715,
+              "nll": 0.2528959087966726,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "SS": {
+              "accuracy": 0.9710241615525257,
+              "brier": 0.028348452175197485,
+              "ece10": 0.003619211334890963,
+              "empiricalEligibilityRate": 0.02897583844747428,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 50.39776374252773,
+              "frames": 556,
+              "meanPredictedEligibility": 0.03259504978236524,
+              "nll": 0.1341554580218987,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "TH": {
+              "accuracy": 0.9562088117845107,
+              "brier": 0.04229470599659234,
+              "ece10": 0.0017978491445849384,
+              "empiricalEligibilityRate": 0.0437911882154894,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 26.64158508158508,
+              "frames": 175,
+              "meanPredictedEligibility": 0.041993339070904454,
+              "nll": 0.18479633422752587,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "U": {
+              "accuracy": 0.9044248917526638,
+              "brier": 0.08598939485303661,
+              "ece10": 0.03295509583194654,
+              "empiricalEligibilityRate": 0.09557510824733609,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 40.63805942079936,
+              "frames": 379,
+              "meanPredictedEligibility": 0.09656994407066011,
+              "nll": 0.3126525963526381,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "aa": {
+              "accuracy": 0.84097102138571,
+              "brier": 0.13481965195258389,
+              "ece10": 0.028320908208234276,
+              "empiricalEligibilityRate": 0.15902897861428994,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 54.08491239153004,
+              "frames": 508,
+              "meanPredictedEligibility": 0.18734988682252426,
+              "nll": 0.4417097571073271,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "kk": {
+              "accuracy": 0.9722415604419482,
+              "brier": 0.029087184431119212,
+              "ece10": 0.04374966059734725,
+              "empiricalEligibilityRate": 0.027758439558051764,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 74.1516225733331,
+              "frames": 667,
+              "meanPredictedEligibility": 0.07150810015539903,
+              "nll": 0.1463965433182857,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "nn": {
+              "accuracy": 0.7018593923805131,
+              "brier": 0.21137145742385727,
+              "ece10": 0.1297043315287529,
+              "empiricalEligibilityRate": 0.298140607619487,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 80.65644942862434,
+              "frames": 657,
+              "meanPredictedEligibility": 0.29844558574418784,
+              "nll": 0.6143836929900622,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "sil": {
+              "accuracy": 0.9579620579506716,
+              "brier": 0.04123898084186092,
+              "ece10": 0.031126760997566186,
+              "empiricalEligibilityRate": 0.04203794204932841,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 31.71737883288305,
+              "frames": 489,
+              "meanPredictedEligibility": 0.0731647030468946,
+              "nll": 0.18268811649772448,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            }
+          },
+          "ece10": 0.020343887737256705,
+          "empiricalEligibilityRate": 0.1116751269035533,
+          "f1M": 0.0,
+          "frames": 7442,
+          "globalPriorBaseline": {
+            "accuracy": 0.8883248730964466,
+            "brier": 0.09960215492037364,
+            "ece10": 0.019959007634275393,
+            "f1M": 0.0,
+            "frames": 7442,
+            "nll": 0.35182696538020425,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "meanPredictedEligibility": 0.13201901464081,
+          "nll": 0.3223317080569238,
+          "occurrences": 788,
+          "precisionM": 0.0,
+          "recallM": 0.0,
+          "relativeBrierImprovementOverGlobalPrior": 0.06304826159583375,
+          "relativeNllImprovementOverGlobalPrior": 0.08383455569247286,
+          "trainingGlobalPrior": 0.1316341345378287
+        },
+        "model": {
+          "accuracy": 0.951608221798173,
+          "brier": 0.038492852216945275,
+          "ece10": 0.048629662868833655,
+          "f1M": 0.9524132986003189,
+          "frames": 738,
+          "nll": 0.14778360242572608,
+          "precisionM": 0.9368276305185571,
+          "recallM": 0.968526326614562,
+          "relativeBrierImprovementOverOculusObservation": 0.8039329333392934,
+          "relativeNllImprovementOverOculusObservation": 0.745376675534299,
+          "reliableCoverageAt025": 0.16699279750750337
+        },
+        "oculusObservationBaseline": {
+          "accuracy": 0.6682135482074207,
+          "brier": 0.19632492530505902,
+          "ece10": 0.1302097075314162,
+          "f1M": 0.5840049707149618,
+          "frames": 738,
+          "nll": 0.580400883288417,
+          "precisionM": 0.7826423811517966,
+          "recallM": 0.4657866643160761
+        }
+      },
+      "developmentFactorCalibration": {
+        "faceLogLikelihoodScale": 1.5941556725662671,
+        "intercept": 0.02362961866999183,
+        "oculusLogLikelihoodScale": 1.12179115611346
+      },
+      "expertAudit": {
+        "byViseme": {
+          "CH": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 23.548504273504264,
+              "ineligible": 339.37718166882894
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 24.548504273504264,
+              "betaIneligible": 340.37718166882894,
+              "effectiveOccurrenceSupport": 362.9256859423332,
+              "mean": 0.06726987224841033
+            },
+            "eligibilityPosteriorAlpha": [
+              340.37718166882894,
+              24.548504273504264
+            ],
+            "fractionalOccurrenceCounts": [
+              17.1514985014985,
+              6.397005772005771,
+              12.496053946053944,
+              326.88112772277503
+            ],
+            "mVsNlLogLikelihoodRatio": 0.3284655210373156,
+            "rawFrameCounts": [
+              124,
+              58,
+              86,
+              3022
+            ],
+            "reliability": 0.06726987224841033
+          },
+          "DD": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 69.51148010486243,
+              "ineligible": 1458.4354980056003
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 70.51148010486243,
+              "betaIneligible": 1459.4354980056003,
+              "effectiveOccurrenceSupport": 1527.9469781104626,
+              "mean": 0.046087531864631374
+            },
+            "eligibilityPosteriorAlpha": [
+              1459.4354980056003,
+              70.51148010486243
+            ],
+            "fractionalOccurrenceCounts": [
+              56.24809904148139,
+              13.263381063381063,
+              41.34036869563185,
+              1417.0951293099683
+            ],
+            "mVsNlLogLikelihoodRatio": -0.1635556017828938,
+            "rawFrameCounts": [
+              393,
+              100,
+              309,
+              11818
+            ],
+            "reliability": 0.046087531864631374
+          },
+          "E": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 135.64299019693755,
+              "ineligible": 544.9573064303734
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 136.64299019693755,
+              "betaIneligible": 545.9573064303734,
+              "effectiveOccurrenceSupport": 680.6002966273109,
+              "mean": 0.20018009202762257
+            },
+            "eligibilityPosteriorAlpha": [
+              545.9573064303734,
+              136.64299019693755
+            ],
+            "fractionalOccurrenceCounts": [
+              110.70702908202911,
+              24.93596111490849,
+              13.9328999947421,
+              531.0244064356314
+            ],
+            "mVsNlLogLikelihoodRatio": -0.2341058191091222,
+            "rawFrameCounts": [
+              789,
+              203,
+              130,
+              5181
+            ],
+            "reliability": 0.20018009202762257
+          },
+          "FF": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 37.511122047886765,
+              "ineligible": 429.33503232370276
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 38.511122047886765,
+              "betaIneligible": 430.33503232370276,
+              "effectiveOccurrenceSupport": 466.84615437158953,
+              "mean": 0.08214021100269989
+            },
+            "eligibilityPosteriorAlpha": [
+              430.33503232370276,
+              38.511122047886765
+            ],
+            "fractionalOccurrenceCounts": [
+              30.125840662605366,
+              7.3852813852813854,
+              12.230633255633256,
+              417.10439906806937
+            ],
+            "mVsNlLogLikelihoodRatio": -0.08541706329166172,
+            "rawFrameCounts": [
+              213,
+              54,
+              107,
+              3516
+            ],
+            "reliability": 0.08214021100269989
+          },
+          "I": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 185.56463268096246,
+              "ineligible": 1223.3809642873296
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 186.56463268096246,
+              "betaIneligible": 1224.3809642873296,
+              "effectiveOccurrenceSupport": 1408.945596968292,
+              "mean": 0.13222666634477978
+            },
+            "eligibilityPosteriorAlpha": [
+              1224.3809642873296,
+              186.56463268096246
+            ],
+            "fractionalOccurrenceCounts": [
+              148.85007373629503,
+              36.7145589446673,
+              24.250746329693694,
+              1199.1302179576364
+            ],
+            "mVsNlLogLikelihoodRatio": -0.15344573953659474,
+            "rawFrameCounts": [
+              1149,
+              332,
+              199,
+              11880
+            ],
+            "reliability": 0.13222666634477978
+          },
+          "O": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 90.20055026672675,
+              "ineligible": 490.88510940574395
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 91.20055026672675,
+              "betaIneligible": 491.88510940574395,
+              "effectiveOccurrenceSupport": 581.0856596724707,
+              "mean": 0.15641020963876162
+            },
+            "eligibilityPosteriorAlpha": [
+              491.88510940574395,
+              91.20055026672675
+            ],
+            "fractionalOccurrenceCounts": [
+              79.55491257108903,
+              10.645637695637694,
+              24.69563492063492,
+              466.1894744851092
+            ],
+            "mVsNlLogLikelihoodRatio": -0.7078640849642156,
+            "rawFrameCounts": [
+              782,
+              93,
+              188,
+              5006
+            ],
+            "reliability": 0.15641020963876162
+          },
+          "PP": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 237.46400212704395,
+              "ineligible": 907.4768412558042
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 238.46400212704395,
+              "betaIneligible": 908.4768412558042,
+              "effectiveOccurrenceSupport": 1144.940843382848,
+              "mean": 0.20791307895506242
+            },
+            "eligibilityPosteriorAlpha": [
+              908.4768412558042,
+              238.46400212704395
+            ],
+            "fractionalOccurrenceCounts": [
+              103.70968104393027,
+              133.7543210831137,
+              262.47773638470227,
+              644.9991048711007
+            ],
+            "mVsNlLogLikelihoodRatio": 1.478405045960841,
+            "rawFrameCounts": [
+              674,
+              1329,
+              2183,
+              5374
+            ],
+            "reliability": 0.20791307895506242
+          },
+          "RR": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 27.746410533910534,
+              "ineligible": 345.7229821471849
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 28.746410533910534,
+              "betaIneligible": 346.7229821471849,
+              "effectiveOccurrenceSupport": 373.4693926810954,
+              "mean": 0.07656126196769991
+            },
+            "eligibilityPosteriorAlpha": [
+              346.7229821471849,
+              28.746410533910534
+            ],
+            "fractionalOccurrenceCounts": [
+              24.780140692640693,
+              2.966269841269842,
+              3.6879120879120877,
+              342.03507005927275
+            ],
+            "mVsNlLogLikelihoodRatio": -0.6456350410172166,
+            "rawFrameCounts": [
+              171,
+              22,
+              28,
+              2836
+            ],
+            "reliability": 0.07656126196769991
+          },
+          "SS": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 35.85104617604616,
+              "ineligible": 1262.275034562669
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 36.85104617604616,
+              "betaIneligible": 1263.275034562669,
+              "effectiveOccurrenceSupport": 1298.126080738715,
+              "mean": 0.028344209628582997
+            },
+            "eligibilityPosteriorAlpha": [
+              1263.275034562669,
+              36.85104617604616
+            ],
+            "fractionalOccurrenceCounts": [
+              21.700649350649357,
+              14.150396825396825,
+              48.153013653013645,
+              1214.122020909655
+            ],
+            "mVsNlLogLikelihoodRatio": 0.8217765423577443,
+            "rawFrameCounts": [
+              159,
+              111,
+              315,
+              12260
+            ],
+            "reliability": 0.028344209628582997
+          },
+          "TH": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 10.254362304362305,
+              "ineligible": 282.48156493256084
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 11.254362304362305,
+              "betaIneligible": 283.48156493256084,
+              "effectiveOccurrenceSupport": 292.73592723692315,
+              "mean": 0.03818456205820982
+            },
+            "eligibilityPosteriorAlpha": [
+              283.48156493256084,
+              11.254362304362305
+            ],
+            "fractionalOccurrenceCounts": [
+              5.941988566988567,
+              4.312373737373738,
+              5.549595944990682,
+              276.9319689875702
+            ],
+            "mVsNlLogLikelihoodRatio": 0.9585938438642295,
+            "rawFrameCounts": [
+              56,
+              40,
+              52,
+              2128
+            ],
+            "reliability": 0.03818456205820982
+          },
+          "U": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 52.65195988222305,
+              "ineligible": 515.0929230267017
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 53.65195988222305,
+              "betaIneligible": 516.0929230267017,
+              "effectiveOccurrenceSupport": 567.7448829089248,
+              "mean": 0.0941683927169197
+            },
+            "eligibilityPosteriorAlpha": [
+              516.0929230267017,
+              53.65195988222305
+            ],
+            "fractionalOccurrenceCounts": [
+              46.71298423798424,
+              5.938975644238803,
+              23.49129187805658,
+              491.6016311486453
+            ],
+            "mVsNlLogLikelihoodRatio": -0.7019060576865339,
+            "rawFrameCounts": [
+              380,
+              61,
+              209,
+              4610
+            ],
+            "reliability": 0.0941683927169197
+          },
+          "aa": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 238.4302744340284,
+              "ineligible": 1018.1945117035688
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 239.4302744340284,
+              "betaIneligible": 1019.1945117035688,
+              "effectiveOccurrenceSupport": 1256.624786137597,
+              "mean": 0.19023165368352526
+            },
+            "eligibilityPosteriorAlpha": [
+              1019.1945117035688,
+              239.4302744340284
+            ],
+            "fractionalOccurrenceCounts": [
+              194.82543793066245,
+              43.6048365033659,
+              74.10694444444444,
+              944.0875672591246
+            ],
+            "mVsNlLogLikelihoodRatio": -0.2532379971779094,
+            "rawFrameCounts": [
+              1519,
+              378,
+              628,
+              9653
+            ],
+            "reliability": 0.19023165368352526
+          },
+          "kk": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 73.62057150365972,
+              "ineligible": 1068.152863994149
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 74.62057150365972,
+              "betaIneligible": 1069.152863994149,
+              "effectiveOccurrenceSupport": 1141.7734354978086,
+              "mean": 0.06524069294473721
+            },
+            "eligibilityPosteriorAlpha": [
+              1069.152863994149,
+              74.62057150365972
+            ],
+            "fractionalOccurrenceCounts": [
+              61.84399807708631,
+              11.776573426573426,
+              28.478769841269845,
+              1039.674094152879
+            ],
+            "mVsNlLogLikelihoodRatio": -0.36689879399117703,
+            "rawFrameCounts": [
+              434,
+              110,
+              204,
+              8897
+            ],
+            "reliability": 0.06524069294473721
+          },
+          "nn": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 462.50371203331906,
+              "ineligible": 1055.0707781049227
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 463.50371203331906,
+              "betaIneligible": 1056.0707781049227,
+              "effectiveOccurrenceSupport": 1517.5744901382418,
+              "mean": 0.30502204073664874
+            },
+            "eligibilityPosteriorAlpha": [
+              1056.0707781049227,
+              463.50371203331906
+            ],
+            "fractionalOccurrenceCounts": [
+              419.0208703480004,
+              43.482841685318455,
+              36.053189904350894,
+              1019.0175882005725
+            ],
+            "mVsNlLogLikelihoodRatio": -1.0190575191521385,
+            "rawFrameCounts": [
+              3850,
+              340,
+              237,
+              8045
+            ],
+            "reliability": 0.30502204073664874
+          },
+          "sil": {
+            "eligibilityFractionalOccurrenceCounts": {
+              "eligible": 39.49838143452694,
+              "ineligible": 525.1614081508558
+            },
+            "eligibilityPosterior": {
+              "alphaEligible": 40.49838143452694,
+              "betaIneligible": 526.1614081508558,
+              "effectiveOccurrenceSupport": 564.6597895853827,
+              "mean": 0.07146859928804734
+            },
+            "eligibilityPosteriorAlpha": [
+              526.1614081508558,
+              40.49838143452694
+            ],
+            "fractionalOccurrenceCounts": [
+              16.82679615705932,
+              22.671585277467628,
+              41.055208718869714,
+              484.10619943198606
+            ],
+            "mVsNlLogLikelihoodRatio": 1.5097160154905938,
+            "rawFrameCounts": [
+              172,
+              259,
+              430,
+              6161
+            ],
+            "reliability": 0.07146859928804734
+          }
+        },
+        "eligibilityBetaPrior": {
+          "alphaEligible": 1.0,
+          "betaIneligible": 1.0
+        },
+        "eligibilityDefinition": "M or N/L forced-phone occurrence; P/B stops and every other forced phone are ineligible",
+        "fractionalOccurrenceCountOrder": [
+          "NL",
+          "M",
+          "Stop",
+          "Other"
+        ],
+        "globalEligibilityRate": 0.13044137721826185,
+        "globalFractionalOccurrenceCounts": [
+          1338.0000000000002,
+          382.0,
+          652.0,
+          10813.999999999996
+        ],
+        "minimumPerWinnerFractionalOccurrenceSupport": 292.73592723692315
+      },
+      "featureAbsP995": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.5084896231572102,
+        0.3951422236696292,
+        0.5412291008579783,
+        0.36504402915679274,
+        0.35966620995339615,
+        0.304827572765651,
+        0.38444756313106987,
+        0.26148664141450395
+      ],
+      "featureAxes": [
+        "JawOpen",
+        "JawAdvance",
+        "LipAperture",
+        "LipProtrusion"
+      ],
+      "featureCount": 12,
+      "featureSafeBound": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0
+      ],
+      "featureStages": [
+        "current",
+        "current-fast",
+        "fast-slow"
+      ],
+      "heldout": {
+        "byOculusWinner": {
+          "CH": {
+            "accuracy": 0.8983685617752092,
+            "brier": 0.07604972463027329,
+            "ece10": 0.0732383207262625,
+            "f1M": 0.9133756366368874,
+            "frames": 51,
+            "nll": 0.23955834021385916,
+            "precisionM": 0.8405624495754735,
+            "recallM": 1.0
+          },
+          "DD": {
+            "accuracy": 0.8991340410708308,
+            "brier": 0.0641472777559321,
+            "ece10": 0.10199478828951129,
+            "f1M": 0.5078078761666287,
+            "frames": 128,
+            "nll": 0.20273382334593376,
+            "precisionM": 0.4451983715175222,
+            "recallM": 0.5909090909090908
+          },
+          "E": {
+            "accuracy": 0.9173052607086327,
+            "brier": 0.052176864387994876,
+            "ece10": 0.08698970943031407,
+            "f1M": 0.8416572626148638,
+            "frames": 213,
+            "nll": 0.18317311603246095,
+            "precisionM": 0.7665472484876961,
+            "recallM": 0.9330855018587361
+          },
+          "FF": {
+            "accuracy": 0.9142973099482943,
+            "brier": 0.09162622911355377,
+            "ece10": 0.10819989230915919,
+            "f1M": 0.7374392220421393,
+            "frames": 56,
+            "nll": 0.395187106023526,
+            "precisionM": 0.7081712062256809,
+            "recallM": 0.7692307692307693
+          },
+          "I": {
+            "accuracy": 0.913287816862665,
+            "brier": 0.05384263222761751,
+            "ece10": 0.12139915295783946,
+            "f1M": 0.840312597461795,
+            "frames": 203,
+            "nll": 0.17784103582613228,
+            "precisionM": 0.7246026779480443,
+            "recallM": 1.0
+          },
+          "O": {
+            "accuracy": 0.7825838804131703,
+            "brier": 0.09449630705345723,
+            "ece10": 0.16742734615364183,
+            "f1M": 0.5575221238938054,
+            "frames": 74,
+            "nll": 0.26113430529212617,
+            "precisionM": 1.0,
+            "recallM": 0.3865030674846626
+          },
+          "PP": {
+            "accuracy": 0.9417138218737214,
+            "brier": 0.04773997383137849,
+            "ece10": 0.017628409224060334,
+            "f1M": 0.9643513610789788,
+            "frames": 363,
+            "nll": 0.18311913981672112,
+            "precisionM": 0.9551761682119707,
+            "recallM": 0.9737045329678712
+          },
+          "RR": {
+            "accuracy": 1.0000000000000002,
+            "brier": 0.028098490446330306,
+            "ece10": 0.13400059645904183,
+            "f1M": 1.0,
+            "frames": 35,
+            "nll": 0.1512957298292684,
+            "precisionM": 1.0,
+            "recallM": 1.0
+          },
+          "SS": {
+            "accuracy": 0.9318592307871307,
+            "brier": 0.0544678332280877,
+            "ece10": 0.11939944276839434,
+            "f1M": 0.9358284738462846,
+            "frames": 61,
+            "nll": 0.1817733676452147,
+            "precisionM": 0.9195720644873225,
+            "recallM": 0.9526699961582789
+          },
+          "TH": {
+            "accuracy": 0.9073747445994798,
+            "brier": 0.09108479909230614,
+            "ece10": 0.17789431061226058,
+            "f1M": 0.6666666666666666,
+            "frames": 23,
+            "nll": 0.26992645622337746,
+            "precisionM": 1.0,
+            "recallM": 0.5
+          },
+          "U": {
+            "accuracy": 0.8481753514852974,
+            "brier": 0.11231401401051916,
+            "ece10": 0.1648372488241251,
+            "f1M": 0.8756062521078328,
+            "frames": 116,
+            "nll": 0.35949644482158744,
+            "precisionM": 0.9539904983751414,
+            "recallM": 0.809124834914519
+          },
+          "aa": {
+            "accuracy": 0.9165302456293778,
+            "brier": 0.06462077370722173,
+            "ece10": 0.04963966324646689,
+            "f1M": 0.9268564621175338,
+            "frames": 640,
+            "nll": 0.2276020544150508,
+            "precisionM": 0.9301946730135942,
+            "recallM": 0.9235421253713373
+          },
+          "kk": {
+            "accuracy": 0.9410556306960458,
+            "brier": 0.04443833928796959,
+            "ece10": 0.10721639581100223,
+            "f1M": 0.9292635658914729,
+            "frames": 184,
+            "nll": 0.17022783000306108,
+            "precisionM": 0.9904372107256245,
+            "recallM": 0.8752070305898259
+          },
+          "nn": {
+            "accuracy": 0.908518216176834,
+            "brier": 0.06461459011743936,
+            "ece10": 0.03072655451924828,
+            "f1M": 0.7862854894041349,
+            "frames": 638,
+            "nll": 0.22785097023185175,
+            "precisionM": 0.78097766772015,
+            "recallM": 0.791665952744033
+          },
+          "sil": {
+            "accuracy": 0.9484220580051168,
+            "brier": 0.037955404401815634,
+            "ece10": 0.06853410013492908,
+            "f1M": 0.970376140663254,
+            "frames": 109,
+            "nll": 0.14265242455537067,
+            "precisionM": 0.9694267799172855,
+            "recallM": 0.9713273626520519
+          }
+        },
+        "crossConfusion": {
+          "mAsNnMeanPosterior": 0.6879738060480818,
+          "mAsNnPredictedMAt050": 39,
+          "mFramesEmittedAsNn": 50,
+          "nlFramesEmittedAsPp": 109
+        },
+        "eligibilityReliability": {
+          "accuracy": 0.8645627876397108,
+          "brier": 0.11270350316234656,
+          "byHardOculusWinner": {
+            "CH": {
+              "accuracy": 0.9323784805588655,
+              "brier": 0.06312546096989659,
+              "ece10": 0.0017142793447677274,
+              "empiricalEligibilityRate": 0.06762151944113454,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 116.36658487443859,
+              "frames": 991,
+              "meanPredictedEligibility": 0.06933579878590226,
+              "nll": 0.24797391584938375,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "DD": {
+              "accuracy": 0.9508535970898226,
+              "brier": 0.0468224059197096,
+              "ece10": 0.001692970998334938,
+              "empiricalEligibilityRate": 0.04914640291017751,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 372.79653976089486,
+              "frames": 2945,
+              "meanPredictedEligibility": 0.050839373908512446,
+              "nll": 0.19686763014650277,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "E": {
+              "accuracy": 0.7349178040042847,
+              "brier": 0.1999035754435814,
+              "ece10": 0.09083735796123459,
+              "empiricalEligibilityRate": 0.2650821959957155,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 134.4122825618923,
+              "frames": 1150,
+              "meanPredictedEligibility": 0.19692128535324138,
+              "nll": 0.5933393683331017,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "FF": {
+              "accuracy": 0.9431247479328098,
+              "brier": 0.054624817857114066,
+              "ece10": 0.027818261406080718,
+              "empiricalEligibilityRate": 0.05687525206719015,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 135.77965905353676,
+              "frames": 974,
+              "meanPredictedEligibility": 0.08469351347327085,
+              "nll": 0.22511557884291453,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "I": {
+              "accuracy": 0.8907207381851027,
+              "brier": 0.0979772824435921,
+              "ece10": 0.02248678062968712,
+              "empiricalEligibilityRate": 0.1092792618148974,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 287.78070918806986,
+              "frames": 2587,
+              "meanPredictedEligibility": 0.1317660424445845,
+              "nll": 0.3478702898398337,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "O": {
+              "accuracy": 0.9106738757600051,
+              "brier": 0.08594029994213248,
+              "ece10": 0.06625172617147371,
+              "empiricalEligibilityRate": 0.08932612423999495,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 152.4576656249331,
+              "frames": 1399,
+              "meanPredictedEligibility": 0.15557785041146865,
+              "nll": 0.32091292452145104,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "PP": {
+              "accuracy": 0.7970516988454549,
+              "brier": 0.16199023547624852,
+              "ece10": 0.005886450122424121,
+              "empiricalEligibilityRate": 0.20294830115454504,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 262.19475980713025,
+              "frames": 1926,
+              "meanPredictedEligibility": 0.2044652926706157,
+              "nll": 0.5051690920269786,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "RR": {
+              "accuracy": 0.8884578400092061,
+              "brier": 0.09977731016591376,
+              "ece10": 0.03010396151458916,
+              "empiricalEligibilityRate": 0.11154215999079395,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 56.82953324027493,
+              "frames": 411,
+              "meanPredictedEligibility": 0.0814381984762048,
+              "nll": 0.35401774191089247,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "SS": {
+              "accuracy": 0.9540727550279191,
+              "brier": 0.044299869084026514,
+              "ece10": 0.013426120082630902,
+              "empiricalEligibilityRate": 0.04592724497208092,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 197.42103145679278,
+              "frames": 1736,
+              "meanPredictedEligibility": 0.03250112488945002,
+              "nll": 0.19348104361009139,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "TH": {
+              "accuracy": 0.9371362832700862,
+              "brier": 0.059681965602688625,
+              "ece10": 0.019201935363673216,
+              "empiricalEligibilityRate": 0.06286371672991364,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 42.58001446867546,
+              "frames": 327,
+              "meanPredictedEligibility": 0.04366178136624044,
+              "nll": 0.24322278565760586,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "U": {
+              "accuracy": 0.9072732819349258,
+              "brier": 0.08411216447890585,
+              "ece10": 0.005010483287093757,
+              "empiricalEligibilityRate": 0.0927267180650741,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 167.25102437848466,
+              "frames": 1492,
+              "meanPredictedEligibility": 0.09475907858538093,
+              "nll": 0.3087572952046544,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "aa": {
+              "accuracy": 0.7570474931317406,
+              "brier": 0.18731561070355485,
+              "ece10": 0.05672113415297575,
+              "empiricalEligibilityRate": 0.24295250686825964,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 390.80145917928655,
+              "frames": 3298,
+              "meanPredictedEligibility": 0.1862715735422277,
+              "nll": 0.5649460221092069,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "kk": {
+              "accuracy": 0.8995829325758927,
+              "brier": 0.09164739664014258,
+              "ece10": 0.032774460059608455,
+              "empiricalEligibilityRate": 0.1004170674241072,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 266.169827334688,
+              "frames": 2151,
+              "meanPredictedEligibility": 0.0688596548166865,
+              "nll": 0.33530440407448575,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "nn": {
+              "accuracy": 0.7635722392501945,
+              "brier": 0.18632117981937996,
+              "ece10": 0.1241613665033066,
+              "empiricalEligibilityRate": 0.23642776074980568,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 335.47708902293243,
+              "frames": 2610,
+              "meanPredictedEligibility": 0.29740094496403807,
+              "nll": 0.5612305608716992,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            },
+            "sil": {
+              "accuracy": 0.9224118036492788,
+              "brier": 0.07161016033367362,
+              "ece10": 0.006128203698437805,
+              "empiricalEligibilityRate": 0.07758819635072114,
+              "f1M": 0.0,
+              "fractionalOccurrenceSupport": 123.68182004796925,
+              "frames": 1332,
+              "meanPredictedEligibility": 0.07164037797151085,
+              "nll": 0.27313136053812237,
+              "precisionM": 0.0,
+              "recallM": 0.0
+            }
+          },
+          "ece10": 0.021486833903925903,
+          "empiricalEligibilityRate": 0.1354372123602893,
+          "f1M": 0.0,
+          "frames": 25329,
+          "globalPriorBaseline": {
+            "accuracy": 0.8645627876397108,
+            "brier": 0.1171189322371295,
+            "ece10": 0.004995835142027449,
+            "f1M": 0.0,
+            "frames": 25329,
+            "nll": 0.3967022939854107,
+            "precisionM": 0.0,
+            "recallM": 0.0
+          },
+          "meanPredictedEligibility": 0.13436734103108017,
+          "nll": 0.37687628692661407,
+          "occurrences": 3042,
+          "precisionM": 0.0,
+          "recallM": 0.0,
+          "relativeBrierImprovementOverGlobalPrior": 0.03770038703770854,
+          "relativeNllImprovementOverGlobalPrior": 0.04997704162387764,
+          "trainingGlobalPrior": 0.13044137721826185
+        },
+        "model": {
+          "accuracy": 0.9167920559402758,
+          "brier": 0.06045171698384397,
+          "ece10": 0.02951798050504737,
+          "f1M": 0.9168129403617055,
+          "frames": 2894,
+          "nll": 0.2128387795933106,
+          "precisionM": 0.9165828865670268,
+          "recallM": 0.9170431096681096,
+          "relativeBrierImprovementOverOculusObservation": 0.7286003408635386,
+          "relativeNllImprovementOverOculusObservation": 0.6653266098914922,
+          "reliableCoverageAt025": 0.1482079198112182
+        },
+        "oculusObservationBaseline": {
+          "accuracy": 0.643671765666251,
+          "brier": 0.2227405781429095,
+          "ece10": 0.05014780510380638,
+          "f1M": 0.5403584291873644,
+          "frames": 2894,
+          "nll": 0.6359596725760122,
+          "precisionM": 0.7610024809295686,
+          "recallM": 0.41890241702741704
+        }
+      },
+      "kind": "Quality",
+      "reliability": [
+        0.07146859928804734,
+        0.20791307895506242,
+        0.08214021100269989,
+        0.03818456205820982,
+        0.046087531864631374,
+        0.06524069294473721,
+        0.06726987224841033,
+        0.028344209628582997,
+        0.30502204073664874,
+        0.07656126196769991,
+        0.19023165368352526,
+        0.20018009202762257,
+        0.13222666634477978,
+        0.15641020963876162,
+        0.0941683927169197
+      ],
+      "selectedRidge": 0.05
+    }
+  },
+  "provenance": {
+    "audioArchiveSha256": "e07eaee117126ebc852593805b865798800a0438dd97cb423f50d1d2b1de2baf",
+    "audioSelectionContentSha256": "6e45ccf1971a87716ff02c467ef6bbc4b9d5ba92131941dc126cc201147a228d",
+    "dataset": {
+      "citation": "Bandekar, J., Udupa, S., and Ghosh, P. K. (2024). Articulatory synthesis using representations learnt through phonetic label-aware contrastive loss. Proc. Interspeech 2024, 427-431.",
+      "datasetCardUrl": "https://huggingface.co/datasets/SpireLab/SPIRE_EMA_CORPUS",
+      "license": "CC-BY-4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "paperDoi": "10.21437/Interspeech.2024-1756",
+      "paperUrl": "https://www.isca-archive.org/interspeech_2024/bandekar24_interspeech.html",
+      "processedArchive": "processed.zip",
+      "processedArchiveBytes": 3086792402,
+      "processedArchiveSha256": "ea1c3440af2b69cef0765b97e1e533ea72dae6029c49a175e1a93761c4236d04",
+      "repository": "SpireLab/SPIRE_EMA_CORPUS",
+      "repositoryRevision": "55f21628de95514e3ff22eaccc75e1547d181297",
+      "sampleRateHz": 100.0,
+      "sampleRateSource": "Verified from processed frame counts against paired WAV duration (approximately 100 frames/s). The 62.5 Hz in Bandekar et al. section 3.4 describes a later synthesis/vocoder downsampling step, not the published processed .pt trajectory rate.",
+      "sensorOrder": [
+        "UpperLipX",
+        "UpperLipY",
+        "LowerLipX",
+        "LowerLipY",
+        "JawX",
+        "JawY",
+        "TongueTipX",
+        "TongueTipY",
+        "TongueBodyX",
+        "TongueBodyY",
+        "TongueDorsumX",
+        "TongueDorsumY"
+      ],
+      "title": "SPIRE EMA Corpus"
+    },
+    "ovrLipSync": {
+      "dllVersion": "1.54.0",
+      "dominantSequenceSha256": "6c3652f1ac2982bc68cc7e0ff1726fce7477668c771129157e43f9f2cf2008cb",
+      "frameDelayMsCounts": {
+        "0": 124159
+      }
+    },
+    "ovrLipSyncDllSha256": "2318c42eb806753e340b426d0b83dd3278f5b8d3b851ccf90a5be0ea8e1d2cd3",
+    "processedSelectionContentSha256": "81b64a8ba071f2a8fe675f9b40947053c01d2d047b3766f43876912b1cfa20ab",
+    "trainerSha256": "8821ce565d6e257630b3929ff5ef9be1870660f4a4a8ef9c57c451444c2db5b1",
+    "transitionRetentionAuditSha256": "0e438cc5159ed7844304759afd06303a83dfc88f9a8a2e490dba98a45fecc7d4",
+    "transitionRetentionContentSha256": "7c48b4fbd137425589323e27abedbfed88edc5b25293936c7951da7a9e0c7d61"
+  },
+  "schemaVersion": 1,
+  "training": {
+    "calibrationQuantiles": [
+      0.02,
+      0.98
+    ],
+    "counting": "Logistic fit/evaluation use class-balanced M/NL occurrence weights. Per-winner Oculus likelihood uses unnormalized M/NL fractional occurrence counts. Eligibility Reliability uses every forced-phone occurrence in its denominator: each occurrence contributes exactly one count distributed across its hard winners. Runtime/evaluation simplex-mix both tables with exact Beta common.fast.",
+    "dirichletAlpha": 1.0,
+    "factorization": "class-balanced shared visible-face log-likelihood ratio plus a Beta-common.fast mixture of Dirichlet-smoothed per-winner log P(Oculus winner|M)/P(Oculus winner|N/L)",
+    "headroomFloor": 0.075,
+    "labels": {
+      "MCompatible": [
+        "em",
+        "m"
+      ],
+      "NLCompatible": [
+        "el",
+        "en",
+        "l",
+        "n",
+        "nx"
+      ],
+      "Other": "every other forced-phone occurrence, including vowels, unrelated consonants, and silence",
+      "StopAmbiguity": [
+        "b",
+        "bcl",
+        "p",
+        "pcl"
+      ]
+    },
+    "observerResponseSeconds": 0.024,
+    "posteriorSemantics": "positive logit is M-compatible; negative is N/L-compatible",
+    "reliabilitySemantics": "Dirichlet-smoothed P(the M-versus-N/L hypothesis is eligible | observed hard Oculus winner), with M/N/L eligible and P/B stops plus all other forced phones ineligible",
+    "ridgeCandidates": [
+      0.05,
+      0.2,
+      1.0,
+      4.0,
+      16.0
+    ],
+    "runtimeFeatureClamp": [
+      -2.0,
+      2.0
+    ],
+    "splits": {
+      "development": {
+        "calibrationUtterances": 8,
+        "evaluationUtterances": 24,
+        "speakers": [
+          7,
+          8
+        ]
+      },
+      "fit": {
+        "speakers": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "utterances": 384
+      },
+      "heldout": {
+        "calibrationUtterances": 32,
+        "evaluationUtterances": 96,
+        "speakers": [
+          9,
+          10,
+          11,
+          12
+        ]
+      }
+    },
+    "stopHandling": "P/B stops never become N negatives; like vowels, silence, and unrelated consonants, they lower eligibility Reliability"
+  }
+}
