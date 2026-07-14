@@ -4,12 +4,23 @@ All notable changes to YUCP Components will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.40] - 2026-07-14
+
 ### Added
+- Advanced Viseme Reconstructor adds a local-only `Speech Liveliness` slider in both Simple and Advanced tuning. It makes speech-only transitions quicker and more distinct through a bounded fast/slow observer blend, then fades the effect continuously to zero as face tracking becomes active; authored visemes are never overdriven beyond their convex animation hull.
+- Advanced Viseme Reconstructor now supports direct VRCFury BlendShape Link targets, including tailored one-to-many mappings and root-level renderers, while preserving target-local authored viseme detail without adding expression parameters or synced bits.
 - Custom Object Sync grouping system: add a Group ID field per component and automatically merge matching components into a single VRLabs Custom Object Sync rig to reduce parameter usage.
 - Group-aware editing: changing the settings on any component automatically propagates the new values to every member of the same group, keeping builds consistent.
 - Parameter budget now reflects the actual number of objects in the current group and surfaces the calculated sync cost plus group size summary.
 
 ### Changed
+- Advanced Viseme Reconstructor now opens in a compact Simple tab with plain-language expression strength, quiet-speech detail, reaction speed, pause stability, pronunciation, tongue, transition, tracking, and avatar-menu controls. Its generated VRChat tuning menu now mirrors that workflow with Simple and Advanced branches backed by the same local parameters. The Advanced inspector and menu retain the complete rig and mathematical tuning surface, without adding synced bits or duplicate motion logic.
+- Calibrated residual ownership now uses a low-rank basis correction with independent authority for identifiable articulator axes and conservative shared authority for rank-dependent axes. It replaces up to 15 per-viseme conflict morphs with at most two nonnegative 0..100 carriers per retained basis ray, avoiding VRChat's final blendshape clamp, and lets genuine native tongue tracking own tongue geometry while inferred or unsupported axes retain authored detail.
+- Compatible controller-only face-tracking pose proxies now drive their calibrated visible axes directly while active, preserving the template's native local jaw response instead of passing it through AVR's speech observer. Tracking diagnostics continue to be published in parallel.
+- Generated reconstruction math now batches simplex observers, voice products, viseme-to-articulator projections, residual weights, ownership projections, and linked-renderer residual poses into vector or matrix BlendTrees. Beta jaw and lip coarticulation is contracted exactly in articulator space instead of materializing redundant 15-weight groups.
+- Beta tongue inference now contracts the fitted viseme/latent/output tensor before runtime evaluation, represents face-conditioned `PP <-> nn` inference as one exact rank-one update, and shares one multi-output frame-rate alpha lookup. This removes hundreds of scalar BlendTrees and dependency parameters without changing the fitted full-precision model.
+- The hidden-phone logistic approximation now uses a 13-knot symmetric minimax table instead of 19 hand-spaced samples, reducing evaluated clips while lowering worst-case interpolation error from about 0.00748 to 0.00534.
+- The runtime-facing `Contradiction Fade` label is now `Tracked Surface Yield`; the serialized control and parameter name remain stable.
 - Custom Object Sync inspector now uses the standard YUCP styling, refreshed parameter budget card, and an updated grouping section that explains the new workflow.
 - Custom Object Sync inspector flow reorganized with summary + card-based sections for easier tuning.
 - Max Radius control now shows the computed meter range inline and explains the trade-off between coverage and parameter cost.
@@ -18,6 +29,16 @@ All notable changes to YUCP Components will be documented in this file.
 
 ### Removed
 - Auto Grip Generator component, editor tooling, and preprocessing pipeline.
+
+### Fixed
+- One-sided signed tailored-template axes, such as a forward-only jaw pose, now use the neutral endpoint for the unsupported direction instead of failing the build.
+- Direct tailored-template rendering and public articulation now use the same calibrated, confidence-weighted authority during tracker startup, remote playback, and tracker loss, preventing the visible pose and residual ownership from briefly disagreeing.
+- VRCFury BlendShape Link integration now validates its reflected schema, Animator-path uniqueness, direct-link provenance, and include-all/fuzzy mappings after mesh generation, preventing root-path omissions, order-dependent chains, competing incoming writers, generated-name rediscovery, duplicate drives, and silent mapping drift.
+- Primary and linked residual calibration now rejects geometrically nonlinear multi-frame blendshapes instead of claiming a linear/exact reconstruction that Unity cannot reproduce.
+- Calibration now solves the box-constrained problem `0 <= C <= 1`; authored motion beyond a basis shape's usable 100% range remains in the exact residual instead of being clipped by VRChat. Near-dependent basis rays share authority only within their dependency group, while independent jaw, lip, and tongue rays remain independently responsive.
+- Tailored coarticulation rays are projected into their valid unit interval, shared pose bindings that could sum beyond 100% are rejected, and signed articulation-only BlendShape Links receive target-local inverse geometry instead of losing their negative half to VRChat's clamp.
+- Advanced Viseme builds now stage generated assets and roll back renderer meshes, lip-sync mode, VRCFury features, and profile diagnostics when any late validation or asset operation fails. Cached diagnostics and profile migration bookkeeping no longer change generated content hashes.
+- Multi-component builds now validate the cumulative expression-parameter union and recheck the final post-VRCFury/Modular-Avatar descriptor against VRChat's 256-bit limit. Same-name tracking wires must also match the required network-sync contract. Transient generated face meshes use deterministic geometry-content hashes instead of Unity session IDs.
 
 ## [0.3.39] - 2026-07-13
 

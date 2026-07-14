@@ -220,7 +220,7 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void GeneratedUncalibratedPartialReuseGraphContainsLocalGeometryPrecedenceAndConstraintGates()
+        public void UncalibratedPartialReuseWithoutInverseGeometryFailsClosed()
         {
             var root = new GameObject("Visible Authority Graph Test");
             var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
@@ -246,57 +246,39 @@ namespace YUCP.Components.Editor.Tests
                     [AdvancedVisemeArticulator.LipClose] = "Tailored/v2/MouthClosed",
                     [AdvancedVisemeArticulator.LipBite] = "Tailored/v2/LipBite"
                 };
-                var result = AdvancedVisemeAnimatorBuilder.Build(
-                    new AdvancedVisemeAnimatorBuilder.Request
-                    {
-                        controllerPath = folder + "/AdvancedViseme.controller",
-                        parametersPath = folder + "/TrackingParameters.asset",
-                        component = component,
-                        profile = profile,
-                        trackingPrefix = "Tailored",
-                        effectiveTrackingInputs = AdvancedVisemeTrackingInputs.Balanced8,
-                        reuseExistingTracking = true,
-                        trackingActiveParameter = "Tailored/v2/LipTrackingActive",
-                        trackingActiveAnimatorType = AnimatorControllerParameterType.Float,
-                        trackingActiveDefault = 1f,
-                        trackingParameterNames = measured,
-                        sourceVisemeBlendShapes = VisemeReconstructionProfile.VisemeNames
-                            .Select(name => "vrc.v_" + name).ToArray(),
-                        calibrationBasis = Array.Empty<AdvancedVisemeMeshCalibrator.BasisInput>(),
-                        resolvedBlendShapes = measured.Keys.ToDictionary(
-                            articulator => articulator, articulator => articulator.ToString()),
-                        externalPoses = new Dictionary<AdvancedVisemeArticulator, AdvancedVisemeExternalPose>(),
-                        trackingEnabled = true,
-                        existingExpressionParameters = new HashSet<string>()
-                    });
+                var exception = Assert.Throws<InvalidOperationException>(() =>
+                    AdvancedVisemeAnimatorBuilder.Build(
+                        new AdvancedVisemeAnimatorBuilder.Request
+                        {
+                            controllerPath = folder + "/AdvancedViseme.controller",
+                            parametersPath = folder + "/TrackingParameters.asset",
+                            component = component,
+                            profile = profile,
+                            trackingPrefix = "Tailored",
+                            effectiveTrackingInputs = AdvancedVisemeTrackingInputs.Balanced8,
+                            reuseExistingTracking = true,
+                            trackingActiveParameter = "Tailored/v2/LipTrackingActive",
+                            trackingActiveAnimatorType = AnimatorControllerParameterType.Float,
+                            trackingActiveDefault = 1f,
+                            trackingParameterNames = measured,
+                            sourceVisemeBlendShapes = VisemeReconstructionProfile.VisemeNames
+                                .Select(name => "vrc.v_" + name).ToArray(),
+                            calibrationBasis =
+                                Array.Empty<AdvancedVisemeMeshCalibrator.BasisInput>(),
+                            resolvedBlendShapes = measured.Keys.ToDictionary(
+                                articulator => articulator,
+                                articulator => articulator.ToString()),
+                            externalPoses = new Dictionary<AdvancedVisemeArticulator,
+                                AdvancedVisemeExternalPose>(),
+                            trackingEnabled = true,
+                            existingExpressionParameters = new HashSet<string>()
+                        }));
 
-                var parameters = result.controller.parameters.Select(parameter => parameter.name).ToArray();
-                Assert.That(parameters.Any(name => name.EndsWith(
-                    "/Viseme/10/VisibleSuppression", StringComparison.Ordinal)), Is.True,
-                    "Unsafe direct aa geometry needs a per-viseme measurement suppression term.");
-                Assert.That(parameters.Any(name => name.EndsWith(
-                    "/Viseme/10/VisibleSpeechWeight", StringComparison.Ordinal)), Is.True,
-                    "The uncalibrated aa fallback needs a complementary visible speech weight.");
-
-                foreach (var stage in new[] { "Fast", "Slow" })
-                foreach (var articulator in new[]
-                         {
-                             AdvancedVisemeArticulator.LipClose,
-                             AdvancedVisemeArticulator.LipBite,
-                             AdvancedVisemeArticulator.JawOpen
-                         })
-                {
-                    var suffix = $"/Constraint/{stage}/{articulator}/MeasurementRemainder";
-                    Assert.That(parameters.Any(name => name.EndsWith(suffix, StringComparison.Ordinal)), Is.True,
-                        $"{stage} {articulator} constraint lacks a per-target local measurement gate.");
-                }
-
-                var trees = AssetDatabase.LoadAllAssetsAtPath(folder + "/AdvancedViseme.controller")
-                    .OfType<BlendTree>().ToArray();
-                Assert.That(trees.Any(tree => tree.name.Contains("Viseme/10/VisibleSuppression")), Is.True,
-                    "Unsafe per-viseme suppression must participate in generated math, not merely exist as an unused parameter.");
-                Assert.That(trees.Any(tree => tree.name.Contains("Viseme/10/VisibleSpeechWeight")), Is.True,
-                    "Uncalibrated direct aa fallback geometry must consume the complementary visible speech weight.");
+                StringAssert.Contains(
+                    "no negative endpoint or build-only inverse geometry",
+                    exception.Message,
+                    "A fallback correction can become negative. It must never emit a " +
+                    "negative blendshape curve that VRChat would clamp silently.");
             }
             finally
             {

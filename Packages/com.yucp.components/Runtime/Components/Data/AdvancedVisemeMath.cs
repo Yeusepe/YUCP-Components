@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -12,6 +13,7 @@ namespace YUCP.Components
         public const float SpeechHistoryHoldFull = 0.55f;
         public const float SpeechPresenceAttackSeconds = 0.009f;
         public const float SpeechPresenceReleaseSeconds = 0.055f;
+        public const float MaximumSpeechLivelinessLead = 0.85f;
 
         /// <summary>
         /// State for the causal, one-pole speech-history observer. History is
@@ -225,6 +227,35 @@ namespace YUCP.Components
         }
 
         /// <summary>
+        /// Shared render lead used for every viseme and articulator. A common
+        /// convex weight preserves the reconstructed simplex and the calibrated
+        /// identity U(Cp) + Rp = Vp. The lead disappears exactly when tracking is
+        /// fully active, so it cannot alter an authoritative tracked pose.
+        /// </summary>
+        public static float SpeechLivelinessLead(
+            float speechLiveliness,
+            float trackingBlend)
+        {
+            return MaximumSpeechLivelinessLead *
+                   Sanitize01(speechLiveliness) *
+                   (1f - Sanitize01(trackingBlend));
+        }
+
+        /// <summary>Numerical reference for the Animator's convex render lead.</summary>
+        public static float ApplySpeechLiveliness(
+            float slow,
+            float fast,
+            float speechLiveliness,
+            float trackingBlend)
+        {
+            slow = IsFinite(slow) ? slow : 0f;
+            fast = IsFinite(fast) ? fast : 0f;
+            return Mathf.Lerp(
+                slow, fast,
+                SpeechLivelinessLead(speechLiveliness, trackingBlend));
+        }
+
+        /// <summary>
         /// Complement of the visible measurement authority. This is the share
         /// of an authored, coupled viseme pose that may remain without moving a
         /// lower-face coordinate already owned by tracking.
@@ -409,26 +440,38 @@ namespace YUCP.Components
             return Mathf.Lerp(normalGain, Sanitize01(previousGain), holdWeight);
         }
 
-        public static float ResidualRetention(
+        /// <summary>
+        /// Evaluates one column of the low-rank residual-ownership correction:
+        /// -detail * yield * gain * sum_i(p_i * projection_i). Projection values
+        /// are signed least-squares coefficients; viseme weights are the causal
+        /// reconstructed simplex. Each articulator calls this independently, so a
+        /// weak unrelated tracking channel cannot delay an already measured axis.
+        /// </summary>
+        public static float LowRankOwnershipCorrection(
+            IReadOnlyList<float> visemeWeights,
+            IReadOnlyList<float> projectionColumn,
             float trackingGain,
-            float articulatorMismatch,
-            float mismatchFade)
+            float authoredDetail,
+            float trackedSurfaceYield)
         {
-            return 1f - Mathf.Clamp01(
-                Sanitize01(trackingGain) * Sanitize01(articulatorMismatch) * Sanitize01(mismatchFade));
-        }
-
-        public static float ResidualMismatchEvidence(
-            float articulatorMismatch,
-            float trackingGain,
-            float deadband = 0.02f,
-            float fullScale = 0.18f)
-        {
-            // Threshold the physical innovation first, then fade its authority.
-            // Reversing this order can turn a large mismatch into full residual
-            // suppression even while tracking itself is only barely blended in.
-            return Sanitize01(trackingGain) *
-                   SmoothStep(deadband, fullScale, Mathf.Abs(articulatorMismatch));
+            if (visemeWeights == null || projectionColumn == null ||
+                visemeWeights.Count != projectionColumn.Count)
+                return 0f;
+            var projected = 0f;
+            for (var index = 0; index < visemeWeights.Count; index++)
+            {
+                var weight = IsFinite(visemeWeights[index])
+                    ? Mathf.Max(0f, visemeWeights[index])
+                    : 0f;
+                var coefficient = IsFinite(projectionColumn[index])
+                    ? projectionColumn[index]
+                    : 0f;
+                projected += weight * coefficient;
+            }
+            return -Sanitize01(trackingGain) *
+                   Sanitize01(authoredDetail) *
+                   Sanitize01(trackedSurfaceYield) *
+                   projected;
         }
 
         public static float HeadroomNormalizedResidual(float tracked, float center)

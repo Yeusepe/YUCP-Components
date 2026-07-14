@@ -22,6 +22,10 @@ namespace YUCP.Components.Editor
         public int poseCoverage;
         public readonly Dictionary<AdvancedVisemeArticulator, string> parameters =
             new Dictionary<AdvancedVisemeArticulator, string>();
+        public readonly HashSet<AdvancedVisemeArticulator> directPoseArticulators =
+            new HashSet<AdvancedVisemeArticulator>();
+        public readonly Dictionary<AdvancedVisemeArticulator, AdvancedVisemeExternalPose> poses =
+            new Dictionary<AdvancedVisemeArticulator, AdvancedVisemeExternalPose>();
         public readonly Dictionary<string, string> auxiliaryParameters =
             new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -160,7 +164,9 @@ namespace YUCP.Components.Editor
             {
                 if (pair.Value.expressionTypeConflict ||
                     (pair.Value.expression != null &&
-                     pair.Value.expression.valueType != VRCExpressionParameters.ValueType.Float) ||
+                     (pair.Value.expression.valueType !=
+                          VRCExpressionParameters.ValueType.Float ||
+                      !pair.Value.expression.networkSynced)) ||
                     pair.Value.animatorTypeConflict ||
                     pair.Value.animatorType != AnimatorControllerParameterType.Float) continue;
                 if (!TrySplitV2(pair.Key, out var prefix, out var suffix)) continue;
@@ -193,8 +199,22 @@ namespace YUCP.Components.Editor
                     out var activeAnimatorDefault);
                 candidate.activeAnimatorType = activeAnimatorType;
                 candidate.activeAnimatorDefault = activeAnimatorDefault;
-                candidate.poseCoverage = candidate.parameters.Count(pair =>
-                    FindPose(pair.Value, candidate.activeParameter) != null);
+                foreach (var pair in candidate.parameters)
+                {
+                    var pose = FindPose(pair.Value, candidate.activeParameter);
+                    if (pose == null) continue;
+                    candidate.poseCoverage++;
+                    candidate.poses[pair.Key] = pose;
+
+                    // A controller-only parameter that is structurally wired to
+                    // the final authored pose is a decoded/template proxy, not a
+                    // raw OSC wire. Re-filtering it duplicates the template's own
+                    // local/remote handling and adds several Animator-frame
+                    // dependencies before the face can move.
+                    if (entries.TryGetValue(pair.Value, out var entry) &&
+                        entry.expression == null)
+                        candidate.directPoseArticulators.Add(pair.Key);
+                }
             }
 
             var viable = candidates.Values.Where(candidate =>
@@ -236,7 +256,8 @@ namespace YUCP.Components.Editor
             var matches = entries.Where(pair =>
                 !pair.Value.expressionTypeConflict &&
                 (pair.Value.expression == null ||
-                 pair.Value.expression.valueType == VRCExpressionParameters.ValueType.Float) &&
+                 pair.Value.expression.valueType == VRCExpressionParameters.ValueType.Float &&
+                 pair.Value.expression.networkSynced) &&
                 !pair.Value.animatorTypeConflict &&
                 pair.Value.animatorType == AnimatorControllerParameterType.Float &&
                 TrySplitV2(pair.Key, out var prefix, out var candidateSuffix) &&
@@ -260,6 +281,11 @@ namespace YUCP.Components.Editor
         {
             var output = new Dictionary<AdvancedVisemeArticulator, AdvancedVisemeExternalPose>();
             if (resolution == null) return output;
+            if (resolution.poses.Count > 0)
+            {
+                foreach (var pair in resolution.poses) output[pair.Key] = pair.Value;
+                return output;
+            }
             foreach (var pair in resolution.parameters)
             {
                 var pose = FindPose(pair.Value, resolution.activeParameter);
@@ -291,7 +317,9 @@ namespace YUCP.Components.Editor
             {
                 var expression = pair.Value.expression;
                 if (pair.Value.expressionTypeConflict || pair.Value.animatorTypeConflict ||
-                    expression == null || expression.valueType != VRCExpressionParameters.ValueType.Bool) continue;
+                    expression == null ||
+                    expression.valueType != VRCExpressionParameters.ValueType.Bool ||
+                    !expression.networkSynced) continue;
                 if (pair.Value.animatorType.HasValue &&
                     pair.Value.animatorType != AnimatorControllerParameterType.Float &&
                     pair.Value.animatorType != AnimatorControllerParameterType.Bool)
@@ -474,11 +502,14 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            if (!neutral.HasValue || !positive.HasValue ||
-                !IsStaticZeroBlendshapeMotion(neutral.Value.motion) ||
-                !TryGetStaticBlendshapePose(positive.Value.motion, out var positiveClip))
+            if (!neutral.HasValue || (!positive.HasValue && !negative.HasValue) ||
+                !IsStaticZeroBlendshapeMotion(neutral.Value.motion))
                 return null;
 
+            AnimationClip positiveClip = null;
+            if (positive.HasValue &&
+                !TryGetStaticBlendshapePose(positive.Value.motion, out positiveClip))
+                return null;
             AnimationClip negativeClip = null;
             if (negative.HasValue &&
                 !TryGetStaticBlendshapePose(negative.Value.motion, out negativeClip))
@@ -488,7 +519,7 @@ namespace YUCP.Components.Editor
             {
                 positive = positiveClip,
                 negative = negativeClip,
-                positiveThreshold = positive.Value.threshold,
+                positiveThreshold = positive?.threshold ?? -negative.Value.threshold,
                 negativeThreshold = negative?.threshold ?? -positive.Value.threshold
             };
         }
@@ -738,10 +769,11 @@ namespace YUCP.Components.Editor
 
         private void Visit(UnityEngine.Object asset)
         {
-            if (asset == null || !visitedAssets.Add(asset)) return;
+            if (asset == null) return;
             switch (asset)
             {
                 case VRCExpressionParameters parameters:
+                    if (!visitedAssets.Add(parameters)) return;
                     if (parameters.parameters == null) return;
                     foreach (var parameter in parameters.parameters)
                     {
@@ -756,6 +788,7 @@ namespace YUCP.Components.Editor
                     }
                     return;
                 case AnimatorController controller:
+                    if (!visitedAssets.Add(controller)) return;
                     controllers.Add(controller);
                     foreach (var parameter in controller.parameters)
                     {
@@ -775,6 +808,7 @@ namespace YUCP.Components.Editor
                     }
                     return;
                 case AnimatorOverrideController overrides:
+                    if (!visitedAssets.Add(overrides)) return;
                     Visit(overrides.runtimeAnimatorController);
                     return;
             }

@@ -14,9 +14,13 @@ namespace YUCP.Components.Editor.Tests
             {
                 Assert.That(fixture.result.success, Is.True, fixture.result.error);
                 Assert.That(fixture.result.hiddenPhoneResidualBlendShapeName, Is.Not.Null.And.Not.Empty);
+                Assert.That(fixture.result.hiddenPhoneResidualNegativeBlendShapeName,
+                    Is.Not.Null.And.Not.Empty);
                 Assert.That(fixture.source.blendShapeCount, Is.EqualTo(fixture.sourceBlendShapeCount));
                 Assert.That(fixture.source.GetBlendShapeIndex(
                     fixture.result.hiddenPhoneResidualBlendShapeName), Is.EqualTo(-1));
+                Assert.That(fixture.source.GetBlendShapeIndex(
+                    fixture.result.hiddenPhoneResidualNegativeBlendShapeName), Is.EqualTo(-1));
 
                 var hidden = ReadDelta(
                     fixture.result.mesh,
@@ -24,6 +28,12 @@ namespace YUCP.Components.Editor.Tests
                         fixture.result.hiddenPhoneResidualBlendShapeName));
                 Assert.That(Mathf.Abs(Dot(hidden.vertices, fixture.basisA.vertices)), Is.LessThan(1e-6f));
                 Assert.That(Mathf.Abs(Dot(hidden.vertices, fixture.basisB.vertices)), Is.LessThan(1e-6f));
+
+                var hiddenNegative = ReadDelta(
+                    fixture.result.mesh,
+                    fixture.result.mesh.GetBlendShapeIndex(
+                        fixture.result.hiddenPhoneResidualNegativeBlendShapeName));
+                AssertDeltasEqual(hiddenNegative, Scale(hidden, -1f), 1e-5f);
 
                 var expected = Subtract(fixture.ppHidden, fixture.nnHidden);
                 AssertDeltasEqual(hidden, expected, 1e-5f);

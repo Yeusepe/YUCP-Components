@@ -41,7 +41,9 @@ namespace YUCP.Components
         TongueArch,
         TongueShape,
         TongueTwist,
-        SilenceStability
+        SilenceStability,
+        // Keep new controls appended so serialized enum values remain stable.
+        SpeechLiveliness
     }
 
     /// <summary>
@@ -55,6 +57,24 @@ namespace YUCP.Components
             (AdvancedVisemeTuningControl[])Enum.GetValues(
                 typeof(AdvancedVisemeTuningControl));
 
+        /// <summary>
+        /// A compact, terminology-free view over the same tuning parameters used
+        /// by the full menu. Keeping this at eight entries lets VRChat display the
+        /// complete friendly surface in one menu without adding parameters.
+        /// </summary>
+        public static readonly IReadOnlyList<AdvancedVisemeTuningControl> SimpleControls =
+            new[]
+            {
+                AdvancedVisemeTuningControl.SpeechMotion,
+                AdvancedVisemeTuningControl.SpeechLiveliness,
+                AdvancedVisemeTuningControl.QuietMotion,
+                AdvancedVisemeTuningControl.SpeechSmoothness,
+                AdvancedVisemeTuningControl.SilenceStability,
+                AdvancedVisemeTuningControl.ConstraintAmount,
+                AdvancedVisemeTuningControl.ContradictionFade,
+                AdvancedVisemeTuningControl.TongueInference
+            };
+
         public static AdvancedVisemeTuningMenuSections Section(
             AdvancedVisemeTuningControl control)
         {
@@ -67,6 +87,7 @@ namespace YUCP.Components
                 case AdvancedVisemeTuningControl.AuthoredDetail:
                 case AdvancedVisemeTuningControl.Coarticulation:
                 case AdvancedVisemeTuningControl.SilenceStability:
+                case AdvancedVisemeTuningControl.SpeechLiveliness:
                     return AdvancedVisemeTuningMenuSections.Speech;
                 case AdvancedVisemeTuningControl.TrackingSmoothness:
                 case AdvancedVisemeTuningControl.TrackingRelease:
@@ -108,10 +129,11 @@ namespace YUCP.Components
                 case AdvancedVisemeTuningControl.AuthoredDetail: return "Authored Detail";
                 case AdvancedVisemeTuningControl.Coarticulation: return "Coarticulation";
                 case AdvancedVisemeTuningControl.SilenceStability: return "Silence Stability";
+                case AdvancedVisemeTuningControl.SpeechLiveliness: return "Speech Lead";
                 case AdvancedVisemeTuningControl.TrackingSmoothness: return "Tracking Smoothness";
                 case AdvancedVisemeTuningControl.TrackingRelease: return "Tracker Release";
                 case AdvancedVisemeTuningControl.RemoteTrust: return "Remote Trust";
-                case AdvancedVisemeTuningControl.ContradictionFade: return "Contradiction Fade";
+                case AdvancedVisemeTuningControl.ContradictionFade: return "Tracked Surface Yield";
                 case AdvancedVisemeTuningControl.ConstraintAmount: return "Constraint Amount";
                 case AdvancedVisemeTuningControl.BilabialAssist: return "PP Closure";
                 case AdvancedVisemeTuningControl.LabiodentalAssist: return "FF Bite";
@@ -130,6 +152,26 @@ namespace YUCP.Components
             }
         }
 
+        public static string SimpleLabel(AdvancedVisemeTuningControl control)
+        {
+            switch (control)
+            {
+                case AdvancedVisemeTuningControl.SpeechMotion: return "Expression Strength";
+                case AdvancedVisemeTuningControl.SpeechLiveliness: return "Speech Liveliness";
+                case AdvancedVisemeTuningControl.QuietMotion: return "Quiet Speech Detail";
+                case AdvancedVisemeTuningControl.SpeechSmoothness: return "Reaction Speed";
+                case AdvancedVisemeTuningControl.SilenceStability: return "Pause Stability";
+                case AdvancedVisemeTuningControl.ConstraintAmount: return "Pronunciation Help";
+                case AdvancedVisemeTuningControl.ContradictionFade: return "Follow My Face";
+                case AdvancedVisemeTuningControl.TongueInference: return "Tongue Motion";
+                case AdvancedVisemeTuningControl.Coarticulation: return "Natural Transitions";
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(control), control,
+                        "The control is not part of the simple viseme menu.");
+            }
+        }
+
         public static string ParameterSuffix(AdvancedVisemeTuningControl control)
         {
             return control.ToString();
@@ -139,9 +181,12 @@ namespace YUCP.Components
             VisemeReconstructionProfile profile,
             AdvancedVisemeTuningControl control)
         {
-            if (profile == null) return control == AdvancedVisemeTuningControl.QuietMotion
-                ? 0.55f
-                : IsCenteredControl(control) ? 0.5f : 1f;
+            if (profile == null)
+            {
+                if (control == AdvancedVisemeTuningControl.QuietMotion) return 0.55f;
+                if (control == AdvancedVisemeTuningControl.SpeechLiveliness) return 0.5f;
+                return IsCenteredControl(control) ? 0.5f : 1f;
+            }
 
             switch (control)
             {
@@ -155,6 +200,8 @@ namespace YUCP.Components
                     return Mathf.Clamp01(profile.quietSpeechFloor);
                 case AdvancedVisemeTuningControl.SpeechMotion:
                     return Mathf.Clamp01(profile.speechMotionStrength);
+                case AdvancedVisemeTuningControl.SpeechLiveliness:
+                    return Mathf.Clamp01(profile.speechLiveliness);
                 case AdvancedVisemeTuningControl.AuthoredDetail:
                     return Mathf.Clamp01(profile.authoredResidualDetail);
                 case AdvancedVisemeTuningControl.Coarticulation:

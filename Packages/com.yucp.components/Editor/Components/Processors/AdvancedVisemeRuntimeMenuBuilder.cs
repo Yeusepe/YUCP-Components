@@ -41,6 +41,22 @@ namespace YUCP.Components.Editor
             var root = NewMenu(Path.GetFileNameWithoutExtension(assetPath));
             var submenus = new List<VRCExpressionsMenu>();
 
+            var simpleControls = OrderedSimpleControls(controls);
+            if (simpleControls.Count > 0)
+            {
+                var simple = NewMenu("Simple");
+                foreach (var control in simpleControls)
+                {
+                    simple.controls.Add(NewRadialControl(
+                        AdvancedVisemeTuning.SimpleLabel(control),
+                        controls[control]));
+                }
+                root.controls.Add(NewSubmenuControl("Simple", simple));
+                submenus.Add(simple);
+            }
+
+            var advanced = NewMenu("Advanced");
+
             foreach (var section in OrderedSections)
             {
                 var sectionControls = grouped[section];
@@ -55,9 +71,12 @@ namespace YUCP.Components.Editor
                         controls[control]));
                 }
 
-                root.controls.Add(NewSubmenuControl(label, submenu));
+                advanced.controls.Add(NewSubmenuControl(label, submenu));
                 submenus.Add(submenu);
             }
+
+            root.controls.Add(NewSubmenuControl("Advanced", advanced));
+            submenus.Insert(simpleControls.Count > 0 ? 1 : 0, advanced);
 
             if (AssetDatabase.LoadMainAssetAtPath(assetPath) != null &&
                 !AssetDatabase.DeleteAsset(assetPath))
@@ -70,7 +89,7 @@ namespace YUCP.Components.Editor
 
             EditorUtility.SetDirty(root);
             foreach (var submenu in submenus) EditorUtility.SetDirty(submenu);
-            AssetDatabase.SaveAssets();
+            AssetDatabase.SaveAssetIfDirty(root);
             AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
 
             return AssetDatabase.LoadAssetAtPath<VRCExpressionsMenu>(assetPath) ?? root;
@@ -107,6 +126,13 @@ namespace YUCP.Components.Editor
             }
 
             var counts = CountControlsBySection(controls);
+            var simpleControlCount = AdvancedVisemeTuning.SimpleControls.Count(
+                controls.ContainsKey);
+            if (simpleControlCount > MaxControlsPerMenu)
+                throw new InvalidOperationException(
+                    $"The simple advanced-viseme menu contains {simpleControlCount} controls; " +
+                    $"VRChat menus allow at most {MaxControlsPerMenu} controls.");
+
             foreach (var section in OrderedSections)
             {
                 if (counts[section] <= MaxControlsPerMenu) continue;
@@ -116,10 +142,10 @@ namespace YUCP.Components.Editor
                     $"{MaxControlsPerMenu} controls per submenu.");
             }
 
-            var rootControlCount = counts.Count(pair => pair.Value > 0);
-            if (rootControlCount > MaxControlsPerMenu)
+            var advancedControlCount = counts.Count(pair => pair.Value > 0);
+            if (advancedControlCount > MaxControlsPerMenu)
                 throw new InvalidOperationException(
-                    $"The advanced-viseme tuning root contains {rootControlCount} submenus; " +
+                    $"The advanced-viseme tuning branch contains {advancedControlCount} submenus; " +
                     $"VRChat menus allow at most {MaxControlsPerMenu} controls.");
         }
 
@@ -153,6 +179,16 @@ namespace YUCP.Components.Editor
             return AdvancedVisemeTuning.Controls
                 .Where(control => controls.ContainsKey(control) &&
                                   AdvancedVisemeTuning.Section(control) == section)
+                .ToArray();
+        }
+
+        internal static IReadOnlyList<AdvancedVisemeTuningControl> OrderedSimpleControls(
+            IReadOnlyDictionary<AdvancedVisemeTuningControl, string> controls)
+        {
+            if (controls == null) throw new ArgumentNullException(nameof(controls));
+            foreach (var control in controls.Keys) ValidateKnownControl(control);
+            return AdvancedVisemeTuning.SimpleControls
+                .Where(controls.ContainsKey)
                 .ToArray();
         }
 

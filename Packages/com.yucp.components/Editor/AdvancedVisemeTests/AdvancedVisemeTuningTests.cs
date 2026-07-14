@@ -74,7 +74,7 @@ namespace YUCP.Components.Editor.Tests
         };
 
         [Test]
-        public void VersionSevenProfileDefaultsAreNeutralAndBackwardCompatible()
+        public void VersionEightProfileDefaultsAreNeutralAndBackwardCompatible()
         {
             var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
             try
@@ -89,6 +89,7 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(profile.voiceNoiseFloor, Is.EqualTo(0.05f).Within(1e-6f));
                 Assert.That(profile.voiceFullScale, Is.EqualTo(0.25f).Within(1e-6f));
                 Assert.That(profile.BetaCoarticulationStrength, Is.EqualTo(1f).Within(1e-6f));
+                Assert.That(profile.speechLiveliness, Is.EqualTo(0.5f).Within(1e-6f));
 
                 foreach (var fieldName in VersionSixUnitFields)
                 {
@@ -122,6 +123,28 @@ namespace YUCP.Components.Editor.Tests
                 profile.EnsureDefaults();
                 Assert.That(profile.speechHangoverSeconds, Is.EqualTo(0.07f).Within(1e-6f),
                     "Migration must not overwrite a deliberate post-upgrade preference.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(profile);
+            }
+        }
+
+        [Test]
+        public void VersionEightMigrationInitializesSpeechLivelinessOnlyOnce()
+        {
+            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
+            try
+            {
+                SetPrivateInt(profile, "defaultsVersion", 7);
+                profile.speechLiveliness = 0f;
+                profile.EnsureDefaults();
+                Assert.That(profile.speechLiveliness, Is.EqualTo(0.5f).Within(1e-6f));
+
+                profile.speechLiveliness = 0f;
+                profile.EnsureDefaults();
+                Assert.That(profile.speechLiveliness, Is.Zero.Within(1e-6f),
+                    "Zero is a deliberate legacy-response preference after migration.");
             }
             finally
             {
@@ -166,6 +189,7 @@ namespace YUCP.Components.Editor.Tests
             {
                 profile.trackingAcquireResponseSeconds = 2f;
                 profile.speechHangoverSeconds = 2f;
+                profile.speechLiveliness = 3f;
                 for (var index = 0; index < VersionSixUnitFields.Length; index++)
                     SetUnitField(profile, VersionSixUnitFields[index], index % 2 == 0 ? -2f : 3f);
 
@@ -173,6 +197,7 @@ namespace YUCP.Components.Editor.Tests
 
                 Assert.That(profile.trackingAcquireResponseSeconds, Is.InRange(0.005f, 0.1f));
                 Assert.That(profile.speechHangoverSeconds, Is.InRange(0.04f, 0.4f));
+                Assert.That(profile.speechLiveliness, Is.EqualTo(1f).Within(1e-6f));
                 foreach (var fieldName in VersionSixUnitFields)
                     Assert.That(UnitField(profile, fieldName), Is.InRange(0f, 1f), fieldName);
 
@@ -216,7 +241,24 @@ namespace YUCP.Components.Editor.Tests
             }
             Assert.That(AdvancedVisemeTuning.Controls.Count(control =>
                     AdvancedVisemeTuning.Section(control) == AdvancedVisemeTuningMenuSections.Speech),
-                Is.EqualTo(7), "Speech must retain one free slot in VRChat's eight-control menu.");
+                Is.EqualTo(8), "Speech must fit exactly in VRChat's eight-control menu.");
+
+            Assert.That(AdvancedVisemeTuning.SimpleControls.Count,
+                Is.InRange(1, AdvancedVisemeRuntimeMenuBuilder.MaxControlsPerMenu));
+            Assert.That(AdvancedVisemeTuning.SimpleControls, Is.Unique);
+            Assert.That(AdvancedVisemeTuning.SimpleControls,
+                Has.All.Matches<AdvancedVisemeTuningControl>(control =>
+                    AdvancedVisemeTuning.Controls.Contains(control)));
+            Assert.That(AdvancedVisemeTuning.SimpleControls,
+                Does.Contain(AdvancedVisemeTuningControl.SpeechMotion));
+            Assert.That(AdvancedVisemeTuning.SimpleControls,
+                Does.Contain(AdvancedVisemeTuningControl.SpeechLiveliness));
+            Assert.That(AdvancedVisemeTuning.SimpleControls.Contains(
+                    AdvancedVisemeTuningControl.Coarticulation),
+                Is.False,
+                "Natural Transitions remains in Advanced because the Simple inspector already exposes its mode toggle.");
+            Assert.That(AdvancedVisemeTuning.SimpleControls
+                .Select(AdvancedVisemeTuning.SimpleLabel), Is.Unique);
         }
 
         [Test]
@@ -229,7 +271,11 @@ namespace YUCP.Components.Editor.Tests
                 {
                     var expected = AdvancedVisemeTuning.IsCenteredControl(control)
                         ? 0.5f
-                        : control == AdvancedVisemeTuningControl.QuietMotion ? 0.55f : 1f;
+                        : control == AdvancedVisemeTuningControl.QuietMotion
+                            ? 0.55f
+                            : control == AdvancedVisemeTuningControl.SpeechLiveliness
+                                ? 0.5f
+                                : 1f;
                     Assert.That(AdvancedVisemeTuning.DefaultValue(profile, control),
                         Is.EqualTo(expected).Within(1e-6f), control.ToString());
                 }
@@ -296,14 +342,32 @@ namespace YUCP.Components.Editor.Tests
 
                 Assert.That(root, Is.Not.Null);
                 Assert.That(AssetDatabase.GetAssetPath(root), Is.EqualTo(assetPath));
-                Assert.That(root.controls, Has.Count.EqualTo(Sections.Length));
+                Assert.That(root.controls, Has.Count.EqualTo(2));
                 Assert.That(root.controls, Has.All.Matches<VRCExpressionsMenu.Control>(control =>
                     control.type == VRCExpressionsMenu.Control.ControlType.SubMenu &&
                     control.subMenu != null));
 
+                var simple = root.controls.Single(control => control.name == "Simple").subMenu;
+                var advanced = root.controls.Single(control => control.name == "Advanced").subMenu;
+                Assert.That(simple.controls, Has.Count.EqualTo(
+                    AdvancedVisemeTuning.SimpleControls.Count));
+                Assert.That(advanced.controls, Has.Count.EqualTo(Sections.Length));
+
+                foreach (var tuningControl in AdvancedVisemeTuning.SimpleControls)
+                {
+                    var radial = simple.controls.Single(control =>
+                        control.name == AdvancedVisemeTuning.SimpleLabel(tuningControl));
+                    Assert.That(radial.type,
+                        Is.EqualTo(VRCExpressionsMenu.Control.ControlType.RadialPuppet));
+                    Assert.That(radial.subParameters, Is.Not.Null.And.Length.EqualTo(1));
+                    Assert.That(radial.subParameters[0].name,
+                        Is.EqualTo(parameters[tuningControl]),
+                        "Simple and Advanced must share one local tuning parameter.");
+                }
+
                 foreach (var section in Sections)
                 {
-                    var sectionControl = root.controls.Single(control =>
+                    var sectionControl = advanced.controls.Single(control =>
                         control.name == AdvancedVisemeTuning.SectionLabel(section));
                     var menu = sectionControl.subMenu;
                     var expectedControls = AdvancedVisemeTuning.Controls.Where(control =>
@@ -325,7 +389,7 @@ namespace YUCP.Components.Editor.Tests
 
                 var menuAssets = AssetDatabase.LoadAllAssetsAtPath(assetPath)
                     .OfType<VRCExpressionsMenu>().ToArray();
-                Assert.That(menuAssets, Has.Length.EqualTo(1 + Sections.Length));
+                Assert.That(menuAssets, Has.Length.EqualTo(3 + Sections.Length));
                 Assert.That(menuAssets, Has.All.Matches<VRCExpressionsMenu>(menu =>
                     menu.controls != null && menu.controls.Count <= 8));
             }
@@ -333,6 +397,30 @@ namespace YUCP.Components.Editor.Tests
             {
                 AssetDatabase.DeleteAsset(folder);
             }
+        }
+
+        [Test]
+        public void SimpleRuntimeMenuFiltersUnavailableControlsWithoutReplacingThem()
+        {
+            var parameters = new Dictionary<AdvancedVisemeTuningControl, string>
+            {
+                { AdvancedVisemeTuningControl.SpeechMotion, "Test/Tuning/SpeechMotion" },
+                { AdvancedVisemeTuningControl.SpeechLiveliness, "Test/Tuning/SpeechLiveliness" },
+                { AdvancedVisemeTuningControl.TongueArch, "Test/Tuning/TongueArch" },
+                { AdvancedVisemeTuningControl.ConstraintAmount, "Test/Tuning/ConstraintAmount" }
+            };
+
+            Assert.That(AdvancedVisemeRuntimeMenuBuilder.OrderedSimpleControls(parameters),
+                Is.EqualTo(new[]
+                {
+                    AdvancedVisemeTuningControl.SpeechMotion,
+                    AdvancedVisemeTuningControl.SpeechLiveliness,
+                    AdvancedVisemeTuningControl.ConstraintAmount
+                }));
+            Assert.That(AdvancedVisemeRuntimeMenuBuilder.OrderedControlsForSection(
+                    AdvancedVisemeTuningMenuSections.Tongue, parameters),
+                Is.EqualTo(new[] { AdvancedVisemeTuningControl.TongueArch }),
+                "Advanced must retain controls that are intentionally absent from Simple.");
         }
 
         [Test]
@@ -459,6 +547,7 @@ namespace YUCP.Components.Editor.Tests
                              AdvancedVisemeTuningControl.SpeechSmoothness,
                              AdvancedVisemeTuningControl.SilenceStability,
                              AdvancedVisemeTuningControl.SpeechMotion,
+                             AdvancedVisemeTuningControl.SpeechLiveliness,
                              AdvancedVisemeTuningControl.TrackingSmoothness,
                              AdvancedVisemeTuningControl.RemoteTrust,
                              AdvancedVisemeTuningControl.ConstraintAmount,
@@ -475,6 +564,60 @@ namespace YUCP.Components.Editor.Tests
             finally
             {
                 fixture.Dispose();
+            }
+        }
+
+        [Test]
+        public void GeneratedLivelinessPublishesOneSharedLedSimplexAndArticulationVector()
+        {
+            foreach (var beta in new[] { false, true })
+            {
+                var fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: true,
+                    createMenu: true,
+                    beta: beta,
+                    tracking: true);
+                try
+                {
+                    var trees = AssetDatabase.LoadAllAssetsAtPath(fixture.controllerPath)
+                        .OfType<BlendTree>().ToArray();
+                    var prefix = fixture.component.NormalizedPrefix;
+                    var lead = prefix + "/_Internal/Speech/RenderLead";
+                    var trackingBlend = prefix + "/Speech/TrackingBlend";
+                    var liveliness = fixture.result.tuningParameters[
+                        AdvancedVisemeTuningControl.SpeechLiveliness];
+
+                    var leadGate = trees.SingleOrDefault(tree =>
+                        tree.name == $"Scale {liveliness} by inverse {trackingBlend}");
+                    Assert.That(leadGate, Is.Not.Null, beta ? "Beta" : "Normal");
+                    Assert.That(leadGate.blendParameter, Is.EqualTo(trackingBlend));
+                    Assert.That(leadGate.children.Select(child => child.threshold),
+                        Is.EqualTo(new[] { 0f, 1f }));
+
+                    var renderVector = trees.SingleOrDefault(tree =>
+                        tree.name == "Speech-liveliness viseme render vector");
+                    var articulation = trees.SingleOrDefault(tree =>
+                        tree.name == "Speech-liveliness articulation vector");
+                    Assert.That(renderVector, Is.Not.Null);
+                    Assert.That(articulation, Is.Not.Null);
+                    Assert.That(renderVector.blendParameter, Is.EqualTo(lead));
+                    Assert.That(articulation.blendParameter, Is.EqualTo(lead));
+
+                    foreach (var viseme in VisemeReconstructionProfile.VisemeNames)
+                    {
+                        var publicName = prefix + "/Viseme/" + viseme;
+                        Assert.That(fixture.result.globalParameters,
+                            Does.Contain(publicName));
+                        Assert.That(fixture.result.controller.parameters.Any(parameter =>
+                            parameter.name == publicName &&
+                            parameter.type == AnimatorControllerParameterType.Float), Is.True);
+                    }
+                }
+                finally
+                {
+                    fixture.Dispose();
+                }
             }
         }
 
@@ -636,6 +779,96 @@ namespace YUCP.Components.Editor.Tests
             finally
             {
                 fixture.Dispose();
+            }
+        }
+
+        [Test]
+        public void SpeechLivelinessIsConvexSimplexSafeAndYieldsExactlyToTracking()
+        {
+            var random = new System.Random(81422);
+            var slow = new float[VisemeReconstructionProfile.VisemeCount];
+            var fast = new float[VisemeReconstructionProfile.VisemeCount];
+            for (var sample = 0; sample < 250; sample++)
+            {
+                var slowSum = 0f;
+                var fastSum = 0f;
+                for (var index = 0; index < slow.Length; index++)
+                {
+                    slow[index] = (float)random.NextDouble();
+                    fast[index] = (float)random.NextDouble();
+                    slowSum += slow[index];
+                    fastSum += fast[index];
+                }
+                for (var index = 0; index < slow.Length; index++)
+                {
+                    slow[index] /= slowSum;
+                    fast[index] /= fastSum;
+                }
+
+                foreach (var liveliness in new[] { 0f, 0.2f, 0.5f, 1f })
+                foreach (var trackingBlend in new[] { 0f, 0.15f, 0.7f, 1f })
+                {
+                    var lead = AdvancedVisemeMath.SpeechLivelinessLead(
+                        liveliness, trackingBlend);
+                    Assert.That(lead, Is.InRange(
+                        0f, AdvancedVisemeMath.MaximumSpeechLivelinessLead));
+
+                    var renderedSum = 0f;
+                    for (var index = 0; index < slow.Length; index++)
+                    {
+                        var rendered = AdvancedVisemeMath.ApplySpeechLiveliness(
+                            slow[index], fast[index], liveliness, trackingBlend);
+                        Assert.That(rendered,
+                            Is.InRange(Mathf.Min(slow[index], fast[index]) - 1e-6f,
+                                Mathf.Max(slow[index], fast[index]) + 1e-6f));
+                        renderedSum += rendered;
+                        if (liveliness <= 0f || trackingBlend >= 1f)
+                            Assert.That(rendered, Is.EqualTo(slow[index]).Within(1e-7f));
+                    }
+                    Assert.That(renderedSum, Is.EqualTo(1f).Within(2e-6f));
+                }
+            }
+
+            Assert.That(AdvancedVisemeMath.SpeechLivelinessLead(float.NaN, 0f),
+                Is.Zero.Within(1e-7f));
+            Assert.That(AdvancedVisemeMath.SpeechLivelinessLead(1f, float.NaN),
+                Is.EqualTo(AdvancedVisemeMath.MaximumSpeechLivelinessLead).Within(1e-7f));
+        }
+
+        [Test]
+        public void SpeechLivelinessMakesSpeechOnlyTransitionsEarlierWithoutOvershoot()
+        {
+            foreach (var fps in new[] { 15f, 30f, 60f, 90f, 144f })
+            {
+                var fast = new float[VisemeReconstructionProfile.VisemeCount];
+                var slow = new float[VisemeReconstructionProfile.VisemeCount];
+                fast[0] = 1f;
+                slow[0] = 1f;
+                var deltaTime = 1f / fps;
+                var elapsed = 0f;
+                var renderedNinety = float.PositiveInfinity;
+                var slowNinety = float.PositiveInfinity;
+
+                for (var frame = 0; frame < Mathf.CeilToInt(fps); frame++)
+                {
+                    AdvancedVisemeMath.StepSimplex(
+                        10, deltaTime, 0.024f, fast, slow);
+                    elapsed += deltaTime;
+                    var rendered = AdvancedVisemeMath.ApplySpeechLiveliness(
+                        slow[10], fast[10], 1f, 0f);
+                    Assert.That(rendered, Is.InRange(0f, 1f));
+                    if (rendered >= 0.9f && float.IsPositiveInfinity(renderedNinety))
+                        renderedNinety = elapsed;
+                    if (slow[10] >= 0.9f && float.IsPositiveInfinity(slowNinety))
+                        slowNinety = elapsed;
+                }
+
+                Assert.That(renderedNinety, Is.LessThan(slowNinety),
+                    $"Speech Liveliness did not improve the 90% transition at {fps} FPS.");
+                Assert.That(AdvancedVisemeMath.ApplySpeechLiveliness(
+                        slow[10], fast[10], 1f, 1f),
+                    Is.EqualTo(slow[10]).Within(1e-7f),
+                    "Fully active tracking must recover the exact slow prior.");
             }
         }
 

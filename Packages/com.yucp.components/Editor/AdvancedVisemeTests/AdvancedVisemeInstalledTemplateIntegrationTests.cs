@@ -53,6 +53,11 @@ namespace YUCP.Components.Editor.Tests
                     Is.EqualTo("OSCm/Proxy/FT/v2/LipFunnel"));
                 Assert.That(resolution.parameters[AdvancedVisemeArticulator.TongueOut],
                     Is.EqualTo("OSCm/Proxy/FT/v2/TongueOut"));
+                Assert.That(resolution.directPoseArticulators,
+                    Does.Contain(AdvancedVisemeArticulator.JawOpen),
+                    "The final controller-only jaw proxy must bypass duplicate AVR smoothing.");
+                Assert.That(resolution.directPoseArticulators,
+                    Does.Contain(AdvancedVisemeArticulator.LipClose));
 
                 var poses = catalog.ExtractPoses(resolution);
                 Assert.That(poses.ContainsKey(AdvancedVisemeArticulator.JawOpen), Is.True,

@@ -16,6 +16,95 @@ namespace YUCP.Components.Editor.Tests
         private const float ReconstructionTolerance = 1e-5f;
 
         [Test]
+        public void OverRangeAuthoredPoseUsesBoundedBasisAndExactResidual()
+        {
+            const int vertexCount = 3;
+            var source = new Mesh { name = "Bounded Calibration" };
+            source.vertices = new[] { Vector3.zero, Vector3.right, Vector3.up };
+            source.normals = Enumerable.Repeat(Vector3.forward, vertexCount).ToArray();
+            source.triangles = new[] { 0, 1, 2 };
+
+            var basis = Delta.WithSingleVertex(
+                vertexCount, 0,
+                new Vector3(0.2f, 0.04f, -0.01f),
+                new Vector3(0.03f, -0.005f, 0.002f),
+                new Vector3(0.018f, 0.004f, -0.003f));
+            var basisIndex = source.blendShapeCount;
+            AddShape(source, "JawOpen", 100f, basis);
+
+            var targets = new Delta[VisemeReconstructionProfile.VisemeCount];
+            for (var viseme = 0; viseme < targets.Length; viseme++)
+            {
+                var scale = viseme == 1 ? 1.5f : 0.025f * viseme;
+                var detail = Delta.WithSingleVertex(
+                    vertexCount, 2,
+                    new Vector3(0.001f, -0.0004f, 0.0007f) * viseme,
+                    new Vector3(-0.0002f, 0.0003f, 0.0001f) * viseme,
+                    new Vector3(0.0004f, 0.0002f, -0.0001f) * viseme);
+                targets[viseme] = Add(Scale(basis, scale), detail);
+                AddShape(
+                    source,
+                    "vrc.v_" + VisemeReconstructionProfile.VisemeNames[viseme],
+                    100f,
+                    targets[viseme]);
+            }
+
+            AdvancedVisemeMeshCalibrator.Result result = null;
+            try
+            {
+                result = AdvancedVisemeMeshCalibrator.Build(
+                    source,
+                    VisemeIndices(source),
+                    new[]
+                    {
+                        new AdvancedVisemeMeshCalibrator.BasisInput(
+                            AdvancedVisemeArticulator.JawOpen, basisIndex)
+                    });
+
+                Assert.That(result.success, Is.True, result.error);
+                for (var viseme = 0; viseme < targets.Length; viseme++)
+                {
+                    Assert.That(result.coefficients[viseme, 0], Is.InRange(0f, 1f),
+                        $"production coefficient {viseme}");
+                }
+
+                var coefficient = result.coefficients[1, 0];
+                Assert.That(coefficient, Is.EqualTo(1f).Within(1e-6f),
+                    "The 150% authored ray must saturate at the usable blendshape endpoint.");
+                Assert.That(coefficient * 100f, Is.LessThanOrEqualTo(100f),
+                    "The generated basis drive may not rely on a VRChat-clamped weight.");
+
+                var residual = ReadDelta(
+                    result.mesh,
+                    result.mesh.GetBlendShapeIndex(result.residualBlendShapeNames[1]));
+                var expectedResidual = Subtract(targets[1], Scale(basis, coefficient));
+                AssertDeltaEqual(expectedResidual, residual, "bounded 150% residual");
+
+                var overflow = Scale(basis, 0.5f);
+                Assert.That(
+                    Vector3.Distance(residual.vertices[0], overflow.vertices[0]),
+                    Is.LessThan(ReconstructionTolerance),
+                    "The geometry above 100% must remain in the residual.");
+                Assert.That(
+                    Vector3.Distance(residual.normals[0], overflow.normals[0]),
+                    Is.LessThan(ReconstructionTolerance));
+                Assert.That(
+                    Vector3.Distance(residual.tangents[0], overflow.tangents[0]),
+                    Is.LessThan(ReconstructionTolerance));
+
+                AssertDeltaEqual(
+                    targets[1],
+                    Add(Scale(basis, coefficient), residual),
+                    "bounded 150% reconstruction");
+            }
+            finally
+            {
+                if (result?.mesh != null) UnityEngine.Object.DestroyImmediate(result.mesh);
+                UnityEngine.Object.DestroyImmediate(source);
+            }
+        }
+
+        [Test]
         public void CompositePositiveAndNegativePoseRaysExactlyReconstructVisemesAndConvexBlends()
         {
             var source = CreateCompositeCalibrationMesh();
@@ -49,6 +138,10 @@ namespace YUCP.Components.Editor.Tests
                 AssertSourceUnchanged(source, sourceSnapshot);
                 Assert.That(result.mesh, Is.Not.SameAs(source));
                 Assert.That(result.poseBasisAxes, Has.Length.EqualTo(2));
+                Assert.That(Enumerable.Range(0, result.mesh.blendShapeCount)
+                    .Select(result.mesh.GetBlendShapeName)
+                    .Any(name => name.Contains("_Conflict_", StringComparison.Ordinal)), Is.False,
+                    "Low-rank ownership must not emit one conflict morph per viseme.");
                 AssertPoseAxis(
                     result.poseBasisAxes[0], AdvancedVisemeArticulator.MouthX,
                     1, positive, RendererPath);
@@ -59,18 +152,39 @@ namespace YUCP.Components.Editor.Tests
                 var targets = new Delta[VisemeReconstructionProfile.VisemeCount];
                 var residuals = new Delta[VisemeReconstructionProfile.VisemeCount];
                 var stableResiduals = new Delta[VisemeReconstructionProfile.VisemeCount];
-                var conflicts = new Delta[VisemeReconstructionProfile.VisemeCount];
+                var projected = new Delta[VisemeReconstructionProfile.VisemeCount];
+                var positiveCarriers = ReadCarrierDeltas(
+                    result.mesh, result.ownershipCarrierBlendShapeNames);
+                var negativeCarriers = ReadCarrierDeltas(
+                    result.mesh, result.ownershipNegativeCarrierBlendShapeNames);
+                for (var column = 0; column < positiveCarriers.Length; column++)
+                {
+                    AssertCarrierWeightsAreNormalizedNonnegative(
+                        result, column, result.ownershipCarrierScales[column], false);
+                    AssertCarrierWeightsAreNormalizedNonnegative(
+                        result, column, result.ownershipNegativeCarrierScales[column], true);
+                }
                 for (var viseme = 0; viseme < targets.Length; viseme++)
                 {
                     targets[viseme] = ReadDelta(source, visemeIndices[viseme]);
                     residuals[viseme] = ReadDelta(
                         result.mesh,
                         result.mesh.GetBlendShapeIndex(result.residualBlendShapeNames[viseme]));
-                    var conflictName = result.conflictingResidualBlendShapeNames[viseme];
-                    conflicts[viseme] = string.IsNullOrEmpty(conflictName)
-                        ? Delta.Zero(source.vertexCount)
-                        : ReadDelta(result.mesh, result.mesh.GetBlendShapeIndex(conflictName));
-                    stableResiduals[viseme] = Subtract(residuals[viseme], conflicts[viseme]);
+                    projected[viseme] = Delta.Zero(source.vertexCount);
+                    for (var column = 0; column < positiveCarriers.Length; column++)
+                    {
+                        var coefficient = result.ownershipProjectionCoefficients[viseme, column];
+                        var positiveScale = result.ownershipCarrierScales[column];
+                        if (coefficient < 0f && positiveScale > 1e-7f)
+                            AddScaled(projected[viseme], positiveCarriers[column],
+                                coefficient / positiveScale);
+                        var negativeScale = result.ownershipNegativeCarrierScales[column];
+                        if (coefficient > 0f && negativeScale > 1e-7f)
+                            AddScaled(projected[viseme], negativeCarriers[column],
+                                -coefficient / negativeScale);
+                    }
+                    stableResiduals[viseme] = Subtract(
+                        residuals[viseme], projected[viseme]);
 
                     Assert.That(
                         result.coefficients[viseme, 0],
@@ -83,8 +197,8 @@ namespace YUCP.Components.Editor.Tests
 
                     AssertDeltaEqual(
                         residuals[viseme],
-                        Add(stableResiduals[viseme], conflicts[viseme]),
-                        $"stable plus conflict {VisemeReconstructionProfile.VisemeNames[viseme]}");
+                        Add(stableResiduals[viseme], projected[viseme]),
+                        $"stable plus projection {VisemeReconstructionProfile.VisemeNames[viseme]}");
                     AssertOrthogonalToBasis(
                         stableResiduals[viseme],
                         positiveRay,
@@ -96,8 +210,8 @@ namespace YUCP.Components.Editor.Tests
                         Mathf.Min(0f, AuthoredPositiveCoefficient(viseme)));
                     AssertDeltaEqual(
                         expectedConflict,
-                        conflicts[viseme],
-                        $"basis conflict {VisemeReconstructionProfile.VisemeNames[viseme]}");
+                        projected[viseme],
+                        $"basis projection {VisemeReconstructionProfile.VisemeNames[viseme]}");
 
                     // Retention one is the exact authored identity V=UC+R.
                     var reconstructedAtRetentionOne = Add(
@@ -117,7 +231,7 @@ namespace YUCP.Components.Editor.Tests
                     var reconstructedAtRetentionZero = Add(
                         trackedBasis,
                         residuals[viseme],
-                        Scale(conflicts[viseme], -1f));
+                        Scale(projected[viseme], -1f));
                     var retainedDetail = Subtract(
                         reconstructedAtRetentionZero, trackedBasis);
                     Assert.That(SquaredMagnitude(retainedDetail.vertices), Is.GreaterThan(1e-12d),
@@ -180,6 +294,114 @@ namespace YUCP.Components.Editor.Tests
             finally
             {
                 UnityEngine.Object.DestroyImmediate(clip);
+                UnityEngine.Object.DestroyImmediate(source);
+            }
+        }
+
+        [Test]
+        public void CompositePoseRejectsEndpointAboveVrchatClamp()
+        {
+            var source = CreateCompositeCalibrationMesh();
+            var clip = CreatePoseClip(
+                "Over-range Composite Pose",
+                (RendererPath, "PositiveA", 150f));
+            try
+            {
+                var result = AdvancedVisemeMeshCalibrator.BuildFromPoses(
+                    source,
+                    VisemeIndices(source),
+                    new[]
+                    {
+                        new AdvancedVisemeMeshCalibrator.PoseBasisInput(
+                            AdvancedVisemeArticulator.JawOpen, 1, clip, RendererPath)
+                    });
+
+                Assert.That(result.success, Is.False);
+                Assert.That(result.mesh, Is.Null);
+                Assert.That(result.error,
+                    Does.Contain("0..100").And.Contain("150"));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(clip);
+                UnityEngine.Object.DestroyImmediate(source);
+            }
+        }
+
+        [Test]
+        public void CompositePoseRejectsBlendShapeSharedBySignedEndpoints()
+        {
+            var source = CreateCompositeCalibrationMesh();
+            var positive = CreatePoseClip(
+                "Shared Positive Endpoint",
+                (RendererPath, "PositiveA", 80f));
+            var negative = CreatePoseClip(
+                "Shared Negative Endpoint",
+                (RendererPath, "PositiveA", 45f));
+            try
+            {
+                var result = AdvancedVisemeMeshCalibrator.BuildFromPoses(
+                    source,
+                    VisemeIndices(source),
+                    new[]
+                    {
+                        new AdvancedVisemeMeshCalibrator.PoseBasisInput(
+                            AdvancedVisemeArticulator.MouthX, 1, positive, RendererPath),
+                        new AdvancedVisemeMeshCalibrator.PoseBasisInput(
+                            AdvancedVisemeArticulator.MouthX, -1, negative, RendererPath)
+                    });
+
+                Assert.That(result.success, Is.False);
+                Assert.That(result.mesh, Is.Null);
+                Assert.That(result.error,
+                    Does.Contain("share active blendshape")
+                        .And.Contain("PositiveA")
+                        .And.Contain("positive endpoint")
+                        .And.Contain("negative endpoint")
+                        .And.Contain("0..100"));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(positive);
+                UnityEngine.Object.DestroyImmediate(negative);
+                UnityEngine.Object.DestroyImmediate(source);
+            }
+        }
+
+        [Test]
+        public void PrimaryCalibrationRejectsNonlinearMultiFrameVisemesAndBasisShapes()
+        {
+            var source = CreateCompositeCalibrationMesh(includeNonlinearShape: true);
+            try
+            {
+                var visemes = VisemeIndices(source);
+                var nonlinear = source.GetBlendShapeIndex("Nonlinear");
+                var nonlinearBasis = AdvancedVisemeMeshCalibrator.Build(
+                    source,
+                    visemes,
+                    new[]
+                    {
+                        new AdvancedVisemeMeshCalibrator.BasisInput(
+                            AdvancedVisemeArticulator.JawOpen, nonlinear)
+                    });
+                Assert.That(nonlinearBasis.success, Is.False);
+                Assert.That(nonlinearBasis.error, Does.Contain("nonlinear"));
+
+                visemes[1] = nonlinear;
+                var nonlinearViseme = AdvancedVisemeMeshCalibrator.Build(
+                    source,
+                    visemes,
+                    new[]
+                    {
+                        new AdvancedVisemeMeshCalibrator.BasisInput(
+                            AdvancedVisemeArticulator.JawOpen,
+                            source.GetBlendShapeIndex("PositiveA"))
+                    });
+                Assert.That(nonlinearViseme.success, Is.False);
+                Assert.That(nonlinearViseme.error, Does.Contain("nonlinear"));
+            }
+            finally
+            {
                 UnityEngine.Object.DestroyImmediate(source);
             }
         }
@@ -272,8 +494,10 @@ namespace YUCP.Components.Editor.Tests
                             AdvancedVisemeArticulator.JawOpen, 1, positive, RendererPath)
                     });
                 Assert.That(calibration.success, Is.True, calibration.error);
-                Assert.That(calibration.conflictingResidualBlendShapeNames.Count(
-                    name => !string.IsNullOrEmpty(name)), Is.GreaterThan(0));
+                Assert.That(calibration.ownershipCarrierBlendShapeNames
+                                .Concat(calibration.ownershipNegativeCarrierBlendShapeNames)
+                                .Count(name => !string.IsNullOrEmpty(name)),
+                    Is.GreaterThan(0));
                 Assert.That(calibration.hiddenPhoneResidualBlendShapeName,
                     Is.Not.Null.And.Not.Empty);
 
@@ -302,6 +526,10 @@ namespace YUCP.Components.Editor.Tests
                             [AdvancedVisemeArticulator.JawOpen] = "Tailored/v2/JawOpen",
                             [AdvancedVisemeArticulator.LipClose] = "Tailored/v2/MouthClosed",
                             [AdvancedVisemeArticulator.MouthOpen] = "Tailored/v2/MouthOpen"
+                        },
+                        directPoseArticulators = new[]
+                        {
+                            AdvancedVisemeArticulator.JawOpen
                         },
                         sourceVisemeBlendShapes = VisemeReconstructionProfile.VisemeNames
                             .Select(name => "vrc.v_" + name).ToArray(),
@@ -334,73 +562,66 @@ namespace YUCP.Components.Editor.Tests
                 var controllerParameters = result.controller.parameters
                     .Select(parameter => parameter.name).ToArray();
                 Assert.That(controllerParameters.Any(parameter =>
-                    parameter.EndsWith("/Residual/AuthoredScale", StringComparison.Ordinal)), Is.True);
-                Assert.That(controllerParameters.Any(parameter =>
                     parameter.Contains("RetainedResidualWeight")), Is.False,
                     "A calibrated residual must not pass through the unsafe visible-pose remainder.");
+                Assert.That(controllerParameters.Any(parameter =>
+                    parameter.EndsWith("/Residual/Retention", StringComparison.Ordinal)), Is.False);
+                Assert.That(controllerParameters.Any(parameter =>
+                    parameter.EndsWith("/Residual/ConflictRemoval", StringComparison.Ordinal)), Is.False);
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
                     .OfType<BlendTree>().ToArray();
-                var retentionParameter = controllerParameters.Single(parameter =>
-                    parameter.EndsWith("/Residual/Retention", StringComparison.Ordinal));
-                var authoredScaleParameter = controllerParameters.Single(parameter =>
-                    parameter.EndsWith("/Residual/AuthoredScale", StringComparison.Ordinal));
-                var authoredScaleTree = trees.Single(tree =>
-                    tree.name.Contains("/Residual/AuthoredScale <-"));
-                Assert.That(authoredScaleTree.name, Does.Contain("AuthoredDetail"));
-                Assert.That(authoredScaleTree.name, Does.Not.Contain("Retention"));
-                Assert.That(UsesParameter(authoredScaleTree, retentionParameter), Is.False,
-                    "Full R must be scaled only by authored detail, never contradiction retention.");
-
-                var conflictRemovalParameter = controllerParameters.Single(parameter =>
-                    parameter.EndsWith("/Residual/ConflictRemoval", StringComparison.Ordinal));
-                var conflictRemovalTree = trees.Single(tree =>
-                    tree.name.EndsWith("/Residual/ConflictRemoval", StringComparison.Ordinal));
-                Assert.That(UsesParameter(conflictRemovalTree, retentionParameter), Is.True,
-                    "Conflict removal must be the complement of residual retention.");
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Native JawOpen tracking gate"), Is.True,
+                    "A rig-connected decoded proxy must render through the direct native gate.");
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Native pose by Tailored/v2/JawOpen"), Is.True,
+                    "The final template proxy must drive its calibrated pose without observer intermediates.");
+                var residualSimplex = trees.SingleOrDefault(tree =>
+                    tree.name == "Authored residual simplex");
+                Assert.That(residualSimplex, Is.Not.Null,
+                    "The calibrated residual simplex must be evaluated as one vector product.");
+                var authoredDetail = controllerParameters.Single(parameter =>
+                    parameter.EndsWith("/Tuning/AuthoredDetail", StringComparison.Ordinal));
+                Assert.That(UsesParameter(residualSimplex, authoredDetail), Is.True,
+                    "Authored detail must scale the complete residual simplex.");
                 for (var viseme = 0; viseme < VisemeReconstructionProfile.VisemeCount; viseme++)
                 {
-                    var residualSuffix = $"/Viseme/{viseme}/ResidualWeight";
-                    var residualTree = trees.SingleOrDefault(tree =>
-                        tree.name.StartsWith("Multiply ", StringComparison.Ordinal) &&
-                        tree.name.EndsWith(residualSuffix, StringComparison.Ordinal));
-                    Assert.That(residualTree, Is.Not.Null,
-                        $"Missing calibrated residual multiply for viseme {viseme}.");
-                    Assert.That(
-                        residualTree.name,
-                        Does.Contain($"/Viseme/{viseme}/SpeechWeight *"),
-                        "Calibrated R must consume the full reconstructed speech simplex.");
-                    Assert.That(
-                        residualTree.name,
-                        Does.Not.Contain("VisibleSpeechWeight"),
-                        "Tracking authority may replace U(Cp), but must not erase R.");
-                    Assert.That(residualTree.name, Does.Contain("/Residual/AuthoredScale"));
-                    Assert.That(UsesParameter(residualTree, retentionParameter), Is.False);
+                    var speechWeight = controllerParameters.Single(parameter =>
+                        parameter.EndsWith(
+                            $"/Viseme/{viseme}/SpeechWeight", StringComparison.Ordinal));
+                    var residualWeight = controllerParameters.Single(parameter =>
+                        parameter.EndsWith(
+                            $"/Viseme/{viseme}/ResidualWeight", StringComparison.Ordinal));
+                    Assert.That(UsesParameter(residualSimplex, speechWeight), Is.True,
+                        $"Calibrated residual {viseme} must consume the full speech simplex.");
+                    Assert.That(WritesParameter(residualSimplex, residualWeight), Is.True,
+                        $"The residual vector must publish viseme {viseme} atomically.");
+                }
+                Assert.That(controllerParameters
+                        .Where(parameter => parameter.Contains(
+                            "/VisibleSpeechWeight", StringComparison.Ordinal))
+                        .Any(parameter => UsesParameter(residualSimplex, parameter)),
+                    Is.False,
+                    "Tracking authority may replace U(Cp), but must not erase R.");
 
-                    var conflictName = calibration.conflictingResidualBlendShapeNames[viseme];
-                    if (string.IsNullOrEmpty(conflictName)) continue;
-                    var removalSuffix = $"/Viseme/{viseme}/RemovedResidualConflictWeight";
-                    var removalTree = trees.SingleOrDefault(tree =>
-                        tree.name.StartsWith("Multiply ", StringComparison.Ordinal) &&
-                        tree.name.EndsWith(removalSuffix, StringComparison.Ordinal));
-                    Assert.That(removalTree, Is.Not.Null,
-                        $"Missing negative conflict correction for viseme {viseme}.");
-                    Assert.That(removalTree.name,
-                        Does.Contain($"/Viseme/{viseme}/ResidualWeight *"));
-                    Assert.That(removalTree.name, Does.Contain("/Residual/ConflictRemoval"));
-                    Assert.That(UsesParameter(removalTree, conflictRemovalParameter), Is.True);
+                var ownershipMatrix = trees.SingleOrDefault(tree =>
+                    tree.name == "Primary ownership matrix projection");
+                Assert.That(ownershipMatrix, Is.Not.Null,
+                    "Ownership carriers must share one exact matrix projection.");
 
-                    var negativeConflict = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
-                        .OfType<AnimationClip>()
-                        .SingleOrDefault(clip =>
-                            clip.name == "Blendshape " + conflictName + " Negative");
-                    Assert.That(negativeConflict, Is.Not.Null,
-                        "Conflict correction must be emitted as a separate negative pose.");
-                    foreach (var binding in AnimationUtility.GetCurveBindings(negativeConflict))
-                    {
-                        var curve = AnimationUtility.GetEditorCurve(negativeConflict, binding);
-                        Assert.That(curve.Evaluate(negativeConflict.length), Is.LessThan(0f));
-                    }
+                for (var column = 0;
+                     column < calibration.ownershipCarrierBlendShapeNames.Length;
+                     column++)
+                {
+                    AssertNonnegativeCarrierDrive(
+                        calibration.ownershipCarrierBlendShapeNames[column],
+                        $"Primary/Ownership/{column}/Add",
+                        controllerParameters, trees, ownershipMatrix, controllerPath);
+                    AssertNonnegativeCarrierDrive(
+                        calibration.ownershipNegativeCarrierBlendShapeNames[column],
+                        $"Primary/Ownership/{column}/Subtract",
+                        controllerParameters, trees, ownershipMatrix, controllerPath);
                 }
 
                 var hiddenSpeechDelta = controllerParameters.Single(parameter =>
@@ -414,8 +635,6 @@ namespace YUCP.Components.Editor.Tests
                     tree.name == "Signed pose " + hiddenSpeechDelta);
                 Assert.That(hiddenDriveTree, Is.Not.Null,
                     "The stable hidden-phone residual was not driven directly.");
-                Assert.That(UsesParameter(hiddenDriveTree, retentionParameter), Is.False,
-                    "Hidden residual detail was incorrectly tied to visible contradiction retention.");
 
                 var externalBasisClip = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
                     .OfType<AnimationClip>()
@@ -439,6 +658,134 @@ namespace YUCP.Components.Editor.Tests
                 UnityEngine.Object.DestroyImmediate(profile);
                 UnityEngine.Object.DestroyImmediate(root);
                 UnityEngine.Object.DestroyImmediate(positive);
+                UnityEngine.Object.DestroyImmediate(source);
+            }
+        }
+
+        [Test]
+        public void CalibratedSignedExternalRayProjectsTargetIntoUnitIntervalBeforePoseDrive()
+        {
+            var source = CreateCompositeCalibrationMesh();
+            var positive = CreatePoseClip(
+                "Signed Mouth Positive",
+                (RendererPath, "PositiveA", 80f),
+                (RendererPath, "PositiveB", 50f));
+            var negative = CreatePoseClip(
+                "Signed Mouth Negative",
+                (RendererPath, "NegativeA", 60f),
+                (RendererPath, "NegativeB", 25f));
+            var root = new GameObject("Signed External Clamp Graph");
+            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
+            var folderName = "__YUCP_AVR_SignedExternalClamp_" + Guid.NewGuid().ToString("N");
+            var folder = "Assets/" + folderName;
+            AssetDatabase.CreateFolder("Assets", folderName);
+            AdvancedVisemeMeshCalibrator.Result calibration = null;
+            try
+            {
+                calibration = AdvancedVisemeMeshCalibrator.BuildFromPoses(
+                    source,
+                    VisemeIndices(source),
+                    new[]
+                    {
+                        new AdvancedVisemeMeshCalibrator.PoseBasisInput(
+                            AdvancedVisemeArticulator.MouthX, 1, positive, RendererPath),
+                        new AdvancedVisemeMeshCalibrator.PoseBasisInput(
+                            AdvancedVisemeArticulator.MouthX, -1, negative, RendererPath)
+                    });
+                Assert.That(calibration.success, Is.True, calibration.error);
+
+                var component = root.AddComponent<AdvancedVisemeReconstructorData>();
+                component.mouthOwnership = AdvancedVisemeMouthOwnership.DriveLowerFace;
+                component.trackingInputs = AdvancedVisemeTrackingInputs.ReuseExisting;
+                component.reconstructionMode = AdvancedVisemeReconstructionMode.BetaCoarticulation;
+                component.createTuningMenu = false;
+                var controllerPath = folder + "/AdvancedViseme.controller";
+                var result = AdvancedVisemeAnimatorBuilder.Build(
+                    new AdvancedVisemeAnimatorBuilder.Request
+                    {
+                        controllerPath = controllerPath,
+                        parametersPath = folder + "/TrackingParameters.asset",
+                        rendererPath = RendererPath,
+                        component = component,
+                        profile = profile,
+                        trackingPrefix = "Tailored",
+                        effectiveTrackingInputs = AdvancedVisemeTrackingInputs.Quality12,
+                        reuseExistingTracking = true,
+                        trackingActiveParameter = "Tailored/v2/LipTrackingActive",
+                        trackingActiveAnimatorType = AnimatorControllerParameterType.Float,
+                        trackingActiveDefault = 1f,
+                        trackingParameterNames = new Dictionary<AdvancedVisemeArticulator, string>
+                        {
+                            [AdvancedVisemeArticulator.MouthX] = "Tailored/v2/MouthX"
+                        },
+                        sourceVisemeBlendShapes = VisemeReconstructionProfile.VisemeNames
+                            .Select(name => "vrc.v_" + name).ToArray(),
+                        calibration = calibration,
+                        calibrationBasis = Array.Empty<AdvancedVisemeMeshCalibrator.BasisInput>(),
+                        resolvedBlendShapes = new Dictionary<AdvancedVisemeArticulator, string>(),
+                        externalPoses = new Dictionary<AdvancedVisemeArticulator, AdvancedVisemeExternalPose>
+                        {
+                            [AdvancedVisemeArticulator.MouthX] = new AdvancedVisemeExternalPose
+                            {
+                                positive = positive,
+                                negative = negative,
+                                positiveThreshold = 1f,
+                                negativeThreshold = -1f
+                            }
+                        },
+                        targetMesh = source,
+                        trackingEnabled = true,
+                        existingExpressionParameters = new HashSet<string>()
+                    });
+
+                var parameters = result.controller.parameters
+                    .Select(parameter => parameter.name).ToArray();
+                var trees = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
+                    .OfType<BlendTree>().ToArray();
+                foreach (var direction in new[] { "Positive", "Negative" })
+                {
+                    var targetRaw = parameters.Single(parameter => parameter.EndsWith(
+                        $"/ExternalBasis/MouthX/{direction}/TargetMass",
+                        StringComparison.Ordinal));
+                    var targetClamped = parameters.Single(parameter => parameter.EndsWith(
+                        $"/ExternalBasis/MouthX/{direction}/TargetClamped",
+                        StringComparison.Ordinal));
+                    var reconciliation = parameters.Single(parameter => parameter.EndsWith(
+                        $"/ExternalBasis/MouthX/{direction}/Reconciliation",
+                        StringComparison.Ordinal));
+                    var primaryWeight = parameters.Single(parameter => parameter.EndsWith(
+                        $"/ExternalBasis/MouthX/{direction}/PrimaryWeight",
+                        StringComparison.Ordinal));
+
+                    var clamp = trees.SingleOrDefault(tree =>
+                        tree.name == $"Map {targetRaw} -> {targetClamped}");
+                    Assert.That(clamp, Is.Not.Null,
+                        $"The {direction.ToLowerInvariant()} tailored ray bypasses its unit clamp.");
+                    AssertMapEndpoints(
+                        clamp,
+                        targetClamped,
+                        (-1f, 0f), (0f, 0f), (1f, 1f), (2f, 1f));
+                    Assert.That(trees.Any(tree =>
+                            tree.name == $"{reconciliation} <- {targetClamped} * 1"),
+                        Is.True,
+                        "Reconciliation must consume the clamped coordinate, not the raw sum.");
+                    Assert.That(trees.Any(tree =>
+                            tree.name == $"Map {reconciliation} -> {primaryWeight}"),
+                        Is.True,
+                        "The clamped reconciliation must remain connected to the final pose drive.");
+                    Assert.That(trees.Any(tree =>
+                            tree.name == "Drive pose by " + primaryWeight),
+                        Is.True);
+                }
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(folder);
+                if (calibration?.mesh != null) UnityEngine.Object.DestroyImmediate(calibration.mesh);
+                UnityEngine.Object.DestroyImmediate(profile);
+                UnityEngine.Object.DestroyImmediate(root);
+                UnityEngine.Object.DestroyImmediate(positive);
+                UnityEngine.Object.DestroyImmediate(negative);
                 UnityEngine.Object.DestroyImmediate(source);
             }
         }
@@ -608,6 +955,23 @@ namespace YUCP.Components.Editor.Tests
             return false;
         }
 
+        private static bool WritesParameter(Motion motion, string parameter)
+        {
+            if (motion is AnimationClip clip)
+                return AnimationUtility.GetCurveBindings(clip).Any(binding =>
+                    binding.type == typeof(Animator) &&
+                    string.Equals(binding.propertyName, parameter, StringComparison.Ordinal));
+            if (!(motion is BlendTree tree)) return false;
+            return tree.children.Any(child => WritesParameter(child.motion, parameter));
+        }
+
+        private static bool ContainsMotion(Motion root, Motion target)
+        {
+            if (root == target) return true;
+            if (!(root is BlendTree tree)) return false;
+            return tree.children.Any(child => ContainsMotion(child.motion, target));
+        }
+
         private static void AddShape(Mesh mesh, string name, float weight, Delta delta)
         {
             mesh.AddBlendShapeFrame(
@@ -622,6 +986,93 @@ namespace YUCP.Components.Editor.Tests
             mesh.GetBlendShapeFrameVertices(
                 index, frame, result.vertices, result.normals, result.tangents);
             return result;
+        }
+
+        private static Delta[] ReadCarrierDeltas(Mesh mesh, IEnumerable<string> names)
+        {
+            return names.Select(name => string.IsNullOrEmpty(name)
+                    ? Delta.Zero(mesh.vertexCount)
+                    : ReadDelta(mesh, mesh.GetBlendShapeIndex(name)))
+                .ToArray();
+        }
+
+        private static void AssertCarrierWeightsAreNormalizedNonnegative(
+            AdvancedVisemeMeshCalibrator.Result result,
+            int column,
+            float scale,
+            bool positiveCoefficients)
+        {
+            var magnitudes = Enumerable.Range(
+                    0, VisemeReconstructionProfile.VisemeCount)
+                .Select(viseme => result.ownershipProjectionCoefficients[viseme, column])
+                .Select(coefficient => positiveCoefficients
+                    ? Mathf.Max(0f, coefficient)
+                    : Mathf.Max(0f, -coefficient))
+                .ToArray();
+            if (magnitudes.All(value => value <= 1e-7f)) return;
+            Assert.That(scale, Is.GreaterThan(1e-7f));
+            Assert.That(magnitudes.Min(), Is.GreaterThanOrEqualTo(0f));
+            Assert.That(magnitudes.Max() / scale, Is.LessThanOrEqualTo(1f + 1e-6f),
+                "Ownership carrier weights must stay inside VRChat's 0..100 blendshape range.");
+        }
+
+        private static void AssertNonnegativeCarrierDrive(
+            string carrier,
+            string projectionKey,
+            IReadOnlyList<string> controllerParameters,
+            IReadOnlyList<BlendTree> trees,
+            BlendTree ownershipMatrix,
+            string controllerPath)
+        {
+            if (string.IsNullOrEmpty(carrier)) return;
+            var projectedParameter = controllerParameters.Single(parameter =>
+                parameter.EndsWith(
+                    "/" + projectionKey + "/Projected", StringComparison.Ordinal));
+            Assert.That(WritesParameter(ownershipMatrix, projectedParameter), Is.True,
+                "The ownership matrix must publish every carrier projection.");
+            var product = trees.SingleOrDefault(tree =>
+                tree.name == projectionKey + " product pose");
+            Assert.That(product, Is.Not.Null,
+                "Each ownership carrier must multiply its projection inside the pose tree.");
+            Assert.That(UsesParameter(product, projectedParameter), Is.True,
+                "Each ownership carrier must consume its matching projected magnitude.");
+            Assert.That(product.children.Any(child =>
+                    child.directBlendParameter.EndsWith(
+                        "/Yield", StringComparison.Ordinal)),
+                Is.True,
+                "Each ownership carrier must consume its corresponding authority yield.");
+            Assert.That(trees.Any(tree =>
+                tree.name == "Signed pose " + projectedParameter), Is.False,
+                "Ownership may not rely on negative final blendshape weights.");
+            var clip = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
+                .OfType<AnimationClip>()
+                .Single(candidate => candidate.name == "Blendshape " + carrier);
+            Assert.That(ContainsMotion(product, clip), Is.True,
+                "The product tree must drive the matching carrier geometry.");
+            foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+            foreach (var key in AnimationUtility.GetEditorCurve(clip, binding).keys)
+                Assert.That(key.value, Is.InRange(0f, 100f));
+        }
+
+        private static void AssertMapEndpoints(
+            BlendTree map,
+            string outputParameter,
+            params (float input, float output)[] expected)
+        {
+            var children = map.children.OrderBy(child => child.threshold).ToArray();
+            Assert.That(children, Has.Length.EqualTo(expected.Length));
+            for (var index = 0; index < expected.Length; index++)
+            {
+                Assert.That(children[index].threshold,
+                    Is.EqualTo(expected[index].input).Within(1e-6f));
+                Assert.That(children[index].motion, Is.TypeOf<AnimationClip>());
+                var clip = (AnimationClip)children[index].motion;
+                var binding = AnimationUtility.GetCurveBindings(clip).Single(candidate =>
+                    candidate.type == typeof(Animator) &&
+                    candidate.propertyName == outputParameter);
+                var value = AnimationUtility.GetEditorCurve(clip, binding).Evaluate(0f);
+                Assert.That(value, Is.EqualTo(expected[index].output).Within(1e-6f));
+            }
         }
 
         private static Delta Add(params Delta[] values)

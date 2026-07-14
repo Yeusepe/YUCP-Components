@@ -101,7 +101,7 @@ namespace YUCP.Components
     public sealed class VisemeReconstructionProfile : ScriptableObject
     {
         public const int VisemeCount = 15;
-        private const int CurrentDefaultsVersion = 7;
+        private const int CurrentDefaultsVersion = 8;
         public static readonly string[] VisemeNames =
         {
             "sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"
@@ -124,6 +124,8 @@ namespace YUCP.Components
 
         [Header("Style Strengths")]
         [Range(0f, 1f)] public float speechMotionStrength = 1f;
+        [Tooltip("How strongly speech-only rendering follows the fast observer. This fades out continuously as face tracking becomes active.")]
+        [Range(0f, 1f)] public float speechLiveliness = 0.5f;
         [Range(0f, 1f)] public float authoredResidualDetail = 1f;
         [Range(0f, 1f)] public float remoteTrackingTrust = 1f;
         [Range(0f, 1f)] public float phoneticConstraintStrength = 1f;
@@ -151,7 +153,7 @@ namespace YUCP.Components
         [Header("Complementary Fusion")]
         [Tooltip("Legacy compatibility value. Measured vowel coordinates are now authoritative; vowel identity is retained only in unobserved articulators.")]
         [Range(0f, 0.75f)] public float vowelIdentityRetention;
-        [Tooltip("How quickly an incompatible tracked pose fades viseme residual correctives. Matching tracking preserves the exact authored viseme.")]
+        [Tooltip("How strongly measured face-tracking axes own matching authored surface motion. Unmeasured tongue, teeth, and mouth-interior detail is preserved.")]
         [Range(0f, 1f)] public float residualMismatchFade = 1f;
 
         [Header("Viseme Poses")]
@@ -260,9 +262,9 @@ namespace YUCP.Components
             }
             if (defaultsVersion < 5 && Mathf.Approximately(residualMismatchFade, 0.9f))
             {
-                // A strong measured contradiction must be able to remove the
-                // complete calibrated residual instead of leaving ten percent of
-                // an incompatible authored mouth pose over face tracking.
+                // A fully authoritative measured surface must be able to own its
+                // complete calibrated subspace instead of retaining ten percent
+                // of duplicate authored motion.
                 residualMismatchFade = 1f;
             }
             if (defaultsVersion < 6)
@@ -296,6 +298,14 @@ namespace YUCP.Components
                 // rewriting a subsequently customized stability setting.
                 speechHangoverSeconds = 0.16f;
             }
+            if (defaultsVersion < 8)
+            {
+                // Version 8 adds a bounded fast-observer lead for speech-only
+                // rendering. Initialize the missing serialized float once; zero
+                // remains a valid deliberate legacy-response preference after
+                // the profile has been upgraded.
+                speechLiveliness = 0.5f;
+            }
             defaultsVersion = CurrentDefaultsVersion;
         }
 
@@ -316,6 +326,7 @@ namespace YUCP.Components
             voiceFullScale = 0.25f;
             betaCoarticulationStrength = 1f;
             speechMotionStrength = 1f;
+            speechLiveliness = 0.5f;
             authoredResidualDetail = 1f;
             remoteTrackingTrust = 1f;
             phoneticConstraintStrength = 1f;
@@ -351,6 +362,7 @@ namespace YUCP.Components
             trackingAcquireResponseSeconds = Mathf.Clamp(
                 trackingAcquireResponseSeconds, 0.005f, 0.1f);
             speechMotionStrength = Mathf.Clamp01(speechMotionStrength);
+            speechLiveliness = Mathf.Clamp01(speechLiveliness);
             authoredResidualDetail = Mathf.Clamp01(authoredResidualDetail);
             remoteTrackingTrust = Mathf.Clamp01(remoteTrackingTrust);
             phoneticConstraintStrength = Mathf.Clamp01(phoneticConstraintStrength);
