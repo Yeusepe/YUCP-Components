@@ -55,6 +55,19 @@ namespace YUCP.UI.DesignSystem.Utilities
             {
                 root.styleSheets.Add(foldoutStyle);
             }
+
+            LoadStyle(root,
+                "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPBadge.uss");
+            LoadStyle(root,
+                "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPProgress.uss");
+            LoadStyle(root,
+                "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPSection.uss");
+        }
+
+        private static void LoadStyle(VisualElement root, string assetPath)
+        {
+            var style = AssetDatabase.LoadAssetAtPath<StyleSheet>(assetPath);
+            if (style != null && !root.styleSheets.Contains(style)) root.styleSheets.Add(style);
         }
         public enum ButtonVariant
         {

@@ -215,15 +215,28 @@ namespace YUCP.Components.Editor
             manualContainer.style.display = microphoneMode ? DisplayStyle.None : DisplayStyle.Flex;
 
             validation.Clear();
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            if (descriptor == null)
+            if (!VisemeTestPreviewSession.TryResolveDescriptor(
+                    data,
+                    out var descriptor,
+                    out var targetSource,
+                    out var targetError))
             {
                 validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "Place this component on or below a VRChat Avatar Descriptor.",
+                    targetError,
                     YUCPUIToolkitHelper.MessageType.Error));
             }
             else
             {
+                if (targetSource != VisemeTestPreviewSession.DescriptorTargetSource.Parent)
+                {
+                    var sourceLabel = targetSource == VisemeTestPreviewSession.DescriptorTargetSource.GestureManager
+                        ? "Gesture Manager"
+                        : "the only active avatar in this scene";
+                    validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        $"Automatically targeting '{descriptor.name}' from {sourceLabel}.",
+                        YUCPUIToolkitHelper.MessageType.Info));
+                }
+
                 var message = ValidateDescriptor(descriptor);
                 if (!string.IsNullOrEmpty(message))
                     validation.Add(YUCPUIToolkitHelper.CreateHelpBox(message, YUCPUIToolkitHelper.MessageType.Warning));
@@ -245,9 +258,17 @@ namespace YUCP.Components.Editor
             }
             else
             {
-                liveLabel.text = $"{VisemeTestMath.VisemeNames[state.currentViseme]}  ·  {state.engineName}";
+                var veryQuiet = microphoneMode &&
+                                state.currentVoice < 0.025f &&
+                                state.currentInputRms < Mathf.Max(
+                                    0.00001f, data.noiseGate * 0.1f);
+                liveLabel.text = veryQuiet
+                    ? "Listening · input is very quiet"
+                    : $"{VisemeTestMath.VisemeNames[state.currentViseme]}  ·  {state.engineName}";
                 voiceMeter.value = state.currentVoice;
-                voiceMeter.title = $"Voice {state.currentVoice:0.00}";
+                voiceMeter.title = state.automaticInputGain > 1.25f
+                    ? $"Voice {state.currentVoice:0.00} · auto boost {state.automaticInputGain:0.0}×"
+                    : $"Voice {state.currentVoice:0.00}";
             }
         }
 

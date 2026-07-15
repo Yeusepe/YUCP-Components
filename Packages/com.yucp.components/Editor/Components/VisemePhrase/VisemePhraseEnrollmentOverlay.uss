@@ -1,0 +1,404 @@
+/* One calm recording surface using the shared YUCP spacing and card language. */
+.yucp-phrase-wizard-root {
+    background-color: var(--yucp-bg-primary);
+}
+
+.yucp-phrase-wizard-scroll {
+    flex-grow: 1;
+}
+
+.yucp-phrase-wizard-shell {
+    width: 100%;
+    max-width: 640px;
+    align-self: center;
+    padding: 24px;
+}
+
+.yucp-phrase-session-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.yucp-phrase-session-copy {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.yucp-phrase-session-title {
+    color: var(--yucp-text-primary);
+    font-size: 14px;
+    -unity-font-style: bold;
+    white-space: normal;
+}
+
+.yucp-phrase-session-subtitle {
+    color: var(--yucp-text-tertiary);
+    font-size: 11px;
+    margin-top: 4px;
+}
+
+.yucp-phrase-header-navigation {
+    flex-direction: row;
+    margin-left: 8px;
+}
+
+.yucp-phrase-nav-button {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+    margin-left: 4px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-phrase-page-title {
+    color: var(--yucp-text-primary);
+    font-size: 20px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    white-space: normal;
+}
+
+.yucp-phrase-page-description {
+    color: var(--yucp-text-secondary);
+    font-size: 12px;
+    -unity-text-align: middle-center;
+    white-space: normal;
+    margin-top: 4px;
+    margin-bottom: 12px;
+}
+
+.yucp-phrase-eyebrow {
+    color: var(--yucp-accent-primary);
+    font-size: 10px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    margin-bottom: 4px;
+}
+
+.yucp-phrase-take-strip {
+    width: 240px;
+    align-self: center;
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.yucp-phrase-take-slot {
+    flex-grow: 1;
+    min-width: 0;
+    height: 28px;
+    margin-left: 2px;
+    margin-right: 2px;
+    align-items: center;
+    justify-content: center;
+    border-bottom-width: 2px;
+    border-bottom-color: var(--yucp-border-secondary);
+    transition-property: border-bottom-color, opacity;
+    transition-duration: 180ms;
+}
+
+.yucp-phrase-take-slot-mark {
+    color: var(--yucp-text-tertiary);
+    font-size: 11px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-phrase-take-slot-active {
+    border-bottom-color: var(--yucp-accent-primary);
+}
+
+.yucp-phrase-take-slot-active .yucp-phrase-take-slot-mark {
+    color: var(--yucp-text-primary);
+    -unity-font-style: bold;
+}
+
+.yucp-phrase-take-slot-ready,
+.yucp-phrase-take-slot-accepted {
+    border-bottom-color: var(--yucp-accent-primary);
+}
+
+.yucp-phrase-take-slot-ready .yucp-phrase-take-slot-mark,
+.yucp-phrase-take-slot-accepted .yucp-phrase-take-slot-mark {
+    color: var(--yucp-accent-primary);
+}
+
+.yucp-phrase-take-slot-problem {
+    border-bottom-color: var(--yucp-accent-warning);
+}
+
+.yucp-phrase-take-slot-problem .yucp-phrase-take-slot-mark {
+    color: var(--yucp-accent-warning);
+    -unity-font-style: bold;
+}
+
+.yucp-phrase-take-slot-clickable {
+    border-radius: 4px;
+    transition-property: background-color, border-bottom-color, opacity;
+}
+
+.yucp-phrase-take-slot-clickable:hover,
+.yucp-phrase-take-slot-clickable:focus {
+    background-color: rgba(54, 191, 177, 0.08);
+}
+
+.yucp-phrase-record-stage {
+    min-height: 176px;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 16px;
+    margin-bottom: 15px;
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    border-radius: var(--yucp-radius-card);
+    overflow: hidden;
+    background-color: var(--yucp-bg-secondary);
+    transition-property: background-color, border-color;
+    transition-duration: 250ms;
+}
+
+.yucp-phrase-stage-speaking,
+.yucp-phrase-stage-hearing {
+    border-color: rgba(54, 191, 177, 0.42);
+    background-color: rgba(54, 191, 177, 0.035);
+}
+
+.yucp-phrase-stage-success {
+    border-color: rgba(54, 191, 177, 0.55);
+    background-color: rgba(54, 191, 177, 0.055);
+}
+
+.yucp-phrase-stage-retry,
+.yucp-phrase-stage-error {
+    border-color: rgba(226, 160, 74, 0.46);
+}
+
+.yucp-phrase-visualizer {
+    height: 72px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.yucp-phrase-visualizer-bar {
+    width: 4px;
+    height: 4px;
+    min-height: 4px;
+    max-height: 56px;
+    margin-left: 2px;
+    margin-right: 2px;
+    border-radius: 2px;
+    background-color: var(--yucp-text-tertiary);
+    opacity: 0.58;
+    transition-property: height, background-color, opacity;
+    transition-duration: 100ms;
+}
+
+.yucp-phrase-stage-speaking .yucp-phrase-visualizer-bar,
+.yucp-phrase-stage-hearing .yucp-phrase-visualizer-bar,
+.yucp-phrase-stage-success .yucp-phrase-visualizer-bar {
+    background-color: var(--yucp-accent-primary);
+    opacity: 1;
+}
+
+.yucp-phrase-stage-finishing .yucp-phrase-visualizer-bar {
+    background-color: var(--yucp-accent-primary);
+    opacity: 0.78;
+}
+
+.yucp-phrase-stage-state-row {
+    height: 24px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.yucp-phrase-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    margin-right: 8px;
+    background-color: var(--yucp-text-tertiary);
+    transition-property: background-color, opacity;
+    transition-duration: 300ms;
+}
+
+.yucp-phrase-stage-listening .yucp-phrase-live-dot,
+.yucp-phrase-stage-starting .yucp-phrase-live-dot,
+.yucp-phrase-stage-finishing .yucp-phrase-live-dot {
+    background-color: var(--yucp-accent-primary);
+    opacity: 0.72;
+}
+
+.yucp-phrase-stage-speaking .yucp-phrase-live-dot,
+.yucp-phrase-stage-hearing .yucp-phrase-live-dot,
+.yucp-phrase-stage-success .yucp-phrase-live-dot {
+    background-color: var(--yucp-accent-primary);
+    opacity: 1;
+}
+
+.yucp-phrase-stage-retry .yucp-phrase-live-dot,
+.yucp-phrase-stage-error .yucp-phrase-live-dot {
+    background-color: var(--yucp-accent-warning);
+}
+
+.yucp-phrase-record-state {
+    color: var(--yucp-text-secondary);
+    -unity-text-align: middle-center;
+    transition-property: opacity;
+    transition-duration: 140ms;
+}
+
+.yucp-phrase-stage-speaking .yucp-phrase-record-state,
+.yucp-phrase-stage-success .yucp-phrase-record-state {
+    color: var(--yucp-text-primary);
+}
+
+.yucp-phrase-stage-timer {
+    min-width: 38px;
+    margin-left: 8px;
+    color: var(--yucp-text-tertiary);
+    font-size: 11px;
+    -unity-text-align: middle-right;
+}
+
+.yucp-phrase-stage-action {
+    min-width: 180px;
+    height: 36px;
+    margin-top: 12px;
+}
+
+.yucp-phrase-compact-controls {
+    width: 100%;
+    max-width: 480px;
+    align-self: center;
+    margin-bottom: 8px;
+}
+
+.yucp-phrase-microphone-picker {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.yucp-phrase-inline-note {
+    color: var(--yucp-text-tertiary);
+    font-size: 10px;
+    -unity-text-align: middle-center;
+    white-space: normal;
+    margin-bottom: 8px;
+}
+
+.yucp-phrase-feedback {
+    margin: 0;
+}
+
+.yucp-phrase-review-summary {
+    min-height: 96px;
+    align-items: center;
+    justify-content: center;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    border-radius: var(--yucp-radius-card);
+    overflow: hidden;
+    background-color: var(--yucp-bg-secondary);
+}
+
+.yucp-phrase-review-mark {
+    color: var(--yucp-accent-primary);
+    font-size: 28px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    margin-bottom: 8px;
+}
+
+.yucp-phrase-review-title {
+    color: var(--yucp-text-primary);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    white-space: normal;
+}
+
+.yucp-phrase-plain-card {
+    padding: 12px;
+    margin-bottom: 12px;
+    background-color: var(--yucp-bg-secondary);
+    border-width: 1px;
+    border-color: var(--yucp-border-primary);
+    border-radius: var(--yucp-radius-card);
+}
+
+.yucp-phrase-review-row {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--yucp-border-primary);
+}
+
+.yucp-phrase-review-copy {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.yucp-phrase-advanced {
+    margin-top: 12px;
+}
+
+.yucp-phrase-advanced-note {
+    color: var(--yucp-text-tertiary);
+    font-size: 11px;
+    white-space: normal;
+    margin-bottom: 8px;
+}
+
+.yucp-phrase-listening-state {
+    color: var(--yucp-text-secondary);
+    font-size: 11px;
+    white-space: normal;
+    margin-top: 4px;
+}
+
+.yucp-phrase-optional-secondary {
+    margin-left: 8px;
+}
+
+.yucp-phrase-footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background-color: var(--yucp-bg-secondary);
+    border-top-width: 1px;
+    border-top-color: var(--yucp-border-primary);
+}
+
+.yucp-phrase-footer-inner {
+    width: 100%;
+    max-width: 640px;
+    align-self: center;
+    flex-direction: row;
+    align-items: center;
+    padding: 12px 24px;
+}
+
+.yucp-phrase-footer-spacer {
+    flex-grow: 1;
+}
+
+.yucp-phrase-footer-button {
+    min-width: 120px;
+    height: 36px;
+    margin-left: 8px;
+}
+
+.yucp-phrase-footer-back {
+    margin-left: 0;
+}
+
+.yucp-phrase-footer-primary {
+    min-width: 160px;
+}

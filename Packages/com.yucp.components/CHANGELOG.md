@@ -4,6 +4,35 @@ All notable changes to YUCP Components will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Phrase enrollment now uses one automatic recording stage: it starts the selected microphone, waits for confirmed speech, waits through a cancellable end pause, saves useful takes, and advances without Start, Stop, Continue, or Next clicks.
+- The enrollment overlay now uses a compact animated speech visualizer and a consistent 4/8/12/16/24 spacing rhythm, with technical controls and optional calibration kept collapsed.
+- Phrase enrollment now ends with a focused Done/Continue action, keeps Skip for now available throughout, and lets creators select any saved take to record again; SDK navigation and Build & Test no longer compete with the teaching task.
+
+### Fixed
+- Phrase matching now retains a bounded cross-take pronunciation lattice instead of requiring every live hard-Viseme sequence to equal one complete enrollment take. One repeatedly supported `A-B-A` classifier bounce may bridge otherwise observed contexts, inferred phones use an analyzer-block debounce floor rather than overfitted singleton duration minima, and the 32-state fitter prunes only optional bridges, never the creator's four recorded paths. This fixes live candidates that advanced partway but could never emit `Matched`; existing current-format recordings rebake the derived model automatically without another microphone take.
+- Personalized phrase enrollment now preserves normal accent and coarticulation differences as bounded whole-sequence alternatives instead of repeatedly asking the wearer to imitate one averaged trace. Singleton changes remain correlated paths rather than permissive aliases, same-phrase prefix pronunciations share the generated trie safely, and only genuine 12-run or avatar-wide 32-state overflows request a different phrase.
+- Phrase enrollment now accepts clean three-shape signatures for short words such as “Cube,” while rejecting signatures that only reach three through classifier flicker or collapse to two states after boundary cleanup. The wizard and compiler share the same stabilized runs, `Take N` diagnostics route to the correct slot, and optional re-recordings are preview-compiled without overwriting a known-good enrollment or entering an automatic retry loop.
+- Phrase capture now derives onset, duration, and end-of-speech from analyzer sample clocks with a robust noise-floor Schmitt gate and viseme corroboration. Quiet speech can start the timer, short within-phrase pauses no longer save early, stalled analyzers retry once, and stale hard visemes cannot hold a take open.
+- Missing phrase enrollment discovered by VRCFury Play Mode preprocessing now hands off to the restored Edit Mode avatar instead of aborting the avatar pipeline or saving creator data on a temporary Play Mode copy.
+
+## [0.3.41] - 2026-07-14
+
+### Added
+- Viseme Phrase Trigger, a prefab-friendly personalized visual phrase matcher that learns four microphone takes without storing audio, compiles them into a compact duration-aware Animator automaton, and requires an Advanced Viseme Reconstructor on the avatar.
+- A YUCP-styled enrollment workflow with microphone selection, sample-clock capture, per-take viseme chips, consistency diagnostics, safe draft recovery, one-click retakes, and optional ordinary-speech negative calibration.
+- One-bit-per-phrase network event carriers. The local wearer toggles a stable hidden Bool on each accepted match, and every client reconstructs the public timed `Matched` pulse from carrier edges with late-join suppression.
+- Reusable local `Confidence` and `Progress` outputs, Natural Speech and Paused Command matching modes, deterministic DTW enrollment tooling, exact baked-language replay validation, source-prefix discovery, homophene checks, parameter-budget validation, and VRCFury full-controller injection.
+
+### Changed
+- Advanced Viseme Reconstructor public parameter names now share a versioned contract with dependent YUCP speech components.
+- Viseme Test Emulator analysis frames can be consumed through a lossless sample-clock capture scope, so enrollment remains deterministic even when Editor updates are backlogged.
+
+### Fixed
+- Phrase enrollment no longer loses complete analyzer frames when microphone input arrives faster than bounded live preview updates.
+- Phrase timing clocks are isolated from parallel cooldown and edge-decoder layers, and low-frame-rate one-frame visemes use exit-time segments instead of stale animated clock values.
+- Baked phrase matching now preserves calibrated alias/skip costs and whole-phrase duration bounds, preventing editor-only DTW scores from accepting a different language than the generated Animator.
+
 ## [0.3.40] - 2026-07-14
 
 ### Added

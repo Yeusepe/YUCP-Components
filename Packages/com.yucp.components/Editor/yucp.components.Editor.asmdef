@@ -3,6 +3,8 @@
     "rootNamespace": "YUCP.Components.Editor",
     "references": [
         "VRC.SDKBase.Editor.BuildPipeline",
+        "VRC.SDKBase.Editor",
+        "VRC.SDK3A.Editor",
         "com.yucp.components.Runtime",
         "VRCFury-Editor-Common",
         "VRCFury-Editor-Avatars",

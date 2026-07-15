@@ -13,6 +13,44 @@ namespace YUCP.Components.Editor
     [InitializeOnLoad]
     internal static class VisemeTestPreviewSession
     {
+        internal const int PreviewMicrophoneBufferSeconds = 2;
+        internal const int LosslessMicrophoneBufferSeconds = 32;
+
+        internal enum DescriptorTargetSource
+        {
+            Parent,
+            GestureManager,
+            SoleSceneAvatar
+        }
+
+        internal readonly struct AnalysisSample
+        {
+            internal readonly VisemeTestEmulatorData source;
+            internal readonly int viseme;
+            internal readonly float voice;
+            internal readonly long sampleClock;
+            internal readonly int sampleRate;
+            internal readonly string engineName;
+
+            internal AnalysisSample(
+                VisemeTestEmulatorData source,
+                int viseme,
+                float voice,
+                long sampleClock,
+                int sampleRate,
+                string engineName)
+            {
+                this.source = source;
+                this.viseme = viseme;
+                this.voice = voice;
+                this.sampleClock = sampleClock;
+                this.sampleRate = sampleRate;
+                this.engineName = engineName;
+            }
+
+            internal double timeSeconds => sampleRate > 0 ? sampleClock / (double)sampleRate : 0d;
+        }
+
         internal sealed class State
         {
             internal VisemeTestEmulatorData data;
@@ -37,10 +75,37 @@ namespace YUCP.Components.Editor
             internal string engineName = "Manual";
             internal OculusBridge oculus;
             internal double lastUpdateTime;
+            internal long analysisSampleClock;
+            internal float currentInputRms;
+            internal float noiseFloorRms;
+            internal float effectiveNoiseGate;
+            internal float automaticInputGain = 1f;
+            internal int speechHangoverFrames;
+            internal int noiseCalibrationFrames = 12;
         }
 
         private static readonly Dictionary<int, State> Sessions = new Dictionary<int, State>();
         private static readonly HashSet<int> AutoStartAttempted = new HashSet<int>();
+        private static readonly HashSet<int> LosslessAnalysisSources = new HashSet<int>();
+
+        /// <summary>
+        /// Raised once for every analyzed audio block. The sample clock, rather than
+        /// EditorApplication.update, makes enrollment recordings independent of how
+        /// many microphone blocks Unity delivers in one editor tick.
+        /// </summary>
+        internal static event Action<AnalysisSample> AnalysisFrameProcessed;
+
+        /// <summary>
+        /// Enrollment uses every classifier block. Ordinary live preview remains
+        /// bounded so a long editor stall cannot monopolize the main thread.
+        /// </summary>
+        internal static IDisposable BeginLosslessAnalysis(VisemeTestEmulatorData data)
+        {
+            if (data == null) throw new ArgumentNullException(nameof(data));
+            var id = data.GetInstanceID();
+            LosslessAnalysisSources.Add(id);
+            return new LosslessAnalysisScope(id);
+        }
 
         static VisemeTestPreviewSession()
         {
@@ -65,7 +130,7 @@ namespace YUCP.Components.Editor
         {
             return OculusBridge.IsAvailable(out var detail)
                 ? "Oculus LipSync detected — microphone classification uses the same engine family as VRChat."
-                : "Oculus LipSync is not installed — microphone preview will use YUCP's local fallback. Manual output remains exact." +
+                : "Approximate enrollment: Oculus LipSync is not installed, so microphone preview will use YUCP's local fallback. Manual output remains exact." +
                   (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail);
         }
 
@@ -75,8 +140,7 @@ namespace YUCP.Components.Editor
             if (data == null) { error = "Component is missing."; return false; }
             Stop(data);
 
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            if (descriptor == null) { error = "Place this component on or below a VRChat Avatar Descriptor."; return false; }
+            if (!TryResolveDescriptor(data, out var descriptor, out _, out error)) return false;
 
             var state = new State
             {
@@ -115,6 +179,113 @@ namespace YUCP.Components.Editor
             return true;
         }
 
+        internal static bool TryResolveDescriptor(
+            VisemeTestEmulatorData data,
+            out VRCAvatarDescriptor descriptor,
+            out DescriptorTargetSource source,
+            out string error)
+        {
+            descriptor = null;
+            source = DescriptorTargetSource.Parent;
+            error = string.Empty;
+            if (data == null)
+            {
+                error = "Component is missing.";
+                return false;
+            }
+
+            var parent = data.GetComponentInParent<VRCAvatarDescriptor>();
+            if (parent != null)
+            {
+                descriptor = parent;
+                source = DescriptorTargetSource.Parent;
+                return true;
+            }
+
+            var sceneDescriptors = UnityEngine.Object.FindObjectsByType<VRCAvatarDescriptor>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .Where(IsActiveSceneDescriptor)
+                .ToArray();
+            var gestureManagerTargets = sceneDescriptors.Length > 1
+                ? GestureManagerBridge.FindTargetedDescriptors(sceneDescriptors)
+                : Array.Empty<VRCAvatarDescriptor>();
+            return TrySelectDescriptor(
+                parent,
+                sceneDescriptors,
+                gestureManagerTargets,
+                out descriptor,
+                out source,
+                out error);
+        }
+
+        internal static bool TrySelectDescriptor(
+            VRCAvatarDescriptor parent,
+            IReadOnlyCollection<VRCAvatarDescriptor> sceneDescriptors,
+            IReadOnlyCollection<VRCAvatarDescriptor> gestureManagerTargets,
+            out VRCAvatarDescriptor descriptor,
+            out DescriptorTargetSource source,
+            out string error)
+        {
+            descriptor = null;
+            source = DescriptorTargetSource.Parent;
+            error = string.Empty;
+
+            if (parent != null)
+            {
+                descriptor = parent;
+                return true;
+            }
+
+            var candidates = DistinctDescriptors(sceneDescriptors);
+            var candidateIds = new HashSet<int>(candidates.Select(candidate => candidate.GetInstanceID()));
+            var targeted = DistinctDescriptors(gestureManagerTargets)
+                .Where(candidate => candidateIds.Contains(candidate.GetInstanceID()))
+                .ToArray();
+
+            if (targeted.Length == 1)
+            {
+                descriptor = targeted[0];
+                source = DescriptorTargetSource.GestureManager;
+                return true;
+            }
+
+            if (candidates.Length == 1)
+            {
+                descriptor = candidates[0];
+                source = DescriptorTargetSource.SoleSceneAvatar;
+                return true;
+            }
+
+            if (candidates.Length == 0)
+            {
+                error = "No active VRChat avatar was found in an open scene. Add an avatar, or place this component below its Avatar Descriptor.";
+                return false;
+            }
+
+            error = targeted.Length > 1
+                ? $"Gesture Managers currently target {targeted.Length} different avatars. Place this component below the Avatar Descriptor you want to preview."
+                : $"Found {candidates.Length} active VRChat avatars and no unambiguous Gesture Manager target. Place this component below the Avatar Descriptor you want to preview.";
+            return false;
+        }
+
+        private static VRCAvatarDescriptor[] DistinctDescriptors(
+            IEnumerable<VRCAvatarDescriptor> descriptors)
+        {
+            return (descriptors ?? Enumerable.Empty<VRCAvatarDescriptor>())
+                .Where(candidate => candidate != null)
+                .GroupBy(candidate => candidate.GetInstanceID())
+                .Select(group => group.First())
+                .ToArray();
+        }
+
+        private static bool IsActiveSceneDescriptor(VRCAvatarDescriptor descriptor)
+        {
+            if (descriptor == null || !descriptor.gameObject.activeInHierarchy) return false;
+            var scene = descriptor.gameObject.scene;
+            return scene.IsValid() && scene.isLoaded && !EditorUtility.IsPersistent(descriptor);
+        }
+
         internal static void Stop(VisemeTestEmulatorData data)
         {
             if (data == null) return;
@@ -150,7 +321,6 @@ namespace YUCP.Components.Editor
                 }
 
                 var now = EditorApplication.timeSinceStartup;
-                var deltaTime = Mathf.Clamp((float)(now - state.lastUpdateTime), 0f, 0.25f);
                 state.lastUpdateTime = now;
 
                 if (state.data.input == VisemeTestInput.Manual)
@@ -159,7 +329,7 @@ namespace YUCP.Components.Editor
                     continue;
                 }
 
-                ReadMicrophone(state, deltaTime);
+                ReadMicrophone(state);
             }
         }
 
@@ -221,7 +391,11 @@ namespace YUCP.Components.Editor
 
             try
             {
-                state.microphoneClip = Microphone.Start(state.microphone, true, 2, state.sampleRate);
+                state.microphoneClip = Microphone.Start(
+                    state.microphone,
+                    true,
+                    MicrophoneBufferSeconds(state.data),
+                    state.sampleRate);
             }
             catch (Exception exception)
             {
@@ -238,17 +412,19 @@ namespace YUCP.Components.Editor
             return true;
         }
 
-        private static void ReadMicrophone(State state, float deltaTime)
+        private static void ReadMicrophone(State state)
         {
             if (state.microphoneClip == null) return;
             var position = Microphone.GetPosition(state.microphone);
             if (position < 0 || position == state.lastMicrophonePosition) return;
 
             var clipSamples = state.microphoneClip.samples;
-            var available = position >= state.lastMicrophonePosition
-                ? position - state.lastMicrophonePosition
-                : clipSamples - state.lastMicrophonePosition + position;
-            available = Mathf.Min(available, state.sampleRate / 2);
+            var available = AvailableMicrophoneSamples(
+                state.lastMicrophonePosition,
+                position,
+                clipSamples);
+            var lossless = state.data != null && LosslessAnalysisSources.Contains(state.data.GetInstanceID());
+            if (!lossless) available = Mathf.Min(available, state.sampleRate / 2);
             if (available <= 0) return;
 
             var samples = new float[available * state.microphoneClip.channels];
@@ -264,18 +440,83 @@ namespace YUCP.Components.Editor
             }
 
             var processed = 0;
-            while (state.pendingSamples.Count >= state.analysisFrame.Length && processed++ < 8)
+            var maximumFrames = lossless ? int.MaxValue : 8;
+            while (state.pendingSamples.Count >= state.analysisFrame.Length && processed++ < maximumFrames)
             {
                 for (var i = 0; i < state.analysisFrame.Length; i++) state.analysisFrame[i] = state.pendingSamples.Dequeue();
-                AnalyzeFrame(state, deltaTime);
+                AnalyzeFrame(state, state.analysisFrame.Length / (float)Mathf.Max(1, state.sampleRate));
             }
-            while (state.pendingSamples.Count > state.sampleRate / 4) state.pendingSamples.Dequeue();
+            if (!lossless)
+                while (state.pendingSamples.Count > state.sampleRate / 4) state.pendingSamples.Dequeue();
+        }
+
+        internal static int MicrophoneBufferSeconds(VisemeTestEmulatorData data)
+        {
+            return data != null && LosslessAnalysisSources.Contains(data.GetInstanceID())
+                ? LosslessMicrophoneBufferSeconds
+                : PreviewMicrophoneBufferSeconds;
+        }
+
+        internal static int AvailableMicrophoneSamples(
+            int previousPosition,
+            int currentPosition,
+            int clipSamples)
+        {
+            clipSamples = Mathf.Max(1, clipSamples);
+            previousPosition = Mathf.Clamp(previousPosition, 0, clipSamples - 1);
+            currentPosition = Mathf.Clamp(currentPosition, 0, clipSamples - 1);
+            return currentPosition >= previousPosition
+                ? currentPosition - previousPosition
+                : clipSamples - previousPosition + currentPosition;
         }
 
         private static void AnalyzeFrame(State state, float deltaTime)
         {
             var rms = VisemeTestMath.RootMeanSquare(state.analysisFrame);
-            var targetVoice = VisemeTestMath.VoiceFromRms(rms, state.data.noiseGate, 1f);
+            if (state.noiseFloorRms <= 0f)
+                state.noiseFloorRms = Mathf.Max(0.000001f, rms);
+            var calibratingNoise = state.noiseCalibrationFrames > 0;
+            if (calibratingNoise)
+            {
+                state.noiseCalibrationFrames--;
+                state.noiseFloorRms = VisemeTestMath.ExpSmooth(
+                    state.noiseFloorRms,
+                    Mathf.Max(0.000001f, rms),
+                    deltaTime,
+                    0.08f);
+            }
+            var gate = VisemeTestMath.AdaptiveNoiseGate(
+                state.noiseFloorRms, state.data.noiseGate);
+            var speechEvidence = !calibratingNoise && rms > Mathf.Max(
+                gate * 1.12f,
+                state.noiseFloorRms * 1.8f);
+            if (!calibratingNoise)
+                state.noiseFloorRms = VisemeTestMath.UpdateNoiseFloor(
+                    state.noiseFloorRms, rms, speechEvidence, deltaTime);
+            gate = VisemeTestMath.AdaptiveNoiseGate(
+                state.noiseFloorRms, state.data.noiseGate);
+
+            if (speechEvidence) state.speechHangoverFrames = 6;
+            else if (state.speechHangoverFrames > 0) state.speechHangoverFrames--;
+            var desiredGain = speechEvidence
+                ? VisemeTestMath.AutomaticInputGain(rms, gate)
+                : 1f;
+            state.automaticInputGain = VisemeTestMath.ExpSmooth(
+                state.automaticInputGain,
+                desiredGain,
+                deltaTime,
+                desiredGain > state.automaticInputGain ? 0.08f : 0.8f);
+            var analysisGain = speechEvidence || state.speechHangoverFrames > 0
+                ? state.automaticInputGain
+                : 1f;
+            if (analysisGain > 1.0001f)
+                for (var index = 0; index < state.analysisFrame.Length; index++)
+                    state.analysisFrame[index] *= analysisGain;
+
+            state.currentInputRms = rms;
+            state.effectiveNoiseGate = gate;
+            var targetVoice = VisemeTestMath.VoiceFromRms(
+                rms * analysisGain, gate * analysisGain, 1f);
             var response = targetVoice > state.currentVoice ? 0.025f : 0.09f;
             var voice = VisemeTestMath.ExpSmooth(state.currentVoice, targetVoice, deltaTime, response);
             int viseme;
@@ -304,6 +545,28 @@ namespace YUCP.Components.Editor
             }
 
             ApplyFrame(state, viseme, voice, weights);
+            state.analysisSampleClock += state.analysisFrame.Length;
+            PublishAnalysisSample(new AnalysisSample(
+                state.data,
+                viseme,
+                voice,
+                state.analysisSampleClock,
+                state.sampleRate,
+                state.engineName));
+        }
+
+        private static void PublishAnalysisSample(AnalysisSample sample)
+        {
+            var subscribers = AnalysisFrameProcessed;
+            if (subscribers == null) return;
+            foreach (Action<AnalysisSample> subscriber in subscribers.GetInvocationList())
+            {
+                try { subscriber(sample); }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception);
+                }
+            }
         }
 
         private static float[] BuildFallbackWeights(State state, int viseme, float voice, float deltaTime)
@@ -466,6 +729,24 @@ namespace YUCP.Components.Editor
             foreach (var state in Sessions.Values.ToArray()) Dispose(state);
             Sessions.Clear();
             TrackingControlBridge.Clear();
+        }
+
+        private sealed class LosslessAnalysisScope : IDisposable
+        {
+            private readonly int sourceId;
+            private bool disposed;
+
+            internal LosslessAnalysisScope(int sourceId)
+            {
+                this.sourceId = sourceId;
+            }
+
+            public void Dispose()
+            {
+                if (disposed) return;
+                disposed = true;
+                LosslessAnalysisSources.Remove(sourceId);
+            }
         }
 
         internal static class TrackingControlBridge
@@ -643,6 +924,35 @@ namespace YUCP.Components.Editor
             private static object cachedModule;
             private static int cachedDescriptorId;
 
+            internal static VRCAvatarDescriptor[] FindTargetedDescriptors(
+                IEnumerable<VRCAvatarDescriptor> candidates)
+            {
+                var descriptors = (candidates ?? Enumerable.Empty<VRCAvatarDescriptor>())
+                    .Where(candidate => candidate != null)
+                    .GroupBy(candidate => candidate.GetInstanceID())
+                    .ToDictionary(group => group.Key, group => group.First());
+                if (descriptors.Count == 0) return Array.Empty<VRCAvatarDescriptor>();
+
+                var targets = new Dictionary<int, VRCAvatarDescriptor>();
+                var managers = UnityEngine.Object.FindObjectsByType<MonoBehaviour>(
+                        FindObjectsInactive.Include,
+                        FindObjectsSortMode.None)
+                    .Where(component => component != null &&
+                                        component.gameObject.activeInHierarchy &&
+                                        component.gameObject.scene.IsValid() &&
+                                        component.gameObject.scene.isLoaded &&
+                                        component.GetType().Name == "GestureManager");
+
+                foreach (var manager in managers)
+                {
+                    var target = DescriptorFromModule(manager) ?? DescriptorFromFavourite(manager);
+                    if (target == null || !descriptors.ContainsKey(target.GetInstanceID())) continue;
+                    targets[target.GetInstanceID()] = target;
+                }
+
+                return targets.Values.ToArray();
+            }
+
             internal static void SetParameters(VRCAvatarDescriptor descriptor, int viseme, float voice)
             {
                 try
@@ -689,6 +999,44 @@ namespace YUCP.Components.Editor
                 TryInitializeModule(cachedManager, descriptor);
                 cachedModule = moduleField?.GetValue(cachedManager);
                 return cachedModule != null && ModuleTargets(cachedModule, descriptor);
+            }
+
+            private static VRCAvatarDescriptor DescriptorFromModule(Component manager)
+            {
+                var moduleField = manager.GetType().GetField(
+                    "Module",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var module = moduleField?.GetValue(manager);
+                if (module == null) return null;
+                var avatarField = module.GetType().GetField(
+                    "Avatar",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                return DescriptorFromTarget(avatarField?.GetValue(module));
+            }
+
+            private static VRCAvatarDescriptor DescriptorFromFavourite(Component manager)
+            {
+                var settingsField = manager.GetType().GetField(
+                    "settings",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var settings = settingsField?.GetValue(manager);
+                if (settings == null) return null;
+                var favouriteField = settings.GetType().GetField(
+                    "favourite",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                return DescriptorFromTarget(favouriteField?.GetValue(settings));
+            }
+
+            private static VRCAvatarDescriptor DescriptorFromTarget(object target)
+            {
+                if (target is VRCAvatarDescriptor descriptor) return descriptor;
+                if (target is GameObject gameObject)
+                    return gameObject.GetComponent<VRCAvatarDescriptor>() ??
+                           gameObject.GetComponentInParent<VRCAvatarDescriptor>();
+                if (target is Component component)
+                    return component.GetComponent<VRCAvatarDescriptor>() ??
+                           component.GetComponentInParent<VRCAvatarDescriptor>();
+                return null;
             }
 
             private static Component FindManager(VRCAvatarDescriptor descriptor)

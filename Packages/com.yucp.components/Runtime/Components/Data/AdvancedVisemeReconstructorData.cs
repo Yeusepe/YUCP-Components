@@ -44,7 +44,8 @@ namespace YUCP.Components
     [SupportBanner]
     public sealed class AdvancedVisemeReconstructorData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        public const string DefaultParameterPrefix = "YUCP/AdvancedViseme";
+        public const string DefaultParameterPrefix =
+            AdvancedVisemeParameterContract.DefaultAdvancedVisemePrefix;
 
         [Header("Face Rig")]
         [Tooltip("Renderer containing the Oculus visemes. When empty, the renderer configured on the avatar descriptor is used.")]
@@ -112,8 +113,9 @@ namespace YUCP.Components
         {
             get
             {
-                var value = string.IsNullOrWhiteSpace(parameterPrefix) ? DefaultParameterPrefix : parameterPrefix.Trim();
-                return value.TrimEnd('/');
+                return AdvancedVisemeParameterContract.NormalizePrefix(
+                    parameterPrefix,
+                    DefaultParameterPrefix);
             }
         }
 

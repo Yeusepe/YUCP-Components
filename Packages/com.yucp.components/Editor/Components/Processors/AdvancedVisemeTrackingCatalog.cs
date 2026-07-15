@@ -61,6 +61,7 @@ namespace YUCP.Components.Editor
         {
             public VRCExpressionParameters.Parameter expression;
             public bool expressionTypeConflict;
+            public bool expressionMetadataConflict;
             public AnimatorControllerParameterType? animatorType;
             public float animatorDefault;
             public bool animatorTypeConflict;
@@ -784,6 +785,10 @@ namespace YUCP.Components.Editor
                             entry.expressionTypeConflict = true;
                             continue;
                         }
+                        if (entry.expression != null &&
+                            (entry.expression.saved != parameter.saved ||
+                             entry.expression.networkSynced != parameter.networkSynced))
+                            entry.expressionMetadataConflict = true;
                         if (!entry.expressionTypeConflict) entry.expression = parameter;
                     }
                     return;

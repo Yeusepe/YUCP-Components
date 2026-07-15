@@ -41,6 +41,54 @@ namespace YUCP.Components
             return Mathf.Clamp01(Mathf.Sqrt(adjusted / range));
         }
 
+        /// <summary>
+        /// Treats the creator's absolute noise gate as an upper bound and adapts
+        /// downward for quiet devices. Unity PCM amplitude varies substantially
+        /// between Windows microphone drivers, so speech activity must also be
+        /// measured relative to the observed noise floor.
+        /// </summary>
+        public static float AdaptiveNoiseGate(float noiseFloorRms, float configuredGate)
+        {
+            configuredGate = Mathf.Max(0f, SanitizeFinite(configuredGate));
+            if (configuredGate <= 0f) return 0f;
+            noiseFloorRms = Mathf.Max(0f, SanitizeFinite(noiseFloorRms));
+            var relativeGate = Mathf.Max(0.00001f, noiseFloorRms * 2.5f + 0.00002f);
+            return Mathf.Min(configuredGate, relativeGate);
+        }
+
+        /// <summary>
+        /// Asymmetric minimum-statistics tracker: follow a quieter room quickly,
+        /// rise slowly, and freeze while speech evidence is present so the voice
+        /// cannot be learned as background noise.
+        /// </summary>
+        public static float UpdateNoiseFloor(
+            float currentNoiseFloorRms,
+            float observedRms,
+            bool speechEvidence,
+            float deltaTime)
+        {
+            observedRms = Mathf.Max(0.000001f, SanitizeFinite(observedRms));
+            currentNoiseFloorRms = SanitizeFinite(currentNoiseFloorRms);
+            if (currentNoiseFloorRms <= 0f) return observedRms;
+            if (speechEvidence) return currentNoiseFloorRms;
+            var responseSeconds = observedRms < currentNoiseFloorRms ? 0.08f : 3f;
+            return Mathf.Max(0.000001f, ExpSmooth(
+                currentNoiseFloorRms, observedRms, deltaTime, responseSeconds));
+        }
+
+        /// <summary>
+        /// Bounded AGC used only after relative-energy speech evidence. Oculus'
+        /// Unity component exposes gains through 15, so the same upper bound
+        /// makes low-level devices classifiable without amplifying idle noise.
+        /// </summary>
+        public static float AutomaticInputGain(float rms, float effectiveGate)
+        {
+            rms = Mathf.Max(0f, SanitizeFinite(rms));
+            effectiveGate = Mathf.Max(0f, SanitizeFinite(effectiveGate));
+            if (rms <= Mathf.Max(0.000001f, effectiveGate)) return 1f;
+            return Mathf.Clamp(0.035f / Mathf.Max(0.000001f, rms), 1f, 15f);
+        }
+
         public static float RootMeanSquare(float[] samples)
         {
             if (samples == null || samples.Length == 0) return 0f;
@@ -110,5 +158,8 @@ namespace YUCP.Components
             }
             return (float)(sum / points);
         }
+
+        private static float SanitizeFinite(float value) =>
+            float.IsNaN(value) || float.IsInfinity(value) ? 0f : value;
     }
 }

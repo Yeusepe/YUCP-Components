@@ -249,7 +249,8 @@ namespace YUCP.Components.Editor
                 graph, mathRoot, request.profile,
                 tuning[AdvancedVisemeTuningControl.VoiceSensitivity]);
             var voiceFast = graph.Param("Voice/Fast", 0f);
-            var voiceSlow = graph.Param(prefix + "/Speech/Energy", 0f, false);
+            var voiceSlow = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "Energy"), 0f, false);
             graph.AddOperation(mathRoot, graph.Smooth(voiceRaw, voiceFast, alphaViseme, false));
             graph.AddOperation(mathRoot, graph.Smooth(voiceFast, voiceSlow, alphaViseme, false));
             result.globalParameters.Add(voiceSlow);
@@ -272,8 +273,10 @@ namespace YUCP.Components.Editor
                 Term.Positive(voiceFast, 1f / Mathf.Max(0.005f, request.profile.visemeResponseSeconds)),
                 Term.Positive(voiceSlow, -1f / Mathf.Max(0.005f, request.profile.visemeResponseSeconds))
             }));
-            var onset = graph.Param(prefix + "/Speech/Onset", 0f, false);
-            var release = graph.Param(prefix + "/Speech/Release", 0f, false);
+            var onset = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "Onset"), 0f, false);
+            var release = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "Release"), 0f, false);
             graph.AddOperation(mathRoot, graph.Map(voiceVelocity, onset, new[] { Point(-1f, 0f), Point(0f, 0f), Point(1f, 1f) }));
             graph.AddOperation(mathRoot, graph.Map(voiceVelocity, release, new[] { Point(-1f, 1f), Point(0f, 0f), Point(1f, 0f) }));
             result.globalParameters.Add(onset);
@@ -471,7 +474,9 @@ namespace YUCP.Components.Editor
                     Term.Positive(alphaTrackingBlendRelease, 1f),
                     Term.Positive(alphaTrackingBlendAttackPart, 1f)
                 }));
-                trackingBlend = graph.Param(prefix + "/Speech/TrackingBlend", 0f, false);
+                trackingBlend = graph.Param(
+                    AdvancedVisemeParameterContract.Speech(prefix, "TrackingBlend"),
+                    0f, false);
                 graph.AddOperation(mathRoot, graph.Smooth(
                     trackingGate, trackingBlend, alphaTrackingBlend, false));
                 result.trackingBlendParameter = trackingBlend;
@@ -516,7 +521,9 @@ namespace YUCP.Components.Editor
             }
             else
             {
-                trackingBlend = graph.Param(prefix + "/Speech/TrackingBlend", 0f, false);
+                trackingBlend = graph.Param(
+                    AdvancedVisemeParameterContract.Speech(prefix, "TrackingBlend"),
+                    0f, false);
                 result.trackingBlendParameter = trackingBlend;
                 result.globalParameters.Add(trackingBlend);
             }
@@ -536,7 +543,7 @@ namespace YUCP.Components.Editor
             var renderedVisemes = new string[reconstructedSlowVisemes.Length];
             for (var i = 0; i < renderedVisemes.Length; i++)
                 renderedVisemes[i] = graph.Param(
-                    prefix + "/Viseme/" + VisemeReconstructionProfile.VisemeNames[i],
+                    AdvancedVisemeParameterContract.Viseme(prefix, i),
                     i == 0 ? 1f : 0f,
                     false);
             result.globalParameters.AddRange(renderedVisemes);
@@ -556,7 +563,8 @@ namespace YUCP.Components.Editor
 
             var vowelWeightRaw = graph.Param("Speech/VowelWeightRaw", 0f);
             var vowelWeightClamped = graph.Param("Speech/VowelWeightClamped", 0f);
-            var vowelWeight = graph.Param(prefix + "/Speech/Vowel", 0f, false);
+            var vowelWeight = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "Vowel"), 0f, false);
             graph.AddOperation(mathRoot, graph.Linear(vowelWeightRaw, new[]
             {
                 Term.Positive(renderedVisemes[10], 1f), Term.Positive(renderedVisemes[11], 1f),
@@ -1110,7 +1118,9 @@ namespace YUCP.Components.Editor
             graph.AddOperation(root, graph.AlphaFromDeltaTime(
                 frameTime, activityRelease,
                 AdvancedVisemeMath.SpeechPresenceReleaseSeconds));
-            var presence = graph.Param(publicPrefix + "/Speech/Talking", 0f, false);
+            var presence = graph.Param(
+                AdvancedVisemeParameterContract.Speech(publicPrefix, "Talking"),
+                0f, false);
             graph.AddOperation(root, graph.SmoothActivityWithSilenceHold(
                 visemeIndex, history, stabilityTuning,
                 presence, activityAttack, activityRelease));
@@ -1664,22 +1674,28 @@ namespace YUCP.Components.Editor
             string energy,
             Result result)
         {
-            PublishEvidence(graph, root, prefix + "/Speech/Bilabial", result,
+            PublishEvidence(graph, root,
+                AdvancedVisemeParameterContract.Speech(prefix, "Bilabial"), result,
                 new[] { Term.Positive(visemes[1], 1f) });
-            PublishEvidence(graph, root, prefix + "/Speech/Labiodental", result,
+            PublishEvidence(graph, root,
+                AdvancedVisemeParameterContract.Speech(prefix, "Labiodental"), result,
                 new[] { Term.Positive(visemes[2], 1f) });
-            PublishEvidence(graph, root, prefix + "/Speech/Sibilant", result,
+            PublishEvidence(graph, root,
+                AdvancedVisemeParameterContract.Speech(prefix, "Sibilant"), result,
                 new[] { Term.Positive(visemes[6], 1f), Term.Positive(visemes[7], 1f) });
-            PublishEvidence(graph, root, prefix + "/Speech/Coronal", result,
+            PublishEvidence(graph, root,
+                AdvancedVisemeParameterContract.Speech(prefix, "Coronal"), result,
                 new[]
                 {
                     Term.Positive(visemes[3], 1f), Term.Positive(visemes[4], 1f),
                     Term.Positive(visemes[6], 1f), Term.Positive(visemes[7], 1f),
                     Term.Positive(visemes[8], 1f)
                 });
-            PublishEvidence(graph, root, prefix + "/Speech/Dorsal", result,
+            PublishEvidence(graph, root,
+                AdvancedVisemeParameterContract.Speech(prefix, "Dorsal"), result,
                 new[] { Term.Positive(visemes[5], 1f) });
-            PublishEvidence(graph, root, prefix + "/Speech/Rhotic", result,
+            PublishEvidence(graph, root,
+                AdvancedVisemeParameterContract.Speech(prefix, "Rhotic"), result,
                 new[] { Term.Positive(visemes[9], 1f) });
 
             var lipClose = result.articulationParameters.TryGetValue(
@@ -1687,7 +1703,9 @@ namespace YUCP.Components.Editor
                 ? closeParameter
                 : graph.Param("Evidence/LipCloseFallback", 0f);
             var tongueContact = BuildTongueContact(graph, root, visemes, result);
-            var tongueContactOutput = graph.Param(prefix + "/Speech/TongueContact", 0f, false);
+            var tongueContactOutput = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "TongueContact"),
+                0f, false);
             graph.AddOperation(root, graph.Copy(tongueContact, tongueContactOutput, false));
             result.globalParameters.Add(tongueContactOutput);
 
@@ -1698,7 +1716,8 @@ namespace YUCP.Components.Editor
             }));
             var mClosure = graph.Param("Evidence/MClosure", 0f);
             graph.AddOperation(root, graph.Multiply(visemes[1], mSupport, mClosure, false));
-            var mOutput = graph.Param(prefix + "/Speech/M", 0f, false);
+            var mOutput = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "M"), 0f, false);
             graph.AddOperation(root, graph.Multiply(energy, mClosure, mOutput, false));
             result.globalParameters.Add(mOutput);
 
@@ -1709,7 +1728,8 @@ namespace YUCP.Components.Editor
             }));
             var nContact = graph.Param("Evidence/NContact", 0f);
             graph.AddOperation(root, graph.Multiply(visemes[8], nSupport, nContact, false));
-            var nOutput = graph.Param(prefix + "/Speech/N", 0f, false);
+            var nOutput = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "N"), 0f, false);
             // nn is the merged n/l class. Its visible lips are observational:
             // a speaker may produce it with closed lips, so closure cannot veto
             // otherwise valid tongue-contact evidence.
@@ -2631,10 +2651,15 @@ namespace YUCP.Components.Editor
             graph.AddOperation(root, graph.Multiply(nShare, candidateMass, nMass, false));
 
             var prefix = request.component.NormalizedPrefix;
-            var mOutput = graph.Param(prefix + "/Speech/Hypothesis/M", 0f, false);
-            var nOutput = graph.Param(prefix + "/Speech/Hypothesis/N", 0f, false);
+            var mOutput = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "Hypothesis/M"),
+                0f, false);
+            var nOutput = graph.Param(
+                AdvancedVisemeParameterContract.Speech(prefix, "Hypothesis/N"),
+                0f, false);
             var confidenceOutput = graph.Param(
-                prefix + "/Speech/Hypothesis/Confidence", 0f, false);
+                AdvancedVisemeParameterContract.Speech(prefix, "Hypothesis/Confidence"),
+                0f, false);
             graph.AddOperation(root, graph.Multiply(
                 posteriorConfidence, mMass, mOutput, false));
             graph.AddOperation(root, graph.Multiply(

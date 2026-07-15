@@ -30,6 +30,42 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void AdaptiveInputLevel_RecoversQuietSpeechWithoutOpeningOnNoiseFloor()
+        {
+            const float configuredGate = 0.012f;
+            const float noiseFloor = 0.00014f;
+            var gate = VisemeTestMath.AdaptiveNoiseGate(noiseFloor, configuredGate);
+
+            Assert.That(gate, Is.GreaterThan(noiseFloor));
+            Assert.That(gate, Is.LessThan(0.001f),
+                "A low-level Windows microphone must not remain trapped below a fixed 0.012 gate.");
+            Assert.That(VisemeTestMath.AutomaticInputGain(noiseFloor, gate), Is.EqualTo(1f),
+                "Idle room noise must not activate automatic gain.");
+
+            const float quietSpeech = 0.001f;
+            var gain = VisemeTestMath.AutomaticInputGain(quietSpeech, gate);
+            var voice = VisemeTestMath.VoiceFromRms(
+                quietSpeech * gain, gate * gain, 1f);
+            Assert.That(gain, Is.EqualTo(15f));
+            Assert.That(voice, Is.GreaterThan(0.025f),
+                "The live HyperX-level regression must reach Oculus classification.");
+        }
+
+        [Test]
+        public void AdaptiveNoiseFloor_FreezesDuringSpeechAndTracksSilenceAsymmetrically()
+        {
+            const float floor = 0.001f;
+            var frozen = VisemeTestMath.UpdateNoiseFloor(floor, 0.02f, true, 0.02f);
+            var quieter = VisemeTestMath.UpdateNoiseFloor(floor, 0.0002f, false, 0.02f);
+            var slightlyLouder = VisemeTestMath.UpdateNoiseFloor(floor, 0.0012f, false, 0.02f);
+
+            Assert.That(frozen, Is.EqualTo(floor));
+            Assert.That(quieter, Is.LessThan(floor));
+            Assert.That(slightlyLouder - floor, Is.LessThan(floor - quieter),
+                "Noise-floor release must be much slower than downward adaptation.");
+        }
+
+        [Test]
         public void VisemeBlendShape_DrivesExactlyOneMappedShape()
         {
             var root = new GameObject("VisemeTest");
@@ -157,6 +193,110 @@ namespace YUCP.Components.Editor.Tests
                 var component = root.GetComponent<VisemeTestEmulatorData>();
                 if (component != null) VisemeTestPreviewSession.Stop(component);
                 Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void DescriptorTarget_ParentWinsOverGestureManagerAndSceneInference()
+        {
+            var parentObject = new GameObject("ParentAvatar");
+            var otherObject = new GameObject("OtherAvatar");
+            try
+            {
+                var parent = parentObject.AddComponent<VRCAvatarDescriptor>();
+                var other = otherObject.AddComponent<VRCAvatarDescriptor>();
+
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptor(
+                    parent,
+                    new[] { parent, other },
+                    new[] { other },
+                    out var selected,
+                    out var source,
+                    out var error), Is.True, error);
+                Assert.That(selected, Is.SameAs(parent));
+                Assert.That(source, Is.EqualTo(VisemeTestPreviewSession.DescriptorTargetSource.Parent));
+            }
+            finally
+            {
+                Object.DestroyImmediate(parentObject);
+                Object.DestroyImmediate(otherObject);
+            }
+        }
+
+        [Test]
+        public void DescriptorTarget_UsesUnambiguousGestureManagerTarget()
+        {
+            var firstObject = new GameObject("FirstAvatar");
+            var secondObject = new GameObject("SecondAvatar");
+            try
+            {
+                var first = firstObject.AddComponent<VRCAvatarDescriptor>();
+                var second = secondObject.AddComponent<VRCAvatarDescriptor>();
+
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptor(
+                    null,
+                    new[] { first, second },
+                    new[] { second },
+                    out var selected,
+                    out var source,
+                    out var error), Is.True, error);
+                Assert.That(selected, Is.SameAs(second));
+                Assert.That(source, Is.EqualTo(VisemeTestPreviewSession.DescriptorTargetSource.GestureManager));
+            }
+            finally
+            {
+                Object.DestroyImmediate(firstObject);
+                Object.DestroyImmediate(secondObject);
+            }
+        }
+
+        [Test]
+        public void DescriptorTarget_UsesSoleActiveSceneAvatar()
+        {
+            var avatarObject = new GameObject("OnlyAvatar");
+            try
+            {
+                var avatar = avatarObject.AddComponent<VRCAvatarDescriptor>();
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptor(
+                    null,
+                    new[] { avatar },
+                    new VRCAvatarDescriptor[0],
+                    out var selected,
+                    out var source,
+                    out var error), Is.True, error);
+                Assert.That(selected, Is.SameAs(avatar));
+                Assert.That(source, Is.EqualTo(VisemeTestPreviewSession.DescriptorTargetSource.SoleSceneAvatar));
+            }
+            finally
+            {
+                Object.DestroyImmediate(avatarObject);
+            }
+        }
+
+        [Test]
+        public void DescriptorTarget_ReportsAmbiguousSceneAvatarsClearly()
+        {
+            var firstObject = new GameObject("FirstAvatar");
+            var secondObject = new GameObject("SecondAvatar");
+            try
+            {
+                var first = firstObject.AddComponent<VRCAvatarDescriptor>();
+                var second = secondObject.AddComponent<VRCAvatarDescriptor>();
+
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptor(
+                    null,
+                    new[] { first, second },
+                    new VRCAvatarDescriptor[0],
+                    out _,
+                    out _,
+                    out var error), Is.False);
+                Assert.That(error, Does.Contain("2 active VRChat avatars"));
+                Assert.That(error, Does.Contain("Place this component below"));
+            }
+            finally
+            {
+                Object.DestroyImmediate(firstObject);
+                Object.DestroyImmediate(secondObject);
             }
         }
 
