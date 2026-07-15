@@ -1379,6 +1379,199 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void FaceConditionedInferenceRequiresCompleteApertureTracking()
+        {
+            var root = new GameObject("Face Inference Capability Test");
+            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
+            try
+            {
+                var component = root.AddComponent<AdvancedVisemeReconstructorData>();
+                component.reconstructionMode =
+                    AdvancedVisemeReconstructionMode.BetaCoarticulation;
+                var request = new AdvancedVisemeAnimatorBuilder.Request
+                {
+                    component = component,
+                    profile = profile,
+                    trackingEnabled = true,
+                    reuseExistingTracking = true,
+                    effectiveTrackingInputs = AdvancedVisemeTrackingInputs.Balanced8,
+                    trackingParameterNames = new System.Collections.Generic.Dictionary<
+                        AdvancedVisemeArticulator, string>
+                    {
+                        [AdvancedVisemeArticulator.JawOpen] = "Tailored/v2/JawOpen",
+                        [AdvancedVisemeArticulator.LipClose] = "Tailored/v2/MouthClosed"
+                    }
+                };
+
+                Assert.That(AdvancedVisemeAnimatorBuilder
+                    .CanBuildFaceConditionedTongueInference(request), Is.False,
+                    "A partial template must not pay for an unreachable hidden-phone graph.");
+
+                request.trackingParameterNames[AdvancedVisemeArticulator.MouthOpen] =
+                    "Tailored/v2/MouthOpen";
+                Assert.That(AdvancedVisemeAnimatorBuilder
+                    .CanBuildFaceConditionedTongueInference(request), Is.True);
+
+                request.trackingEnabled = false;
+                Assert.That(AdvancedVisemeAnimatorBuilder
+                    .CanBuildFaceConditionedTongueInference(request), Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(profile);
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void PartialBetaTemplateContractsTongueGroupsAndUsesConvexFusion()
+        {
+            var root = new GameObject("Optimized Partial Beta Graph Test");
+            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
+            var folderName = "__YUCP_AVR_OptimizedPartial_" + Guid.NewGuid().ToString("N");
+            var folder = "Assets/" + folderName;
+            AssetDatabase.CreateFolder("Assets", folderName);
+            try
+            {
+                var component = root.AddComponent<AdvancedVisemeReconstructorData>();
+                component.reconstructionMode =
+                    AdvancedVisemeReconstructionMode.BetaCoarticulation;
+                component.mouthOwnership = AdvancedVisemeMouthOwnership.OutputsOnly;
+                component.trackingInputs = AdvancedVisemeTrackingInputs.Auto;
+                component.createTuningMenu = false;
+                var reused = new System.Collections.Generic.Dictionary<
+                    AdvancedVisemeArticulator, string>
+                {
+                    [AdvancedVisemeArticulator.JawOpen] = "Tailored/v2/JawOpen"
+                };
+
+                var controllerPath = folder + "/AdvancedViseme.controller";
+                var result = AdvancedVisemeAnimatorBuilder.Build(
+                    new AdvancedVisemeAnimatorBuilder.Request
+                    {
+                        controllerPath = controllerPath,
+                        parametersPath = folder + "/TrackingParameters.asset",
+                        component = component,
+                        profile = profile,
+                        trackingPrefix = "Tailored",
+                        effectiveTrackingInputs = AdvancedVisemeTrackingInputs.Balanced8,
+                        reuseExistingTracking = true,
+                        trackingActiveParameter = "Tailored/LipTrackingActive",
+                        trackingActiveAnimatorType = AnimatorControllerParameterType.Float,
+                        trackingActiveDefault = 1f,
+                        trackingParameterNames = reused,
+                        sourceVisemeBlendShapes =
+                            new string[VisemeReconstructionProfile.VisemeCount],
+                        calibrationBasis =
+                            Array.Empty<AdvancedVisemeMeshCalibrator.BasisInput>(),
+                        resolvedBlendShapes = new System.Collections.Generic.Dictionary<
+                            AdvancedVisemeArticulator, string>(),
+                        externalPoses = new System.Collections.Generic.Dictionary<
+                            AdvancedVisemeArticulator, AdvancedVisemeExternalPose>(),
+                        trackingEnabled = true,
+                        existingExpressionParameters = new System.Collections.Generic.HashSet<string>(
+                            reused.Values.Concat(new[] { "Tailored/LipTrackingActive" }))
+                    });
+
+                var parameters = result.controller.parameters
+                    .Select(parameter => parameter.name).ToArray();
+                Assert.That(parameters.Any(name => name.Contains(
+                    "/BetaCoarticulation/TongueTip/Viseme/")), Is.False);
+                Assert.That(parameters.Any(name => name.Contains(
+                    "/BetaCoarticulation/TongueBody/Viseme/")), Is.False,
+                    "Unobservable tongue simplexes must be contracted out of the Animator.");
+                Assert.That(parameters.Any(name => name.EndsWith(
+                    "/SpeechSlowPart", StringComparison.Ordinal) ||
+                    name.EndsWith("/SpeechFastPart", StringComparison.Ordinal) ||
+                    name.EndsWith("/TrackingSlowPart", StringComparison.Ordinal) ||
+                    name.EndsWith("/TrackingFastPart", StringComparison.Ordinal)), Is.False,
+                    "Convex fusion must not materialize scalar product temporaries.");
+
+                var trees = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
+                    .OfType<BlendTree>().ToArray();
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Corpus TongueTip contracted fast"), Is.True);
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Corpus TongueBody contracted fast"), Is.True);
+                Assert.That(trees.Any(tree => tree.name.Contains(
+                    "Articulation/JawOpen/FusedSlow", StringComparison.Ordinal)), Is.True,
+                    "Tracking fusion should be one continuous interpolation tree.");
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Tracking observer fast vector"), Is.True);
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Tracking observer slow vector"), Is.True,
+                    "Tracking coordinates sharing one pole should use two vector observers.");
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Voice-scaled corpus articulation fast"), Is.True);
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Voice-scaled corpus articulation slow"), Is.True,
+                    "Beta speech amplitude should be applied once per articulation vector.");
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Public articulation vector"), Is.True);
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Articulation velocity difference vector"), Is.True);
+                Assert.That(trees.Any(tree => tree.name.StartsWith(
+                    "Smooth YUCP/AdvancedViseme/_Internal/Tracking/JawOpen/Fast toward Tailored/v2/JawOpen",
+                    StringComparison.Ordinal) || tree.name.StartsWith(
+                    "Smooth YUCP/AdvancedViseme/_Internal/Tracking/JawOpen/Slow toward YUCP/AdvancedViseme/_Internal/Tracking/JawOpen/Fast",
+                    StringComparison.Ordinal)), Is.False,
+                    "The scalar per-coordinate tracking observers must not return.");
+                Assert.That(trees.Any(tree => tree.name.StartsWith(
+                    "Multiply YUCP/AdvancedViseme/_Internal/Voice/Gain *",
+                    StringComparison.Ordinal) && tree.name.Contains(
+                    "/Corpus", StringComparison.Ordinal)), Is.False,
+                    "The scalar per-articulator Beta amplitude pass must not return.");
+                Assert.That(parameters.Any(name => name.Contains(
+                    "/Constraint/Shared/", StringComparison.Ordinal)), Is.True);
+                Assert.That(parameters.Any(name => name.Contains(
+                    "/Constraint/Fast/PP/GloballyTuned", StringComparison.Ordinal) ||
+                    name.Contains("/Constraint/Slow/PP/GloballyTuned",
+                        StringComparison.Ordinal)), Is.False,
+                    "Fast and slow constraints should reuse their common tuning gate.");
+
+                var random = new System.Random(0x46555345);
+                for (var sample = 0; sample < 128; sample++)
+                {
+                    var speech = (float)random.NextDouble();
+                    var tracking = (float)random.NextDouble();
+                    var gain = (float)random.NextDouble();
+                    Assert.That(Mathf.LerpUnclamped(speech, tracking, gain),
+                        Is.EqualTo((1f - gain) * speech + gain * tracking).Within(1e-6f));
+
+                    var voiceGain = (float)random.NextDouble();
+                    var signedArticulation = (float)(2d * random.NextDouble() - 1d);
+                    Assert.That(voiceGain * signedArticulation,
+                        Is.EqualTo(signedArticulation * voiceGain).Within(1e-6f));
+
+                    var fast = (float)(2d * random.NextDouble() - 1d);
+                    var slow = (float)(2d * random.NextDouble() - 1d);
+                    var response = 0.005f + 0.115f * (float)random.NextDouble();
+                    Assert.That((fast - slow) / response,
+                        Is.EqualTo(fast / response - slow / response).Within(1e-5f));
+
+                    var active = (float)random.NextDouble();
+                    var viseme = (float)random.NextDouble();
+                    var globalStrength = (float)random.NextDouble();
+                    var channelStrength = (float)random.NextDouble();
+                    var local = (float)random.NextDouble();
+                    var authority = (float)random.NextDouble();
+                    var scalarConstraint = active * viseme * globalStrength *
+                                           channelStrength * (1f - local * authority);
+                    var factoredConstraint = active * (globalStrength * channelStrength) *
+                                             (1f - local * authority) * viseme;
+                    Assert.That(factoredConstraint,
+                        Is.EqualTo(scalarConstraint).Within(1e-6f));
+                }
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(folder);
+                UnityEngine.Object.DestroyImmediate(profile);
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
         public void BetaFallbackBuildsGroupCorrectionWithoutFaceTracking()
         {
             var root = new GameObject("Beta Fallback Correction Test");

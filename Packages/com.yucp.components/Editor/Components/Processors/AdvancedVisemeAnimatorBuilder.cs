@@ -112,6 +112,13 @@ namespace YUCP.Components.Editor
             public string slow;
         }
 
+        private sealed class ConstraintConfidenceBases
+        {
+            public string bilabial;
+            public string labiodental;
+            public string sibilant;
+        }
+
         private static readonly AdvancedVisemeArticulator[] CoreArticulators =
         {
             AdvancedVisemeArticulator.JawOpen,
@@ -289,6 +296,8 @@ namespace YUCP.Components.Editor
             var fastSpeechWeights = new string[VisemeReconstructionProfile.VisemeCount];
             var betaEnabled = request.component.reconstructionMode ==
                               AdvancedVisemeReconstructionMode.BetaCoarticulation;
+            var betaFaceInferenceEnabled = betaEnabled &&
+                                           CanBuildFaceConditionedTongueInference(request);
             for (var i = 0; i < rawVisemes.Length; i++)
             {
                 var defaultValue = i == 0 ? 1f : 0f;
@@ -332,7 +341,8 @@ namespace YUCP.Components.Editor
                     tuning[AdvancedVisemeTuningControl.Coarticulation], frameTime,
                     rawVisemes, fastVisemes, slowVisemes,
                     visemeIndex, speechHangover.history,
-                    tuning[AdvancedVisemeTuningControl.SilenceStability]);
+                    tuning[AdvancedVisemeTuningControl.SilenceStability],
+                    betaFaceInferenceEnabled);
                 reconstructedFastVisemes = betaGraph.common.fast;
                 reconstructedSlowVisemes = betaGraph.common.slow;
             }
@@ -482,6 +492,9 @@ namespace YUCP.Components.Editor
                 result.trackingBlendParameter = trackingBlend;
                 result.globalParameters.Add(trackingBlend);
 
+                var observerRaw = new Dictionary<AdvancedVisemeArticulator, string>();
+                var observerFast = new Dictionary<AdvancedVisemeArticulator, string>();
+                var observerSlow = new Dictionary<AdvancedVisemeArticulator, string>();
                 foreach (var articulator in TrackedArticulators(request.effectiveTrackingInputs))
                 {
                     var binding = request.profile.FindBinding(articulator);
@@ -513,10 +526,25 @@ namespace YUCP.Components.Editor
                     }
                     var fast = graph.Param($"Tracking/{articulator}/Fast", 0f);
                     var slow = graph.Param($"Tracking/{articulator}/Slow", 0f);
-                    graph.AddOperation(mathRoot, graph.Smooth(input, fast, alphaTracking, signed));
-                    graph.AddOperation(mathRoot, graph.Smooth(fast, slow, alphaTracking, signed));
                     trackingFast[articulator] = fast;
                     trackingSlow[articulator] = slow;
+                    observerRaw[articulator] = input;
+                    observerFast[articulator] = fast;
+                    observerSlow[articulator] = slow;
+                }
+
+                if (observerFast.Count > 0)
+                {
+                    // Every non-native tracking coordinate uses the same pole.
+                    // Evaluating the observer as two articulation vectors is
+                    // algebraically identical to one Smooth tree per scalar, but
+                    // shares the interpolation traversal and zero baselines.
+                    graph.AddOperation(mathRoot, graph.InterpolateArticulationVector(
+                        observerFast, observerRaw, observerFast, alphaTracking,
+                        "Tracking observer fast vector"));
+                    graph.AddOperation(mathRoot, graph.InterpolateArticulationVector(
+                        observerSlow, observerFast, observerSlow, alphaTracking,
+                        "Tracking observer slow vector"));
                 }
             }
             else
@@ -590,7 +618,6 @@ namespace YUCP.Components.Editor
             var calibratedTrackingPose = new Dictionary<AdvancedVisemeArticulator, string>();
             var calibratedTrackingLead = new Dictionary<AdvancedVisemeArticulator, string>();
             var trackingGains = new Dictionary<AdvancedVisemeArticulator, string>();
-            var inverseTrackingGains = new Dictionary<AdvancedVisemeArticulator, string>();
             var articulators = SynthesizedArticulators().ToArray();
 
             // Build the complete speech prior first. Beta inference needs both the
@@ -609,10 +636,13 @@ namespace YUCP.Components.Editor
                 Dictionary<AdvancedVisemeArticulator, string>>();
             var fallbackProjection =
                 new Dictionary<AdvancedVisemeArticulator, string>();
+            var betaUnscaledFast =
+                new Dictionary<AdvancedVisemeArticulator, string>();
+            var betaUnscaledSlow =
+                new Dictionary<AdvancedVisemeArticulator, string>();
 
             foreach (var articulator in articulators)
             {
-                var signed = IsSigned(articulator);
                 var speechFast = graph.Param($"Articulation/{articulator}/SpeechFast", 0f);
                 var speechSlow = graph.Param($"Articulation/{articulator}/SpeechSlow", 0f);
                 var fallbackSpeechSlow = speechSlow;
@@ -636,10 +666,8 @@ namespace YUCP.Components.Editor
                     var unscaledSlow = graph.Param($"Articulation/{articulator}/CorpusSlow", 0f);
                     fastOutputs[articulator] = unscaledFast;
                     corpusSlowProjection[group][articulator] = unscaledSlow;
-                    graph.AddOperation(mathRoot, graph.Multiply(
-                        voiceGain, unscaledFast, speechFast, signed));
-                    graph.AddOperation(mathRoot, graph.Multiply(
-                        voiceGain, unscaledSlow, speechSlow, signed));
+                    betaUnscaledFast[articulator] = unscaledFast;
+                    betaUnscaledSlow[articulator] = unscaledSlow;
                     // The corpus model is centered in normalized articulator space.
                     // Voice is an expressive amplitude, not part of that semantic
                     // calibration, so use the unscaled coarticulated center here.
@@ -699,6 +727,12 @@ namespace YUCP.Components.Editor
                     graph, mathRoot, request,
                     "Fallback common articulation slow",
                     speechWeights, fallbackProjection);
+                graph.AddOperation(mathRoot, graph.ScaleArticulationVector(
+                    voiceGain, betaUnscaledFast, speechArticulationFast,
+                    "Voice-scaled corpus articulation fast"));
+                graph.AddOperation(mathRoot, graph.ScaleArticulationVector(
+                    voiceGain, betaUnscaledSlow, speechArticulationSlow,
+                    "Voice-scaled corpus articulation slow"));
             }
 
             foreach (var articulator in articulators)
@@ -789,7 +823,6 @@ namespace YUCP.Components.Editor
                 {
                     Term.Constant(1f), Term.Positive(gain, -1f)
                 }));
-                inverseTrackingGains[articulator] = inverseGain;
                 result.inverseTrackingGainParameters[articulator] = inverseGain;
             }
 
@@ -800,7 +833,7 @@ namespace YUCP.Components.Editor
             // It is inserted here, before direct tongue measurements, so a real
             // tongue tracker remains authoritative at gain=1.
             FacePhonePosteriorGraph facePhonePosterior = null;
-            if (betaGraph != null && request.trackingEnabled)
+            if (betaGraph != null && betaFaceInferenceEnabled)
             {
                 facePhonePosterior = ApplyBetaTongueInference(
                     graph, mathRoot, request, result, betaGraph, frameTime,
@@ -854,7 +887,6 @@ namespace YUCP.Components.Editor
                                  request.directPoseArticulators.Contains(articulator);
                 if (!directPose && trackingGains.TryGetValue(articulator, out var gain))
                 {
-                    var inverseGain = inverseTrackingGains[articulator];
                     var calibratedPose = calibratedTrackingPose[articulator];
                     var calibratedLead = calibratedTrackingLead[articulator];
 
@@ -862,24 +894,17 @@ namespace YUCP.Components.Editor
                     graph.AddOperation(mathRoot, graph.Multiply(gain, calibratedPose, trackingContribution, signed));
                     result.trackingContributionParameters[articulator] = trackingContribution;
 
-                    var speechSlowPart = graph.Param($"Articulation/{articulator}/SpeechSlowPart", 0f);
-                    var speechFastPart = graph.Param($"Articulation/{articulator}/SpeechFastPart", 0f);
-                    var trackingSlowPart = graph.Param($"Articulation/{articulator}/TrackingSlowPart", 0f);
-                    var trackingFastPart = graph.Param($"Articulation/{articulator}/TrackingFastPart", 0f);
-                    graph.AddOperation(mathRoot, graph.Multiply(inverseGain, speechSlow, speechSlowPart, signed));
-                    graph.AddOperation(mathRoot, graph.Multiply(inverseGain, speechFast, speechFastPart, signed));
-                    graph.AddOperation(mathRoot, graph.Multiply(gain, calibratedPose, trackingSlowPart, signed));
-                    graph.AddOperation(mathRoot, graph.Multiply(gain, calibratedLead, trackingFastPart, signed));
                     finalSlow = graph.Param($"Articulation/{articulator}/FusedSlow", 0f);
                     finalFast = graph.Param($"Articulation/{articulator}/FusedFast", 0f);
-                    graph.AddOperation(mathRoot, graph.Linear(finalSlow, new[]
-                    {
-                        Term.For(speechSlowPart, 1f, signed), Term.For(trackingSlowPart, 1f, signed)
-                    }));
-                    graph.AddOperation(mathRoot, graph.Linear(finalFast, new[]
-                    {
-                        Term.For(speechFastPart, 1f, signed), Term.For(trackingFastPart, 1f, signed)
-                    }));
+                    // Convex interpolation is exactly
+                    //   (1 - gain) * speech + gain * tracking.
+                    // Encoding it as one 1D tree removes four scalar products,
+                    // two sums, and their temporary AAPs per articulator. It also
+                    // keeps the measured tracker on the shortest Animator path.
+                    graph.AddOperation(mathRoot, graph.Interpolate(
+                        speechSlow, calibratedPose, finalSlow, gain, signed));
+                    graph.AddOperation(mathRoot, graph.Interpolate(
+                        speechFast, calibratedLead, finalFast, gain, signed));
                 }
 
                 articulationFast[articulator] = finalFast;
@@ -888,14 +913,15 @@ namespace YUCP.Components.Editor
 
             if (request.trackingEnabled && request.component.fusionMode == AdvancedVisemeFusionMode.PhoneticAssist)
             {
+                var constraintBases = BuildConstraintConfidenceBases(
+                    graph, mathRoot, speechPresence, trackingBlend, localFactor,
+                    trackingGains, tuning);
                 ApplyConstraints(
                     graph, mathRoot, request.profile, reconstructedFastVisemes,
-                    speechPresence, trackingBlend, localFactor, trackingGains,
-                    articulationFast, tuning, "Fast");
+                    constraintBases, articulationFast, "Fast");
                 ApplyConstraints(
                     graph, mathRoot, request.profile, renderedVisemes,
-                    speechPresence, trackingBlend, localFactor, trackingGains,
-                    articulationSlow, tuning, "Slow");
+                    constraintBases, articulationSlow, "Slow");
             }
 
             // Do not impose a generic MouthOpen/MouthClosed or Pucker/Suck
@@ -905,12 +931,15 @@ namespace YUCP.Components.Editor
             // speech remains rig-defined, while only the sparse phonetic
             // constraints above may alter a tracked lower face.
 
+            var publicArticulationSources =
+                new Dictionary<AdvancedVisemeArticulator, string>();
+            var publicArticulationOutputs =
+                new Dictionary<AdvancedVisemeArticulator, string>();
             foreach (var articulator in articulators)
             {
                 var signed = IsSigned(articulator);
+                var source = articulationSlow[articulator];
                 var output = graph.Param(prefix + "/Articulation/" + articulator, 0f, false);
-                Motion outputMotion = graph.Copy(
-                    articulationSlow[articulator], output, signed);
                 if (request.reuseExistingTracking &&
                     request.directPoseArticulators != null &&
                     request.directPoseArticulators.Contains(articulator) &&
@@ -921,29 +950,45 @@ namespace YUCP.Components.Editor
                     // Only the visible calibrated pose consumes the native proxy
                     // directly; this diagnostic mirror is never read back into
                     // rendering, so its calibration stage cannot add face lag.
-                    var nativeOutput = graph.Copy(
-                        directTrackingOutput, output, signed);
-                    outputMotion = graph.SelectMotion(
+                    graph.AddOperation(mathRoot, graph.SelectMotion(
                         directTrackingGain,
-                        outputMotion, nativeOutput,
-                        $"Native {articulator} public output gate");
+                        graph.Copy(source, output, signed),
+                        graph.Copy(directTrackingOutput, output, signed),
+                        $"Native {articulator} public output gate"));
                 }
-                graph.AddOperation(mathRoot, outputMotion);
+                else
+                {
+                    publicArticulationSources[articulator] = source;
+                    publicArticulationOutputs[articulator] = output;
+                }
+
                 articulationSlow[articulator] = output;
                 result.articulationParameters[articulator] = output;
                 result.globalParameters.Add(output);
+            }
 
-                var velocityRaw = graph.Param($"Velocity/{articulator}/Raw", 0f);
-                graph.AddOperation(mathRoot, graph.Linear(velocityRaw, new[]
-                {
-                    Term.For(articulationFast[articulator], 1f / Mathf.Max(0.005f, request.profile.visemeResponseSeconds), signed),
-                    Term.For(output, -1f / Mathf.Max(0.005f, request.profile.visemeResponseSeconds), signed)
-                }));
+            if (publicArticulationOutputs.Count > 0)
+                graph.AddOperation(mathRoot, graph.CopyArticulationVector(
+                    publicArticulationSources, publicArticulationOutputs,
+                    "Public articulation vector"));
+
+            var velocityRawOutputs = new Dictionary<AdvancedVisemeArticulator, string>();
+            foreach (var articulator in articulators)
+                velocityRawOutputs[articulator] = graph.Param(
+                    $"Velocity/{articulator}/Raw", 0f);
+            graph.AddOperation(mathRoot, graph.DifferenceArticulationVector(
+                articulationFast, articulationSlow, velocityRawOutputs,
+                1f / Mathf.Max(0.005f, request.profile.visemeResponseSeconds),
+                "Articulation velocity difference vector"));
+
+            foreach (var articulator in articulators)
+            {
                 var velocity = graph.Param(prefix + "/Velocity/" + articulator, 0f, false);
-                graph.AddOperation(mathRoot, graph.Map(velocityRaw, velocity, new[]
-                {
-                    Point(-1f, -1f), Point(0f, 0f), Point(1f, 1f)
-                }));
+                graph.AddOperation(mathRoot, graph.Map(
+                    velocityRawOutputs[articulator], velocity, new[]
+                    {
+                        Point(-1f, -1f), Point(0f, 0f), Point(1f, 1f)
+                    }));
                 result.globalParameters.Add(velocity);
             }
 
@@ -1432,35 +1477,87 @@ namespace YUCP.Components.Editor
             };
         }
 
+        private static ConstraintConfidenceBases BuildConstraintConfidenceBases(
+            MathGraph graph,
+            BlendTree root,
+            string speechPresence,
+            string trackingBlend,
+            string localFactor,
+            IReadOnlyDictionary<AdvancedVisemeArticulator, string> trackingGains,
+            IReadOnlyDictionary<AdvancedVisemeTuningControl, string> tuning)
+        {
+            var active = graph.Param("Constraint/Shared/ActiveBlend", 0f);
+            graph.AddOperation(root, graph.Multiply(
+                speechPresence, trackingBlend, active, false));
+            return new ConstraintConfidenceBases
+            {
+                bilabial = BuildConstraintConfidenceBase(
+                    graph, root, "Constraint/Shared/PP", active, localFactor,
+                    trackingGains, AdvancedVisemeArticulator.LipClose,
+                    tuning[AdvancedVisemeTuningControl.ConstraintAmount],
+                    tuning[AdvancedVisemeTuningControl.BilabialAssist]),
+                labiodental = BuildConstraintConfidenceBase(
+                    graph, root, "Constraint/Shared/FF", active, localFactor,
+                    trackingGains, AdvancedVisemeArticulator.LipBite,
+                    tuning[AdvancedVisemeTuningControl.ConstraintAmount],
+                    tuning[AdvancedVisemeTuningControl.LabiodentalAssist]),
+                sibilant = BuildConstraintConfidenceBase(
+                    graph, root, "Constraint/Shared/Sibilant", active, localFactor,
+                    trackingGains, AdvancedVisemeArticulator.JawOpen,
+                    tuning[AdvancedVisemeTuningControl.ConstraintAmount],
+                    tuning[AdvancedVisemeTuningControl.SibilantAssist])
+            };
+        }
+
+        private static string BuildConstraintConfidenceBase(
+            MathGraph graph,
+            BlendTree root,
+            string key,
+            string active,
+            string localFactor,
+            IReadOnlyDictionary<AdvancedVisemeArticulator, string> trackingGains,
+            AdvancedVisemeArticulator target,
+            string globalStrength,
+            string channelStrength)
+        {
+            var strength = graph.Param(key + "/Strength", 0f);
+            graph.AddOperation(root, graph.Multiply(
+                globalStrength, channelStrength, strength, false));
+            var activeStrength = graph.Param(key + "/ActiveStrength", 0f);
+            graph.AddOperation(root, graph.Multiply(
+                active, strength, activeStrength, false));
+            if (!trackingGains.TryGetValue(target, out var gain))
+                return activeStrength;
+
+            var localAuthority = graph.Param(key + "/LocalAuthority", 0f);
+            graph.AddOperation(root, graph.Multiply(
+                localFactor, gain, localAuthority, false));
+            var remainder = graph.Param(key + "/MeasurementRemainder", 1f);
+            graph.AddOperation(root, graph.Linear(remainder, new[]
+            {
+                Term.Constant(1f), Term.Positive(localAuthority, -1f)
+            }));
+            var output = graph.Param(key + "/ConfidenceBase", 0f);
+            graph.AddOperation(root, graph.Multiply(
+                remainder, activeStrength, output, false));
+            return output;
+        }
+
         private static void ApplyConstraints(
             MathGraph graph,
             BlendTree root,
             VisemeReconstructionProfile profile,
             string[] visemes,
-            string speechPresence,
-            string trackingBlend,
-            string localFactor,
-            IReadOnlyDictionary<AdvancedVisemeArticulator, string> trackingGains,
+            ConstraintConfidenceBases bases,
             IDictionary<AdvancedVisemeArticulator, string> articulation,
-            IReadOnlyDictionary<AdvancedVisemeTuningControl, string> tuning,
             string stage)
         {
             var constraintRoot = "Constraint/" + stage;
-            var activeConstraintBlend = graph.Param(constraintRoot + "/ActiveBlend", 0f);
-            graph.AddOperation(root, graph.Multiply(
-                speechPresence, trackingBlend, activeConstraintBlend, false));
             if (articulation.TryGetValue(AdvancedVisemeArticulator.LipClose, out var lipClose))
             {
                 var confidence = graph.Param(constraintRoot + "/PPConfidence", 0f);
                 graph.AddOperation(root, graph.Multiply(
-                    activeConstraintBlend, visemes[1], confidence, false));
-                confidence = TuneConstraintConfidence(
-                    graph, root, constraintRoot + "/PP", confidence,
-                    tuning[AdvancedVisemeTuningControl.ConstraintAmount],
-                    tuning[AdvancedVisemeTuningControl.BilabialAssist]);
-                confidence = GateConstraintForLocalMeasurement(
-                    graph, root, constraintRoot, AdvancedVisemeArticulator.LipClose,
-                    confidence, localFactor, trackingGains);
+                    bases.bilabial, visemes[1], confidence, false));
                 articulation[AdvancedVisemeArticulator.LipClose] = SmoothFloorProjection(
                     graph, root, constraintRoot + "/PPClosure", lipClose,
                     profile.bilabialClosure, confidence);
@@ -1469,14 +1566,7 @@ namespace YUCP.Components.Editor
             {
                 var confidence = graph.Param(constraintRoot + "/FFConfidence", 0f);
                 graph.AddOperation(root, graph.Multiply(
-                    activeConstraintBlend, visemes[2], confidence, false));
-                confidence = TuneConstraintConfidence(
-                    graph, root, constraintRoot + "/FF", confidence,
-                    tuning[AdvancedVisemeTuningControl.ConstraintAmount],
-                    tuning[AdvancedVisemeTuningControl.LabiodentalAssist]);
-                confidence = GateConstraintForLocalMeasurement(
-                    graph, root, constraintRoot, AdvancedVisemeArticulator.LipBite,
-                    confidence, localFactor, trackingGains);
+                    bases.labiodental, visemes[2], confidence, false));
                 articulation[AdvancedVisemeArticulator.LipBite] = SmoothFloorProjection(
                     graph, root, constraintRoot + "/FFBite", lipBite,
                     profile.labiodentalBite, confidence);
@@ -1489,64 +1579,17 @@ namespace YUCP.Components.Editor
                     Term.Positive(visemes[6], 1f), Term.Positive(visemes[7], 1f)
                 }));
                 var sibilantClamped = graph.Param(constraintRoot + "/SibilantClamped", 0f);
-                graph.AddOperation(root, graph.Map(sibilant, sibilantClamped, new[] { Point(0f, 0f), Point(1f, 1f), Point(2f, 1f) }));
+                graph.AddOperation(root, graph.Map(sibilant, sibilantClamped, new[]
+                {
+                    Point(0f, 0f), Point(1f, 1f), Point(2f, 1f)
+                }));
                 var confidence = graph.Param(constraintRoot + "/SibilantConfidence", 0f);
                 graph.AddOperation(root, graph.Multiply(
-                    activeConstraintBlend, sibilantClamped, confidence, false));
-                confidence = TuneConstraintConfidence(
-                    graph, root, constraintRoot + "/Sibilant", confidence,
-                    tuning[AdvancedVisemeTuningControl.ConstraintAmount],
-                    tuning[AdvancedVisemeTuningControl.SibilantAssist]);
-                confidence = GateConstraintForLocalMeasurement(
-                    graph, root, constraintRoot, AdvancedVisemeArticulator.JawOpen,
-                    confidence, localFactor, trackingGains);
+                    bases.sibilant, sibilantClamped, confidence, false));
                 articulation[AdvancedVisemeArticulator.JawOpen] = SmoothCeilingProjection(
                     graph, root, constraintRoot + "/SibilantJaw", jaw,
                     profile.sibilantJawMaximum, confidence);
             }
-        }
-
-        private static string TuneConstraintConfidence(
-            MathGraph graph,
-            BlendTree root,
-            string key,
-            string confidence,
-            string globalStrength,
-            string channelStrength)
-        {
-            var globallyTuned = graph.Param(key + "/GloballyTuned", 0f);
-            var tuned = graph.Param(key + "/Tuned", 0f);
-            graph.AddOperation(root, graph.Multiply(
-                confidence, globalStrength, globallyTuned, false));
-            graph.AddOperation(root, graph.Multiply(
-                globallyTuned, channelStrength, tuned, false));
-            return tuned;
-        }
-
-        private static string GateConstraintForLocalMeasurement(
-            MathGraph graph,
-            BlendTree root,
-            string constraintRoot,
-            AdvancedVisemeArticulator target,
-            string confidence,
-            string localFactor,
-            IReadOnlyDictionary<AdvancedVisemeArticulator, string> trackingGains)
-        {
-            var key = constraintRoot + "/" + target;
-            var localAuthority = graph.Param(key + "/LocalAuthority", 0f);
-            if (trackingGains.TryGetValue(target, out var gain))
-                graph.AddOperation(root, graph.Multiply(
-                    localFactor, gain, localAuthority, false));
-
-            var remainder = graph.Param(key + "/MeasurementRemainder", 1f);
-            graph.AddOperation(root, graph.Linear(remainder, new[]
-            {
-                Term.Constant(1f), Term.Positive(localAuthority, -1f)
-            }));
-            var gated = graph.Param(key + "/GatedConfidence", 0f);
-            graph.AddOperation(root, graph.Multiply(
-                remainder, confidence, gated, false));
-            return gated;
         }
 
         private static string SmoothFloorProjection(
@@ -1902,6 +1945,29 @@ namespace YUCP.Components.Editor
             // A measured funnel or pucker is already the visible vowel identity.
             // Hidden tongue-body channels retain the speech prior instead.
             return false;
+        }
+
+        internal static bool CanBuildFaceConditionedTongueInference(Request request)
+        {
+            if (request == null || !request.trackingEnabled || request.profile == null)
+                return false;
+
+            var available = new HashSet<AdvancedVisemeArticulator>(
+                TrackedArticulators(request.effectiveTrackingInputs));
+            var required = new[]
+            {
+                AdvancedVisemeArticulator.JawOpen,
+                AdvancedVisemeArticulator.LipClose,
+                AdvancedVisemeArticulator.MouthOpen
+            };
+            foreach (var articulator in required)
+            {
+                if (!available.Contains(articulator)) return false;
+                var binding = request.profile.FindBinding(articulator);
+                if (!TryResolveTrackingParameter(
+                        request, articulator, binding, out _)) return false;
+            }
+            return true;
         }
 
         private static FacePhonePosteriorGraph ApplyBetaTongueInference(
@@ -3340,7 +3406,8 @@ namespace YUCP.Components.Editor
             IReadOnlyList<string> slow,
             string visemeIndex,
             string speechHistory,
-            string silenceStability)
+            string silenceStability,
+            bool materializeTongueSimplexes)
         {
             var output = new BetaCoarticulationGraph();
             var retentionParameters = new Dictionary<AdvancedVisemeArticulatorGroup, string>();
@@ -3488,12 +3555,13 @@ namespace YUCP.Components.Editor
             {
                 var lead = groupLeads[pair.Key];
                 output.leads[pair.Key] = lead;
-                // Tongue groups retain their full posterior simplex because the
-                // learned hidden-phone model consumes individual probabilities.
-                // Jaw and lip groups are consumed only through a linear
-                // articulator matrix, so their contraction is deferred and
-                // evaluated directly in articulator space below.
-                if (pair.Key != AdvancedVisemeArticulatorGroup.TongueTip &&
+                // Only the face-conditioned hidden-phone estimator consumes the
+                // two individual tongue probability simplexes. When a reused
+                // template lacks the required jaw/aperture measurements, those
+                // 60 filtered AAPs are provably unobservable and the same linear
+                // articulation is contracted after projection instead.
+                if (!materializeTongueSimplexes ||
+                    pair.Key != AdvancedVisemeArticulatorGroup.TongueTip &&
                     pair.Key != AdvancedVisemeArticulatorGroup.TongueBody)
                     continue;
                 output.groups[pair.Key] = BuildBetaStageWeights(
@@ -5626,6 +5694,110 @@ namespace YUCP.Components.Editor
                         name + " safety zero",
                         ordered.Select(pair =>
                             new KeyValuePair<string, float>(pair.Value, 0f))),
+                    directBlendParameter = AlwaysOne,
+                    timeScale = 1f
+                });
+                tree.children = children.ToArray();
+                return tree;
+            }
+
+            public Motion ScaleArticulationVector(
+                string nonNegativeWeight,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> inputs,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> outputs,
+                string name)
+            {
+                if (inputs == null || outputs == null ||
+                    outputs.Keys.Any(key => !inputs.ContainsKey(key)))
+                    throw new InvalidOperationException(
+                        $"{name} requires matching articulation vectors.");
+
+                var tree = Direct(name);
+                tree.children = new[]
+                {
+                    new ChildMotion
+                    {
+                        motion = CopyArticulationVector(inputs, outputs, name + " values"),
+                        directBlendParameter = nonNegativeWeight,
+                        timeScale = 1f
+                    },
+                    new ChildMotion
+                    {
+                        motion = MultiSetter(
+                            name + " safety zero",
+                            outputs.Values.Select(output =>
+                                new KeyValuePair<string, float>(output, 0f))),
+                        directBlendParameter = AlwaysOne,
+                        timeScale = 1f
+                    }
+                };
+                return tree;
+            }
+
+            public Motion DifferenceArticulationVector(
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> positive,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> negative,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> outputs,
+                float scale,
+                string name)
+            {
+                if (positive == null || negative == null || outputs == null ||
+                    outputs.Keys.Any(key =>
+                        !positive.ContainsKey(key) || !negative.ContainsKey(key)))
+                    throw new InvalidOperationException(
+                        $"{name} requires matching articulation vectors.");
+
+                var tree = Direct(name);
+                var children = new List<ChildMotion>();
+                foreach (var pair in outputs.OrderBy(pair => (int)pair.Key))
+                {
+                    var articulator = pair.Key;
+                    var output = pair.Value;
+                    if (IsSigned(articulator))
+                    {
+                        children.Add(new ChildMotion
+                        {
+                            motion = Map(positive[articulator], output, new[]
+                            {
+                                Point(-2f, -2f * scale), Point(0f, 0f),
+                                Point(2f, 2f * scale)
+                            }),
+                            directBlendParameter = AlwaysOne,
+                            timeScale = 1f
+                        });
+                        children.Add(new ChildMotion
+                        {
+                            motion = Map(negative[articulator], output, new[]
+                            {
+                                Point(-2f, 2f * scale), Point(0f, 0f),
+                                Point(2f, -2f * scale)
+                            }),
+                            directBlendParameter = AlwaysOne,
+                            timeScale = 1f
+                        });
+                    }
+                    else
+                    {
+                        children.Add(new ChildMotion
+                        {
+                            motion = Setter(output, scale),
+                            directBlendParameter = positive[articulator],
+                            timeScale = 1f
+                        });
+                        children.Add(new ChildMotion
+                        {
+                            motion = Setter(output, -scale),
+                            directBlendParameter = negative[articulator],
+                            timeScale = 1f
+                        });
+                    }
+                }
+                children.Add(new ChildMotion
+                {
+                    motion = MultiSetter(
+                        name + " safety zero",
+                        outputs.Values.Select(output =>
+                            new KeyValuePair<string, float>(output, 0f))),
                     directBlendParameter = AlwaysOne,
                     timeScale = 1f
                 });
