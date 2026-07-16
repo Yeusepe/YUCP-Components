@@ -14,6 +14,9 @@ namespace YUCP.Components.Editor
     [CustomEditor(typeof(VisemeTestEmulatorData))]
     public sealed class VisemeTestEmulatorDataEditor : UnityEditor.Editor
     {
+        internal const string OculusLipSyncDownloadUrl =
+            "https://developers.meta.com/horizon/downloads/package/oculus-lipsync-unity/";
+
         private VisemeTestEmulatorData data;
         private SerializedProperty inputProp;
         private SerializedProperty microphoneProp;
@@ -243,9 +246,22 @@ namespace YUCP.Components.Editor
             }
 
             if (microphoneMode && backendProp.enumValueIndex != (int)VisemeTestAnalysisBackend.BuiltIn)
+            {
                 validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
                     VisemeTestPreviewSession.ExactBackendStatus(),
                     YUCPUIToolkitHelper.MessageType.Info));
+
+                if (!VisemeTestPreviewSession.OculusBridge.IsAvailable(out _))
+                {
+                    var installButton = YUCPUIToolkitHelper.CreateButton(
+                        "Install Oculus LipSync",
+                        () => Application.OpenURL(OculusLipSyncDownloadUrl),
+                        YUCPUIToolkitHelper.ButtonVariant.Secondary);
+                    installButton.name = "oculus-lipsync-install";
+                    installButton.style.marginTop = 3;
+                    validation.Add(installButton);
+                }
+            }
 
             var running = VisemeTestPreviewSession.IsRunning(data);
             previewButton.text = running ? "Stop & Restore" : "Start Preview";

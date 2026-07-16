@@ -107,6 +107,10 @@ namespace YUCP.Components
         public int sourceTakeIndex = -1;
         [Tooltip("-1 for the complete path, otherwise the one learned state omitted by this path.")]
         public int skippedStateIndex = -1;
+        [Tooltip("True when this timing lane is a synthesized multi-take profile rather than a creator-recorded take.")]
+        public bool inferredProfile;
+        [Tooltip("True when one phrase-wide runtime observation allowance has already been distributed across retained states.")]
+        public bool includesRuntimeObservationUncertainty;
         public float[] minimumDurationSeconds = Array.Empty<float>();
         public float[] maximumDurationSeconds = Array.Empty<float>();
     }
@@ -119,6 +123,14 @@ namespace YUCP.Components
         public int sourceTakeIndex;
         [Tooltip("True when this bounded path was inferred from repeatable local enrollment contexts rather than recorded as one complete take.")]
         public bool inferredContextPath;
+        [Tooltip("True when this optional path contains exactly one generic Oculus classifier confusion.")]
+        public bool inferredConfusionPath;
+        [Tooltip("Primary-Viseme sequence of the enrolled path whose timing rectangles this one-edit inference reuses.")]
+        public string confusionSourceSequence = string.Empty;
+        [Tooltip("Unique compiled variant whose correlated timing rectangles this one-edit inference reuses.")]
+        public string confusionSourceVariantId = string.Empty;
+        [Tooltip("Unnormalized weighted-edit cost paid before this inferred path can match.")]
+        public float inferencePenalty;
         public float cohesion;
         public float medianDurationSeconds;
         public float minimumDurationSeconds;
@@ -158,11 +170,12 @@ namespace YUCP.Components
     [Serializable]
     public sealed class VisemePhraseCompiledModel
     {
-        // Schema 4 retains recorded pronunciations as protected whole-sequence
-        // paths and marks separately inferred, bounded context paths. Those
-        // optional paths may be pruned to the avatar's finite Animator budget;
-        // a creator's four enrolled takes may never be pruned.
-        public const int CurrentModelSchemaVersion = 4;
+        // Schema 8 keeps distinct raw-winner probation clocks and removes
+        // uncalibrated runtime timing grace. Schema 7 made the categorical
+        // observer's proven minimum residence part of the matcher contract;
+        // schema 6 calibrated phrase-wide timing corridors; schema 5 added
+        // bounded one-confusion paths. Enrolled takes may never be pruned.
+        public const int CurrentModelSchemaVersion = 8;
 
         public int modelSchemaVersion = CurrentModelSchemaVersion;
         public string phraseId = string.Empty;

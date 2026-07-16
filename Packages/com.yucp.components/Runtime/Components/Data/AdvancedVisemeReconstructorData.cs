@@ -38,6 +38,12 @@ namespace YUCP.Components
         FullFloat
     }
 
+    public enum AdvancedVisemeTuningSyncMode
+    {
+        LocalOnly,
+        CompactSynced
+    }
+
     [DisallowMultipleComponent]
     [AddComponentMenu("YUCP/Advanced Viseme Reconstructor")]
     [HelpURL("https://github.com/Yeusepe/YUCP-Components#advanced-viseme-reconstructor")]
@@ -84,7 +90,7 @@ namespace YUCP.Components
         public string existingTrackingPrefix = "";
 
         [Header("Avatar Tuning Menu")]
-        [Tooltip("Add saved radial sliders for live viseme tuning. These controls are local-only and consume zero synced parameter bits.")]
+        [Tooltip("Add radial sliders for live viseme tuning. They can stay local or be shared through the compact quantized transport below.")]
         public bool createTuningMenu = true;
 
         [Tooltip("Menu path that contains the generated Speech, Tracking, Phonetics, and Tongue slider groups.")]
@@ -92,6 +98,10 @@ namespace YUCP.Components
 
         [Tooltip("Remember local tuning slider values when changing worlds or avatars.")]
         public bool saveTuningValues = true;
+
+        [Tooltip("Compact Synced shares every generated tuning slider through one quantized network bus. Local values stay full precision and can remain saved; remote avatars receive 255 evenly spaced levels using exactly 13 synced bits.")]
+        public AdvancedVisemeTuningSyncMode tuningSyncMode =
+            AdvancedVisemeTuningSyncMode.CompactSynced;
 
         [Tooltip("Choose which groups of tuning sliders are generated.")]
         public AdvancedVisemeTuningMenuSections tuningMenuSections =
@@ -146,6 +156,13 @@ namespace YUCP.Components
                 tuningMenuSections = AdvancedVisemeTuningMenuSections.All;
                 settingsVersion = 1;
             }
+            if (settingsVersion < 2)
+            {
+                tuningSyncMode = AdvancedVisemeTuningSyncMode.CompactSynced;
+                settingsVersion = 2;
+            }
+            if (!System.Enum.IsDefined(typeof(AdvancedVisemeTuningSyncMode), tuningSyncMode))
+                tuningSyncMode = AdvancedVisemeTuningSyncMode.CompactSynced;
             tuningMenuPath = string.IsNullOrWhiteSpace(tuningMenuPath)
                 ? "YUCP/Viseme Settings"
                 : tuningMenuPath.Trim().Trim('/');

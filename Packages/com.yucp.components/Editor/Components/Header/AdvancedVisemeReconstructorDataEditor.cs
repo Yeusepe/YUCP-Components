@@ -46,6 +46,30 @@ namespace YUCP.Components.Editor
             "Create Full Tongue Inputs"
         };
 
+        private static readonly string[] FineTuneVisemeLabels =
+        {
+            "Silence", "P / B / M", "F / V", "TH", "T / D", "K / G", "CH / J", "S / Z",
+            "N / L", "R", "A", "E", "I", "O", "U"
+        };
+
+        private static readonly string[] FineTuneJawFields = { "jawOpen", "mouthOpen" };
+        private static readonly string[] FineTuneLipFields =
+        {
+            "lipClose", "lipFunnel", "lipPucker", "lipSuck", "smileSad", "lipBite"
+        };
+        private static readonly string[] FineTuneTongueFields =
+        {
+            "tongueOut", "tongueY", "tongueX", "tongueRoll", "tongueArchY", "tongueShape",
+            "tongueTwistRight", "tongueTwistLeft"
+        };
+        private static readonly string[] FineTuneAllFields =
+        {
+            "jawOpen", "lipClose", "mouthOpen", "lipFunnel", "lipPucker", "lipSuck",
+            "smileSad", "lipBite", "tongueOut", "jawX", "jawZ", "mouthX", "tongueY",
+            "tongueX", "tongueRoll", "tongueArchY", "tongueShape", "tongueTwistRight",
+            "tongueTwistLeft"
+        };
+
         private AdvancedVisemeReconstructorData data;
         private SerializedProperty faceRendererProp;
         private SerializedProperty profileProp;
@@ -61,6 +85,7 @@ namespace YUCP.Components.Editor
         private SerializedProperty createTuningMenuProp;
         private SerializedProperty tuningMenuPathProp;
         private SerializedProperty saveTuningValuesProp;
+        private SerializedProperty tuningSyncModeProp;
         private SerializedProperty tuningMenuSectionsProp;
         private SerializedProperty verboseLoggingProp;
 
@@ -76,6 +101,7 @@ namespace YUCP.Components.Editor
         private PopupField<string> simpleTrackingPopup;
         private Toggle simpleNaturalTransitionsToggle;
         private Toggle simpleKeepSpeechClearToggle;
+        private Toggle simpleShareTuningToggle;
         private Label simpleTrackingStatusLabel;
         private Label simpleMenuStatusLabel;
         private Slider simpleSpeechMovementSlider;
@@ -93,6 +119,7 @@ namespace YUCP.Components.Editor
         private VisualElement reuseContainer;
         private VisualElement tuningMenuOptions;
         private VisualElement motionProfileHost;
+        private VisualElement fineTuneProfileHost;
         private VisualElement rigProfileHost;
         private VisualElement expertProfileHost;
         private VisualElement coarticulationContainer;
@@ -104,11 +131,14 @@ namespace YUCP.Components.Editor
         private Button remapAllButton;
         private Button analyzeFitButton;
         private Button emulatorButton;
+        private readonly List<Button> fineTuneVisemeButtons = new List<Button>();
+        private Button resetSelectedVisemeButton;
 
         private VisemeReconstructionProfile displayedProfile;
         private SerializedObject profileSerializedObject;
         private bool profileUiBuilt;
         private int selectedVisemeIndex;
+        private int selectedFineTuneVisemeIndex;
         private int selectedBindingIndex;
         private InspectorMode inspectorMode;
 
@@ -129,11 +159,14 @@ namespace YUCP.Components.Editor
             createTuningMenuProp = serializedObject.FindProperty("createTuningMenu");
             tuningMenuPathProp = serializedObject.FindProperty("tuningMenuPath");
             saveTuningValuesProp = serializedObject.FindProperty("saveTuningValues");
+            tuningSyncModeProp = serializedObject.FindProperty("tuningSyncMode");
             tuningMenuSectionsProp = serializedObject.FindProperty("tuningMenuSections");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
 
             var id = data != null ? data.GetInstanceID() : 0;
             selectedVisemeIndex = SessionState.GetInt($"YUCP_AVR_Viseme_{id}", 0);
+            selectedFineTuneVisemeIndex = SessionState.GetInt(
+                $"YUCP_AVR_FineTuneViseme_{id}", 0);
             selectedBindingIndex = SessionState.GetInt($"YUCP_AVR_Articulator_{id}", 0);
             inspectorMode = (InspectorMode)Mathf.Clamp(
                 SessionState.GetInt(InspectorModeSessionKey(id), (int)InspectorMode.Simple),
@@ -171,6 +204,7 @@ namespace YUCP.Components.Editor
             BuildSetupCard(advancedModeHost);
             BuildFaceTrackingCard(advancedModeHost);
             BuildMotionTuning(advancedModeHost);
+            BuildFineTuneVisemes(advancedModeHost);
             BuildAvatarMenuSettings(advancedModeHost);
             BuildRigTools(advancedModeHost);
             BuildExpertSettings(advancedModeHost);
@@ -361,6 +395,17 @@ namespace YUCP.Components.Editor
             simpleMenuOptions = new VisualElement { name = "simple-menu-options" };
             simpleMenuOptions.Add(YUCPUIToolkitHelper.CreateField(
                 saveTuningValuesProp, "Remember Avatar Menu Changes"));
+            simpleShareTuningToggle = CreateSimpleToggle(
+                "simple-share-tuning",
+                "Share Changes With Others",
+                "Uses one compact quantized channel so other players see your viseme settings.",
+                value => SetComponentEnum(
+                    tuningSyncModeProp,
+                    value
+                        ? (int)AdvancedVisemeTuningSyncMode.CompactSynced
+                        : (int)AdvancedVisemeTuningSyncMode.LocalOnly,
+                    "Change Advanced Viseme Settings Sharing"));
+            simpleMenuOptions.Add(simpleShareTuningToggle);
             avatarControlsContent.Add(simpleMenuOptions);
             simpleMenuStatusLabel = Caption("", "simple-menu-status");
             avatarControlsContent.Add(simpleMenuStatusLabel);
@@ -452,6 +497,16 @@ namespace YUCP.Components.Editor
             root.Add(foldout);
         }
 
+        private void BuildFineTuneVisemes(VisualElement root)
+        {
+            var card = YUCPUIToolkitHelper.CreateCard(
+                "Fine-tune Visemes",
+                "Adjust one sound without weakening the rest of the mouth or tongue.");
+            card.name = "fine-tune-visemes";
+            fineTuneProfileHost = YUCPUIToolkitHelper.GetCardContent(card);
+            root.Add(card);
+        }
+
         private void BuildAvatarMenuSettings(VisualElement root)
         {
             var foldout = RememberedFoldout("Avatar Menu", "avatar-menu-settings", false);
@@ -459,6 +514,7 @@ namespace YUCP.Components.Editor
             tuningMenuOptions = new VisualElement { name = "tuning-menu-options" };
             tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(tuningMenuPathProp, "Menu Path"));
             tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(saveTuningValuesProp, "Save Values"));
+            tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(tuningSyncModeProp, "Share Settings"));
             tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(tuningMenuSectionsProp, "Slider Groups"));
             foldout.Add(tuningMenuOptions);
             tuningMenuBudgetLabel = Caption("", "runtime-menu-budget");
@@ -498,6 +554,7 @@ namespace YUCP.Components.Editor
 
             simpleProfileHost.Clear();
             motionProfileHost.Clear();
+            fineTuneProfileHost.Clear();
             rigProfileHost.Clear();
             expertProfileHost.Clear();
 
@@ -505,6 +562,14 @@ namespace YUCP.Components.Editor
             {
                 BuildSimpleProfileFields();
                 BuildMissingProfilePrompt(motionProfileHost);
+                fineTuneProfileHost.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "Create a custom profile to fine-tune individual sounds.",
+                    YUCPUIToolkitHelper.MessageType.Info));
+                var createProfile = YUCPUIToolkitHelper.CreateButton(
+                    "Create Custom Profile", CreateAndAssignProfile,
+                    YUCPUIToolkitHelper.ButtonVariant.Primary);
+                createProfile.name = "fine-tune-create-profile";
+                fineTuneProfileHost.Add(createProfile);
                 rigProfileHost.Add(YUCPUIToolkitHelper.CreateHelpBox(
                     "Create a profile to edit viseme poses, mappings, and calibration.",
                     YUCPUIToolkitHelper.MessageType.Info));
@@ -517,6 +582,7 @@ namespace YUCP.Components.Editor
             profileSerializedObject = new SerializedObject(profile);
             BuildSimpleProfileFields();
             BuildMotionProfileFields();
+            BuildFineTuneProfileFields();
             BuildRigProfileFields();
             BuildExpertProfileFields();
         }
@@ -672,6 +738,266 @@ namespace YUCP.Components.Editor
             AddProfileField(tongue, "tongueShapeStrength", "Shape");
             AddProfileField(tongue, "tongueTwistStrength", "Twist");
             motionProfileHost.Add(tongue);
+        }
+
+        private void BuildFineTuneProfileFields()
+        {
+            var adjustments = profileSerializedObject.FindProperty("visemeAdjustments");
+            if (adjustments == null || adjustments.arraySize != VisemeReconstructionProfile.VisemeCount)
+            {
+                fineTuneProfileHost.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "The profile's viseme adjustments need to be repaired.",
+                    YUCPUIToolkitHelper.MessageType.Warning));
+                return;
+            }
+
+            selectedFineTuneVisemeIndex = Mathf.Clamp(
+                selectedFineTuneVisemeIndex, 0, adjustments.arraySize - 1);
+            fineTuneVisemeButtons.Clear();
+
+            var chips = new VisualElement { name = "fine-tune-viseme-chips" };
+            var selection = new VisualElement { name = "fine-tune-selected-viseme" };
+            chips.style.flexDirection = FlexDirection.Row;
+            chips.style.flexWrap = Wrap.Wrap;
+            chips.style.marginBottom = 6;
+            for (var i = 0; i < adjustments.arraySize; i++)
+            {
+                var index = i;
+                var chip = YUCPUIToolkitHelper.CreateButton(
+                    FineTuneVisemeLabels[index],
+                    () =>
+                    {
+                        selectedFineTuneVisemeIndex = index;
+                        SessionState.SetInt(
+                            $"YUCP_AVR_FineTuneViseme_{data.GetInstanceID()}",
+                            selectedFineTuneVisemeIndex);
+                        UpdateFineTuneChipStates();
+                        BuildSelectedVisemeAdjustment();
+                    },
+                    YUCPUIToolkitHelper.ButtonVariant.Secondary);
+                chip.name = $"fine-tune-viseme-{index}";
+                chip.tooltip = $"{FineTuneVisemeLabels[index]} · Oculus {VisemeReconstructionProfile.VisemeNames[index]}";
+                chip.style.flexBasis = Length.Percent(18f);
+                chip.style.flexGrow = 1;
+                chip.style.minWidth = 52;
+                chip.style.marginLeft = 2;
+                chip.style.marginRight = 2;
+                chip.style.marginBottom = 4;
+                fineTuneVisemeButtons.Add(chip);
+                chips.Add(chip);
+            }
+            fineTuneProfileHost.Add(chips);
+            fineTuneProfileHost.Add(selection);
+
+            void BuildSelectedVisemeAdjustment()
+            {
+                selection.Clear();
+                profileSerializedObject.UpdateIfRequiredOrScript();
+                var currentAdjustments = profileSerializedObject.FindProperty("visemeAdjustments");
+                if (currentAdjustments == null || currentAdjustments.arraySize == 0) return;
+                selectedFineTuneVisemeIndex = Mathf.Clamp(
+                    selectedFineTuneVisemeIndex, 0, currentAdjustments.arraySize - 1);
+                var adjustment = currentAdjustments.GetArrayElementAtIndex(
+                    selectedFineTuneVisemeIndex);
+
+                var heading = new Label(
+                    $"{FineTuneVisemeLabels[selectedFineTuneVisemeIndex]}  ·  " +
+                    VisemeReconstructionProfile.VisemeNames[selectedFineTuneVisemeIndex]);
+                heading.AddToClassList("yucp-card-title");
+                heading.style.marginBottom = 2;
+                selection.Add(heading);
+                selection.Add(Caption(
+                    "100% keeps the original shape. Lower only the part that clips."));
+
+                Slider jaw = null;
+                Slider lips = null;
+                Slider tongue = null;
+                var preciseSliders = new Dictionary<string, Slider>();
+                Action refresh = null;
+
+                jaw = CreateFineTunePercentageSlider(
+                    "Jaw & Opening", adjustment, FineTuneJawFields, () => refresh?.Invoke());
+                lips = CreateFineTunePercentageSlider(
+                    "Lips", adjustment, FineTuneLipFields, () => refresh?.Invoke());
+                tongue = CreateFineTunePercentageSlider(
+                    "Tongue", adjustment, FineTuneTongueFields, () => refresh?.Invoke());
+                jaw.name = "fine-tune-jaw-opening";
+                lips.name = "fine-tune-lips";
+                tongue.name = "fine-tune-tongue";
+                selection.Add(jaw);
+                selection.Add(lips);
+                selection.Add(tongue);
+
+                var precise = YUCPUIToolkitHelper.CreateFoldout("Precise controls", false);
+                precise.name = "fine-tune-precise-controls";
+                foreach (var fieldName in FineTuneAllFields)
+                {
+                    var slider = CreateFineTunePercentageSlider(
+                        FineTuneAxisLabel(fieldName), adjustment,
+                        new[] { fieldName }, () => refresh?.Invoke());
+                    slider.name = "fine-tune-axis-" + fieldName;
+                    preciseSliders[fieldName] = slider;
+                    precise.Add(slider);
+                }
+                selection.Add(precise);
+
+                resetSelectedVisemeButton = YUCPUIToolkitHelper.CreateButton(
+                    "Reset This Viseme",
+                    () =>
+                    {
+                        ApplyFineTunePercentage(
+                            adjustment, FineTuneAllFields, 100f,
+                            "Reset Advanced Viseme Fine Tuning");
+                        refresh?.Invoke();
+                    },
+                    YUCPUIToolkitHelper.ButtonVariant.Ghost);
+                resetSelectedVisemeButton.name = "fine-tune-reset-viseme";
+                resetSelectedVisemeButton.style.marginTop = 4;
+                selection.Add(resetSelectedVisemeButton);
+
+                refresh = () =>
+                {
+                    profileSerializedObject.UpdateIfRequiredOrScript();
+                    RefreshFineTunePercentageSlider(
+                        jaw, "Jaw & Opening", adjustment, FineTuneJawFields);
+                    RefreshFineTunePercentageSlider(
+                        lips, "Lips", adjustment, FineTuneLipFields);
+                    RefreshFineTunePercentageSlider(
+                        tongue, "Tongue", adjustment, FineTuneTongueFields);
+                    foreach (var pair in preciseSliders)
+                        RefreshFineTunePercentageSlider(
+                            pair.Value, FineTuneAxisLabel(pair.Key), adjustment,
+                            new[] { pair.Key });
+                    var neutral = IsFineTuneAdjustmentNeutral(adjustment);
+                    resetSelectedVisemeButton?.SetEnabled(!neutral);
+                    UpdateFineTuneChipStates();
+                };
+                refresh();
+            }
+
+            UpdateFineTuneChipStates();
+            BuildSelectedVisemeAdjustment();
+        }
+
+        private Slider CreateFineTunePercentageSlider(
+            string label,
+            SerializedProperty adjustment,
+            IReadOnlyList<string> fields,
+            Action changed)
+        {
+            var slider = new Slider(label, 0f, 150f)
+            {
+                showInputField = true,
+                tooltip = "100% preserves this part of the selected viseme; lower values reduce only this part."
+            };
+            slider.AddToClassList("yucp-field-input");
+            slider.RegisterValueChangedCallback(evt =>
+            {
+                ApplyFineTunePercentage(
+                    adjustment, fields, evt.newValue,
+                    "Fine-tune Advanced Viseme");
+                changed?.Invoke();
+            });
+            return slider;
+        }
+
+        private void ApplyFineTunePercentage(
+            SerializedProperty adjustment,
+            IReadOnlyList<string> fields,
+            float percentage,
+            string undoName)
+        {
+            if (adjustment == null || displayedProfile == null) return;
+            profileSerializedObject.UpdateIfRequiredOrScript();
+            Undo.RecordObject(displayedProfile, undoName);
+            var value = Mathf.Clamp(percentage / 100f,
+                VisemeArticulationAdjustment.Minimum,
+                VisemeArticulationAdjustment.Maximum);
+            foreach (var fieldName in fields)
+            {
+                var property = adjustment.FindPropertyRelative(fieldName);
+                if (property != null) property.floatValue = value;
+            }
+            profileSerializedObject.ApplyModifiedProperties();
+            EditorUtility.SetDirty(displayedProfile);
+        }
+
+        private static void RefreshFineTunePercentageSlider(
+            Slider slider,
+            string label,
+            SerializedProperty adjustment,
+            IReadOnlyList<string> fields)
+        {
+            if (slider == null || adjustment == null || fields == null || fields.Count == 0) return;
+            var total = 0f;
+            var count = 0;
+            var first = 1f;
+            var mixed = false;
+            foreach (var fieldName in fields)
+            {
+                var property = adjustment.FindPropertyRelative(fieldName);
+                if (property == null) continue;
+                if (count == 0) first = property.floatValue;
+                else if (Mathf.Abs(property.floatValue - first) > 0.0001f) mixed = true;
+                total += property.floatValue;
+                count++;
+            }
+            slider.label = mixed ? label + " (Mixed)" : label;
+            slider.SetValueWithoutNotify((count == 0 ? 1f : total / count) * 100f);
+        }
+
+        private void UpdateFineTuneChipStates()
+        {
+            if (profileSerializedObject == null) return;
+            profileSerializedObject.UpdateIfRequiredOrScript();
+            var adjustments = profileSerializedObject.FindProperty("visemeAdjustments");
+            if (adjustments == null) return;
+            for (var i = 0; i < fineTuneVisemeButtons.Count; i++)
+            {
+                var button = fineTuneVisemeButtons[i];
+                if (button == null || i >= adjustments.arraySize) continue;
+                var modified = !IsFineTuneAdjustmentNeutral(
+                    adjustments.GetArrayElementAtIndex(i));
+                button.text = FineTuneVisemeLabels[i] + (modified ? "  •" : string.Empty);
+                var selected = i == selectedFineTuneVisemeIndex;
+                if (selected)
+                {
+                    button.RemoveFromClassList("yucp-button-secondary");
+                    button.AddToClassList("yucp-button-primary");
+                }
+                else
+                {
+                    button.RemoveFromClassList("yucp-button-primary");
+                    button.AddToClassList("yucp-button-secondary");
+                }
+            }
+        }
+
+        private static bool IsFineTuneAdjustmentNeutral(SerializedProperty adjustment)
+        {
+            if (adjustment == null) return true;
+            foreach (var fieldName in FineTuneAllFields)
+            {
+                var property = adjustment.FindPropertyRelative(fieldName);
+                if (property != null && Mathf.Abs(property.floatValue - 1f) > 0.0001f)
+                    return false;
+            }
+            return true;
+        }
+
+        private static string FineTuneAxisLabel(string fieldName)
+        {
+            switch (fieldName)
+            {
+                case "smileSad": return "Smile / Sad";
+                case "jawX": return "Jaw Left / Right";
+                case "jawZ": return "Jaw Forward / Back";
+                case "mouthX": return "Mouth Left / Right";
+                case "tongueY": return "Tongue Up / Down";
+                case "tongueX": return "Tongue Left / Right";
+                case "tongueArchY": return "Tongue Arch";
+                default: return Nicify(fieldName);
+            }
         }
 
         private void BuildRigProfileFields()
@@ -999,6 +1325,9 @@ namespace YUCP.Components.Editor
             simpleKeepSpeechClearToggle?.SetValueWithoutNotify(
                 fusionModeProp.enumValueIndex ==
                 (int)AdvancedVisemeFusionMode.PhoneticAssist);
+            simpleShareTuningToggle?.SetValueWithoutNotify(
+                tuningSyncModeProp.enumValueIndex ==
+                (int)AdvancedVisemeTuningSyncMode.CompactSynced);
 
             var trackingEnabled = tracking != AdvancedVisemeTrackingInputs.Disabled;
             simpleKeepSpeechClearToggle?.SetEnabled(trackingEnabled);
@@ -1033,9 +1362,26 @@ namespace YUCP.Components.Editor
                     ? DisplayStyle.Flex
                     : DisplayStyle.None;
             if (simpleMenuStatusLabel != null)
-                simpleMenuStatusLabel.text = createTuningMenuProp.boolValue
-                    ? "Local controls - 0 synced bits"
-                    : "No avatar-menu controls";
+            {
+                if (!createTuningMenuProp.boolValue)
+                {
+                    simpleMenuStatusLabel.text = "No avatar-menu controls";
+                }
+                else
+                {
+                    var sections =
+                        (AdvancedVisemeTuningMenuSections)tuningMenuSectionsProp.intValue;
+                    var count = AdvancedVisemeTuning.Controls.Count(control =>
+                        (sections & AdvancedVisemeTuning.Section(control)) != 0);
+                    var bits = tuningSyncModeProp.enumValueIndex ==
+                               (int)AdvancedVisemeTuningSyncMode.CompactSynced
+                        ? AdvancedVisemeTuning.CompactSyncTransportBits(count)
+                        : 0;
+                    simpleMenuStatusLabel.text = bits > 0
+                        ? $"Shared in {bits} synced bits"
+                        : "Local controls - 0 synced bits";
+                }
+            }
 
             RefreshSimpleProfileSlider(
                 simpleSpeechMovementSlider, "speechMotionStrength", 1f, value => value);
@@ -1095,9 +1441,13 @@ namespace YUCP.Components.Editor
             var sections = (AdvancedVisemeTuningMenuSections)tuningMenuSectionsProp.intValue;
             var count = AdvancedVisemeTuning.Controls.Count(control =>
                 (sections & AdvancedVisemeTuning.Section(control)) != 0);
+            var bits = tuningSyncModeProp.enumValueIndex ==
+                       (int)AdvancedVisemeTuningSyncMode.CompactSynced
+                ? AdvancedVisemeTuning.CompactSyncTransportBits(count)
+                : 0;
             tuningMenuBudgetLabel.text = saveTuningValuesProp.boolValue
-                ? $"0 synced bits / up to {count} saved local sliders"
-                : $"0 synced bits / up to {count} session local sliders";
+                ? $"{bits} synced bits / up to {count} saved sliders"
+                : $"{bits} synced bits / up to {count} session sliders";
         }
 
         private void UpdateMappingCoverage()

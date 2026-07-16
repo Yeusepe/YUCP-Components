@@ -19,6 +19,8 @@ namespace YUCP.Components.Editor.VisemePhrase
     internal static class VisemePhraseTriggerAnimatorBuilder
     {
         private const string RawViseme = "Viseme";
+        private const string StableViseme = "__YUCP_Phrase_StableViseme";
+        private const int OtherVisemeClass = 15;
         private const string IsLocal = "IsLocal";
         private const float TalkingThreshold = 0.08f;
         private const float TransientThreshold = 0.025f;
@@ -30,6 +32,20 @@ namespace YUCP.Components.Editor.VisemePhrase
         // learned short phone/window from being silently inflated to 20 ms.
         private const float TimingEpsilonSeconds = 0.0001f;
         private const float BoundaryConsumeSeconds = 0.12f;
+        // Quarantine has no timed exit: it waits for a newly committed label.
+        // This duration only gives its output clip a stable, nonzero sample
+        // window while the state waits on categorical transition conditions.
+        private const float ExpiredQuarantineClipSeconds = 0.12f;
+        // Enrollment removes hard-winner runs shorter than 30 ms. The runtime
+        // state machine uses the same wall-clock threshold; its probation states
+        // carry no StateMachineBehaviour, so interruption is safe immediately.
+        private const float VisemeProbationSeconds =
+            VisemePhraseTimedSubsetPlanner.CommittedRunEvidenceSeconds;
+        private static readonly string[] VisemeNames =
+        {
+            "sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS",
+            "nn", "RR", "aa", "E", "I", "O", "U"
+        };
 
         internal sealed class Request
         {
@@ -83,6 +99,7 @@ namespace YUCP.Components.Editor.VisemePhrase
             var result = new Result { controller = controller };
 
             graph.AddParameter(RawViseme, AnimatorControllerParameterType.Int);
+            graph.AddParameter(StableViseme, AnimatorControllerParameterType.Float);
             graph.AddParameter(IsLocal, AnimatorControllerParameterType.Float);
             result.externalParameters.Add(RawViseme);
             result.externalParameters.Add(IsLocal);
@@ -106,6 +123,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                 result.globalParameters.Add(phrase.carrierParameter);
             }
 
+            AddVisemeStabilizerLayer(graph, request.plan);
             var classes = BuildMatcherClasses(request.plan);
             foreach (var matcherClass in classes)
             {
@@ -176,6 +194,167 @@ namespace YUCP.Components.Editor.VisemePhrase
             result = loaded;
             return true;
         }
+
+        /// <summary>
+        /// Converts VRChat's frame-sampled hard Viseme into the same run-length
+        /// filtered token stream used during enrollment. Each state encodes both
+        /// the last committed winner and the candidate currently being timed.
+        /// The state's motion continuously publishes the committed label as a
+        /// local float AAP, avoiding short-lived Parameter Drivers entirely.
+        ///
+        /// A candidate changed before 30 ms is replaced without committing it.
+        /// At or after 30 ms, a changed boundary commits the old candidate and
+        /// begins timing the new one in the same transition. This pair-state
+        /// observer preserves rapid A-B-C speech without an extra frame gate.
+        /// </summary>
+        private static void AddVisemeStabilizerLayer(
+            ControllerGraph graph,
+            VisemePhraseBuildPlan plan)
+        {
+            var layer = graph.AddLayer("YUCP Phrase Viseme Stabilizer");
+            var remote = graph.AddState(layer, "Remote",
+                graph.TimerClip("Viseme stabilizer remote", DriverStateSeconds));
+            var initialize = graph.AddState(layer, "Initialize from VRChat",
+                graph.TimerClip("Viseme stabilizer initialize", DriverStateSeconds));
+            var relevant = new HashSet<int>(plan.phrases
+                .SelectMany(phrase => phrase.variants)
+                .SelectMany(variant => variant.states)
+                .SelectMany(state => state.aliases ?? Array.Empty<int>())
+                .Where(viseme => viseme >= 0 && viseme < 15)) { 0 };
+            var classes = relevant.OrderBy(viseme => viseme).ToList();
+            if (relevant.Count < 15) classes.Add(OtherVisemeClass);
+            var classByRaw = Enumerable.Range(0, 15).ToDictionary(
+                raw => raw,
+                raw => relevant.Contains(raw) ? raw : OtherVisemeClass);
+            var stableStates = new AnimatorState[16];
+            var candidates = new AnimatorState[16, 15];
+            var stableMotions = new Motion[16];
+            foreach (var viseme in classes)
+            {
+                stableMotions[viseme] = graph.SetterClip(
+                    "Viseme committed " + VisemeClassName(viseme),
+                    VisemeProbationSeconds,
+                    StableViseme,
+                    viseme);
+                stableStates[viseme] = graph.AddState(layer,
+                    "Stable " + VisemeClassName(viseme),
+                    stableMotions[viseme]);
+            }
+            foreach (var committed in classes)
+            for (var candidateRaw = 0; candidateRaw < 15; candidateRaw++)
+            {
+                if (classByRaw[candidateRaw] == committed) continue;
+                candidates[committed, candidateRaw] = graph.AddState(layer,
+                    "Probation " + VisemeClassName(committed) + " -> " +
+                    VisemeClassName(candidateRaw),
+                    stableMotions[committed]);
+            }
+            layer.defaultState = remote;
+
+            AddImmediate(remote, initialize, AnimatorConditionMode.Greater,
+                0.5f, IsLocal);
+            AddImmediate(initialize, remote, AnimatorConditionMode.Less,
+                0.5f, IsLocal);
+            foreach (var stableViseme in classes)
+            {
+                foreach (var raw in Enumerable.Range(0, 15).Where(raw =>
+                             classByRaw[raw] == stableViseme))
+                    AddRawTransition(
+                        initialize, stableStates[stableViseme], raw, false);
+
+                AddImmediate(stableStates[stableViseme], remote,
+                    AnimatorConditionMode.Less, 0.5f, IsLocal);
+                // Encoding the committed label in the state keeps the hot path
+                // to one integer comparison per possible changed winner.
+                for (var observedRaw = 0; observedRaw < 15; observedRaw++)
+                {
+                    if (classByRaw[observedRaw] == stableViseme) continue;
+                    AddRawTransition(
+                        stableStates[stableViseme],
+                        candidates[stableViseme, observedRaw],
+                        observedRaw,
+                        false);
+                }
+            }
+
+            foreach (var committed in classes)
+            for (var candidateRaw = 0; candidateRaw < 15; candidateRaw++)
+                if (classByRaw[candidateRaw] != committed)
+                    ConfigureCandidateState(
+                        candidates[committed, candidateRaw],
+                        committed,
+                        candidateRaw,
+                        remote,
+                        stableStates,
+                        candidates,
+                        classByRaw);
+        }
+
+        private static void ConfigureCandidateState(
+            AnimatorState state,
+            int committed,
+            int candidateRaw,
+            AnimatorState remote,
+            IReadOnlyList<AnimatorState> stableStates,
+            AnimatorState[,] candidates,
+            IReadOnlyDictionary<int, int> classByRaw)
+        {
+            AddImmediate(state, remote, AnimatorConditionMode.Less, 0.5f, IsLocal);
+            var candidateClass = classByRaw[candidateRaw];
+
+            // If the old candidate has already survived its full 30 ms window,
+            // commit it while beginning the new candidate. These transitions
+            // must precede the immediate short-run replacement paths below.
+            for (var observedRaw = 0; observedRaw < 15; observedRaw++)
+            {
+                if (observedRaw == candidateRaw) continue;
+                var observedClass = classByRaw[observedRaw];
+                AddRawTransition(
+                    state,
+                    observedClass == candidateClass
+                        ? stableStates[candidateClass]
+                        : candidates[candidateClass, observedRaw],
+                    observedRaw,
+                    true);
+            }
+
+            AddRawTransition(
+                state, stableStates[candidateClass], candidateRaw, true);
+
+            // Before 30 ms, replace B without changing the committed label.
+            // Returning to A can go directly back to Stable A; another label C
+            // starts a fresh (A,C) probation state.
+            for (var observedRaw = 0; observedRaw < 15; observedRaw++)
+            {
+                if (observedRaw == candidateRaw) continue;
+                var observedClass = classByRaw[observedRaw];
+                AddRawTransition(
+                    state,
+                    observedClass == committed
+                        ? stableStates[committed]
+                        : candidates[committed, observedRaw],
+                    observedRaw,
+                    false);
+            }
+        }
+
+        private static void AddRawTransition(
+            AnimatorState from,
+            AnimatorState to,
+            int rawViseme,
+            bool timed)
+        {
+            var transition = from.AddTransition(to);
+            if (timed) ConfigureTimed(transition, 1f);
+            else ConfigureImmediate(transition);
+            transition.AddCondition(
+                AnimatorConditionMode.Equals, rawViseme, RawViseme);
+        }
+
+        private static string VisemeClassName(int viseme) =>
+            viseme >= 0 && viseme < VisemeNames.Length
+                ? VisemeNames[viseme]
+                : "other";
 
         private static List<MatcherClass> BuildMatcherClasses(VisemePhraseBuildPlan plan)
         {
@@ -288,9 +467,22 @@ namespace YUCP.Components.Editor.VisemePhrase
             var ready = graph.AddState(layer, "Ready",
                 graph.SubsetOutputMotion("Matcher ready", DriverStateSeconds,
                     null, Array.Empty<int>(), plan, timedGraph.root));
+            var expired = new AnimatorState[OtherVisemeClass + 1];
+            for (var held = 0; held <= OtherVisemeClass; held++)
+                expired[held] = graph.AddState(layer,
+                    "Expired boundary quarantine " + VisemeClassName(held),
+                    graph.SubsetOutputMotion(
+                        "Matcher expired boundary " + VisemeClassName(held),
+                        ExpiredQuarantineClipSeconds, null, Array.Empty<int>(),
+                        plan, timedGraph.root));
             layer.defaultState = remote;
             AddImmediate(remote, ready, AnimatorConditionMode.Greater, 0.5f, IsLocal);
             AddImmediate(ready, remote, AnimatorConditionMode.Less, 0.5f, IsLocal);
+            for (var held = 0; held <= OtherVisemeClass; held++)
+            {
+                AddImmediate(expired[held], remote,
+                    AnimatorConditionMode.Less, 0.5f, IsLocal);
+            }
 
             var emitStates = new Dictionary<(int phrase, int carrier), AnimatorState>();
             var trailingWaitStates = new Dictionary<int, AnimatorState>();
@@ -394,8 +586,42 @@ namespace YUCP.Components.Editor.VisemePhrase
                         0.5f, CooldownReady(phraseIndex));
                     transition.AddCondition(AnimatorConditionMode.IfNot,
                         0f, CooldownTrigger(phraseIndex));
-                    transition.AddCondition(AnimatorConditionMode.Equals, alias, RawViseme);
+                    AddStableVisemeCondition(transition, alias);
+
+                    // A newly committed natural root is already a complete
+                    // filtered observation. Consume it directly from
+                    // quarantine; routing through Ready costs one Animator
+                    // evaluation and can lose a one-frame phone at low FPS.
+                    if (!start.paused)
+                    {
+                        for (var held = 0; held <= OtherVisemeClass; held++)
+                        {
+                            if (held == alias) continue;
+                            var recovered = expired[held].AddTransition(
+                                animatorStates[(start.state, 0)]);
+                            ConfigureImmediate(recovered);
+                            recovered.AddCondition(AnimatorConditionMode.Greater,
+                                0.5f, CooldownReady(phraseIndex));
+                            recovered.AddCondition(AnimatorConditionMode.IfNot,
+                                0f, CooldownTrigger(phraseIndex));
+                            AddStableVisemeCondition(recovered, alias);
+                        }
+                    }
                 }
+            }
+
+            // Do not return to Ready on a timer while the committed label that
+            // expired is still published. A train of individually sub-30 ms
+            // raw winners can leave it stale indefinitely. Natural root starts
+            // above get first refusal on a changed label; every other committed
+            // category falls back to Ready here.
+            for (var held = 0; held <= OtherVisemeClass; held++)
+            for (var observed = 0; observed <= OtherVisemeClass; observed++)
+            {
+                if (observed == held) continue;
+                var changed = expired[held].AddTransition(ready);
+                ConfigureImmediate(changed);
+                AddStableVisemeCondition(changed, observed);
             }
 
             foreach (var timedState in timedGraph.states.OrderBy(state => state.index))
@@ -414,7 +640,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                             from, true, next, timedState, timedGraph, plan,
                             animatorStates, emitStates, trailingWaitStates);
                         var held = new HashSet<int>(Aliases(timedState.node.value));
-                        for (var alias = 0; alias < 15; alias++)
+                        for (var alias = 0; alias <= OtherVisemeClass; alias++)
                         {
                             if (held.Contains(alias)) continue;
                             AddFailureOrRestartTransitions(
@@ -426,15 +652,14 @@ namespace YUCP.Components.Editor.VisemePhrase
                             var advanceTime = from.AddTransition(
                                 animatorStates[(timedState, segmentIndex + 1)]);
                             ConfigureTimed(advanceTime, 1f);
-                            advanceTime.AddCondition(
-                                AnimatorConditionMode.Equals, alias, RawViseme);
+                            AddStableVisemeCondition(advanceTime, alias);
                         }
                     }
                     AddSegmentObservationTransitions(
                         from, false, segment, timedState, timedGraph, plan,
                         animatorStates, emitStates, trailingWaitStates);
                     var heldAliases = new HashSet<int>(Aliases(timedState.node.value));
-                    for (var alias = 0; alias < 15; alias++)
+                    for (var alias = 0; alias <= OtherVisemeClass; alias++)
                     {
                         if (heldAliases.Contains(alias)) continue;
                         AddFailureOrRestartTransitions(
@@ -448,18 +673,39 @@ namespace YUCP.Components.Editor.VisemePhrase
                         // exact maximum both are eligible, and the scorer's
                         // interval is inclusive. A held token has no such
                         // transition and therefore still expires here.
-                        var timeout = from.AddTransition(ready);
                         // Exact-max observations win because their conditioned
-                        // transitions were added first. If the phone is still
-                        // held at that boundary, expire it immediately so a
-                        // change on the following sampled frame cannot borrow
-                        // another frame beyond the learned maximum.
+                        // transitions were added first. A raw winner that has
+                        // already changed is still in the 30 ms probation layer;
+                        // do not charge that classifier debounce against the old
+                        // phone. If raw identity is still one of this state's
+                        // aliases, expire immediately so a following-frame change
+                        // cannot borrow time beyond the learned maximum.
                         // Unity evaluates an exit time of exactly 1 only after
                         // equality, which lets a next-frame phone change win.
                         // One float epsilon below 1 expires the held phone on
                         // the boundary sample; a simultaneous valid change still
                         // wins because its conditioned transition is ordered first.
-                        ConfigureTimed(timeout, 1f - 0.000001f);
+                        foreach (var heldAlias in heldAliases.OrderBy(value => value))
+                        {
+                            var timeout = from.AddTransition(expired[heldAlias]);
+                            ConfigureTimed(timeout, 1f - 0.000001f);
+                            timeout.AddCondition(
+                                AnimatorConditionMode.Equals,
+                                heldAlias,
+                                RawViseme);
+                        }
+                        // The build plan already contains the calibrated
+                        // observation corridor. Do not add another hidden grace
+                        // window here: that would accept durations the negative
+                        // scorer never saw. Changed-token transitions above keep
+                        // exact inclusive boundaries deterministic.
+                        foreach (var heldAlias in heldAliases.OrderBy(value => value))
+                        {
+                            var calibratedTimeout = from.AddTransition(
+                                expired[heldAlias]);
+                            ConfigureTimed(calibratedTimeout, 1f);
+                            AddStableVisemeCondition(calibratedTimeout, heldAlias);
+                        }
                     }
                     // Talking is a smoothed observer output and can lag the raw
                     // Viseme by a frame at onset or briefly dip inside quiet
@@ -495,8 +741,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                     var failure = from.AddTransition(animatorStates[(longest, 0)]);
                     if (timed) ConfigureTimed(failure, 1f);
                     else ConfigureImmediate(failure);
-                    failure.AddCondition(AnimatorConditionMode.Equals,
-                        observedViseme, RawViseme);
+                    AddStableVisemeCondition(failure, observedViseme);
                     AddCooldownConditions(failure, phraseIndex);
                 }
             }
@@ -519,15 +764,14 @@ namespace YUCP.Components.Editor.VisemePhrase
                 var restart = from.AddTransition(animatorStates[(start.state, 0)]);
                 if (timed) ConfigureTimed(restart, 1f);
                 else ConfigureImmediate(restart);
-                restart.AddCondition(AnimatorConditionMode.Equals,
-                    observedViseme, RawViseme);
+                AddStableVisemeCondition(restart, observedViseme);
                 AddCooldownConditions(restart, phraseIndex);
             }
 
             var failed = from.AddTransition(ready);
             if (timed) ConfigureTimed(failed, 1f);
             else ConfigureImmediate(failed);
-            failed.AddCondition(AnimatorConditionMode.Equals, observedViseme, RawViseme);
+            AddStableVisemeCondition(failed, observedViseme);
         }
 
         private static VisemePhraseTimedSubsetPlanner.State FindLongestSafeFailureState(
@@ -609,10 +853,13 @@ namespace YUCP.Components.Editor.VisemePhrase
                                 compatible = false;
                                 break;
                             }
-                            possibleMinimum = sourceTimings.Min(state => state.minimumSeconds);
+                            possibleMinimum = sourceTimings.Min(
+                                VisemePhraseTimedSubsetPlanner.EffectiveMinimumSeconds);
                             possibleMaximum = sourceTimings.Max(state => state.maximumSeconds);
                         }
-                        if (possibleMinimum + 0.000001f < targetTiming.minimumSeconds ||
+                        if (possibleMinimum + 0.000001f <
+                            VisemePhraseTimedSubsetPlanner.EffectiveMinimumSeconds(
+                                targetTiming) ||
                             possibleMaximum - 0.000001f > targetTiming.maximumSeconds)
                             compatible = false;
                     }
@@ -688,7 +935,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                 var transition = from.AddTransition(animatorStates[(advance.destination, 0)]);
                 if (timed) ConfigureTimed(transition, 1f);
                 else ConfigureImmediate(transition);
-                transition.AddCondition(AnimatorConditionMode.Equals, alias, RawViseme);
+                AddStableVisemeCondition(transition, alias);
             }
 
             var candidatePhrases = segment.candidateIds
@@ -745,7 +992,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                         var accept = from.AddTransition(emitStates[(phraseIndex, carrier)]);
                         if (timed) ConfigureTimed(accept, 1f);
                         else ConfigureImmediate(accept);
-                        accept.AddCondition(AnimatorConditionMode.Equals, exitAlias, RawViseme);
+                        AddStableVisemeCondition(accept, exitAlias);
                         accept.AddCondition(carrier == 0
                                 ? AnimatorConditionMode.IfNot
                                 : AnimatorConditionMode.If,
@@ -863,6 +1110,18 @@ namespace YUCP.Components.Editor.VisemePhrase
             transition.hasFixedDuration = true;
             transition.canTransitionToSelf = false;
             transition.interruptionSource = TransitionInterruptionSource.None;
+        }
+
+        private static void AddStableVisemeCondition(
+            AnimatorStateTransition transition,
+            int viseme)
+        {
+            if (viseme > 0)
+                transition.AddCondition(
+                    AnimatorConditionMode.Greater, viseme - 0.5f, StableViseme);
+            if (viseme <= 14)
+                transition.AddCondition(
+                    AnimatorConditionMode.Less, viseme + 0.5f, StableViseme);
         }
 
         private static VRC_AvatarParameterDriver.Parameter Set(string parameter, float value) =>

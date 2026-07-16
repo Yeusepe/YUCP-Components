@@ -571,20 +571,9 @@ namespace YUCP.Components.Editor.Tests
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
                     .OfType<BlendTree>().ToArray();
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Native JawOpen tracking gate"), Is.True,
-                    "A rig-connected decoded proxy must render through the direct native gate.");
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Native pose by Tailored/v2/JawOpen"), Is.True,
-                    "The final template proxy must drive its calibrated pose without observer intermediates.");
-                var residualSimplex = trees.SingleOrDefault(tree =>
-                    tree.name == "Authored residual simplex");
-                Assert.That(residualSimplex, Is.Not.Null,
-                    "The calibrated residual simplex must be evaluated as one vector product.");
+                var dependencies = BuildParameterDependencies(result.controller);
                 var authoredDetail = controllerParameters.Single(parameter =>
                     parameter.EndsWith("/Tuning/AuthoredDetail", StringComparison.Ordinal));
-                Assert.That(UsesParameter(residualSimplex, authoredDetail), Is.True,
-                    "Authored detail must scale the complete residual simplex.");
                 for (var viseme = 0; viseme < VisemeReconstructionProfile.VisemeCount; viseme++)
                 {
                     var speechWeight = controllerParameters.Single(parameter =>
@@ -593,22 +582,23 @@ namespace YUCP.Components.Editor.Tests
                     var residualWeight = controllerParameters.Single(parameter =>
                         parameter.EndsWith(
                             $"/Viseme/{viseme}/ResidualWeight", StringComparison.Ordinal));
-                    Assert.That(UsesParameter(residualSimplex, speechWeight), Is.True,
+                    Assert.That(DependsOn(
+                            dependencies, residualWeight, speechWeight), Is.True,
                         $"Calibrated residual {viseme} must consume the full speech simplex.");
-                    Assert.That(WritesParameter(residualSimplex, residualWeight), Is.True,
-                        $"The residual vector must publish viseme {viseme} atomically.");
+                    Assert.That(DependsOn(
+                            dependencies, residualWeight, authoredDetail), Is.True,
+                        "Authored detail must scale the complete residual simplex.");
                 }
                 Assert.That(controllerParameters
                         .Where(parameter => parameter.Contains(
                             "/VisibleSpeechWeight", StringComparison.Ordinal))
-                        .Any(parameter => UsesParameter(residualSimplex, parameter)),
+                        .Any(parameter => controllerParameters
+                            .Where(candidate => candidate.EndsWith(
+                                "/ResidualWeight", StringComparison.Ordinal))
+                            .Any(residual => DependsOn(
+                                dependencies, residual, parameter))),
                     Is.False,
                     "Tracking authority may replace U(Cp), but must not erase R.");
-
-                var ownershipMatrix = trees.SingleOrDefault(tree =>
-                    tree.name == "Primary ownership matrix projection");
-                Assert.That(ownershipMatrix, Is.Not.Null,
-                    "Ownership carriers must share one exact matrix projection.");
 
                 for (var column = 0;
                      column < calibration.ownershipCarrierBlendShapeNames.Length;
@@ -617,11 +607,11 @@ namespace YUCP.Components.Editor.Tests
                     AssertNonnegativeCarrierDrive(
                         calibration.ownershipCarrierBlendShapeNames[column],
                         $"Primary/Ownership/{column}/Add",
-                        controllerParameters, trees, ownershipMatrix, controllerPath);
+                        controllerParameters, trees, dependencies, controllerPath);
                     AssertNonnegativeCarrierDrive(
                         calibration.ownershipNegativeCarrierBlendShapeNames[column],
                         $"Primary/Ownership/{column}/Subtract",
-                        controllerParameters, trees, ownershipMatrix, controllerPath);
+                        controllerParameters, trees, dependencies, controllerPath);
                 }
 
                 var hiddenSpeechDelta = controllerParameters.Single(parameter =>
@@ -631,9 +621,13 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(controllerParameters.Any(parameter =>
                     parameter.Contains("PhonePosterior/Residual/RetainedSpeechDelta")), Is.False,
                     "The stable hidden-phone complement must not consume contradiction retention.");
-                var hiddenDriveTree = trees.SingleOrDefault(tree =>
-                    tree.name == "Signed pose " + hiddenSpeechDelta);
-                Assert.That(hiddenDriveTree, Is.Not.Null,
+                var hiddenClip = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
+                    .OfType<AnimationClip>()
+                    .Single(clip => clip.name == "Blendshape " +
+                        calibration.hiddenPhoneResidualBlendShapeName);
+                Assert.That(trees.Any(tree =>
+                        ContainsMotion(tree, hiddenClip) &&
+                        UsesParameter(tree, hiddenSpeechDelta)), Is.True,
                     "The stable hidden-phone residual was not driven directly.");
 
                 var externalBasisClip = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
@@ -650,6 +644,14 @@ namespace YUCP.Components.Editor.Tests
                         "blendShape.PositiveA",
                         "blendShape.PositiveB"
                     }));
+                var directTrackingGain = result.trackingGainParameters[
+                    AdvancedVisemeArticulator.JawOpen];
+                Assert.That(trees.Any(tree =>
+                        ContainsMotion(tree, externalBasisClip) &&
+                        UsesParameter(tree, directTrackingGain) &&
+                        UsesParameter(tree, "Tailored/v2/JawOpen")), Is.True,
+                    "A rig-connected decoded proxy must reach the calibrated pose through " +
+                    "the native tracking gate.");
             }
             finally
             {
@@ -758,24 +760,30 @@ namespace YUCP.Components.Editor.Tests
                         StringComparison.Ordinal));
 
                     var clamp = trees.SingleOrDefault(tree =>
-                        tree.name == $"Map {targetRaw} -> {targetClamped}");
+                        tree.blendType == BlendTreeType.Simple1D &&
+                        tree.blendParameter == targetRaw &&
+                        WritesParameter(tree, targetClamped));
                     Assert.That(clamp, Is.Not.Null,
                         $"The {direction.ToLowerInvariant()} tailored ray bypasses its unit clamp.");
                     AssertMapEndpoints(
                         clamp,
                         targetClamped,
                         (-1f, 0f), (0f, 0f), (1f, 1f), (2f, 1f));
-                    Assert.That(trees.Any(tree =>
-                            tree.name == $"{reconciliation} <- {targetClamped} * 1"),
-                        Is.True,
+                    var dependencies = BuildParameterDependencies(result.controller);
+                    Assert.That(DependsOn(
+                            dependencies, reconciliation, targetClamped), Is.True,
                         "Reconciliation must consume the clamped coordinate, not the raw sum.");
-                    Assert.That(trees.Any(tree =>
-                            tree.name == $"Map {reconciliation} -> {primaryWeight}"),
-                        Is.True,
+                    Assert.That(DependsOn(
+                            dependencies, primaryWeight, reconciliation), Is.True,
                         "The clamped reconciliation must remain connected to the final pose drive.");
+                    var poseName = $"Calibrated MouthX {direction}";
+                    var pose = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
+                        .OfType<AnimationClip>()
+                        .Single(clip => clip.name == poseName);
                     Assert.That(trees.Any(tree =>
-                            tree.name == "Drive pose by " + primaryWeight),
-                        Is.True);
+                            ContainsMotion(tree, pose) &&
+                            UsesParameter(tree, primaryWeight)), Is.True,
+                        "The reconciled coordinate must drive the matching calibrated ray.");
                 }
             }
             finally
@@ -1021,37 +1029,106 @@ namespace YUCP.Components.Editor.Tests
             string projectionKey,
             IReadOnlyList<string> controllerParameters,
             IReadOnlyList<BlendTree> trees,
-            BlendTree ownershipMatrix,
+            IReadOnlyDictionary<string, HashSet<string>> dependencies,
             string controllerPath)
         {
             if (string.IsNullOrEmpty(carrier)) return;
             var projectedParameter = controllerParameters.Single(parameter =>
                 parameter.EndsWith(
                     "/" + projectionKey + "/Projected", StringComparison.Ordinal));
-            Assert.That(WritesParameter(ownershipMatrix, projectedParameter), Is.True,
+            Assert.That(dependencies.ContainsKey(projectedParameter), Is.True,
                 "The ownership matrix must publish every carrier projection.");
-            var product = trees.SingleOrDefault(tree =>
-                tree.name == projectionKey + " product pose");
-            Assert.That(product, Is.Not.Null,
-                "Each ownership carrier must multiply its projection inside the pose tree.");
-            Assert.That(UsesParameter(product, projectedParameter), Is.True,
-                "Each ownership carrier must consume its matching projected magnitude.");
-            Assert.That(product.children.Any(child =>
-                    child.directBlendParameter.EndsWith(
-                        "/Yield", StringComparison.Ordinal)),
-                Is.True,
-                "Each ownership carrier must consume its corresponding authority yield.");
             Assert.That(trees.Any(tree =>
                 tree.name == "Signed pose " + projectedParameter), Is.False,
                 "Ownership may not rely on negative final blendshape weights.");
             var clip = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
                 .OfType<AnimationClip>()
                 .Single(candidate => candidate.name == "Blendshape " + carrier);
-            Assert.That(ContainsMotion(product, clip), Is.True,
-                "The product tree must drive the matching carrier geometry.");
+            var yieldParameters = controllerParameters.Where(parameter =>
+                parameter.EndsWith("/Yield", StringComparison.Ordinal)).ToArray();
+            var product = trees
+                .Where(tree =>
+                    ContainsMotion(tree, clip) &&
+                    UsesParameter(tree, projectedParameter) &&
+                    yieldParameters.Any(parameter => UsesParameter(tree, parameter)))
+                .OrderBy(MotionNodeCount)
+                .FirstOrDefault();
+            Assert.That(product, Is.Not.Null,
+                "Each ownership carrier must multiply its matching projection and " +
+                "authority yield inside the pose path.");
             foreach (var binding in AnimationUtility.GetCurveBindings(clip))
             foreach (var key in AnimationUtility.GetEditorCurve(clip, binding).keys)
                 Assert.That(key.value, Is.InRange(0f, 100f));
+        }
+
+        private static int MotionNodeCount(Motion motion)
+        {
+            if (!(motion is BlendTree tree)) return 1;
+            return 1 + tree.children.Sum(child => MotionNodeCount(child.motion));
+        }
+
+        private static Dictionary<string, HashSet<string>> BuildParameterDependencies(
+            AnimatorController controller)
+        {
+            var dependencies = new Dictionary<string, HashSet<string>>(
+                StringComparer.Ordinal);
+
+            void Visit(Motion motion, HashSet<string> controls)
+            {
+                if (motion is AnimationClip clip)
+                {
+                    foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+                    {
+                        if (binding.type != typeof(Animator)) continue;
+                        if (!dependencies.TryGetValue(binding.propertyName, out var inputs))
+                            dependencies[binding.propertyName] = inputs =
+                                new HashSet<string>(StringComparer.Ordinal);
+                        inputs.UnionWith(controls);
+                    }
+                    return;
+                }
+                if (!(motion is BlendTree tree)) return;
+
+                var treeControls = new HashSet<string>(controls, StringComparer.Ordinal);
+                if (tree.blendType != BlendTreeType.Direct)
+                {
+                    if (!string.IsNullOrEmpty(tree.blendParameter))
+                        treeControls.Add(tree.blendParameter);
+                    if (tree.blendType != BlendTreeType.Simple1D &&
+                        !string.IsNullOrEmpty(tree.blendParameterY))
+                        treeControls.Add(tree.blendParameterY);
+                }
+                foreach (var child in tree.children)
+                {
+                    var childControls = new HashSet<string>(
+                        treeControls, StringComparer.Ordinal);
+                    if (tree.blendType == BlendTreeType.Direct &&
+                        !string.IsNullOrEmpty(child.directBlendParameter) &&
+                        child.directBlendParameter != "__YUCP_AVR_ONE")
+                        childControls.Add(child.directBlendParameter);
+                    Visit(child.motion, childControls);
+                }
+            }
+
+            foreach (var layer in controller.layers)
+            foreach (var state in layer.stateMachine.states)
+                Visit(state.state.motion, new HashSet<string>(StringComparer.Ordinal));
+            return dependencies;
+        }
+
+        private static bool DependsOn(
+            IReadOnlyDictionary<string, HashSet<string>> dependencies,
+            string output,
+            string input)
+        {
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            bool Visit(string parameter)
+            {
+                if (!visited.Add(parameter) ||
+                    !dependencies.TryGetValue(parameter, out var direct)) return false;
+                return direct.Contains(input) || direct.Any(Visit);
+            }
+            return Visit(output);
         }
 
         private static void AssertMapEndpoints(

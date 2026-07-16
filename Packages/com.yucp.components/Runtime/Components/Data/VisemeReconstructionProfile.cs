@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using UnityEngine;
 
 namespace YUCP.Components
@@ -79,6 +80,116 @@ namespace YUCP.Components
         }
     }
 
+    /// <summary>
+    /// Per-viseme, per-articulator trim applied after the authored or calibrated
+    /// speech pose has been resolved. A value of one preserves the source pose.
+    /// These values are intentionally separate from VisemeArticulationPose so a
+    /// reusable profile can trim a calibrated avatar without replacing its base
+    /// phonetic model.
+    /// </summary>
+    [Serializable]
+    public sealed class VisemeArticulationAdjustment
+    {
+        public const float Minimum = 0f;
+        public const float Maximum = 1.5f;
+
+        [Range(Minimum, Maximum)] public float jawOpen = 1f;
+        [Range(Minimum, Maximum)] public float lipClose = 1f;
+        [Range(Minimum, Maximum)] public float mouthOpen = 1f;
+        [Range(Minimum, Maximum)] public float lipFunnel = 1f;
+        [Range(Minimum, Maximum)] public float lipPucker = 1f;
+        [Range(Minimum, Maximum)] public float lipSuck = 1f;
+        [Range(Minimum, Maximum)] public float smileSad = 1f;
+        [Range(Minimum, Maximum)] public float lipBite = 1f;
+        [Range(Minimum, Maximum)] public float tongueOut = 1f;
+        [Range(Minimum, Maximum)] public float jawX = 1f;
+        [Range(Minimum, Maximum)] public float jawZ = 1f;
+        [Range(Minimum, Maximum)] public float mouthX = 1f;
+        [Range(Minimum, Maximum)] public float tongueY = 1f;
+        [Range(Minimum, Maximum)] public float tongueX = 1f;
+        [Range(Minimum, Maximum)] public float tongueRoll = 1f;
+        [Range(Minimum, Maximum)] public float tongueArchY = 1f;
+        [Range(Minimum, Maximum)] public float tongueShape = 1f;
+        [Range(Minimum, Maximum)] public float tongueTwistRight = 1f;
+        [Range(Minimum, Maximum)] public float tongueTwistLeft = 1f;
+
+        public float Get(AdvancedVisemeArticulator articulator)
+        {
+            switch (articulator)
+            {
+                case AdvancedVisemeArticulator.JawOpen: return jawOpen;
+                case AdvancedVisemeArticulator.LipClose: return lipClose;
+                case AdvancedVisemeArticulator.MouthOpen: return mouthOpen;
+                case AdvancedVisemeArticulator.LipFunnel: return lipFunnel;
+                case AdvancedVisemeArticulator.LipPucker: return lipPucker;
+                case AdvancedVisemeArticulator.LipSuck: return lipSuck;
+                case AdvancedVisemeArticulator.SmileSad: return smileSad;
+                case AdvancedVisemeArticulator.LipBite: return lipBite;
+                case AdvancedVisemeArticulator.TongueOut: return tongueOut;
+                case AdvancedVisemeArticulator.JawX: return jawX;
+                case AdvancedVisemeArticulator.JawZ: return jawZ;
+                case AdvancedVisemeArticulator.MouthX: return mouthX;
+                case AdvancedVisemeArticulator.TongueY: return tongueY;
+                case AdvancedVisemeArticulator.TongueX: return tongueX;
+                case AdvancedVisemeArticulator.TongueRoll: return tongueRoll;
+                case AdvancedVisemeArticulator.TongueArchY: return tongueArchY;
+                case AdvancedVisemeArticulator.TongueShape: return tongueShape;
+                case AdvancedVisemeArticulator.TongueTwistRight: return tongueTwistRight;
+                case AdvancedVisemeArticulator.TongueTwistLeft: return tongueTwistLeft;
+                default: return 1f;
+            }
+        }
+
+        public void Set(AdvancedVisemeArticulator articulator, float value)
+        {
+            value = Mathf.Clamp(value, Minimum, Maximum);
+            switch (articulator)
+            {
+                case AdvancedVisemeArticulator.JawOpen: jawOpen = value; break;
+                case AdvancedVisemeArticulator.LipClose: lipClose = value; break;
+                case AdvancedVisemeArticulator.MouthOpen: mouthOpen = value; break;
+                case AdvancedVisemeArticulator.LipFunnel: lipFunnel = value; break;
+                case AdvancedVisemeArticulator.LipPucker: lipPucker = value; break;
+                case AdvancedVisemeArticulator.LipSuck: lipSuck = value; break;
+                case AdvancedVisemeArticulator.SmileSad: smileSad = value; break;
+                case AdvancedVisemeArticulator.LipBite: lipBite = value; break;
+                case AdvancedVisemeArticulator.TongueOut: tongueOut = value; break;
+                case AdvancedVisemeArticulator.JawX: jawX = value; break;
+                case AdvancedVisemeArticulator.JawZ: jawZ = value; break;
+                case AdvancedVisemeArticulator.MouthX: mouthX = value; break;
+                case AdvancedVisemeArticulator.TongueY: tongueY = value; break;
+                case AdvancedVisemeArticulator.TongueX: tongueX = value; break;
+                case AdvancedVisemeArticulator.TongueRoll: tongueRoll = value; break;
+                case AdvancedVisemeArticulator.TongueArchY: tongueArchY = value; break;
+                case AdvancedVisemeArticulator.TongueShape: tongueShape = value; break;
+                case AdvancedVisemeArticulator.TongueTwistRight: tongueTwistRight = value; break;
+                case AdvancedVisemeArticulator.TongueTwistLeft: tongueTwistLeft = value; break;
+            }
+        }
+
+        public bool IsNeutral(float tolerance = 0.0001f)
+        {
+            foreach (AdvancedVisemeArticulator articulator in
+                     Enum.GetValues(typeof(AdvancedVisemeArticulator)))
+                if (Mathf.Abs(Get(articulator) - 1f) > tolerance) return false;
+            return true;
+        }
+
+        public void ResetToNeutral()
+        {
+            foreach (AdvancedVisemeArticulator articulator in
+                     Enum.GetValues(typeof(AdvancedVisemeArticulator)))
+                Set(articulator, 1f);
+        }
+
+        internal void Clamp()
+        {
+            foreach (AdvancedVisemeArticulator articulator in
+                     Enum.GetValues(typeof(AdvancedVisemeArticulator)))
+                Set(articulator, Get(articulator));
+        }
+    }
+
     [Serializable]
     public sealed class ArticulatorRigBinding
     {
@@ -101,7 +212,7 @@ namespace YUCP.Components
     public sealed class VisemeReconstructionProfile : ScriptableObject
     {
         public const int VisemeCount = 15;
-        private const int CurrentDefaultsVersion = 8;
+        private const int CurrentDefaultsVersion = 9;
         public static readonly string[] VisemeNames =
         {
             "sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"
@@ -159,6 +270,10 @@ namespace YUCP.Components
         [Header("Viseme Poses")]
         public VisemeArticulationPose[] visemePoses = new VisemeArticulationPose[VisemeCount];
 
+        [Tooltip("Per-viseme trims applied independently to each reconstructed articulator. One preserves the authored or calibrated pose.")]
+        public VisemeArticulationAdjustment[] visemeAdjustments =
+            new VisemeArticulationAdjustment[VisemeCount];
+
         [Header("Rig Bindings")]
         public ArticulatorRigBinding[] articulatorBindings = Array.Empty<ArticulatorRigBinding>();
 
@@ -187,6 +302,47 @@ namespace YUCP.Components
             return null;
         }
 
+        public VisemeArticulationAdjustment GetVisemeAdjustment(int visemeIndex)
+        {
+            EnsureDefaults();
+            if (visemeIndex < 0 || visemeIndex >= VisemeCount)
+                throw new ArgumentOutOfRangeException(nameof(visemeIndex));
+            return visemeAdjustments[visemeIndex];
+        }
+
+        public float GetVisemeArticulationMultiplier(
+            int visemeIndex,
+            AdvancedVisemeArticulator articulator)
+        {
+            return GetVisemeAdjustment(visemeIndex).Get(articulator);
+        }
+
+        public bool HasNonNeutralVisemeAdjustment(int visemeIndex)
+        {
+            return !GetVisemeAdjustment(visemeIndex).IsNeutral();
+        }
+
+        public bool HasNonNeutralVisemeAdjustments()
+        {
+            EnsureDefaults();
+            return visemeAdjustments.Any(adjustment =>
+                adjustment != null && !adjustment.IsNeutral());
+        }
+
+        public bool HasNonNeutralArticulationAdjustment(
+            AdvancedVisemeArticulator articulator)
+        {
+            EnsureDefaults();
+            return visemeAdjustments.Any(adjustment =>
+                adjustment != null &&
+                Mathf.Abs(adjustment.Get(articulator) - 1f) > 0.0001f);
+        }
+
+        public void ResetVisemeAdjustment(int visemeIndex)
+        {
+            GetVisemeAdjustment(visemeIndex).ResetToNeutral();
+        }
+
         public void EnsureDefaults()
         {
             if (visemePoses == null || visemePoses.Length != VisemeCount)
@@ -201,6 +357,18 @@ namespace YUCP.Components
                 if (visemePoses[i] == null) visemePoses[i] = CreateDefaultPose(i);
                 visemePoses[i].name = VisemeNames[i];
             }
+
+            if (visemeAdjustments == null || visemeAdjustments.Length != VisemeCount)
+            {
+                var previous = visemeAdjustments;
+                visemeAdjustments = new VisemeArticulationAdjustment[VisemeCount];
+                if (previous != null)
+                    Array.Copy(previous, visemeAdjustments,
+                        Mathf.Min(previous.Length, VisemeCount));
+            }
+            for (var i = 0; i < VisemeCount; i++)
+                if (visemeAdjustments[i] == null)
+                    visemeAdjustments[i] = new VisemeArticulationAdjustment();
 
             if (articulatorBindings == null)
             {
@@ -306,6 +474,15 @@ namespace YUCP.Components
                 // the profile has been upgraded.
                 speechLiveliness = 0.5f;
             }
+            if (defaultsVersion < 9)
+            {
+                // Version 9 introduces per-viseme trims. Missing entries must be
+                // neutral: Unity otherwise deserializes newly introduced floats
+                // as zero, which would erase speech on an upgraded profile.
+                for (var i = 0; i < VisemeCount; i++)
+                    if (visemeAdjustments[i] == null)
+                        visemeAdjustments[i] = new VisemeArticulationAdjustment();
+            }
             defaultsVersion = CurrentDefaultsVersion;
         }
 
@@ -314,6 +491,9 @@ namespace YUCP.Components
         {
             visemePoses = new VisemeArticulationPose[VisemeCount];
             for (var i = 0; i < VisemeCount; i++) visemePoses[i] = CreateDefaultPose(i);
+            visemeAdjustments = new VisemeArticulationAdjustment[VisemeCount];
+            for (var i = 0; i < VisemeCount; i++)
+                visemeAdjustments[i] = new VisemeArticulationAdjustment();
             articulatorBindings = CreateDefaultBindings();
             visemeResponseSeconds = 0.024f;
             speechHangoverSeconds = 0.16f;
@@ -379,6 +559,8 @@ namespace YUCP.Components
             tongueArchStrength = Mathf.Clamp01(tongueArchStrength);
             tongueShapeStrength = Mathf.Clamp01(tongueShapeStrength);
             tongueTwistStrength = Mathf.Clamp01(tongueTwistStrength);
+            foreach (var adjustment in visemeAdjustments)
+                adjustment?.Clamp();
         }
 
         public static VisemeReconstructionProfile CreateDefaultRuntimeProfile()

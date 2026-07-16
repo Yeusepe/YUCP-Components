@@ -1532,7 +1532,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                         break;
                     default:
                         stateClass = "listening";
-                        text = "Listening — start when you’re ready";
+                        text = "Listening. Start when you’re ready";
                         break;
                 }
             }

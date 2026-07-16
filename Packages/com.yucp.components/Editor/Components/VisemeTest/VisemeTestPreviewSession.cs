@@ -129,7 +129,7 @@ namespace YUCP.Components.Editor
         internal static string ExactBackendStatus()
         {
             return OculusBridge.IsAvailable(out var detail)
-                ? "Oculus LipSync detected — microphone classification uses the same engine family as VRChat."
+                ? "Oculus LipSync detected. Microphone classification uses the same engine family as VRChat."
                 : "Approximate enrollment: Oculus LipSync is not installed, so microphone preview will use YUCP's local fallback. Manual output remains exact." +
                   (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail);
         }

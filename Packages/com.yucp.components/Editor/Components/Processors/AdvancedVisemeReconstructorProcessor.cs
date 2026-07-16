@@ -434,7 +434,8 @@ namespace YUCP.Components.Editor
                 if (built.tuningParameters.Count > 0)
                 {
                     var tuningMenu = AdvancedVisemeRuntimeMenuBuilder.Build(
-                        folder + "/TuningMenu.asset", built.tuningParameters);
+                        folder + "/TuningMenu.asset", built.tuningParameters,
+                        built.tuningSyncFocusParameter);
                     fullController.AddMenu(tuningMenu, component.tuningMenuPath);
                 }
 
@@ -465,9 +466,12 @@ namespace YUCP.Components.Editor
                     : ", direct-pose fallback";
                 var trackingText = trackingResolution != null ? $", {trackingResolution.Summary}" : string.Empty;
                 var tuningText = built.tuningParameters.Count > 0
-                    ? $", {built.tuningParameters.Count} saved local sliders (0 synced bits)"
+                    ? component.tuningSyncMode == AdvancedVisemeTuningSyncMode.CompactSynced
+                        ? $", {built.tuningParameters.Count} saved sliders shared through " +
+                          $"{built.tuningSyncBits} compact synced bits"
+                        : $", {built.tuningParameters.Count} saved local sliders (0 synced bits)"
                     : string.Empty;
-                component.SetBuildSummary($"Built {built.globalParameters.Distinct().Count()} reusable outputs, +{trackingBits} synced bits{tuningText}{trackingText}{calibrationText}{linkedRendererSummary.Text}");
+                component.SetBuildSummary($"Built {built.globalParameters.Distinct().Count()} reusable outputs, +{trackingBits + built.tuningSyncBits} synced bits{tuningText}{trackingText}{calibrationText}{linkedRendererSummary.Text}");
                 EditorUtility.SetDirty(component);
                 EditorUtility.SetDirty(descriptor);
 
@@ -1293,12 +1297,14 @@ namespace YUCP.Components.Editor
         {
             error = null;
             if (!request.component.createTuningMenu) return true;
+            var generatedControls = new List<AdvancedVisemeTuningControl>();
             foreach (var control in AdvancedVisemeTuning.Controls)
             {
                 if ((request.component.tuningMenuSections &
                      AdvancedVisemeTuning.Section(control)) == 0 ||
                     !AdvancedVisemeAnimatorBuilder.IsTuningControlRelevant(request, control))
                     continue;
+                generatedControls.Add(control);
                 var name = request.component.TuningParameterName(control);
                 if (!existing.TryGetValue(name, out var parameter)) continue;
                 if (parameter.valueType != VRCExpressionParameters.ValueType.Float)
@@ -1321,6 +1327,80 @@ namespace YUCP.Components.Editor
                     return false;
                 }
             }
+
+            if (request.component.tuningSyncMode !=
+                    AdvancedVisemeTuningSyncMode.CompactSynced ||
+                generatedControls.Count == 0)
+                return true;
+
+            var dataParameter = AdvancedVisemeTuning.CompactSyncDataParameter(
+                request.component.NormalizedPrefix);
+            if (!ValidateCompactTuningParameter(
+                    existing, dataParameter,
+                    VRCExpressionParameters.ValueType.Int,
+                    false, true, out error))
+                return false;
+
+            var focusParameter = AdvancedVisemeTuning.CompactSyncFocusParameter(
+                request.component.NormalizedPrefix);
+            if (!ValidateCompactTuningParameter(
+                    existing, focusParameter,
+                    VRCExpressionParameters.ValueType.Int,
+                    false, false, out error))
+                return false;
+
+            var indexBits = AdvancedVisemeTuning.CompactSyncTransportIndexBits;
+            var incrementalTuningBits = existing.ContainsKey(dataParameter) ? 0 : 8;
+            for (var bit = 0; bit < indexBits; bit++)
+            {
+                var name = AdvancedVisemeTuning.CompactSyncIndexParameter(
+                    request.component.NormalizedPrefix, bit);
+                if (!ValidateCompactTuningParameter(
+                        existing, name,
+                        VRCExpressionParameters.ValueType.Bool,
+                        false, true, out error))
+                    return false;
+                if (!existing.ContainsKey(name)) incrementalTuningBits++;
+            }
+
+            var currentBits = existing.Values
+                .Where(parameter => parameter.networkSynced)
+                .Sum(ParameterBits);
+            var trackingBits = IncrementalTrackingBits(
+                request.component, request.profile, request.trackingPrefix,
+                existing,
+                request.effectiveTrackingInputs, request.reuseExistingTracking,
+                request.trackingActiveParameter);
+            if (currentBits + trackingBits + incrementalTuningBits > ParameterBudget)
+            {
+                error = $"Compact viseme-setting sync needs {incrementalTuningBits} " +
+                        $"additional bits, but only " +
+                        $"{ParameterBudget - currentBits - trackingBits} remain after " +
+                        $"face-tracking inputs.";
+                return false;
+            }
+            return true;
+        }
+
+        private static bool ValidateCompactTuningParameter(
+            IReadOnlyDictionary<string, VRCExpressionParameters.Parameter> existing,
+            string name,
+            VRCExpressionParameters.ValueType type,
+            bool saved,
+            bool synced,
+            out string error)
+        {
+            error = null;
+            if (!existing.TryGetValue(name, out var parameter)) return true;
+            if (parameter.valueType != type ||
+                parameter.saved != saved ||
+                parameter.networkSynced != synced)
+            {
+                error = $"Existing compact tuning parameter '{name}' must be " +
+                        $"{type}, Saved={saved}, Synced={synced}. Change the " +
+                        $"conflicting parameter or use another prefix.";
+                return false;
+            }
             return true;
         }
 
@@ -1328,7 +1408,7 @@ namespace YUCP.Components.Editor
             AdvancedVisemeReconstructorData component,
             VisemeReconstructionProfile profile,
             string prefix,
-            Dictionary<string, VRCExpressionParameters.Parameter> existing,
+            IReadOnlyDictionary<string, VRCExpressionParameters.Parameter> existing,
             AdvancedVisemeTrackingInputs effectiveInputs,
             bool reuseExisting,
             string activeParameter)
@@ -1937,6 +2017,7 @@ namespace YUCP.Components.Editor
             var tuningDependency = component.createTuningMenu + ":" +
                                    component.tuningMenuPath + ":" +
                                    component.saveTuningValues + ":" +
+                                   component.tuningSyncMode + ":" +
                                    component.tuningMenuSections;
             var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|{component.existingTrackingPrefix}";
             return Hash128.Compute(settings).ToString();

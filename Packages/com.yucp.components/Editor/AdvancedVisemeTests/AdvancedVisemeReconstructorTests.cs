@@ -1,5 +1,6 @@
 #if UNITY_INCLUDE_TESTS
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
@@ -1489,27 +1490,26 @@ namespace YUCP.Components.Editor.Tests
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
                     .OfType<BlendTree>().ToArray();
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Corpus TongueTip contracted fast"), Is.True);
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Corpus TongueBody contracted fast"), Is.True);
+                Assert.That(trees.Count(tree => tree.name ==
+                    "Vector transient-silence hold"), Is.EqualTo(1),
+                    "All compatible speech observers should share one silence router.");
                 Assert.That(trees.Any(tree => tree.name.Contains(
-                    "Articulation/JawOpen/FusedSlow", StringComparison.Ordinal)), Is.True,
-                    "Tracking fusion should be one continuous interpolation tree.");
+                    "Tracking/JawOpen/FusedSlow", StringComparison.Ordinal) ||
+                    tree.name.Contains("Tracking/JawOpen/BaseGain", StringComparison.Ordinal)),
+                    Is.True, "Tracking fusion should remain a continuous interpolation tree.");
                 Assert.That(trees.Any(tree => tree.name ==
                     "Tracking observer fast vector"), Is.True);
                 Assert.That(trees.Any(tree => tree.name ==
                     "Tracking observer slow vector"), Is.True,
                     "Tracking coordinates sharing one pole should use two vector observers.");
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Voice-scaled corpus articulation fast"), Is.True);
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Voice-scaled corpus articulation slow"), Is.True,
+                Assert.That(trees.Any(tree => tree.name.StartsWith(
+                    "Vector product by YUCP/AdvancedViseme/_Internal/Voice/Gain",
+                    StringComparison.Ordinal)), Is.True,
                     "Beta speech amplitude should be applied once per articulation vector.");
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Public articulation vector"), Is.True);
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Articulation velocity difference vector"), Is.True);
+                Assert.That(parameters, Does.Contain(
+                    "YUCP/AdvancedViseme/Articulation/JawOpen"));
+                Assert.That(parameters, Does.Contain(
+                    "YUCP/AdvancedViseme/Velocity/JawOpen"));
                 Assert.That(trees.Any(tree => tree.name.StartsWith(
                     "Smooth YUCP/AdvancedViseme/_Internal/Tracking/JawOpen/Fast toward Tailored/v2/JawOpen",
                     StringComparison.Ordinal) || tree.name.StartsWith(
@@ -1692,7 +1692,13 @@ namespace YUCP.Components.Editor.Tests
                         trackingParameterNames = new System.Collections.Generic.Dictionary<AdvancedVisemeArticulator, string>(),
                         sourceVisemeBlendShapes = new string[VisemeReconstructionProfile.VisemeCount],
                         calibrationBasis = Array.Empty<AdvancedVisemeMeshCalibrator.BasisInput>(),
-                        resolvedBlendShapes = new System.Collections.Generic.Dictionary<AdvancedVisemeArticulator, string>(),
+                        // One driveable channel deliberately creates mixed
+                        // tracking-supported/unsupported viseme rows. This keeps
+                        // their Animator write depth covered by the runtime test.
+                        resolvedBlendShapes = new System.Collections.Generic.Dictionary<AdvancedVisemeArticulator, string>
+                        {
+                            { AdvancedVisemeArticulator.JawOpen, "DummyJawOpen" }
+                        },
                         externalPoses = new System.Collections.Generic.Dictionary<AdvancedVisemeArticulator, AdvancedVisemeExternalPose>(),
                         trackingEnabled = true,
                         existingExpressionParameters = new System.Collections.Generic.HashSet<string>()
@@ -1700,31 +1706,17 @@ namespace YUCP.Components.Editor.Tests
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(folder + "/AdvancedViseme.controller")
                     .OfType<BlendTree>().ToArray();
-                var transitionSelectors = trees
-                    .Where(tree => tree.name.StartsWith("Corpus destination contraction", StringComparison.Ordinal))
-                    .ToArray();
-                Assert.That(transitionSelectors, Is.Not.Empty);
-                Assert.That(transitionSelectors.All(tree => tree.blendType == BlendTreeType.Direct), Is.True,
-                    "Beta destination weights must be mixed by the continuous fast simplex.");
-                Assert.That(transitionSelectors.All(tree => tree.children.Count(child =>
-                    child.directBlendParameter.Contains("/Viseme/")) >= VisemeReconstructionProfile.VisemeCount),
-                    Is.True, "Every destination viseme must contribute continuously.");
-                var contextProjections = trees.Where(tree => tree.name.StartsWith(
-                    "Corpus context projection", StringComparison.Ordinal)).ToArray();
-                Assert.That(contextProjections.Length, Is.EqualTo(transitionSelectors.Length));
-                Assert.That(contextProjections.All(tree =>
-                    tree.children.Count(child => child.directBlendParameter.Contains(
-                        "/BetaCoarticulation/Context/")) >=
-                    VisemeReconstructionProfile.VisemeCount), Is.True,
-                    "Every previous viseme must contribute through one vector row.");
+                var parameterNames = result.controller.parameters.Select(parameter => parameter.name).ToArray();
+                Assert.That(parameterNames.Count(name => name.Contains(
+                    "/BetaCoarticulation/Context/", StringComparison.Ordinal)),
+                    Is.GreaterThanOrEqualTo(VisemeReconstructionProfile.VisemeCount),
+                    "Every previous viseme must remain available to the continuous context projection.");
                 Assert.That(trees.Any(tree => tree.name.StartsWith(
                     "Previous context ->", StringComparison.Ordinal)), Is.False,
                     "The old 15x15 nested table expansion must not return.");
-                Assert.That(trees.Any(tree => tree.name == "Corpus Jaw contracted fast"), Is.True);
-                Assert.That(trees.Any(tree => tree.name == "Corpus Lips contracted fast"), Is.True,
-                    "Visible Beta groups must contract directly in articulator space.");
-
-                var parameterNames = result.controller.parameters.Select(parameter => parameter.name).ToArray();
+                Assert.That(trees.Count(tree => tree.name ==
+                    "Vector transient-silence hold"), Is.EqualTo(1),
+                    "Compatible Beta observers must share one vector silence router.");
                 Assert.That(parameterNames.Any(name => name.Contains(
                     "/BetaCoarticulation/Jaw/Viseme/")), Is.False);
                 Assert.That(parameterNames.Any(name => name.Contains(
@@ -1734,11 +1726,50 @@ namespace YUCP.Components.Editor.Tests
                     "/BetaCoarticulation/TongueTip/Viseme/")), Is.True);
                 Assert.That(parameterNames.Any(name => name.Contains(
                     "/BetaCoarticulation/TongueBody/Viseme/")), Is.True,
-                    "Individual tongue probabilities remain available to hidden-phone inference.");
-                Assert.That(trees.Length, Is.LessThan(2000),
-                    "A regression to scalar or pairwise expansion would make the runtime controller too expensive.");
-                Assert.That(parameterNames.Length, Is.LessThan(1300),
+                    "The observed PP/nn tongue coordinates remain available to hidden-phone inference.");
+                var tongueTipFast = parameterNames.Where(name => name.Contains(
+                    "/BetaCoarticulation/TongueTip/Viseme/") &&
+                    name.EndsWith("/Fast", StringComparison.Ordinal)).ToArray();
+                var tongueTipSlow = parameterNames.Where(name => name.Contains(
+                    "/BetaCoarticulation/TongueTip/Viseme/") &&
+                    name.EndsWith("/Slow", StringComparison.Ordinal)).ToArray();
+                var tongueBodyFast = parameterNames.Where(name => name.Contains(
+                    "/BetaCoarticulation/TongueBody/Viseme/") &&
+                    name.EndsWith("/Fast", StringComparison.Ordinal)).ToArray();
+                var tongueBodySlow = parameterNames.Where(name => name.Contains(
+                    "/BetaCoarticulation/TongueBody/Viseme/") &&
+                    name.EndsWith("/Slow", StringComparison.Ordinal)).ToArray();
+                Assert.That(tongueTipFast.Length, Is.EqualTo(2));
+                Assert.That(tongueTipSlow.Length,
+                    Is.EqualTo(VisemeReconstructionProfile.VisemeCount));
+                Assert.That(tongueBodyFast.Length, Is.EqualTo(2));
+                Assert.That(tongueBodySlow.Length, Is.EqualTo(2),
+                    "Consumer-driven projection must not publish unobserved tongue coordinates.");
+                Assert.That(trees.Length, Is.LessThan(750),
+                    "The generated graph must stay vector-lowered instead of returning to scalar expansion.");
+                var curveBindingCount = AssetDatabase
+                    .LoadAllAssetsAtPath(folder + "/AdvancedViseme.controller")
+                    .OfType<AnimationClip>()
+                    .Sum(clip => AnimationUtility.GetCurveBindings(clip).Length);
+                Assert.That(curveBindingCount, Is.LessThan(5500),
+                    "The generated math graph must not republish zero or dead AAP curves.");
+                Assert.That(parameterNames.Length, Is.LessThan(1150),
                     "Internal parameter growth is a proxy for additional frame-staged math.");
+                Assert.That(parameterNames.Any(name => name.Contains(
+                    "/FallbackCommonSpeechSlow", StringComparison.Ordinal) ||
+                    name.Contains("/TunedFallbackSpeech", StringComparison.Ordinal)), Is.False,
+                    "Output-basis membership must not materialize dead articulation values.");
+                Assert.That(parameterNames.Any(name =>
+                    name.EndsWith("/LowBlend", StringComparison.Ordinal) ||
+                    name.EndsWith("/HighBlend", StringComparison.Ordinal) ||
+                    name.EndsWith("/Lower", StringComparison.Ordinal)), Is.False,
+                    "Three-point tuning should lower to one piecewise-linear motion.");
+                Assert.That(parameterNames.Any(name =>
+                    name.Contains("/Alpha/TrackingDifference", StringComparison.Ordinal) ||
+                    name.Contains("/Alpha/TrackingLocalPart", StringComparison.Ordinal) ||
+                    name.Contains("/Alpha/TrackingBlendDifference", StringComparison.Ordinal) ||
+                    name.Contains("/Alpha/TrackingBlendAttackPart", StringComparison.Ordinal)), Is.False,
+                    "Binary alpha selection should lower directly to interpolation.");
                 Assert.That(parameterNames.Any(name => name.Contains(
                     "/TongueInference/Model/TongueOut/Stable")), Is.True);
                 Assert.That(parameterNames.Any(name => name.Contains(
@@ -1757,16 +1788,28 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(parameterNames.Any(name => name.Contains(
                     "/PhonePosterior/TongueTip/Slow/Delta")), Is.True,
                     "The hidden PP/nn update should be retained as one rank-one correction.");
+                Assert.That(parameterNames.Any(name =>
+                    name.Contains("/PhonePosterior/Tongue", StringComparison.Ordinal) &&
+                    (name.Contains("/CandidateMass", StringComparison.Ordinal) ||
+                     name.Contains("/TargetPP", StringComparison.Ordinal) ||
+                     name.Contains("/RawDelta", StringComparison.Ordinal))), Is.False,
+                    "The nasal sum-product must be fused into its final observable delta.");
                 Assert.That(parameterNames.Any(name => name.Contains(
                     "/PhonePosterior/TongueTip/Slow/Viseme/")), Is.False,
                     "The rank-one PP/nn update must not materialize another 15-weight simplex.");
+                Assert.That(parameterNames.Any(name =>
+                    name.Contains("/PhonePosterior/Hypothesis/NShare", StringComparison.Ordinal) ||
+                    name.Contains("/PhonePosterior/Hypothesis/NMass", StringComparison.Ordinal)), Is.False,
+                    "M/N diagnostics must be emitted from one phase-coherent nested motion.");
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Hidden phone hypothesis M-N distribution"), Is.True);
                 Assert.That(parameterNames.Any(name => name.Contains(
                     "/TongueInference/Model/Viseme/")), Is.False,
                     "The visible-tongue tensor must stay in its contracted matrix form.");
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Tongue inference viseme contraction"), Is.True);
-                Assert.That(trees.Any(tree => tree.name ==
-                    "Hidden phone rank-one tongue articulation correction"), Is.True);
+                Assert.That(parameterNames.Any(name => name.Contains(
+                    "/PhonePosterior/TongueTip/Fast/Delta", StringComparison.Ordinal)), Is.True);
+                Assert.That(parameterNames.Any(name => name.Contains(
+                    "/TongueInference/Model/TongueOut/Stable", StringComparison.Ordinal)), Is.True);
                 var alphaVectors = trees.Where(tree => tree.name ==
                     "Frame-rate-correct alpha vector").ToArray();
                 Assert.That(alphaVectors.Length, Is.EqualTo(1),
@@ -1794,6 +1837,179 @@ namespace YUCP.Components.Editor.Tests
                     "/Constraint/Slow/PPConfidence")), Is.True);
                 Assert.That(parameterNames.Any(name => name.Contains("ViolationActive")), Is.False,
                     "The old non-monotone constraint graph must not return.");
+
+                var visibleWeightNames = Enumerable.Range(
+                        0, VisemeReconstructionProfile.VisemeCount)
+                    .Select(index => component.NormalizedPrefix +
+                        $"/_Internal/Viseme/{index}/VisibleSpeechWeight")
+                    .ToArray();
+                Assert.That(visibleWeightNames.All(parameterNames.Contains), Is.True,
+                    "Mixed-support visible rows must all have one phase-aligned output stage.");
+
+                var runtimeRoot = new GameObject("Generated Beta Graph Runtime Test");
+                try
+                {
+                    var animator = runtimeRoot.AddComponent<Animator>();
+                    animator.runtimeAnimatorController = result.controller;
+                    animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                    animator.Rebind();
+                    animator.Update(0f);
+
+                    var internalPrefix = component.NormalizedPrefix + "/_Internal";
+                    var renderedWeightNames = Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
+                        .Select(index => internalPrefix +
+                            $"/Viseme/{index}/RenderedSpeechWeight")
+                        .ToArray();
+                    var jawGainName = internalPrefix + "/Tracking/JawOpen/BaseGain";
+                    var candidateName = internalPrefix +
+                        "/PhonePosterior/Residual/CandidateMass";
+                    var shareName = internalPrefix +
+                        "/PhonePosterior/Model/MShareSlow";
+                    var confidenceName = internalPrefix +
+                        "/PhonePosterior/Confidence";
+                    var mName = component.NormalizedPrefix +
+                        "/Speech/Hypothesis/M";
+                    var nName = component.NormalizedPrefix +
+                        "/Speech/Hypothesis/N";
+                    var outputConfidenceName = component.NormalizedPrefix +
+                        "/Speech/Hypothesis/Confidence";
+                    var trackingNames = parameterNames.Where(name =>
+                            name.StartsWith("YUCP/TestFaceTracking/", StringComparison.Ordinal))
+                        .ToArray();
+                    var frames = new List<(
+                        float[] rendered,
+                        float[] visible,
+                        float jawGain,
+                        float candidate,
+                        float share,
+                        float confidence,
+                        float m,
+                        float n,
+                        float outputConfidence)>();
+                    var nasalChannels = new[]
+                    {
+                        (group: "TongueTip", stage: "Fast", share: "MShareFast"),
+                        (group: "TongueTip", stage: "Slow", share: "MShareSlow"),
+                        (group: "TongueBody", stage: "Fast", share: "MShareFast"),
+                        (group: "TongueBody", stage: "Slow", share: "MShareSlow")
+                    };
+                    var nasalFrames = new List<(
+                        float[] pp,
+                        float[] nn,
+                        float[] share,
+                        float confidence,
+                        float[] delta)>();
+                    for (var frame = 0; frame < 96; frame++)
+                    {
+                        animator.SetInteger("Viseme", frame % 11 < 2
+                            ? 0
+                            : 1 + (frame * 7 + frame / 9) % 14);
+                        animator.SetFloat("Voice", 0.2f +
+                            0.75f * Mathf.Abs(Mathf.Sin(frame * 0.17f)));
+                        animator.SetFloat("IsLocal", 1f);
+                        foreach (var trackingName in trackingNames)
+                        {
+                            var value = trackingName.EndsWith(
+                                    "/LipTrackingActive", StringComparison.Ordinal)
+                                ? 1f
+                                : Mathf.Clamp01(0.45f + 0.42f *
+                                    Mathf.Sin(frame * (0.09f +
+                                        trackingName.Length * 0.0007f)));
+                            animator.SetFloat(trackingName, value);
+                        }
+                        animator.Update(frame % 3 == 0 ? 1f / 15f :
+                            frame % 3 == 1 ? 1f / 60f : 1f / 144f);
+                        frames.Add((
+                            renderedWeightNames.Select(animator.GetFloat).ToArray(),
+                            visibleWeightNames.Select(animator.GetFloat).ToArray(),
+                            animator.GetFloat(jawGainName),
+                            animator.GetFloat(candidateName),
+                            animator.GetFloat(shareName),
+                            animator.GetFloat(confidenceName),
+                            animator.GetFloat(mName),
+                            animator.GetFloat(nName),
+                            animator.GetFloat(outputConfidenceName)));
+                        nasalFrames.Add((
+                            nasalChannels.Select(channel => animator.GetFloat(
+                                $"{internalPrefix}/BetaCoarticulation/{channel.group}" +
+                                $"/Viseme/1/{channel.stage}")).ToArray(),
+                            nasalChannels.Select(channel => animator.GetFloat(
+                                $"{internalPrefix}/BetaCoarticulation/{channel.group}" +
+                                $"/Viseme/8/{channel.stage}")).ToArray(),
+                            nasalChannels.Select(channel => animator.GetFloat(
+                                $"{internalPrefix}/PhonePosterior/Model/{channel.share}"))
+                                .ToArray(),
+                            animator.GetFloat(confidenceName),
+                            nasalChannels.Select(channel => animator.GetFloat(
+                                $"{internalPrefix}/PhonePosterior/{channel.group}" +
+                                $"/{channel.stage}/Delta")).ToArray()));
+                    }
+
+                    for (var frame = 4; frame < frames.Count; frame++)
+                    {
+                        var sampled = frames[frame - 1];
+                        var actual = frames[frame];
+                        for (var viseme = 0;
+                             viseme < VisemeReconstructionProfile.VisemeCount;
+                             viseme++)
+                        {
+                            var supported = Mathf.Abs(profile.visemePoses[viseme]
+                                .Get(AdvancedVisemeArticulator.JawOpen)) >= 1e-6f;
+                            var expected = sampled.rendered[viseme] *
+                                (supported ? 1f - sampled.jawGain : 1f);
+                            Assert.That(actual.visible[viseme],
+                                Is.EqualTo(expected).Within(2e-5f),
+                                $"Visible viseme {viseme} mixed Animator frames at {frame}.");
+                        }
+
+                        var expectedM = sampled.confidence * sampled.share *
+                            sampled.candidate;
+                        var expectedN = sampled.confidence * (1f - sampled.share) *
+                            sampled.candidate;
+                        Assert.That(actual.m, Is.GreaterThanOrEqualTo(-1e-6f));
+                        Assert.That(actual.n, Is.GreaterThanOrEqualTo(-1e-6f));
+                        Assert.That(actual.outputConfidence,
+                            Is.GreaterThanOrEqualTo(-1e-6f));
+                        Assert.That(actual.m,
+                            Is.EqualTo(expectedM).Within(2e-5f));
+                        Assert.That(actual.n,
+                            Is.EqualTo(expectedN).Within(2e-5f));
+                        Assert.That(actual.outputConfidence,
+                            Is.EqualTo(sampled.confidence).Within(2e-5f));
+                        Assert.That(actual.m + actual.n,
+                            Is.EqualTo(sampled.confidence * sampled.candidate)
+                                .Within(3e-5f),
+                            "The phase-coherent M/N output must conserve candidate mass.");
+
+                        var sampledNasal = nasalFrames[frame - 1];
+                        var actualNasal = nasalFrames[frame];
+                        for (var channel = 0;
+                             channel < nasalChannels.Length;
+                             channel++)
+                        {
+                            var expectedDelta = sampledNasal.confidence *
+                                (sampledNasal.share[channel] *
+                                 (sampledNasal.pp[channel] + sampledNasal.nn[channel]) -
+                                 sampledNasal.pp[channel]);
+                            Assert.That(actualNasal.delta[channel],
+                                Is.EqualTo(expectedDelta).Within(2e-5f),
+                                $"Nasal correction mixed Animator frames at {frame}.");
+                            Assert.That(actualNasal.delta[channel],
+                                Is.GreaterThanOrEqualTo(
+                                    -sampledNasal.confidence * sampledNasal.pp[channel] -
+                                    2e-5f));
+                            Assert.That(actualNasal.delta[channel],
+                                Is.LessThanOrEqualTo(
+                                    sampledNasal.confidence * sampledNasal.nn[channel] +
+                                    2e-5f));
+                        }
+                    }
+                }
+                finally
+                {
+                    UnityEngine.Object.DestroyImmediate(runtimeRoot);
+                }
             }
             finally
             {
@@ -1857,11 +2073,30 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(result.globalParameters, Does.Contain(
                     component.NormalizedPrefix + "/Speech/Hypothesis/Confidence"));
                 Assert.That(result.parameters.parameters, Is.Not.Empty,
-                    "The optional local tuning menu should still be available on a tailored rig.");
-                Assert.That(result.parameters.parameters.All(parameter => !parameter.networkSynced), Is.True,
-                    "Reusing a tailored template must not create another synced input stream.");
-                Assert.That(result.parameters.parameters.Select(parameter => parameter.name),
-                    Is.All.StartsWith(component.NormalizedPrefix + "/Tuning/"));
+                    "The optional tuning menu should still be available on a tailored rig.");
+                var tuningSources = result.parameters.parameters.Where(parameter =>
+                    parameter.name.StartsWith(
+                        component.NormalizedPrefix + "/Tuning/",
+                        StringComparison.Ordinal)).ToArray();
+                Assert.That(tuningSources, Is.Not.Empty);
+                Assert.That(tuningSources.All(parameter =>
+                        parameter.valueType == VRCExpressionParameters.ValueType.Float &&
+                        !parameter.networkSynced), Is.True,
+                    "Full-precision saved tuning sources must remain local.");
+                var synced = result.parameters.parameters
+                    .Where(parameter => parameter.networkSynced)
+                    .ToArray();
+                Assert.That(synced.Select(parameter => parameter.name),
+                    Is.EquivalentTo(new[]
+                    {
+                        AdvancedVisemeTuning.CompactSyncDataParameter(
+                            component.NormalizedPrefix)
+                    }.Concat(Enumerable.Range(0, 5).Select(bit =>
+                        AdvancedVisemeTuning.CompactSyncIndexParameter(
+                            component.NormalizedPrefix, bit)))));
+                Assert.That(synced.Any(parameter =>
+                    parameter.name.Contains("/v2/", StringComparison.Ordinal)), Is.False,
+                    "Reusing a tailored template must not create another synced face-tracking input stream.");
             }
             finally
             {
@@ -2582,6 +2817,10 @@ namespace YUCP.Components.Editor.Tests
                     Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Toggle>(root, "simple-natural-transitions"),
                     Is.Not.Null);
+                Assert.That(UQueryExtensions.Q<Toggle>(root, "simple-share-tuning"),
+                    Is.Not.Null);
+                Assert.That(UQueryExtensions.Q<Toggle>(root, "simple-share-tuning").value,
+                    Is.True);
                 Assert.That(UQueryExtensions.Q<Slider>(root, "simple-speech-movement"),
                     Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Slider>(root, "simple-speech-liveliness"),
@@ -2597,13 +2836,17 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(UQueryExtensions.Q<Button>(root, "simple-profile-action"), Is.Null);
                 Assert.That(UQueryExtensions.Q<Button>(root, "profile-action"), Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Foldout>(root, "motion-tuning"), Is.Not.Null);
+                Assert.That(UQueryExtensions.Q<VisualElement>(root, "fine-tune-visemes"),
+                    Is.Not.Null);
+                Assert.That(UQueryExtensions.Q<Button>(root, "fine-tune-create-profile"),
+                    Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Foldout>(root, "avatar-menu-settings"), Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Foldout>(root, "rig-tools"), Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Foldout>(root, "expert-settings"), Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Label>(root, "tracking-budget").text,
                     Does.Contain("speech only"));
                 Assert.That(UQueryExtensions.Q<Label>(root, "runtime-menu-budget").text,
-                    Does.Contain("0 synced bits"));
+                    Does.Contain("13 synced bits"));
                 Assert.That(UQueryExtensions.Q<VisualElement>(root, "reuse-prefix-container").style.display.value,
                     Is.EqualTo(DisplayStyle.Flex));
             }
@@ -2611,6 +2854,68 @@ namespace YUCP.Components.Editor.Tests
             {
                 SessionState.SetInt(modeKey, previousMode);
                 UnityEngine.Object.DestroyImmediate(editor);
+                UnityEngine.Object.DestroyImmediate(gameObject);
+            }
+        }
+
+        [Test]
+        public void AdvancedInspectorShowsFocusedPerVisemeControls()
+        {
+            const int rrViseme = 9;
+            const int aaViseme = 10;
+            var gameObject = new GameObject("Advanced Viseme Per-Sound UI Test");
+            var component = gameObject.AddComponent<AdvancedVisemeReconstructorData>();
+            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
+            component.profile = profile;
+            var modeKey = AdvancedVisemeReconstructorDataEditor.InspectorModeSessionKey(
+                component.GetInstanceID());
+            var visemeKey = $"YUCP_AVR_FineTuneViseme_{component.GetInstanceID()}";
+            var previousMode = SessionState.GetInt(modeKey, 0);
+            var previousViseme = SessionState.GetInt(visemeKey, 0);
+            SessionState.SetInt(modeKey, 1);
+            SessionState.SetInt(visemeKey, rrViseme);
+            var editor = UnityEditor.Editor.CreateEditor(component);
+            try
+            {
+                var root = editor.CreateInspectorGUI();
+                var chips = UQueryExtensions.Query<Button>(root)
+                    .ToList()
+                    .Where(button => button.name != null &&
+                                     button.name.StartsWith("fine-tune-viseme-",
+                                         StringComparison.Ordinal))
+                    .ToArray();
+                Assert.That(chips, Has.Length.EqualTo(
+                    VisemeReconstructionProfile.VisemeCount));
+                Assert.That(UQueryExtensions.Q<Button>(root, "fine-tune-viseme-9").text,
+                    Does.StartWith("R"));
+
+                var jaw = UQueryExtensions.Q<Slider>(root, "fine-tune-jaw-opening");
+                var lips = UQueryExtensions.Q<Slider>(root, "fine-tune-lips");
+                var tongue = UQueryExtensions.Q<Slider>(root, "fine-tune-tongue");
+                Assert.That(jaw, Is.Not.Null);
+                Assert.That(lips, Is.Not.Null);
+                Assert.That(tongue, Is.Not.Null);
+                Assert.That(jaw.value, Is.EqualTo(100f).Within(1e-6f));
+                Assert.That(lips.value, Is.EqualTo(100f).Within(1e-6f));
+                Assert.That(tongue.value, Is.EqualTo(100f).Within(1e-6f));
+
+                Assert.That(profile.GetVisemeArticulationMultiplier(
+                        rrViseme, AdvancedVisemeArticulator.JawOpen),
+                    Is.EqualTo(1f).Within(1e-6f));
+                Assert.That(profile.GetVisemeArticulationMultiplier(
+                        aaViseme, AdvancedVisemeArticulator.JawOpen),
+                    Is.EqualTo(1f).Within(1e-6f));
+                Assert.That(UQueryExtensions.Q<Foldout>(
+                    root, "fine-tune-precise-controls"), Is.Not.Null);
+                Assert.That(UQueryExtensions.Q<Slider>(
+                    root, "fine-tune-axis-jawOpen"), Is.Not.Null);
+            }
+            finally
+            {
+                SessionState.SetInt(modeKey, previousMode);
+                SessionState.SetInt(visemeKey, previousViseme);
+                UnityEngine.Object.DestroyImmediate(editor);
+                UnityEngine.Object.DestroyImmediate(profile);
                 UnityEngine.Object.DestroyImmediate(gameObject);
             }
         }

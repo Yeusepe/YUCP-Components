@@ -31,7 +31,8 @@ namespace YUCP.Components.Editor
         /// </summary>
         public static VRCExpressionsMenu Build(
             string assetPath,
-            IReadOnlyDictionary<AdvancedVisemeTuningControl, string> controls)
+            IReadOnlyDictionary<AdvancedVisemeTuningControl, string> controls,
+            string focusedParameter = null)
         {
             ValidateAssetPath(assetPath);
             ValidateControlGroups(controls);
@@ -49,7 +50,8 @@ namespace YUCP.Components.Editor
                 {
                     simple.controls.Add(NewRadialControl(
                         AdvancedVisemeTuning.SimpleLabel(control),
-                        controls[control]));
+                        controls[control], focusedParameter,
+                        ChannelId(control, controls)));
                 }
                 root.controls.Add(NewSubmenuControl("Simple", simple));
                 submenus.Add(simple);
@@ -68,7 +70,8 @@ namespace YUCP.Components.Editor
                 {
                     submenu.controls.Add(NewRadialControl(
                         AdvancedVisemeTuning.Label(control),
-                        controls[control]));
+                        controls[control], focusedParameter,
+                        ChannelId(control, controls)));
                 }
 
                 advanced.controls.Add(NewSubmenuControl(label, submenu));
@@ -225,18 +228,37 @@ namespace YUCP.Components.Editor
 
         private static VRCExpressionsMenu.Control NewRadialControl(
             string label,
-            string parameterName)
+            string parameterName,
+            string focusedParameter,
+            int channelId)
         {
             return new VRCExpressionsMenu.Control
             {
                 name = label,
                 type = VRCExpressionsMenu.Control.ControlType.RadialPuppet,
-                parameter = EmptyParameter(),
+                parameter = string.IsNullOrEmpty(focusedParameter)
+                    ? EmptyParameter()
+                    : new VRCExpressionsMenu.Control.Parameter
+                    {
+                        name = focusedParameter
+                    },
+                value = string.IsNullOrEmpty(focusedParameter) ? 0f : channelId,
                 subParameters = new[]
                 {
                     new VRCExpressionsMenu.Control.Parameter { name = parameterName }
                 }
             };
+        }
+
+        internal static int ChannelId(
+            AdvancedVisemeTuningControl control,
+            IReadOnlyDictionary<AdvancedVisemeTuningControl, string> controls)
+        {
+            if (controls == null) throw new ArgumentNullException(nameof(controls));
+            if (!controls.ContainsKey(control))
+                throw new ArgumentOutOfRangeException(
+                    nameof(control), control, "The tuning control is not generated.");
+            return AdvancedVisemeTuning.CompactSyncChannelId(control);
         }
 
         private static VRCExpressionsMenu.Control.Parameter EmptyParameter()

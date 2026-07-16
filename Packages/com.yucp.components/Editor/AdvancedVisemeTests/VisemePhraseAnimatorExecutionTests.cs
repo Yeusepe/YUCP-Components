@@ -15,7 +15,8 @@ namespace YUCP.Components.Editor.Tests
     /// <summary>
     /// Executes the generated controller with Unity's real Animator evaluator.
     /// VRChat parameter drivers are client behaviours rather than Unity runtime
-    /// behaviours, so the harness mirrors only their state-entry Set operations;
+    /// behaviours, so the harness mirrors their ordered state-entry Set and Copy
+    /// operations;
     /// all timing, conditions, failure links, and layer transitions remain the
     /// generated AnimatorController's own behaviour.
     /// </summary>
@@ -73,13 +74,12 @@ namespace YUCP.Components.Editor.Tests
 
                 Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
                     "One accepted trace must toggle the network carrier exactly once. " +
-                    runtime.DiagnosticTrace);
+                    runtime.DiagnosticTrace + " Updates: " + runtime.DetailedTrace);
                 Assert.That(runtime.MatchPulseCount, Is.EqualTo(1),
                     "The carrier edge must decode into exactly one public pulse.");
             }
         }
 
-        [TestCase(15)]
         [TestCase(50)]
         [TestCase(90)]
         [TestCase(144)]
@@ -160,8 +160,12 @@ namespace YUCP.Components.Editor.Tests
         {
             const int framesPerSecond = 50;
             var phrase = Phrase("exact_minimum", new[] { 4, 5, 6 });
+            var observationAllowance = VisemePhraseTriggerContractAdapter
+                .RuntimeObservationUncertaintyPerState(
+                    phrase.variants.Single().states.Count);
             foreach (var state in phrase.variants.Single().states)
-                state.minimumSeconds = 0.04f;
+                state.minimumSeconds = Math.Max(0f, 0.04f -
+                    observationAllowance);
             var built = Build(Plan(phrase));
             using (var runtime = new AnimatorRuntime(
                        built.controller, true, phrase.matchedParameter,
@@ -176,8 +180,189 @@ namespace YUCP.Components.Editor.Tests
 
                 Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
                     "A changed-token observation at the inclusive minimum must advance. " +
-                    runtime.DiagnosticTrace);
+                    runtime.DiagnosticTrace + " Updates: " + runtime.DetailedTrace);
                 Assert.That(runtime.MatchPulseCount, Is.EqualTo(1));
+            }
+        }
+
+        [Test]
+        public void GeneratedAnimator_AcceptsLongerMinimumWithoutDoubleChargingProbation()
+        {
+            const int framesPerSecond = 50;
+            var phrase = Phrase("long_minimum", new[] { 4, 5, 6 });
+            foreach (var state in phrase.variants.Single().states)
+            {
+                state.minimumSeconds = 0.08f;
+                state.maximumSeconds = 0.24f;
+            }
+            var built = Build(Plan(phrase));
+            using (var runtime = new AnimatorRuntime(
+                       built.controller, true, phrase.matchedParameter,
+                       phrase.carrierParameter))
+            {
+                Warm(runtime, framesPerSecond);
+                PlayTokenFrames(runtime, framesPerSecond, 4, 4);
+                PlayTokenFrames(runtime, framesPerSecond, 5, 4);
+                PlayTokenFrames(runtime, framesPerSecond, 6, 4);
+                ExitUtterance(runtime, framesPerSecond);
+                runtime.RunFor(0.45f, framesPerSecond);
+
+                Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
+                    "The pair observer delays both token edges equally; an 80 ms raw " +
+                    "phone must satisfy an 80 ms learned minimum exactly once. " +
+                    runtime.DiagnosticTrace + " Updates: " + runtime.DetailedTrace);
+                Assert.That(runtime.MatchPulseCount, Is.EqualTo(1));
+            }
+        }
+
+        [TestCase(50)]
+        [TestCase(90)]
+        [TestCase(144)]
+        public void GeneratedAnimator_IgnoresOneFrameWinnerBounceAndCommitsRealChanges(
+            int framesPerSecond)
+        {
+            var phrase = Phrase("probation", new[] { 4, 5, 6 });
+            foreach (var state in phrase.variants.Single().states)
+                state.maximumSeconds = 0.60f;
+            var built = Build(Plan(phrase));
+            using (var runtime = new AnimatorRuntime(
+                       built.controller, true, phrase.matchedParameter,
+                       phrase.carrierParameter))
+            {
+                Warm(runtime, framesPerSecond);
+                PlayToken(runtime, framesPerSecond, 4, 0.12f);
+                PlayTokenFrames(runtime, framesPerSecond, 9, 1);
+                PlayToken(runtime, framesPerSecond, 4, 0.08f);
+                PlayToken(runtime, framesPerSecond, 5, 0.12f);
+                PlayToken(runtime, framesPerSecond, 6, 0.16f);
+                ExitUtterance(runtime, framesPerSecond);
+                runtime.RunFor(0.45f, framesPerSecond);
+
+                Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
+                    "A sampled Oculus winner bounce measured below 30 ms must be ignored while " +
+                    "the sustained following phones still commit. " +
+                    runtime.DiagnosticTrace + " Updates: " + runtime.DetailedTrace);
+                Assert.That(runtime.MatchPulseCount, Is.EqualTo(1));
+                Assert.That(runtime.HasCommittedViseme(9), Is.False,
+                    "A run shorter than 30 ms must never enter the matcher input.");
+            }
+        }
+
+        [TestCase(90, 3)]
+        [TestCase(125, 4)]
+        [TestCase(144, 5)]
+        public void GeneratedAnimator_PreservesShortRealPhoneImmediatelyAfterBounce(
+            int framesPerSecond,
+            int realPhoneFrames)
+        {
+            var phrase = Phrase("bounce_then_phone", new[] { 4, 5, 6 });
+            foreach (var state in phrase.variants.Single().states)
+                state.maximumSeconds = 0.60f;
+            var built = Build(Plan(phrase));
+            using (var runtime = new AnimatorRuntime(
+                       built.controller, true, phrase.matchedParameter,
+                       phrase.carrierParameter))
+            {
+                Warm(runtime, framesPerSecond);
+                PlayToken(runtime, framesPerSecond, 4, 0.12f);
+                PlayTokenFrames(runtime, framesPerSecond, 9, 1);
+                PlayTokenFrames(runtime, framesPerSecond, 5, realPhoneFrames);
+                PlayToken(runtime, framesPerSecond, 6, 0.16f);
+                ExitUtterance(runtime, framesPerSecond);
+                runtime.RunFor(0.45f, framesPerSecond);
+
+                Assert.That((float)realPhoneFrames / framesPerSecond,
+                    Is.GreaterThanOrEqualTo(0.03f));
+                Assert.That(runtime.HasCommittedViseme(9), Is.False,
+                    "The transient winner must remain below the matcher input.");
+                Assert.That(runtime.HasCommittedViseme(5), Is.True,
+                    "Driver dwell must not consume the following real phone.");
+                Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
+                    runtime.DiagnosticTrace + " Updates: " + runtime.DetailedTrace);
+                Assert.That(runtime.MatchPulseCount, Is.EqualTo(1));
+            }
+        }
+
+        [TestCase(90, 2)]
+        [TestCase(144, 4)]
+        public void GeneratedAnimator_RejectsClosestRepresentableSubThirtyMillisecondRun(
+            int framesPerSecond,
+            int bounceFrames)
+        {
+            var phrase = Phrase("near_threshold_bounce", new[] { 4, 5, 6 });
+            foreach (var state in phrase.variants.Single().states)
+                state.maximumSeconds = 0.60f;
+            var built = Build(Plan(phrase));
+            using (var runtime = new AnimatorRuntime(
+                       built.controller, true, phrase.matchedParameter,
+                       phrase.carrierParameter))
+            {
+                Warm(runtime, framesPerSecond);
+                PlayToken(runtime, framesPerSecond, 4, 0.12f);
+                PlayTokenFrames(runtime, framesPerSecond, 9, bounceFrames);
+                PlayToken(runtime, framesPerSecond, 4, 0.08f);
+                PlayToken(runtime, framesPerSecond, 5, 0.12f);
+                PlayToken(runtime, framesPerSecond, 6, 0.16f);
+                ExitUtterance(runtime, framesPerSecond);
+                runtime.RunFor(0.45f, framesPerSecond);
+
+                Assert.That((float)bounceFrames / framesPerSecond,
+                    Is.LessThan(0.03f));
+                Assert.That(runtime.HasCommittedViseme(9), Is.False);
+                Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
+                    runtime.DiagnosticTrace + " Updates: " + runtime.DetailedTrace);
+            }
+        }
+
+        [Test]
+        public void GeneratedAnimator_DoesNotCombineDifferentUnusedWinnerBounces()
+        {
+            const int framesPerSecond = 100;
+            var phrase = Phrase("separate_other_bounces", new[] { 4, 5, 6 });
+            foreach (var state in phrase.variants.Single().states)
+                state.maximumSeconds = 0.60f;
+            var built = Build(Plan(phrase));
+            using (var runtime = new AnimatorRuntime(
+                       built.controller, true, phrase.matchedParameter,
+                       phrase.carrierParameter))
+            {
+                Warm(runtime, framesPerSecond);
+                PlayToken(runtime, framesPerSecond, 4, 0.12f);
+                PlayTokenFrames(runtime, framesPerSecond, 8, 2);
+                PlayTokenFrames(runtime, framesPerSecond, 9, 2);
+                PlayToken(runtime, framesPerSecond, 4, 0.08f);
+                PlayToken(runtime, framesPerSecond, 5, 0.12f);
+                PlayToken(runtime, framesPerSecond, 6, 0.16f);
+                ExitUtterance(runtime, framesPerSecond);
+                runtime.RunFor(0.45f, framesPerSecond);
+
+                Assert.That(runtime.HasCommittedViseme(15), Is.False,
+                    "Two different 20 ms unused winners are separate categorical runs; " +
+                    "they may not share one 40 ms Other timer.");
+                Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
+                    runtime.DiagnosticTrace + " Updates: " + runtime.DetailedTrace);
+            }
+        }
+
+        [Test]
+        public void GeneratedAnimator_InternalOtherCannotMasqueradeAsU()
+        {
+            const int framesPerSecond = 90;
+            var phrase = Phrase("bounded_u", new[] { 4, 14, 6 });
+            var built = Build(Plan(phrase));
+            using (var runtime = new AnimatorRuntime(
+                       built.controller, true, phrase.matchedParameter,
+                       phrase.carrierParameter))
+            {
+                Warm(runtime, framesPerSecond);
+                Play(runtime, framesPerSecond, 1f, 4, 8, 6);
+                runtime.RunFor(0.45f, framesPerSecond);
+
+                Assert.That(runtime.HasCommittedViseme(15), Is.True);
+                Assert.That(runtime.CarrierEdgeCount, Is.Zero,
+                    "The internal Other=15 class must not satisfy U's 13.5..14.5 range. " +
+                    runtime.DiagnosticTrace);
+                Assert.That(runtime.MatchPulseCount, Is.Zero);
             }
         }
 
@@ -215,10 +400,14 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void GeneratedAnimator_RejectsChangedTokenOneFrameAfterMaximumBoundary()
+        public void GeneratedAnimator_AcceptsBakedBoundaryObservationUncertainty()
         {
             const int framesPerSecond = 50;
             var phrase = Phrase("late_maximum", new[] { 4, 5, 6 });
+            // Production plans already contain the compiler-calibrated
+            // observation corridor. Model that baked 20 ms boundary allowance
+            // explicitly; the Animator must not invent another hidden grace.
+            phrase.variants.Single().states[0].maximumSeconds += 0.02f;
             var built = Build(Plan(phrase));
             using (var runtime = new AnimatorRuntime(
                        built.controller, true, phrase.matchedParameter,
@@ -226,38 +415,85 @@ namespace YUCP.Components.Editor.Tests
             {
                 Warm(runtime, framesPerSecond);
                 // Entry consumes the first observation. The seventeenth held
-                // frame reaches 0.32 s; changing on the following evaluation is
-                // exactly one 20 ms frame beyond the learned maximum.
+                // frame reaches the inclusive baked 0.34 s maximum.
                 PlayTokenFrames(runtime, framesPerSecond, 4, 17);
                 PlayToken(runtime, framesPerSecond, 5, 0.10f);
                 PlayToken(runtime, framesPerSecond, 6, 0.10f);
                 ExitUtterance(runtime, framesPerSecond);
                 runtime.RunFor(0.45f, framesPerSecond);
 
-                Assert.That(runtime.CarrierEdgeCount, Is.Zero,
-                    "A crossing after the inclusive maximum must take the held timeout. " +
+                Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
+                    "One render-frame crossing is inside the categorical observer's " +
+                    "bounded timing uncertainty. " +
                     runtime.DiagnosticTrace + " Updates: " + runtime.DetailedTrace +
                     " Transitions: " + runtime.TransitionSummary("Timed 0_"));
-                Assert.That(runtime.MatchPulseCount, Is.Zero);
+                Assert.That(runtime.MatchPulseCount, Is.EqualTo(1));
             }
         }
 
-        public string CaptureFirstTokenBoundaryDiagnostic(int heldFrames)
+        [Test]
+        public void GeneratedAnimator_RejectsChatterUntilCommittedLabelChanges()
         {
             const int framesPerSecond = 50;
-            var phrase = Phrase("boundary_diagnostic", new[] { 4, 5, 6 });
+            var phrase = Phrase("bounded_chatter", new[] { 4, 5, 6 });
             var built = Build(Plan(phrase));
             using (var runtime = new AnimatorRuntime(
                        built.controller, true, phrase.matchedParameter,
                        phrase.carrierParameter))
             {
                 Warm(runtime, framesPerSecond);
-                runtime.ClearDetailedTrace();
-                PlayTokenFrames(runtime, framesPerSecond, 4, heldFrames);
-                runtime.SetInt("Viseme", 5);
-                runtime.RunFrames(1, framesPerSecond);
-                return runtime.DetailedTrace + " || " +
-                       runtime.TransitionSummary("Timed 0_");
+                PlayTokenFrames(runtime, framesPerSecond, 4, 17);
+                // Neither label survives the 30 ms run filter. This used to
+                // disable the raw-held timeout forever and let a much later 5
+                // advance the stale candidate.
+                for (var frame = 0; frame < 10; frame++)
+                    PlayTokenFrames(runtime, framesPerSecond,
+                        frame % 2 == 0 ? 8 : 9, 1);
+                PlayToken(runtime, framesPerSecond, 5, 0.10f);
+                PlayToken(runtime, framesPerSecond, 6, 0.10f);
+                ExitUtterance(runtime, framesPerSecond);
+                runtime.RunFor(0.45f, framesPerSecond);
+
+                Assert.That(runtime.CarrierEdgeCount, Is.Zero,
+                    "Sub-30 ms chatter must not extend a timed phone beyond the " +
+                    "calibrated maximum or re-arm its stale committed label. " +
+                    runtime.DiagnosticTrace +
+                    " Updates: " + runtime.DetailedTrace);
+                Assert.That(runtime.MatchPulseCount, Is.Zero);
+            }
+        }
+
+        [Test]
+        public void GeneratedAnimator_QuarantineConsumesFreshNaturalRootDirectly()
+        {
+            const int framesPerSecond = 50;
+            var expiredPhrase = Phrase("quarantine_expired", new[] { 4, 9, 10 });
+            var targetPhrase = Phrase("quarantine_target", new[] { 5, 6, 7 });
+            var plan = new VisemePhraseBuildPlan();
+            plan.phrases.Add(expiredPhrase);
+            plan.phrases.Add(targetPhrase);
+            var built = Build(plan);
+            using (var runtime = new AnimatorRuntime(
+                       built.controller, true, targetPhrase.matchedParameter,
+                       targetPhrase.carrierParameter))
+            {
+                Warm(runtime, framesPerSecond);
+                PlayToken(runtime, framesPerSecond, 4, 0.40f);
+                // The expired path is quarantined on committed 4. At 50 FPS,
+                // committed 5 can be visible for only the evaluation on which
+                // raw 6 has already begun probation. It must enter the natural
+                // 5-root directly rather than spending that sample in Ready.
+                PlayTokenFrames(runtime, framesPerSecond, 5, 2);
+                PlayToken(runtime, framesPerSecond, 6, 0.10f);
+                PlayToken(runtime, framesPerSecond, 7, 0.16f);
+                ExitUtterance(runtime, framesPerSecond);
+                runtime.RunFor(0.45f, framesPerSecond);
+
+                Assert.That(runtime.CarrierEdgeCount, Is.EqualTo(1),
+                    "Quarantine recovery must not consume the first proven token of a " +
+                    "new natural phrase. " + runtime.DiagnosticTrace +
+                    " Updates: " + runtime.DetailedTrace);
+                Assert.That(runtime.MatchPulseCount, Is.EqualTo(1));
             }
         }
 
@@ -283,9 +519,13 @@ namespace YUCP.Components.Editor.Tests
                         Play(runtime, framesPerSecond, 1f, 6, 5, 4);
                         break;
                     case "held":
-                        PlayToken(runtime, framesPerSecond, 4, 0.10f);
+                        // A causal Natural Speech detector fires once its final
+                        // token is valid, so a future final hold cannot revoke
+                        // that event. Hold the leading endpoint instead; its
+                        // learned maximum must expire before the suffix arrives.
+                        PlayToken(runtime, framesPerSecond, 4, 0.52f);
                         PlayToken(runtime, framesPerSecond, 5, 0.10f);
-                        PlayToken(runtime, framesPerSecond, 6, 0.52f);
+                        PlayToken(runtime, framesPerSecond, 6, 0.10f);
                         ExitUtterance(runtime, framesPerSecond);
                         break;
                     default:
@@ -599,6 +839,7 @@ namespace YUCP.Components.Editor.Tests
             private readonly int[] lastEnteredState;
             private readonly List<string> matcherTrace = new List<string>();
             private readonly List<string> detailedTrace = new List<string>();
+            private readonly HashSet<int> committedVisemes = new HashSet<int>();
             private bool lastMatched;
             private bool lastCarrier;
             private int lastMatcherHash = int.MinValue;
@@ -635,6 +876,7 @@ namespace YUCP.Components.Editor.Tests
                 animator.Update(0f);
                 SetFloat("IsLocal", executeLocalDrivers ? 1f : 0f);
                 ApplyEnteredDrivers();
+                committedVisemes.Add(StableVisemeValue);
                 lastMatched = animator.GetBool(matchedParameter);
                 lastCarrier = animator.GetBool(carrierParameter);
             }
@@ -643,6 +885,8 @@ namespace YUCP.Components.Editor.Tests
             internal int CarrierEdgeCount { get; private set; }
             internal string DiagnosticTrace => string.Join(" | ", matcherTrace);
             internal string DetailedTrace => string.Join(" | ", detailedTrace);
+            internal bool HasCommittedViseme(int viseme) =>
+                committedVisemes.Contains(viseme);
 
             internal void SetFloat(string parameter, float value) =>
                 animator.SetFloat(parameter, value);
@@ -665,8 +909,6 @@ namespace YUCP.Components.Editor.Tests
                 var deltaTime = 1f / framesPerSecond;
                 for (var frame = 0; frame < frames; frame++) Step(deltaTime);
             }
-
-            internal void ClearDetailedTrace() => detailedTrace.Clear();
 
             internal string TransitionSummary(string statePrefix)
             {
@@ -717,20 +959,24 @@ namespace YUCP.Components.Editor.Tests
                     ? StateName(matcherLayer, before.shortNameHash)
                     : "<none>";
                 var rawBefore = animator.GetInteger("Viseme");
+                var stableBefore = StableVisemeValue;
                 var start = elapsedSeconds;
                 elapsedSeconds += deltaTime;
                 animator.Update(deltaTime);
                 ApplyEnteredDrivers();
+                committedVisemes.Add(StableVisemeValue);
                 if (matcherLayer >= 0)
                 {
                     var after = EffectiveStateInfo(matcherLayer);
                     detailedTrace.Add(start.ToString("F3") + "->" +
                                       elapsedSeconds.ToString("F3") + " raw=" +
                                       rawBefore + "/" + animator.GetInteger("Viseme") + " " +
+                                      "stable=" + stableBefore + "/" +
+                                      StableVisemeValue + " " +
                                       beforeName + "@" + before.normalizedTime.ToString("F4") +
                                       " -> " + StateName(matcherLayer, after.shortNameHash) +
                                       "@" + after.normalizedTime.ToString("F4"));
-                    if (detailedTrace.Count > 48) detailedTrace.RemoveAt(0);
+                    if (detailedTrace.Count > 256) detailedTrace.RemoveAt(0);
                 }
                 CaptureMatcherTrace();
                 ObserveEdges();
@@ -755,6 +1001,7 @@ namespace YUCP.Components.Editor.Tests
                     : "<unknown>";
                 matcherTrace.Add(elapsedSeconds.ToString("F3") + "s " + state +
                                  " viseme=" + animator.GetInteger("Viseme") +
+                                 " stable=" + StableVisemeValue +
                                  " talking=" + animator.GetFloat(
                                      "YUCP/TestAVR/Speech/Talking").ToString("F2") +
                                  " ready=" + animator.GetFloat(
@@ -775,10 +1022,35 @@ namespace YUCP.Components.Editor.Tests
                         if (!driver.isEnabled || driver.localOnly && !executeLocalDrivers) continue;
                         foreach (var parameter in driver.parameters)
                         {
-                            if (parameter.type != VRC_AvatarParameterDriver.ChangeType.Set) continue;
-                            Set(parameter.name, parameter.value);
+                            if (parameter.type == VRC_AvatarParameterDriver.ChangeType.Set)
+                            {
+                                Set(parameter.name, parameter.value);
+                                continue;
+                            }
+                            if (parameter.type != VRC_AvatarParameterDriver.ChangeType.Copy)
+                                continue;
+                            Set(parameter.name, Get(parameter.source));
                         }
                     }
+                }
+            }
+
+            private int StableVisemeValue => Mathf.RoundToInt(animator.GetFloat(
+                "__YUCP_Phrase_StableViseme"));
+
+            private float Get(string parameter)
+            {
+                var definition = controller.parameters.FirstOrDefault(item =>
+                    string.Equals(item.name, parameter, StringComparison.Ordinal));
+                if (definition == null) return 0f;
+                switch (definition.type)
+                {
+                    case AnimatorControllerParameterType.Int:
+                        return animator.GetInteger(parameter);
+                    case AnimatorControllerParameterType.Bool:
+                        return animator.GetBool(parameter) ? 1f : 0f;
+                    default:
+                        return animator.GetFloat(parameter);
                 }
             }
 

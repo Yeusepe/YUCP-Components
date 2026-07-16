@@ -154,38 +154,31 @@ namespace YUCP.Components.Editor.Tests
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(folder + "/AdvancedViseme.controller")
                     .OfType<BlendTree>().ToArray();
-                var jawYieldTree = trees.Single(tree => tree.name.EndsWith(
-                    " -> " + jawYield, StringComparison.Ordinal));
-                var lipYieldTree = trees.Single(tree => tree.name.EndsWith(
-                    " -> " + lipYield, StringComparison.Ordinal));
-                Assert.That(UsesParameter(jawYieldTree, jawGain), Is.True);
-                Assert.That(UsesParameter(jawYieldTree, lipGain), Is.False,
+                var dependencies = BuildParameterDependencies(result.controller);
+                Assert.That(DependsOn(dependencies, jawYield, jawGain), Is.True);
+                Assert.That(DependsOn(dependencies, jawYield, lipGain), Is.False,
                     "Jaw ownership must not wait for an unrelated lip channel.");
-                Assert.That(UsesParameter(lipYieldTree, lipGain), Is.True);
-                Assert.That(UsesParameter(lipYieldTree, jawGain), Is.False,
+                Assert.That(DependsOn(dependencies, lipYield, lipGain), Is.True);
+                Assert.That(DependsOn(dependencies, lipYield, jawGain), Is.False,
                     "Lip ownership must not wait for an unrelated jaw channel.");
 
-                var primaryMatrix = trees.Single(tree =>
-                    tree.name == "Primary ownership matrix projection");
-                var linkedMatrix = trees.Single(tree =>
-                    tree.name == "LinkedRenderer/0 ownership matrix projection");
-                Assert.That(WritesParameter(primaryMatrix, primaryJawProjected), Is.True);
-                Assert.That(WritesParameter(primaryMatrix, primaryLipProjected), Is.True);
-                Assert.That(WritesParameter(linkedMatrix, linkedJawProjected), Is.True);
-                Assert.That(WritesParameter(linkedMatrix, linkedLipProjected), Is.True);
+                Assert.That(dependencies.ContainsKey(primaryJawProjected), Is.True);
+                Assert.That(dependencies.ContainsKey(primaryLipProjected), Is.True);
+                Assert.That(dependencies.ContainsKey(linkedJawProjected), Is.True);
+                Assert.That(dependencies.ContainsKey(linkedLipProjected), Is.True);
 
                 AssertOwnershipProduct(
-                    trees, "Primary/Ownership/0/Subtract",
+                    trees, folder + "/AdvancedViseme.controller", "PrimaryJawCarrier",
                     primaryJawProjected, jawYield);
                 AssertOwnershipProduct(
-                    trees, "Primary/Ownership/1/Add",
+                    trees, folder + "/AdvancedViseme.controller", "PrimaryLipCarrier",
                     primaryLipProjected, lipYield);
                 AssertOwnershipProduct(
-                    trees, "LinkedRenderer/0/Ownership/0/Subtract",
+                    trees, folder + "/AdvancedViseme.controller", "LinkedJawCarrier",
                     linkedJawProjected, jawYield,
                     "Linked renderers must reuse renderer-independent ownership gains.");
                 AssertOwnershipProduct(
-                    trees, "LinkedRenderer/0/Ownership/1/Subtract",
+                    trees, folder + "/AdvancedViseme.controller", "LinkedLipCarrier",
                     linkedLipProjected, lipYield);
 
                 Assert.That(parameters.Any(name => name.Contains(
@@ -309,27 +302,19 @@ namespace YUCP.Components.Editor.Tests
                     .Single(name => name.Contains(
                                            "/Primary/Dependency/", StringComparison.Ordinal) &&
                                     name.EndsWith("/Authority/1", StringComparison.Ordinal));
-                var minimumTree = AssetDatabase.LoadAllAssetsAtPath(
-                        folder + "/AdvancedViseme.controller")
-                    .OfType<BlendTree>()
-                    .Single(tree => tree.name == "Min -> " + minimum);
-                Assert.That(UsesParameter(minimumTree, jawGain), Is.True);
-                Assert.That(UsesParameter(minimumTree, lipGain), Is.True,
+                var dependencies = BuildParameterDependencies(result.controller);
+                Assert.That(DependsOn(dependencies, minimum, jawGain), Is.True);
+                Assert.That(DependsOn(dependencies, minimum, lipGain), Is.True,
                     "A dependent lip ray must be able to veto removal of shared jaw/lip geometry.");
-                Assert.That(UsesParameter(minimumTree, tongueGain), Is.False,
+                Assert.That(DependsOn(dependencies, minimum, tongueGain), Is.False,
                     "An independent tongue ray must not inherit jaw/lip rank ambiguity.");
 
                 var tongueYield = result.controller.parameters.Select(parameter => parameter.name)
                     .Single(name => name.EndsWith(
                         "/Residual/Ownership/TongueOut/Yield", StringComparison.Ordinal));
-                var tongueYieldTree = AssetDatabase.LoadAllAssetsAtPath(
-                        folder + "/AdvancedViseme.controller")
-                    .OfType<BlendTree>()
-                    .Single(tree => tree.name.EndsWith(
-                        " -> " + tongueYield, StringComparison.Ordinal));
-                Assert.That(UsesParameter(tongueYieldTree, tongueGain), Is.True);
-                Assert.That(UsesParameter(tongueYieldTree, jawGain), Is.False);
-                Assert.That(UsesParameter(tongueYieldTree, lipGain), Is.False);
+                Assert.That(DependsOn(dependencies, tongueYield, tongueGain), Is.True);
+                Assert.That(DependsOn(dependencies, tongueYield, jawGain), Is.False);
+                Assert.That(DependsOn(dependencies, tongueYield, lipGain), Is.False);
             }
             finally
             {
@@ -342,18 +327,102 @@ namespace YUCP.Components.Editor.Tests
 
         private static void AssertOwnershipProduct(
             IEnumerable<BlendTree> trees,
-            string key,
+            string controllerPath,
+            string carrier,
             string projected,
             string authorityYield,
             string message = null)
         {
-            var product = trees.Single(tree =>
-                tree.blendType == BlendTreeType.Direct &&
-                tree.name == key + " product pose");
-            Assert.That(UsesParameter(product, projected), Is.True,
-                "The carrier pose must consume its matching matrix projection.");
-            Assert.That(UsesParameter(product, authorityYield), Is.True,
-                message ?? "The carrier pose must consume its corresponding authority yield.");
+            var clip = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
+                .OfType<AnimationClip>()
+                .Single(candidate => candidate.name == "Blendshape " + carrier);
+            var product = trees
+                .Where(tree =>
+                    ContainsMotion(tree, clip) &&
+                    UsesParameter(tree, projected) &&
+                    UsesParameter(tree, authorityYield))
+                .OrderBy(MotionNodeCount)
+                .FirstOrDefault();
+            Assert.That(product, Is.Not.Null,
+                message ?? "The carrier pose must consume its matching matrix projection " +
+                "and corresponding authority yield.");
+        }
+
+        private static int MotionNodeCount(Motion motion)
+        {
+            if (!(motion is BlendTree tree)) return 1;
+            return 1 + tree.children.Sum(child => MotionNodeCount(child.motion));
+        }
+
+        private static bool ContainsMotion(Motion root, Motion target)
+        {
+            if (root == target) return true;
+            return root is BlendTree tree &&
+                   tree.children.Any(child => ContainsMotion(child.motion, target));
+        }
+
+        private static Dictionary<string, HashSet<string>> BuildParameterDependencies(
+            AnimatorController controller)
+        {
+            var dependencies = new Dictionary<string, HashSet<string>>(
+                StringComparer.Ordinal);
+
+            void Visit(Motion motion, HashSet<string> controls)
+            {
+                if (motion is AnimationClip clip)
+                {
+                    foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+                    {
+                        if (binding.type != typeof(Animator)) continue;
+                        if (!dependencies.TryGetValue(binding.propertyName, out var inputs))
+                            dependencies[binding.propertyName] = inputs =
+                                new HashSet<string>(StringComparer.Ordinal);
+                        inputs.UnionWith(controls);
+                    }
+                    return;
+                }
+                if (!(motion is BlendTree tree)) return;
+
+                var treeControls = new HashSet<string>(controls, StringComparer.Ordinal);
+                if (tree.blendType != BlendTreeType.Direct)
+                {
+                    if (!string.IsNullOrEmpty(tree.blendParameter))
+                        treeControls.Add(tree.blendParameter);
+                    if (tree.blendType != BlendTreeType.Simple1D &&
+                        !string.IsNullOrEmpty(tree.blendParameterY))
+                        treeControls.Add(tree.blendParameterY);
+                }
+                foreach (var child in tree.children)
+                {
+                    var childControls = new HashSet<string>(
+                        treeControls, StringComparer.Ordinal);
+                    if (tree.blendType == BlendTreeType.Direct &&
+                        !string.IsNullOrEmpty(child.directBlendParameter) &&
+                        child.directBlendParameter != "__YUCP_AVR_ONE")
+                        childControls.Add(child.directBlendParameter);
+                    Visit(child.motion, childControls);
+                }
+            }
+
+            foreach (var layer in controller.layers)
+            foreach (var state in layer.stateMachine.states)
+                Visit(state.state.motion, new HashSet<string>(StringComparer.Ordinal));
+            return dependencies;
+        }
+
+        private static bool DependsOn(
+            IReadOnlyDictionary<string, HashSet<string>> dependencies,
+            string output,
+            string input)
+        {
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            bool Visit(string parameter)
+            {
+                if (!visited.Add(parameter) ||
+                    !dependencies.TryGetValue(parameter, out var direct)) return false;
+                return direct.Contains(input) || direct.Any(Visit);
+            }
+            return Visit(output);
         }
 
         private static AdvancedVisemeMeshCalibrator.Result SyntheticCalibration(

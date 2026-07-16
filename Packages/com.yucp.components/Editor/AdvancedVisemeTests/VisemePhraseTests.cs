@@ -355,7 +355,7 @@ namespace YUCP.Components.Editor.Tests
                     $"A trained phrase at {scale:0.##}x duration should remain positive.");
             }
 
-            foreach (var scale in new[] { 0.4f, 2.5f })
+            foreach (var scale in new[] { 0.3f, 3f })
             {
                 Assert.That(
                     VisemePhraseModelCompiler.Score(
@@ -407,6 +407,106 @@ namespace YUCP.Components.Editor.Tests
             Assert.That(first.model.contentFingerprint, Is.EqualTo(second.model.contentFingerprint));
             Assert.That(first.model.variants.SelectMany(variant => variant.states)
                 .Any(state => state.aliasVisemes.Length > 0), Is.True);
+        }
+
+        [Test]
+        public void Compiler_AddsOnlyOneWeightedClassifierConfusionPerOptionalPath()
+        {
+            var definition = MakeDefinition("personalized varied phrase");
+            definition.mode = VisemePhraseContextMode.PausedCommand;
+            definition.strictness = 0.65f;
+            var enrollment = MakeEnrollment(
+                definition,
+                new[] { 1, 10, 7, 12, 9, 2 },
+                new[] { 1, 10, 7, 12, 5, 9, 2 },
+                new[] { 14, 1, 10, 7, 12, 9, 2 },
+                new[] { 1, 10, 7, 12, 9, 2, 4 });
+
+            var result = VisemePhraseModelCompiler.Compile(definition, enrollment);
+
+            Assert.That(result.success, Is.True, Join(result.diagnostics));
+            var inferred = result.model.variants
+                .Where(variant => variant.inferredConfusionPath)
+                .ToArray();
+            Assert.That(inferred.Length, Is.InRange(1,
+                VisemePhraseCompileOptions.MaximumConfusionPaths));
+            Assert.That(inferred, Has.All.Matches<VisemePhraseModelVariant>(variant =>
+                variant.inferredContextPath &&
+                variant.inferencePenalty > 0f &&
+                !string.IsNullOrEmpty(variant.confusionSourceSequence)));
+
+            foreach (var variant in inferred)
+            {
+                var source = result.model.variants.First(candidate =>
+                    !candidate.inferredConfusionPath &&
+                    string.Join(",", candidate.states.Select(state => state.primaryViseme)) ==
+                    variant.confusionSourceSequence);
+                var changed = source.states.Zip(
+                        variant.states,
+                        (left, right) => left.primaryViseme != right.primaryViseme)
+                    .Count(value => value);
+                Assert.That(changed, Is.EqualTo(1),
+                    "A generic path may spend exactly one weighted uncertainty operation.");
+                CollectionAssert.AreEqual(
+                    source.runtimeTimingRectangles.Select(rectangle =>
+                        string.Join(",", rectangle.minimumDurationSeconds) + "|" +
+                        string.Join(",", rectangle.maximumDurationSeconds)),
+                    variant.runtimeTimingRectangles.Select(rectangle =>
+                        string.Join(",", rectangle.minimumDurationSeconds) + "|" +
+                        string.Join(",", rectangle.maximumDurationSeconds)));
+
+                var sourceTake = result.processedPositiveTakes[variant.sourceTakeIndex];
+                if (sourceTake.Count != variant.states.Count) continue;
+                var live = TokensWithDurations(
+                    variant.states.Select(state => state.primaryViseme).ToArray(),
+                    sourceTake.Select(token => token.DurationSeconds).ToArray());
+                Assert.That(VisemePhraseModelCompiler.Score(
+                        result.model, live, false),
+                    Is.LessThanOrEqualTo(result.model.acceptanceCost + 1e-5f));
+            }
+
+            var twoCorrections = Tokens(1, 10, 6, 11, 9, 2);
+            Assert.That(VisemePhraseModelCompiler.Score(
+                    result.model, twoCorrections, false),
+                Is.GreaterThan(result.model.acceptanceCost),
+                "Two unseen substitutions must not be accepted by combining optional paths.");
+            Assert.That(result.diagnostics.messages.Any(message =>
+                message.code == "confusion_paths_retained"), Is.True);
+        }
+
+        [Test]
+        public void Compiler_BackgroundSpeechVetoesCollidingConfusionPath()
+        {
+            var definition = MakeDefinition("background guarded phrase");
+            definition.mode = VisemePhraseContextMode.PausedCommand;
+            definition.strictness = 0.65f;
+            var basePath = new[] { 1, 10, 7, 12, 9, 2 };
+            var enrollment = MakeEnrollment(
+                definition,
+                basePath,
+                basePath,
+                new[] { 3, 4, 5, 6, 7, 8 },
+                new[] { 3, 4, 5, 6, 7, 9 });
+            var collidingBackground = new[] { 1, 10, 7, 11, 9, 2 };
+            enrollment.negativeTraces.Add(
+                MakeTrace("ordinary-speech", collidingBackground));
+
+            var result = VisemePhraseModelCompiler.Compile(definition, enrollment);
+
+            Assert.That(result.success, Is.True, Join(result.diagnostics));
+            Assert.That(result.model.variants
+                .Where(variant => variant.inferredConfusionPath)
+                .Any(variant => variant.states.Select(state => state.primaryViseme)
+                    .SequenceEqual(collidingBackground)), Is.False);
+            var negative = VisemePhraseTraceMath.RemoveTransientRuns(
+                VisemePhraseTraceMath.RunLengthEncode(
+                    VisemePhraseTraceMath.Trim(enrollment.negativeTraces[0])));
+            Assert.That(VisemePhraseModelCompiler.Score(
+                    result.model, negative, true),
+                Is.GreaterThan(result.model.acceptanceCost));
+            Assert.That(result.diagnostics.messages.Any(message =>
+                message.code == "confusion_path_pruned"), Is.True,
+                Join(result.diagnostics));
         }
 
         [Test]
@@ -560,6 +660,33 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void Compiler_EndpointOmissionBecomesExactPathInsteadOfOptionalSkip()
+        {
+            var definition = MakeDefinition("endpoint deletion phrase");
+            definition.strictness = 0.65f;
+            var longPath = new[] { 1, 4, 7, 10, 13 };
+            var shortPath = new[] { 1, 4, 7, 10 };
+            var enrollment = MakeEnrollment(
+                definition, longPath, longPath, longPath, shortPath);
+
+            var result = VisemePhraseModelCompiler.Compile(definition, enrollment);
+
+            Assert.That(result.success, Is.True, Join(result.diagnostics));
+            Assert.That(result.model.variants.Any(variant =>
+                    variant.states.Count > 0 &&
+                    (variant.states[0].allowSkip ||
+                     variant.states[variant.states.Count - 1].allowSkip)), Is.False,
+                "A first/final omission must be represented as a complete pronunciation, " +
+                "never an ambiguous optional prefix deletion.");
+            Assert.That(result.model.variants.Any(variant =>
+                variant.states.Select(state => state.primaryViseme)
+                    .SequenceEqual(shortPath)), Is.True);
+            Assert.That(result.processedPositiveTakes.All(take =>
+                VisemePhraseModelCompiler.Score(result.model, take, false) <=
+                result.model.acceptanceCost + 1e-5f), Is.True);
+        }
+
+        [Test]
         public void Compiler_PreservesLiveMancojoVariationAsBoundedEnrolledPaths()
         {
             var definition = MakeDefinition("Mancojo");
@@ -591,9 +718,17 @@ namespace YUCP.Components.Editor.Tests
                     new[] { 10, 5, 13, 5, 13, 8 }
                 }),
                 "The regression must keep the stabilized hard-Viseme traces captured in Unity.");
-            Assert.That(result.model.variants.Count, Is.EqualTo(8),
+            Assert.That(result.model.variants.Count(variant =>
+                    !variant.inferredConfusionPath), Is.EqualTo(8),
                 "The bounded order-two closure should retain four enrollment paths and " +
                 "exactly four locally observed pronunciation bridges.");
+            Assert.That(result.model.variants.Count, Is.LessThanOrEqualTo(
+                VisemePhraseCompileOptions.MaximumRuntimePaths));
+            Assert.That(result.model.variants.Count(variant =>
+                    variant.inferredConfusionPath), Is.LessThanOrEqualTo(
+                VisemePhraseCompileOptions.MaximumConfusionPaths),
+                "Generic classifier guesses are separately bounded and must not displace " +
+                "the personalized profile language.");
             Assert.That(result.model.variants.SelectMany(variant => variant.states)
                 .Sum(state => state.aliasVisemes?.Length ?? 0), Is.Zero,
                 "Singleton differences must stay correlated inside exact paths, not become broad aliases.");
@@ -888,7 +1023,7 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void RuntimeTimingRectangles_PreserveCorrelatedWholeDurationBounds()
+        public void RuntimeTimingRectangles_AddSafeMultiTakeProfileBetweenCadences()
         {
             var first = RuntimeState(1, 0.05f, 0.3f);
             var second = RuntimeState(2, 0.05f, 0.3f);
@@ -916,7 +1051,9 @@ namespace YUCP.Components.Editor.Tests
             VisemePhraseRuntimeLanguage.BuildPositiveTimingRectangles(
                 model, positives, new List<VisemePhraseDiagnostic>());
 
-            Assert.That(variant.runtimeTimingRectangles.Count, Is.EqualTo(2));
+            Assert.That(variant.runtimeTimingRectangles.Count, Is.EqualTo(3));
+            Assert.That(variant.runtimeTimingRectangles.Count(rectangle =>
+                rectangle.inferredProfile), Is.EqualTo(1));
             Assert.That(VisemePhraseRuntimeLanguage.Score(model, earlyFirst, false), Is.Zero);
             Assert.That(VisemePhraseRuntimeLanguage.Score(model, lateFirst, false), Is.Zero);
             var unseenCorrelation = TokensWithDurations(
@@ -928,9 +1065,166 @@ namespace YUCP.Components.Editor.Tests
                 token.DurationSeconds <= first.maximumDurationSeconds));
             Assert.That(
                 VisemePhraseRuntimeLanguage.Score(model, unseenCorrelation, false),
+                Is.Zero,
+                "The log-median multi-take profile should accept a natural cadence " +
+                "between two enrolled examples.");
+            var extremeMix = TokensWithDurations(
+                new[] { 1, 2 }, new[] { 0.05f, 0.25f });
+            Assert.That(
+                VisemePhraseRuntimeLanguage.Score(model, extremeMix, false),
                 Is.EqualTo(VisemePhraseRuntimeLanguage.NoMatchCost),
-                "A Cartesian union of per-state bounds would accept this unseen timing mix; " +
-                "the positive-seeded safe rectangles must not.");
+                "Profile interpolation must not become an independent Cartesian " +
+                "union of every state's broad bounds.");
+        }
+
+        [Test]
+        public void InferredTimingProfileNeverReplacesObservedRectangle()
+        {
+            var observed = new VisemePhraseRuntimeTimingRectangle
+            {
+                sourceTakeIndex = 2,
+                skippedStateIndex = -1,
+                inferredProfile = false,
+                minimumDurationSeconds = new[] { 0.10f, 0.12f },
+                maximumDurationSeconds = new[] { 0.18f, 0.20f }
+            };
+            var profile = new VisemePhraseRuntimeTimingRectangle
+            {
+                sourceTakeIndex = -1,
+                skippedStateIndex = -1,
+                inferredProfile = true,
+                minimumDurationSeconds = new[] { 0.08f, 0.10f },
+                maximumDurationSeconds = new[] { 0.22f, 0.24f }
+            };
+
+            var rectangles = new List<VisemePhraseRuntimeTimingRectangle> { observed };
+            VisemePhraseRuntimeLanguage.AddIfNotContained(rectangles, profile);
+
+            Assert.That(rectangles, Has.Count.EqualTo(2));
+            Assert.That(rectangles, Does.Contain(observed),
+                "An optional interpolated lane must not replace a creator-observed take.");
+            Assert.That(rectangles, Does.Contain(profile));
+        }
+
+        [Test]
+        public void RuntimeScorerUsesTheSamePhraseWideObservationCorridorAsAnimator()
+        {
+            var variant = new VisemePhraseModelVariant
+            {
+                id = "v0",
+                inferredContextPath = true,
+                minimumDurationSeconds = 0.4f,
+                maximumDurationSeconds = 0.4f
+            };
+            foreach (var viseme in new[] { 1, 10, 7, 12 })
+                variant.states.Add(RuntimeState(viseme, 0.1f, 0.1f));
+            variant.runtimeTimingRectangles.Add(
+                new VisemePhraseRuntimeTimingRectangle
+                {
+                    sourceTakeIndex = 0,
+                    skippedStateIndex = -1,
+                    minimumDurationSeconds = Enumerable.Repeat(0.1f, 4).ToArray(),
+                    maximumDurationSeconds = Enumerable.Repeat(0.1f, 4).ToArray()
+                });
+            var model = new VisemePhraseCompiledModel
+            {
+                variants = new List<VisemePhraseModelVariant> { variant }
+            };
+            var positives = new List<List<VisemePhraseToken>>
+            {
+                TokensWithDurations(
+                    new[] { 1, 10, 7, 12 },
+                    new[] { 0.1f, 0.1f, 0.1f, 0.1f })
+            };
+
+            VisemePhraseRuntimeLanguage.BuildPositiveTimingRectangles(
+                model, positives, new List<VisemePhraseDiagnostic>());
+
+            var rectangle = variant.runtimeTimingRectangles.Single();
+            Assert.That(rectangle.includesRuntimeObservationUncertainty, Is.True);
+            Assert.That(rectangle.maximumDurationSeconds.Sum(),
+                Is.EqualTo(0.43f).Within(0.00001f));
+            Assert.That(VisemePhraseModelCompiler.Score(
+                    model,
+                    TokensWithDurations(
+                        new[] { 1, 10, 7, 12 },
+                        new[] { 0.107f, 0.1f, 0.1f, 0.1f }),
+                    false),
+                Is.LessThan(VisemePhraseRuntimeLanguage.NoMatchCost),
+                "Calibration must see a duration the generated Animator can accept.");
+            Assert.That(VisemePhraseModelCompiler.Score(
+                    model,
+                    TokensWithDurations(
+                        new[] { 1, 10, 7, 12 },
+                        new[] { 0.109f, 0.1f, 0.1f, 0.1f }),
+                    false),
+                Is.EqualTo(VisemePhraseRuntimeLanguage.NoMatchCost),
+                "The fixed phrase-wide allowance must not become an unbounded lane.");
+        }
+
+        [Test]
+        public void ConfusionTimingUsesUniqueSourceVariantNotDuplicatePrimarySequence()
+        {
+            VisemePhraseModelVariant Source(
+                string id,
+                float duration,
+                bool inferredContext)
+            {
+                var states = new[] { 1, 10, 7, 12 }
+                    .Select(viseme => RuntimeState(viseme, duration, duration))
+                    .ToList();
+                return new VisemePhraseModelVariant
+                {
+                    id = id,
+                    inferredContextPath = inferredContext,
+                    minimumDurationSeconds = duration * states.Count,
+                    maximumDurationSeconds = duration * states.Count,
+                    states = states,
+                    runtimeTimingRectangles = new List<
+                        VisemePhraseRuntimeTimingRectangle>
+                    {
+                        new VisemePhraseRuntimeTimingRectangle
+                        {
+                            sourceTakeIndex = 0,
+                            skippedStateIndex = -1,
+                            minimumDurationSeconds = Enumerable.Repeat(
+                                duration, states.Count).ToArray(),
+                            maximumDurationSeconds = Enumerable.Repeat(
+                                duration, states.Count).ToArray()
+                        }
+                    }
+                };
+            }
+
+            var fast = Source("v0", 0.10f, false);
+            var slow = Source("v1", 0.20f, true);
+            var confusion = Source("v2", 0.20f, true);
+            confusion.inferredConfusionPath = true;
+            confusion.confusionSourceVariantId = "v1";
+            confusion.confusionSourceSequence = "1,10,7,12";
+            confusion.states[1] = RuntimeState(11, 0.20f, 0.20f);
+            confusion.runtimeTimingRectangles.Clear();
+            var model = new VisemePhraseCompiledModel
+            {
+                variants = new List<VisemePhraseModelVariant>
+                    { fast, slow, confusion }
+            };
+            var positives = new List<List<VisemePhraseToken>>
+            {
+                TokensWithDurations(
+                    new[] { 1, 10, 7, 12 },
+                    new[] { 0.10f, 0.10f, 0.10f, 0.10f })
+            };
+
+            VisemePhraseRuntimeLanguage.BuildPositiveTimingRectangles(
+                model, positives, new List<VisemePhraseDiagnostic>());
+
+            Assert.That(confusion.runtimeTimingRectangles, Has.Count.EqualTo(1));
+            CollectionAssert.AreEqual(
+                slow.runtimeTimingRectangles.Single().maximumDurationSeconds,
+                confusion.runtimeTimingRectangles.Single().maximumDurationSeconds,
+                "Duplicate primary sequences must not redirect an inferred path to " +
+                "another variant's timing lane.");
         }
 
         [Test]

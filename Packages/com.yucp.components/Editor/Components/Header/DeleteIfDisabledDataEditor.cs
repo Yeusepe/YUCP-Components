@@ -41,7 +41,7 @@ namespace YUCP.Components.Editor
 			overviewContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
 				"Attach this component to a child object you want to strip from the built avatar when it is turned off. " +
 				"Only the object this component is on is affected. If the GameObject is active when you build, it is kept; if it is inactive, it is deleted. " +
-				"Cannot be attached to the avatar root—use a child only.",
+				"Cannot be attached to the avatar root. Use a child only.",
 				YUCPUIToolkitHelper.MessageType.Info));
 			root.Add(overviewCard);
 

@@ -1936,7 +1936,7 @@ namespace YUCP.Components.PackageGuardian.Editor.Windows
             
             if (_totalFilesLabel != null)
             {
-                _totalFilesLabel.text = "—";
+                _totalFilesLabel.text = "N/A";
             }
             
             if (_pendingChangesCountLabel != null)

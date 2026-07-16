@@ -11,7 +11,10 @@ namespace YUCP.Components.Editor.VisemePhrase
     {
         public const int MaximumLearnedVariants = 2;
         public const int MaximumEnrolledPaths = 4;
-        public const int MaximumRuntimePaths = 8;
+        public const int MaximumProfilePaths = 8;
+        public const int MaximumConfusionPaths = 2;
+        public const int MaximumRuntimePaths =
+            MaximumProfilePaths + MaximumConfusionPaths;
         public const int MaximumStatesPerVariant = 12;
         public const int MinimumInformativeRuns = 3;
         public const int RecommendedInformativeRuns = 6;
@@ -447,13 +450,71 @@ namespace YUCP.Components.Editor.VisemePhrase
                     "recombine safely."));
             }
             ReindexVariants(model);
-            model.negativeCalibration = Calibrate(
+            var retainedConfusionPaths = RetainBoundedConfusionPaths(
                 model,
                 result.processedPositiveTakes,
                 negativeTokens,
+                pairwise,
                 strictness,
                 diagnostics.messages);
-            model.acceptanceCost = model.negativeCalibration.recommendedAcceptanceCost;
+            ReindexVariants(model);
+            var calibrationMessages = new List<VisemePhraseDiagnostic>();
+            var prunedUnreachableConfusions = 0;
+            // Negative calibration can be stricter than the generic threshold
+            // used while proposing optional confusion arcs. Find a small fixed
+            // point: calibrate, remove only optional arcs whose base penalty can
+            // no longer fit the final runtime budget, then calibrate again. A
+            // speculative generalization must never invalidate enrolled speech.
+            for (var pass = 0;
+                 pass <= VisemePhraseCompileOptions.MaximumConfusionPaths;
+                 pass++)
+            {
+                calibrationMessages.Clear();
+                model.negativeCalibration = Calibrate(
+                    model,
+                    result.processedPositiveTakes,
+                    negativeTokens,
+                    strictness,
+                    calibrationMessages);
+                model.acceptanceCost =
+                    model.negativeCalibration.recommendedAcceptanceCost;
+                var removed = RemoveUnreachableConfusionPaths(model);
+                if (removed == 0) break;
+                prunedUnreachableConfusions += removed;
+                ReindexVariants(model);
+            }
+            foreach (var message in calibrationMessages)
+                diagnostics.messages.Add(message);
+            var finalConfusionPaths = model.variants.Count(variant =>
+                variant != null && variant.inferredConfusionPath);
+            if (finalConfusionPaths > 0)
+            {
+                diagnostics.messages.Add(new VisemePhraseDiagnostic(
+                    VisemePhraseDiagnosticSeverity.Info,
+                    "confusion_paths_retained",
+                    finalConfusionPaths.ToString(CultureInfo.InvariantCulture) +
+                    " weighted one-confusion path" +
+                    (finalConfusionPaths == 1 ? " was" : "s were") +
+                    " retained. Each path changes one visually confusable Oculus " +
+                    "winner while preserving the enrolled order and correlated timing."));
+            }
+            if (retainedConfusionPaths > finalConfusionPaths ||
+                prunedUnreachableConfusions > 0)
+            {
+                diagnostics.messages.Add(new VisemePhraseDiagnostic(
+                    VisemePhraseDiagnosticSeverity.Info,
+                    "confusion_path_over_budget",
+                    Math.Max(prunedUnreachableConfusions,
+                            retainedConfusionPaths - finalConfusionPaths)
+                        .ToString(CultureInfo.InvariantCulture) +
+                    " optional confusion path" +
+                    (Math.Max(prunedUnreachableConfusions,
+                         retainedConfusionPaths - finalConfusionPaths) == 1
+                        ? " was"
+                        : "s were") +
+                    " omitted because personalized background-speech calibration " +
+                    "made its weighted error too expensive."));
+            }
             diagnostics.negativeMargin = model.negativeCalibration.separation;
             ValidateRuntimeReplay(
                 model,
@@ -772,6 +833,272 @@ namespace YUCP.Components.Editor.VisemePhrase
                     "v" + index.ToString(CultureInfo.InvariantCulture);
         }
 
+        private static int RemoveUnreachableConfusionPaths(
+            VisemePhraseCompiledModel model)
+        {
+            if (model?.variants == null) return 0;
+            var before = model.variants.Count;
+            model.variants.RemoveAll(variant =>
+                variant != null &&
+                variant.inferredConfusionPath &&
+                Mathf.Max(0f, variant.inferencePenalty) >
+                Mathf.Clamp01(model.acceptanceCost) *
+                Mathf.Max(1, variant.states?.Count ?? 0) +
+                RuntimeCostEpsilon);
+            return before - model.variants.Count;
+        }
+
+        /// <summary>
+        /// Four enrollment takes are enough to retain complete personalized
+        /// pronunciations, but not enough to observe every hard-winner error the
+        /// Oculus classifier will make later. Compile at most two weighted,
+        /// one-substitution paths from a small visual-confusion prior. Each path
+        /// changes one interior winner, reuses one enrolled path's correlated
+        /// timing, and is independently removable by negative calibration or the
+        /// avatar-wide state fitter. This is a bounded WFST error arc, not a
+        /// Cartesian fuzzy product.
+        /// </summary>
+        private static int RetainBoundedConfusionPaths(
+            VisemePhraseCompiledModel model,
+            IReadOnlyList<List<VisemePhraseToken>> positiveTakes,
+            IReadOnlyList<List<VisemePhraseToken>> negativeTakes,
+            float[,] pairwise,
+            float strictness,
+            ICollection<VisemePhraseDiagnostic> messages)
+        {
+            if (model?.variants == null || positiveTakes == null ||
+                model.variants.Count >= VisemePhraseCompileOptions.MaximumRuntimePaths)
+                return 0;
+
+            // A stable repeated trace needs no generic correction. Require at
+            // least three independently observed hard-winner paths before using
+            // scarce runtime states on classifier generalization.
+            var distinctPositivePaths = positiveTakes
+                .Where(take => take != null && take.Count > 0)
+                .Select(VisemeSequenceKey)
+                .Distinct(StringComparer.Ordinal)
+                .Count();
+            if (distinctPositivePaths < 3) return 0;
+
+            var sources = model.variants
+                .Where(variant => variant?.states != null &&
+                                  !variant.inferredContextPath &&
+                                  !variant.inferredConfusionPath &&
+                                  variant.states.Count >= 4 &&
+                                  variant.states.All(state => state != null &&
+                                      !state.allowSkip &&
+                                      (state.aliasVisemes == null ||
+                                       state.aliasVisemes.Length == 0)))
+                .OrderBy(variant => MedoidDistance(
+                    variant.sourceTakeIndex, positiveTakes.Count, pairwise))
+                .ThenBy(variant => variant.states.Count)
+                .ThenBy(variant => VisemeSequenceKey(
+                    variant.states.Select(state => state.primaryViseme)),
+                    StringComparer.Ordinal)
+                .ToArray();
+            if (sources.Length == 0) return 0;
+
+            var existing = new HashSet<string>(model.variants
+                .Where(variant => variant?.states != null)
+                .Select(variant => VisemeSequenceKey(
+                    variant.states.Select(state => state.primaryViseme))),
+                StringComparer.Ordinal);
+            var candidates = new List<ConfusionPathCandidate>();
+            foreach (var source in sources)
+            {
+                var sourceSequence = VisemeSequenceKey(
+                    source.states.Select(state => state.primaryViseme));
+                for (var stateIndex = 1;
+                     stateIndex + 1 < source.states.Count;
+                     stateIndex++)
+                {
+                    var primary = source.states[stateIndex].primaryViseme;
+                    foreach (var alternative in BoundedConfusions(primary))
+                    {
+                        if (alternative.viseme ==
+                                source.states[stateIndex - 1].primaryViseme ||
+                            alternative.viseme ==
+                                source.states[stateIndex + 1].primaryViseme)
+                            continue;
+                        var sequence = source.states
+                            .Select((state, index) => index == stateIndex
+                                ? alternative.viseme
+                                : state.primaryViseme)
+                            .ToArray();
+                        var key = VisemeSequenceKey(sequence);
+                        if (existing.Contains(key)) continue;
+                        var likelihood = Mathf.Clamp01(alternative.likelihood *
+                            Mathf.Lerp(1f, 0.82f, Mathf.Clamp01(strictness)));
+                        var penalty = 1f - likelihood;
+                        var fallbackBudget = Mathf.Lerp(0.46f, 0.2f, strictness);
+                        if (penalty / Mathf.Max(1, sequence.Length) >
+                            fallbackBudget - AcceptanceGuard)
+                            continue;
+                        candidates.Add(new ConfusionPathCandidate
+                        {
+                            source = source,
+                            sourceSequence = sourceSequence,
+                            sequence = sequence,
+                            sequenceKey = key,
+                            stateIndex = stateIndex,
+                            likelihood = likelihood,
+                            penalty = penalty,
+                            weaknessRank = ConfusionWeaknessRank(primary)
+                        });
+                    }
+                }
+            }
+
+            var baseline = EvaluateCalibration(model, positiveTakes, negativeTakes);
+            var retained = 0;
+            var prunedByBackground = 0;
+            foreach (var candidate in candidates
+                         .OrderBy(item => item.weaknessRank)
+                         .ThenByDescending(item => item.likelihood)
+                         .ThenBy(item => item.source.states.Count)
+                         .ThenBy(item => item.stateIndex)
+                         .ThenBy(item => item.sequenceKey, StringComparer.Ordinal))
+            {
+                if (retained >= VisemePhraseCompileOptions.MaximumConfusionPaths ||
+                    model.variants.Count >=
+                    VisemePhraseCompileOptions.MaximumRuntimePaths)
+                    break;
+                if (!existing.Add(candidate.sequenceKey)) continue;
+
+                var inferred = BuildConfusionVariant(
+                    model.variants.Count, candidate);
+                model.variants.Add(inferred);
+                VisemePhraseRuntimeLanguage.BuildPositiveTimingRectangles(
+                    model, positiveTakes, messages);
+                if (inferred.runtimeTimingRectangles == null ||
+                    inferred.runtimeTimingRectangles.Count == 0)
+                {
+                    model.variants.Remove(inferred);
+                    existing.Remove(candidate.sequenceKey);
+                    continue;
+                }
+
+                var withCandidate = EvaluateCalibration(
+                    model, positiveTakes, negativeTakes);
+                var introducedUnsafeNegative = withCandidate.negativeCount > 0 &&
+                    withCandidate.bestNegative + RuntimeCostEpsilon <
+                    baseline.bestNegative &&
+                    withCandidate.separation + RuntimeCostEpsilon <
+                    model.minimumNegativeMargin;
+                if (introducedUnsafeNegative)
+                {
+                    model.variants.Remove(inferred);
+                    existing.Remove(candidate.sequenceKey);
+                    VisemePhraseRuntimeLanguage.BuildPositiveTimingRectangles(
+                        model, positiveTakes, messages);
+                    prunedByBackground++;
+                    continue;
+                }
+
+                baseline = withCandidate;
+                retained++;
+            }
+
+            if (prunedByBackground > 0)
+                messages.Add(new VisemePhraseDiagnostic(
+                    VisemePhraseDiagnosticSeverity.Info,
+                    "confusion_path_pruned",
+                    prunedByBackground.ToString(CultureInfo.InvariantCulture) +
+                    " generic one-confusion path" +
+                    (prunedByBackground == 1 ? " was" : "s were") +
+                    " omitted because recorded ordinary speech used the same mouth-shape sequence."));
+            return retained;
+        }
+
+        private static float MedoidDistance(
+            int sourceTakeIndex,
+            int takeCount,
+            float[,] pairwise)
+        {
+            if (pairwise == null || sourceTakeIndex < 0 ||
+                sourceTakeIndex >= takeCount ||
+                pairwise.GetLength(0) <= sourceTakeIndex ||
+                pairwise.GetLength(1) < takeCount)
+                return float.MaxValue;
+            var total = 0f;
+            for (var index = 0; index < takeCount; index++)
+                total += pairwise[sourceTakeIndex, index];
+            return total;
+        }
+
+        private static VisemePhraseModelVariant BuildConfusionVariant(
+            int variantIndex,
+            ConfusionPathCandidate candidate)
+        {
+            var source = candidate.source;
+            var variant = new VisemePhraseModelVariant
+            {
+                id = "v" + variantIndex.ToString(CultureInfo.InvariantCulture),
+                sourceTakeId = source.sourceTakeId,
+                sourceTakeIndex = source.sourceTakeIndex,
+                inferredContextPath = true,
+                inferredConfusionPath = true,
+                confusionSourceSequence = candidate.sourceSequence,
+                confusionSourceVariantId = source.id,
+                inferencePenalty = candidate.penalty,
+                cohesion = Mathf.Clamp01(source.cohesion * candidate.likelihood),
+                medianDurationSeconds = source.medianDurationSeconds,
+                minimumDurationSeconds = source.minimumDurationSeconds,
+                maximumDurationSeconds = source.maximumDurationSeconds
+            };
+            for (var index = 0; index < source.states.Count; index++)
+            {
+                var original = source.states[index];
+                var viseme = candidate.sequence[index];
+                var emissions = new float[VisemePhraseTraceMath.VisemeCount];
+                emissions[viseme] = 1f;
+                variant.states.Add(new VisemePhraseModelState
+                {
+                    index = index,
+                    primaryViseme = viseme,
+                    aliasVisemes = Array.Empty<int>(),
+                    aliasLikelihoods = Array.Empty<float>(),
+                    emissionLikelihoods = emissions,
+                    medianDurationSeconds = original.medianDurationSeconds,
+                    minimumDurationSeconds = original.minimumDurationSeconds,
+                    maximumDurationSeconds = original.maximumDurationSeconds,
+                    meanVoice = original.meanVoice,
+                    allowSkip = false,
+                    skipPenalty = 0f
+                });
+            }
+            return variant;
+        }
+
+        private static int ConfusionWeaknessRank(int viseme)
+        {
+            if (viseme >= 10) return 0;       // vowel arg-max boundaries
+            if (viseme == 6 || viseme == 7) return 1; // CH / SS frication
+            return 2;                        // DD / nn tongue-place ambiguity
+        }
+
+        private static IEnumerable<ConfusionAlternative> BoundedConfusions(int viseme)
+        {
+            // Likelihoods are deliberately conservative priors. They rank
+            // visually neighbouring Oculus classes; creator takes and recorded
+            // background speech remain authoritative at compile time.
+            switch (viseme)
+            {
+                case 4: yield return new ConfusionAlternative(8, 0.52f); break;
+                case 6: yield return new ConfusionAlternative(7, 0.65f); break;
+                case 7: yield return new ConfusionAlternative(6, 0.65f); break;
+                case 8: yield return new ConfusionAlternative(4, 0.52f); break;
+                case 10: yield return new ConfusionAlternative(11, 0.58f); break;
+                case 11:
+                    yield return new ConfusionAlternative(12, 0.64f);
+                    yield return new ConfusionAlternative(10, 0.58f);
+                    break;
+                case 12: yield return new ConfusionAlternative(11, 0.64f); break;
+                case 13: yield return new ConfusionAlternative(14, 0.65f); break;
+                case 14: yield return new ConfusionAlternative(13, 0.65f); break;
+            }
+        }
+
         /// <summary>
         /// A set of complete enrollment templates is still too brittle when a
         /// hard arg-max classifier chooses a prefix seen in one take and a
@@ -794,7 +1121,7 @@ namespace YUCP.Components.Editor.VisemePhrase
         {
             if (model?.variants == null || positiveTakes == null ||
                 positiveTakes.Count == 0 || rawTakes == null ||
-                model.variants.Count >= VisemePhraseCompileOptions.MaximumRuntimePaths)
+                model.variants.Count >= VisemePhraseCompileOptions.MaximumProfilePaths)
                 return 0;
             var usable = positiveTakes
                 .Where(take => take != null && take.Count >= 3)
@@ -988,7 +1315,7 @@ namespace YUCP.Components.Editor.VisemePhrase
             foreach (var candidate in prioritized)
             {
                 if (model.variants.Count >=
-                    VisemePhraseCompileOptions.MaximumRuntimePaths) break;
+                    VisemePhraseCompileOptions.MaximumProfilePaths) break;
                 var variant = BuildContextVariant(
                     model.variants.Count,
                     candidate,
@@ -1614,10 +1941,14 @@ namespace YUCP.Components.Editor.VisemePhrase
                     strictness,
                     out skipEvidence[stateIndex]));
             }
-            if (skipEvidence.Length > 0)
+            // Endpoint omissions are complete short pronunciations, not safe
+            // optional deletions: an omitted final state can become an
+            // indistinguishable prefix of the longer path. Whole-sequence path
+            // retention preserves those demonstrated short takes explicitly.
+            if (skipEvidence.Length > 2)
             {
-                var bestSkip = 0;
-                for (var i = 1; i < skipEvidence.Length; i++)
+                var bestSkip = 1;
+                for (var i = 2; i + 1 < skipEvidence.Length; i++)
                     if (skipEvidence[i] > skipEvidence[bestSkip] + 1e-7f) bestSkip = i;
                 if (skipEvidence[bestSkip] >= 0.12f)
                     variant.states[bestSkip].allowSkip = true;
@@ -2218,6 +2549,10 @@ namespace YUCP.Components.Editor.VisemePhrase
                 builder.Append("|V:").Append(variant.id).Append(':')
                     .Append(variant.sourceTakeIndex).Append(':')
                     .Append(variant.inferredContextPath ? 'I' : 'E').Append(':')
+                    .Append(variant.inferredConfusionPath ? 'C' : 'N').Append(':')
+                    .Append(variant.confusionSourceSequence ?? string.Empty).Append(':')
+                    .Append(variant.confusionSourceVariantId ?? string.Empty).Append(':')
+                    .Append(variant.inferencePenalty.ToString("R", CultureInfo.InvariantCulture)).Append(':')
                     .Append(variant.cohesion.ToString("R", CultureInfo.InvariantCulture)).Append(':')
                     .Append(variant.medianDurationSeconds.ToString("R", CultureInfo.InvariantCulture)).Append(':')
                     .Append(variant.minimumDurationSeconds.ToString("R", CultureInfo.InvariantCulture)).Append(':')
@@ -2245,7 +2580,11 @@ namespace YUCP.Components.Editor.VisemePhrase
                                           new List<VisemePhraseRuntimeTimingRectangle>())
                 {
                     builder.Append("|R:").Append(rectangle.sourceTakeIndex).Append(':')
-                        .Append(rectangle.skippedStateIndex);
+                        .Append(rectangle.skippedStateIndex).Append(':')
+                        .Append(rectangle.inferredProfile ? 'P' : 'E').Append(':')
+                        .Append(rectangle.includesRuntimeObservationUncertainty
+                            ? 'U'
+                            : 'N');
                     var minimums = rectangle.minimumDurationSeconds ?? Array.Empty<float>();
                     var maximums = rectangle.maximumDurationSeconds ?? Array.Empty<float>();
                     var count = Mathf.Max(minimums.Length, maximums.Length);
@@ -2289,6 +2628,30 @@ namespace YUCP.Components.Editor.VisemePhrase
             internal int viseme;
             internal int count;
             internal float support;
+        }
+
+        private readonly struct ConfusionAlternative
+        {
+            internal readonly int viseme;
+            internal readonly float likelihood;
+
+            internal ConfusionAlternative(int viseme, float likelihood)
+            {
+                this.viseme = viseme;
+                this.likelihood = likelihood;
+            }
+        }
+
+        private sealed class ConfusionPathCandidate
+        {
+            internal VisemePhraseModelVariant source;
+            internal string sourceSequence;
+            internal int[] sequence;
+            internal string sequenceKey;
+            internal int stateIndex;
+            internal float likelihood;
+            internal float penalty;
+            internal int weaknessRank;
         }
 
         private sealed class ClusterCandidate
@@ -2431,6 +2794,7 @@ namespace YUCP.Components.Editor.VisemePhrase
     internal static class VisemePhraseRuntimeLanguage
     {
         internal const float NoMatchCost = 1f;
+        internal const float RuntimeObservationUncertaintySeconds = 0.03f;
         private const float CostEpsilon = 0.00001f;
         private const float TimingEpsilon = 0.0001f;
 
@@ -2497,6 +2861,24 @@ namespace YUCP.Components.Editor.VisemePhrase
                    aliasIndex < state.aliasLikelihoods.Length
                 ? Mathf.Clamp01(state.aliasLikelihoods[aliasIndex])
                 : 0f;
+        }
+
+        internal static float RuntimeMinimumTotalSeconds(
+            VisemePhraseModelVariant variant)
+        {
+            if (variant == null) return 0f;
+            return Mathf.Max(
+                0f,
+                variant.minimumDurationSeconds -
+                RuntimeObservationUncertaintySeconds);
+        }
+
+        internal static float RuntimeMaximumTotalSeconds(
+            VisemePhraseModelVariant variant)
+        {
+            if (variant == null) return 0f;
+            return variant.maximumDurationSeconds +
+                   RuntimeObservationUncertaintySeconds;
         }
 
         /// <summary>
@@ -2601,6 +2983,21 @@ namespace YUCP.Components.Editor.VisemePhrase
             ICollection<VisemePhraseDiagnostic> messages)
         {
             if (model?.variants == null) return;
+            // Context/profile paths are synthesized from several takes and do
+            // not necessarily equal any one enrollment trace. Candidate
+            // confusion evaluation rebuilds timing repeatedly; retain these
+            // already-validated correlated rectangles so a generic guess can
+            // never erase the personalized pronunciation language.
+            var retainedContextRectangles = model.variants
+                .Where(variant => variant != null &&
+                                  variant.inferredContextPath &&
+                                  !variant.inferredConfusionPath)
+                .ToDictionary(
+                    variant => variant,
+                    variant => (variant.runtimeTimingRectangles ??
+                                new List<VisemePhraseRuntimeTimingRectangle>())
+                        .Select(CloneRectangle)
+                        .ToList());
             foreach (var variant in model.variants)
             {
                 if (variant == null) continue;
@@ -2628,11 +3025,169 @@ namespace YUCP.Components.Editor.VisemePhrase
                 AddIfNotContained(variant.runtimeTimingRectangles, rectangle);
             }
 
+            // A component-wise log-median profile is the small-sample analogue
+            // of a DTW barycenter. It admits a natural cadence between two
+            // enrolled takes without taking the unsafe Cartesian union of every
+            // state's independent bounds.
+            foreach (var variant in model.variants.Where(item =>
+                         item != null && !item.inferredConfusionPath))
+                AddProfileTimingRectangles(variant, positiveTakes);
+
+            foreach (var pair in retainedContextRectangles)
+            foreach (var rectangle in pair.Value)
+                AddIfNotContained(
+                    pair.Key.runtimeTimingRectangles,
+                    CloneRectangle(rectangle));
+
+            // A weighted confusion path changes identity, not timing. Reuse the
+            // complete correlated timing language of its enrolled source rather
+            // than attempting to seed it with a pronunciation nobody recorded.
+            foreach (var inferred in model.variants.Where(item =>
+                         item != null && item.inferredConfusionPath))
+            {
+                var source = model.variants.FirstOrDefault(item =>
+                    item != null && !item.inferredConfusionPath &&
+                    string.Equals(
+                        item.id,
+                        inferred.confusionSourceVariantId,
+                        StringComparison.Ordinal));
+                if (source?.runtimeTimingRectangles == null) continue;
+                inferred.runtimeTimingRectangles = source.runtimeTimingRectangles
+                    .Select(CloneRectangle)
+                    .ToList();
+            }
+
+            foreach (var variant in model.variants.Where(item => item != null))
+            foreach (var rectangle in variant.runtimeTimingRectangles)
+                ApplyRuntimeObservationUncertainty(variant, rectangle);
+
             foreach (var variant in model.variants.Where(item => item != null))
                 variant.runtimeTimingRectangles = variant.runtimeTimingRectangles
                     .OrderBy(rectangle => rectangle.skippedStateIndex)
                     .ThenBy(rectangle => RectangleKey(rectangle), StringComparer.Ordinal)
                     .ToList();
+        }
+
+        private static void AddProfileTimingRectangles(
+            VisemePhraseModelVariant variant,
+            IReadOnlyList<List<VisemePhraseToken>> positiveTakes)
+        {
+            if (variant?.states == null || variant.runtimeTimingRectangles == null ||
+                positiveTakes == null) return;
+            var groups = variant.runtimeTimingRectangles
+                .Where(rectangle => rectangle != null &&
+                                    rectangle.sourceTakeIndex >= 0)
+                .GroupBy(rectangle => rectangle.skippedStateIndex)
+                .ToArray();
+            foreach (var group in groups)
+            {
+                if (group.Count() < 2 || !TryGetPathAliases(
+                        variant,
+                        group.Key,
+                        out var retainedStateIndices,
+                        out _,
+                        out _))
+                    continue;
+                var observations = retainedStateIndices.ToDictionary(
+                    index => index,
+                    _ => new List<float>());
+                var totalDurations = new List<float>();
+                foreach (var rectangle in group)
+                {
+                    var takeIndex = rectangle.sourceTakeIndex;
+                    if (takeIndex < 0 || takeIndex >= positiveTakes.Count) continue;
+                    var take = positiveTakes[takeIndex];
+                    if (take == null || take.Count != retainedStateIndices.Length)
+                        continue;
+                    totalDurations.Add(take.Sum(token => token.DurationSeconds));
+                    for (var pathIndex = 0;
+                         pathIndex < retainedStateIndices.Length;
+                         pathIndex++)
+                        observations[retainedStateIndices[pathIndex]].Add(
+                            take[pathIndex].DurationSeconds);
+                }
+                if (observations.Values.Any(values => values.Count < 2)) continue;
+
+                var profileDurations = retainedStateIndices.Select(stateIndex =>
+                {
+                    var logs = observations[stateIndex]
+                        .Where(value => Finite(value) && value > 0f)
+                        .Select(value => Mathf.Log(Mathf.Max(0.0001f, value)))
+                        .ToArray();
+                    return logs.Length < 2
+                        ? float.NaN
+                        : Mathf.Exp(VisemePhraseTraceMath.Median(logs));
+                }).ToArray();
+                if (profileDurations.Any(value => !Finite(value) || value <= 0f) ||
+                    totalDurations.Count < 2)
+                    continue;
+                var targetTotal = VisemePhraseTraceMath.Median(totalDurations);
+                var profileTotal = profileDurations.Sum();
+                var scale = targetTotal / Mathf.Max(0.0001f, profileTotal);
+                var seed = new List<VisemePhraseToken>(retainedStateIndices.Length);
+                var clock = 0f;
+                for (var pathIndex = 0;
+                     pathIndex < retainedStateIndices.Length;
+                     pathIndex++)
+                {
+                    var stateIndex = retainedStateIndices[pathIndex];
+                    var duration = profileDurations[pathIndex] * scale;
+                    seed.Add(new VisemePhraseToken
+                    {
+                        viseme = variant.states[stateIndex].primaryViseme,
+                        startSeconds = clock,
+                        endSeconds = clock + duration,
+                        meanVoice = variant.states[stateIndex].meanVoice,
+                        frameCount = 1
+                    });
+                    clock += duration;
+                }
+                if (!TryCreateSafeRectangle(
+                        variant, group.Key, seed, -1, out var profile))
+                    continue;
+                profile.inferredProfile = true;
+                AddIfNotContained(variant.runtimeTimingRectangles, profile);
+            }
+        }
+
+        private static VisemePhraseRuntimeTimingRectangle CloneRectangle(
+            VisemePhraseRuntimeTimingRectangle source) =>
+            new VisemePhraseRuntimeTimingRectangle
+            {
+                sourceTakeIndex = source?.sourceTakeIndex ?? -1,
+                skippedStateIndex = source?.skippedStateIndex ?? -1,
+                inferredProfile = source != null && source.inferredProfile,
+                includesRuntimeObservationUncertainty = source != null &&
+                    source.includesRuntimeObservationUncertainty,
+                minimumDurationSeconds = source?.minimumDurationSeconds?.ToArray() ??
+                                         Array.Empty<float>(),
+                maximumDurationSeconds = source?.maximumDurationSeconds?.ToArray() ??
+                                         Array.Empty<float>()
+            };
+
+        private static void ApplyRuntimeObservationUncertainty(
+            VisemePhraseModelVariant variant,
+            VisemePhraseRuntimeTimingRectangle rectangle)
+        {
+            if (rectangle == null ||
+                rectangle.includesRuntimeObservationUncertainty ||
+                !TryGetPathAliases(
+                    variant,
+                    rectangle.skippedStateIndex,
+                    out var retainedStateIndices,
+                    out _,
+                    out _))
+                return;
+            var allowance = RuntimeObservationUncertaintySeconds /
+                Mathf.Max(1, retainedStateIndices.Length);
+            foreach (var stateIndex in retainedStateIndices)
+            {
+                rectangle.minimumDurationSeconds[stateIndex] = Mathf.Max(
+                    0f,
+                    rectangle.minimumDurationSeconds[stateIndex] - allowance);
+                rectangle.maximumDurationSeconds[stateIndex] += allowance;
+            }
+            rectangle.includesRuntimeObservationUncertainty = true;
         }
 
         private static SeedCandidate BestSeedCandidate(
@@ -2698,7 +3253,7 @@ namespace YUCP.Components.Editor.VisemePhrase
             var total = tokens.Sum(token => token?.DurationSeconds ?? 0f);
             if (!Within(total, variant.minimumDurationSeconds,
                     variant.maximumDurationSeconds)) return NoMatchCost;
-            var totalCost = 0f;
+            var totalCost = Mathf.Max(0f, variant.inferencePenalty);
             if (skippedStateIndex >= 0)
                 totalCost += Mathf.Clamp01(
                     variant.states[skippedStateIndex].skipPenalty);
@@ -2811,10 +3366,18 @@ namespace YUCP.Components.Editor.VisemePhrase
             var totalDuration = 0f;
             for (var index = start; index < start + consumed; index++)
                 totalDuration += tokens[index]?.DurationSeconds ?? 0f;
-            if (!Within(totalDuration, variant.minimumDurationSeconds,
-                    variant.maximumDurationSeconds)) return NoMatchCost;
+            var minimumTotal = rectangle.includesRuntimeObservationUncertainty
+                ? RuntimeMinimumTotalSeconds(variant)
+                : variant.minimumDurationSeconds;
+            var maximumTotal = rectangle.includesRuntimeObservationUncertainty
+                ? RuntimeMaximumTotalSeconds(variant)
+                : variant.maximumDurationSeconds;
+            if (!Within(
+                    totalDuration,
+                    minimumTotal,
+                    maximumTotal)) return NoMatchCost;
 
-            var totalCost = 0f;
+            var totalCost = Mathf.Max(0f, variant.inferencePenalty);
             if (rectangle.skippedStateIndex >= 0)
                 totalCost += Mathf.Clamp01(
                     variant.states[rectangle.skippedStateIndex].skipPenalty);
@@ -2867,8 +3430,13 @@ namespace YUCP.Components.Editor.VisemePhrase
                 minimumSum += minimum;
                 maximumSum += maximum;
             }
-            return minimumSum + TimingEpsilon >= variant.minimumDurationSeconds &&
-                   maximumSum - TimingEpsilon <= variant.maximumDurationSeconds;
+            var uncertainty = rectangle.includesRuntimeObservationUncertainty
+                ? RuntimeObservationUncertaintySeconds
+                : 0f;
+            return minimumSum + TimingEpsilon >=
+                       variant.minimumDurationSeconds - uncertainty &&
+                   maximumSum - TimingEpsilon <=
+                       variant.maximumDurationSeconds + uncertainty;
         }
 
         private static bool ValidVariantEnvelope(VisemePhraseModelVariant variant) =>
@@ -2886,7 +3454,7 @@ namespace YUCP.Components.Editor.VisemePhrase
             return value + tolerance >= minimum && value - tolerance <= maximum;
         }
 
-        private static void AddIfNotContained(
+        internal static void AddIfNotContained(
             IList<VisemePhraseRuntimeTimingRectangle> rectangles,
             VisemePhraseRuntimeTimingRectangle candidate)
         {
@@ -2894,8 +3462,20 @@ namespace YUCP.Components.Editor.VisemePhrase
             {
                 var existing = rectangles[index];
                 if (existing.skippedStateIndex != candidate.skippedStateIndex) continue;
-                if (Contains(existing, candidate)) return;
-                if (Contains(candidate, existing)) rectangles.RemoveAt(index);
+                if (Contains(existing, candidate))
+                {
+                    // A synthesized profile may cover a narrower observed take,
+                    // but it must never erase that take's protected provenance.
+                    if (!candidate.inferredProfile && existing.inferredProfile)
+                        continue;
+                    return;
+                }
+                if (Contains(candidate, existing))
+                {
+                    if (candidate.inferredProfile && !existing.inferredProfile)
+                        continue;
+                    rectangles.RemoveAt(index);
+                }
             }
             rectangles.Add(candidate);
         }
@@ -2919,7 +3499,8 @@ namespace YUCP.Components.Editor.VisemePhrase
 
         private static string RectangleKey(VisemePhraseRuntimeTimingRectangle rectangle)
         {
-            var builder = new StringBuilder();
+            var builder = new StringBuilder(
+                rectangle.includesRuntimeObservationUncertainty ? "U|" : "N|");
             for (var index = 0; index < rectangle.minimumDurationSeconds.Length; index++)
             {
                 builder.Append(rectangle.minimumDurationSeconds[index]

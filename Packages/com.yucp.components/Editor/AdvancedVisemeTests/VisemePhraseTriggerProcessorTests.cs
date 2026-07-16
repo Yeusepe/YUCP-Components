@@ -60,7 +60,7 @@ namespace YUCP.Components.Editor.Tests
             Assert.That(new VisemePhraseTriggerProcessor().callbackOrder,
                 Is.EqualTo(int.MinValue + 191));
             Assert.That(new VisemePhraseBuildPlan().CanonicalFingerprint(),
-                Does.StartWith("YUCP_VISPHRASE_CONTROLLER_V4_CONTRACT_"),
+                Does.StartWith("YUCP_VISPHRASE_CONTROLLER_V10_CONTRACT_"),
                 "Generator semantic changes must invalidate content-addressed controllers.");
         }
 
@@ -460,6 +460,175 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void RuntimeFitterPrunesGenericConfusionBeforeCreatorContext()
+        {
+            var first = Phrase("first", new[]
+            {
+                State(1, 0.03f, 0.12f), State(2, 0.03f, 0.12f),
+                State(3, 0.03f, 0.12f)
+            });
+            var trainedContext = RuntimeVariant(
+                "v99_context", new[] { 1, 2, 4 },
+                new[] { 0.06f, 0.06f, 0.06f });
+            trainedContext.inferredContextPath = true;
+            first.variants.Add(trainedContext);
+            var genericConfusion = RuntimeVariant(
+                "v1_confusion", new[] { 7, 8, 9 },
+                new[] { 0.06f, 0.06f, 0.06f });
+            genericConfusion.inferredContextPath = true;
+            genericConfusion.inferredConfusionPath = true;
+            first.variants.Add(genericConfusion);
+
+            var plan = new VisemePhraseBuildPlan();
+            plan.phrases.Add(first);
+            plan.phrases.Add(Phrase("second", new[]
+            {
+                State(7, 0.03f, 0.12f), State(8, 0.03f, 0.12f),
+                State(9, 0.03f, 0.12f)
+            }));
+
+            Assert.That(VisemePhraseTriggerContractAdapter.TryFitRuntimeLanguage(
+                plan, out _, out var error), Is.True, error);
+            Assert.That(first.variants.Any(variant =>
+                variant.inferredConfusionPath), Is.False,
+                "Generic classifier guesses must yield before personalized paths.");
+            Assert.That(first.variants.Any(variant =>
+                ReferenceEquals(variant, trainedContext)), Is.True,
+                "A creator-trained context bridge should survive when removing the " +
+                "generic confusion resolves the conflict.");
+        }
+
+        [Test]
+        public void OverBudgetGenericConfusionCannotInvalidateEnrolledPath()
+        {
+            var phrase = Phrase("calibrated", new[]
+            {
+                State(1, 0.03f, 0.12f), State(10, 0.03f, 0.12f),
+                State(7, 0.03f, 0.12f), State(12, 0.03f, 0.12f)
+            });
+            phrase.runtimeAcceptanceCost = 0.05f;
+            var confusion = RuntimeVariant(
+                "generic_confusion", new[] { 1, 11, 7, 12 },
+                new[] { 0.06f, 0.06f, 0.06f, 0.06f });
+            confusion.inferredContextPath = true;
+            confusion.inferredConfusionPath = true;
+            confusion.runtimeBaseCost = 0.45f;
+            phrase.variants.Add(confusion);
+            var plan = new VisemePhraseBuildPlan();
+            plan.phrases.Add(phrase);
+
+            Assert.That(VisemePhraseGlobalTrie.TryBuild(
+                plan, out var root, out _, out var error), Is.True, error);
+            Assert.That(root.candidates, Has.Count.EqualTo(1));
+            Assert.That(root.candidates.Single().variantId,
+                Does.StartWith("v0_"),
+                "The exact enrolled path must build while the optional over-budget " +
+                "confusion arc disappears.");
+        }
+
+        [Test]
+        public void ObservationUncertaintyIsOnePhraseWideBudget()
+        {
+            foreach (var retainedStates in new[] { 1, 3, 6, 12 })
+            {
+                var perState = VisemePhraseTriggerContractAdapter
+                    .RuntimeObservationUncertaintyPerState(retainedStates);
+                Assert.That(perState * retainedStates,
+                    Is.EqualTo(VisemePhraseTriggerContractAdapter
+                        .RuntimeObservationUncertaintySeconds).Within(0.000001f),
+                    "Adding more phones must not multiply the observation allowance.");
+            }
+
+            var root = new GameObject("Phrase-wide timing adapter regression");
+            try
+            {
+                var descriptor = root.AddComponent<VRCAvatarDescriptor>();
+                descriptor.lipSync = VRCAvatarDescriptor.LipSyncStyle.VisemeParameterOnly;
+                root.AddComponent<AdvancedVisemeReconstructorData>();
+                var trigger = root.AddComponent<VisemePhraseTriggerData>();
+                trigger.enrollmentProfile = CreatePersonalProfile("TimingBudgetProfile");
+                var definition = new VisemePhraseDefinition
+                {
+                    prompt = "timing budget",
+                    strictness = 0.65f
+                };
+                definition.EnsureDefaults();
+                trigger.phrases.Add(definition);
+                var enrollment = trigger.enrollmentProfile.GetOrCreateEnrollment(
+                    definition.id, definition.PromptFingerprint);
+                for (var take = 0; take < 4; take++)
+                    enrollment.positiveTakes.Add(MakeBlockTrace(
+                        "timing-" + take,
+                        (1, 4), (10, 4), (7, 4), (12, 4)));
+
+                Assert.That(VisemePhraseTriggerContractAdapter.TryCreatePlan(
+                    root, descriptor, new[] { trigger }, out var plan, out var error),
+                    Is.True, error);
+                var model = enrollment.compiledModel;
+                Assert.That(model, Is.Not.Null);
+                foreach (var runtimeVariant in plan.phrases.Single().variants)
+                {
+                    var marker = runtimeVariant.id.LastIndexOf(
+                        "_rectangle_", StringComparison.Ordinal);
+                    Assert.That(marker, Is.GreaterThan(0));
+                    var sourceId = runtimeVariant.id.Substring(0, marker);
+                    var rectangleIndex = int.Parse(runtimeVariant.id.Substring(
+                        marker + "_rectangle_".Length));
+                    var source = model.variants.Single(variant => variant.id == sourceId);
+                    var rectangle = source.runtimeTimingRectangles[rectangleIndex];
+                    Assert.That(rectangle.includesRuntimeObservationUncertainty, Is.True);
+                    Assert.That(VisemePhraseRuntimeLanguage.TryGetPathAliases(
+                        source, rectangle.skippedStateIndex,
+                        out var retained, out _, out error), Is.True, error);
+                    CollectionAssert.AreEqual(
+                        retained.Select(index =>
+                            rectangle.minimumDurationSeconds[index]).ToArray(),
+                        runtimeVariant.states.Select(state => state.minimumSeconds).ToArray(),
+                        "The adapter must consume the exact calibrated minimum corridor.");
+                    CollectionAssert.AreEqual(
+                        retained.Select(index =>
+                            rectangle.maximumDurationSeconds[index]).ToArray(),
+                        runtimeVariant.states.Select(state => state.maximumSeconds).ToArray(),
+                        "The adapter must not widen the calibrated corridor a second time.");
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void RuntimeFitterCanRemoveSyntheticTimingProfile()
+        {
+            var first = Phrase("first", new[]
+            {
+                State(1, 0.03f, 0.12f), State(2, 0.03f, 0.12f),
+                State(3, 0.03f, 0.12f)
+            });
+            var timingProfile = RuntimeVariant(
+                "v0_profile", new[] { 7, 8, 9 },
+                new[] { 0.06f, 0.06f, 0.06f });
+            timingProfile.inferredContextPath = true;
+            timingProfile.inferredTimingProfile = true;
+            first.variants.Add(timingProfile);
+            var plan = new VisemePhraseBuildPlan();
+            plan.phrases.Add(first);
+            plan.phrases.Add(Phrase("second", new[]
+            {
+                State(7, 0.03f, 0.12f), State(8, 0.03f, 0.12f),
+                State(9, 0.03f, 0.12f)
+            }));
+
+            Assert.That(VisemePhraseTriggerContractAdapter.TryFitRuntimeLanguage(
+                plan, out _, out var error), Is.True, error);
+            Assert.That(first.variants, Has.Count.EqualTo(1));
+            Assert.That(first.variants.Single().inferredTimingProfile, Is.False,
+                "A synthesized cadence lane must never make a valid avatar fail its " +
+                "shared state budget or homophene checks.");
+        }
+
+        [Test]
         public void RuntimeBudgetPrunesInferredCrossPhraseHomopheneButNotExactConflict()
         {
             var plan = new VisemePhraseBuildPlan();
@@ -743,17 +912,17 @@ namespace YUCP.Components.Editor.Tests
             var heldCompletion = firstGate.transitions.Single(transition =>
                 transition.hasExitTime &&
                 transition.destinationState.name.Contains("_1 depth 1 [1] natural ") &&
-                HasCondition(transition, "Viseme", AnimatorConditionMode.Equals, 1f));
+                HasCondition(transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 1f));
             Assert.That(heldCompletion.exitTime, Is.EqualTo(1f));
             var boundaryAdvance = firstGate.transitions.FirstOrDefault(transition =>
                 transition.hasExitTime && transition.destinationState != null &&
                 transition.destinationState.name.Contains(" depth 2 [2] ") &&
-                HasCondition(transition, "Viseme", AnimatorConditionMode.Equals, 2f));
+                HasCondition(transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 2f));
             Assert.That(boundaryAdvance, Is.Not.Null,
                 "The first sample at the learned minimum must advance directly.");
             var earlyChange = firstGate.transitions.FirstOrDefault(transition =>
                 !transition.hasExitTime && HasCondition(
-                    transition, "Viseme", AnimatorConditionMode.Equals, 2f));
+                    transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 2f));
             Assert.That(earlyChange, Is.Not.Null,
                 "A next token arriving before the minimum hold must fail immediately.");
             Assert.That(earlyChange.destinationState.name, Is.EqualTo("Ready"));
@@ -765,14 +934,15 @@ namespace YUCP.Components.Editor.Tests
                         StringComparison.Ordinal)));
             var silenceTransitions = terminal.transitions
                 .Where(transition => HasCondition(
-                    transition, "Viseme", AnimatorConditionMode.Equals, 0f))
+                    transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 0f))
                 .ToArray();
             Assert.That(silenceTransitions.Length, Is.GreaterThanOrEqualTo(2));
             Assert.That(silenceTransitions[0].destinationState.name,
                 Does.StartWith("Emit hello"),
                 "Terminal acceptance must beat the same-frame sil failure link.");
             Assert.That(terminal.transitions.Any(transition =>
-                transition.hasExitTime && transition.destinationState.name == "Ready"), Is.True,
+                transition.hasExitTime && transition.destinationState.name.StartsWith(
+                    "Expired boundary quarantine ", StringComparison.Ordinal)), Is.True,
                 "Holding the terminal beyond its maximum must reject it.");
         }
 
@@ -802,7 +972,7 @@ namespace YUCP.Components.Editor.Tests
                 state.name.Contains(" depth 2 [2] natural ") &&
                 state.name.EndsWith("candidates 0", StringComparison.Ordinal));
             var sameObservationFallbacks = outerSecond.transitions.Where(transition =>
-                HasCondition(transition, "Viseme", AnimatorConditionMode.Equals, 3f)).ToArray();
+                HasCondition(transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 3f)).ToArray();
             var longestIndex = Array.FindIndex(sameObservationFallbacks, transition =>
                 transition.destinationState != null && transition.destinationState.name
                     .Contains(" depth 2 [3] natural "));
@@ -813,7 +983,7 @@ namespace YUCP.Components.Editor.Tests
                 state.name.Contains(" depth 1 [1] natural ") &&
                 state.name.EndsWith("candidates 0", StringComparison.Ordinal));
             Assert.That(outerFirst.transitions.Any(transition =>
-                HasCondition(transition, "Viseme", AnimatorConditionMode.Equals, 7f) &&
+                HasCondition(transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 7f) &&
                 transition.destinationState != null && transition.destinationState.name
                     .Contains(" depth 1 [7] natural ")), Is.True,
                 "A one-frame token that starts another phrase must bypass Ready.");
@@ -832,7 +1002,7 @@ namespace YUCP.Components.Editor.Tests
                 state.name.Contains(" depth 4 [2] natural ") &&
                 state.name.EndsWith("candidates 0", StringComparison.Ordinal));
             Assert.That(abab.transitions.Where(transition =>
-                    HasCondition(transition, "Viseme", AnimatorConditionMode.Equals, 1f))
+                    HasCondition(transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 1f))
                 .First().destinationState.name, Does.Contain(" depth 3 [1] natural "),
                 "ABAB + A must fall to ABA so ABABABC still contains ABABC.");
         }
@@ -875,9 +1045,9 @@ namespace YUCP.Components.Editor.Tests
             var sharedTerminal = matcher.states.Select(item => item.state)
                 .Where(state => state.name.Contains(" depth 5 [8] natural "))
                 .First(state => state.transitions.Any(transition =>
-                    HasCondition(transition, "Viseme", AnimatorConditionMode.Equals, 13f)));
+                    HasCondition(transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 13f)));
             Assert.That(sharedTerminal.transitions.Any(transition =>
-                HasCondition(transition, "Viseme", AnimatorConditionMode.Equals, 13f) &&
+                HasCondition(transition, "__YUCP_Phrase_StableViseme", AnimatorConditionMode.Equals, 13f) &&
                 transition.destinationState != null &&
                 transition.destinationState.name.Contains(" depth 6 [13] natural ")), Is.True,
                 "A recorded longer continuation must advance instead of prematurely firing the shorter path.");
@@ -960,6 +1130,155 @@ namespace YUCP.Components.Editor.Tests
             var totalWindow = entry.motion.averageDuration + eligible.motion.averageDuration;
             Assert.That(totalWindow, Is.EqualTo(0.03f).Within(0.0005f),
                 "Segment durations must sum to the exact learned maximum.");
+        }
+
+        [Test]
+        public void GeneratedMatcherUsesEnrollmentEquivalentVisemeProbation()
+        {
+            Assert.That(VisemePhraseTimedSubsetPlanner.EffectiveMinimumSeconds(
+                    State(1, 0.03f, 0.18f)), Is.Zero,
+                "A committed category already proves a 30 ms learned minimum.");
+            Assert.That(VisemePhraseTimedSubsetPlanner.EffectiveMinimumSeconds(
+                    State(1, 0.08f, 0.18f)), Is.EqualTo(0.08f).Within(0.000001f),
+                "Longer minima must remain intact; the observer threshold is not a " +
+                "per-phone arithmetic discount.");
+            var plan = new VisemePhraseBuildPlan();
+            plan.phrases.Add(Phrase("stable_input", new[]
+            {
+                State(10, 0.04f, 0.18f), State(7, 0.04f, 0.18f),
+                State(14, 0.04f, 0.18f), State(9, 0.04f, 0.18f)
+            }));
+
+            var built = Build(plan);
+            var stableParameter = built.controller.parameters.Single(parameter =>
+                parameter.name == "__YUCP_Phrase_StableViseme");
+            Assert.That(stableParameter.type,
+                Is.EqualTo(AnimatorControllerParameterType.Float));
+            Assert.That(built.controller.parameters.Any(parameter =>
+                parameter.name == "__YUCP_Phrase_CandidateViseme"), Is.False,
+                "Pair states encode categorical memory without a driver register.");
+            var stabilizer = built.controller.layers.Single(layer =>
+                layer.name == "YUCP Phrase Viseme Stabilizer").stateMachine;
+            Assert.That(stabilizer.states.Count(state =>
+                state.state.name.StartsWith("Probation ", StringComparison.Ordinal)),
+                Is.EqualTo(75),
+                "Published labels are alphabet-pruned, but every raw winner needs its own " +
+                "probation clock so different short bounces cannot combine.");
+            Assert.That(stabilizer.states.Count(state =>
+                state.state.name.StartsWith("Stable ", StringComparison.Ordinal)),
+                Is.EqualTo(6));
+            Assert.That(stabilizer.states.Select(item => item.state)
+                .SelectMany(state => state.behaviours)
+                .OfType<VRCAvatarParameterDriver>(), Is.Empty,
+                "The categorical observer must remain immediately interruptible.");
+            var probation = StateNamed(stabilizer, "Probation aa -> SS");
+            Assert.That(probation.motion.averageDuration,
+                Is.EqualTo(0.03f).Within(0.0005f));
+            Assert.That(probation.transitions.Length,
+                Is.EqualTo(30),
+                "Probation must distinguish timed commits from short categorical replacements.");
+            Assert.That(StateNamed(stabilizer, "Stable aa").transitions.Length,
+                Is.EqualTo(15));
+            var stableRoutes = StateNamed(stabilizer, "Stable aa").transitions
+                .Where(transition => transition.destinationState != null &&
+                                     transition.destinationState.name.StartsWith(
+                                         "Probation ", StringComparison.Ordinal))
+                .ToArray();
+            Assert.That(stableRoutes.Length, Is.EqualTo(14));
+            Assert.That(stableRoutes,
+                Has.All.Matches<AnimatorStateTransition>(transition =>
+                    transition.conditions.Length == 1 &&
+                    transition.conditions[0].parameter == "Viseme"),
+                "A labeled stable state should route each genuine change with one " +
+                "integer comparison instead of a two-parameter blend-tree gate.");
+
+            var timedChanges = probation.transitions
+                .Where(transition => transition.destinationState != null &&
+                                     transition.destinationState.name.StartsWith(
+                                         "Probation SS -> ",
+                                         StringComparison.Ordinal))
+                .ToArray();
+            Assert.That(timedChanges.Length, Is.EqualTo(14));
+            Assert.That(timedChanges, Has.All.Matches<AnimatorStateTransition>(transition =>
+                transition.hasExitTime &&
+                Math.Abs(transition.exitTime - 1f) < 0.0001f &&
+                transition.conditions.Length == 1 &&
+                transition.conditions[0].parameter == "Viseme"));
+
+            var shortReplacements = probation.transitions.Where(transition =>
+                !transition.hasExitTime && transition.destinationState != null &&
+                (transition.destinationState.name == "Stable aa" ||
+                 transition.destinationState.name.StartsWith(
+                     "Probation aa -> ", StringComparison.Ordinal))).ToArray();
+            Assert.That(shortReplacements, Has.Length.EqualTo(14));
+            var stableAaClip = StateNamed(stabilizer, "Stable aa").motion as AnimationClip;
+            Assert.That(stableAaClip, Is.Not.Null);
+            var stableBinding = AnimationUtility.GetCurveBindings(stableAaClip).Single(binding =>
+                binding.propertyName == "__YUCP_Phrase_StableViseme");
+            Assert.That(AnimationUtility.GetEditorCurve(stableAaClip, stableBinding)
+                .Evaluate(0f), Is.EqualTo(10f).Within(0.0001f));
+
+            var matcher = built.controller.layers.Single(layer =>
+                layer.name == "YUCP Phrase Shared Matcher").stateMachine;
+            var identityConditions = matcher.states
+                .SelectMany(item => item.state.transitions)
+                .SelectMany(transition => transition.conditions)
+                .Where(condition => condition.parameter ==
+                                    "__YUCP_Phrase_StableViseme")
+                .ToArray();
+            Assert.That(identityConditions, Is.Not.Empty);
+            Assert.That(identityConditions, Has.All.Matches<AnimatorCondition>(condition =>
+                condition.mode == AnimatorConditionMode.Greater ||
+                condition.mode == AnimatorConditionMode.Less));
+            var matcherTransitions = matcher.states
+                .SelectMany(item => item.state.transitions)
+                .ToArray();
+            Assert.That(matcherTransitions.Any(transition =>
+                    transition.conditions.Any(condition =>
+                        condition.parameter == "__YUCP_Phrase_StableViseme" &&
+                        condition.mode == AnimatorConditionMode.Greater &&
+                        Math.Abs(condition.threshold - 13.5f) < 0.0001f) &&
+                    transition.conditions.Any(condition =>
+                        condition.parameter == "__YUCP_Phrase_StableViseme" &&
+                        condition.mode == AnimatorConditionMode.Less &&
+                        Math.Abs(condition.threshold - 14.5f) < 0.0001f)), Is.True,
+                "U must be a bounded category; the internal Other=15 sentinel may not " +
+                "satisfy an open-ended U condition.");
+            Assert.That(matcherTransitions.Any(transition =>
+                    transition.conditions.Any(condition =>
+                        condition.parameter == "__YUCP_Phrase_StableViseme" &&
+                        condition.mode == AnimatorConditionMode.Greater &&
+                        Math.Abs(condition.threshold - 14.5f) < 0.0001f)), Is.True,
+                "Committed Other must explicitly fail or restart an active candidate.");
+            var rawGuards = matcher.states
+                .SelectMany(item => item.state.transitions)
+                .Where(transition => transition.conditions.Any(condition =>
+                    condition.parameter == "Viseme"))
+                .ToArray();
+            Assert.That(rawGuards, Has.All.Matches<AnimatorStateTransition>(transition =>
+                transition.hasExitTime && transition.destinationState != null &&
+                transition.destinationState.name.StartsWith(
+                    "Expired boundary quarantine ", StringComparison.Ordinal)),
+                "Raw Viseme may only prevent a held-token timeout while its changed " +
+                "winner is under probation; sequence identity must use the stable stream.");
+            var quarantineStates = matcher.states.Select(item => item.state)
+                .Where(state => state.name.StartsWith(
+                    "Expired boundary quarantine ", StringComparison.Ordinal))
+                .ToArray();
+            Assert.That(quarantineStates, Has.Length.EqualTo(16));
+            Assert.That(quarantineStates.Select(state => state.motion.averageDuration),
+                Has.All.EqualTo(0.12f).Within(0.0005f));
+            Assert.That(StateNamed(stabilizer, "Stable sil"), Is.Not.Null);
+            var expiredSil = StateNamed(matcher,
+                "Expired boundary quarantine sil");
+            Assert.That(expiredSil.transitions.Any(transition =>
+                    transition.destinationState != null &&
+                    transition.destinationState.name.Contains(
+                        "depth 1 [10] natural", StringComparison.Ordinal)), Is.True,
+                "A freshly committed Natural Speech root must be consumed directly " +
+                "from quarantine instead of being lost through Ready.");
+            Assert.That(built.parameters.CalcTotalCost(), Is.EqualTo(1),
+                "Animator-only stabilization must not add expression sync memory.");
         }
 
         [Test]
@@ -1325,9 +1644,26 @@ namespace YUCP.Components.Editor.Tests
             AnimatorStateTransition transition,
             string parameter,
             AnimatorConditionMode mode,
-            float threshold) => transition.conditions.Any(condition =>
-            condition.parameter == parameter && condition.mode == mode &&
-            Math.Abs(condition.threshold - threshold) < 0.0001f);
+            float threshold)
+        {
+            if (parameter == "__YUCP_Phrase_StableViseme" &&
+                mode == AnimatorConditionMode.Equals)
+            {
+                var viseme = Mathf.RoundToInt(threshold);
+                var lower = viseme == 0 || transition.conditions.Any(condition =>
+                    condition.parameter == parameter &&
+                    condition.mode == AnimatorConditionMode.Greater &&
+                    Math.Abs(condition.threshold - (viseme - 0.5f)) < 0.0001f);
+                var upper = viseme == 14 || transition.conditions.Any(condition =>
+                    condition.parameter == parameter &&
+                    condition.mode == AnimatorConditionMode.Less &&
+                    Math.Abs(condition.threshold - (viseme + 0.5f)) < 0.0001f);
+                return lower && upper;
+            }
+            return transition.conditions.Any(condition =>
+                condition.parameter == parameter && condition.mode == mode &&
+                Math.Abs(condition.threshold - threshold) < 0.0001f);
+        }
 
         private static IEnumerable<AnimatorState> AllStates(AnimatorController controller) =>
             controller.layers.SelectMany(layer => layer.stateMachine.states)

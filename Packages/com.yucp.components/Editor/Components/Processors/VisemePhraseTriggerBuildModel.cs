@@ -22,7 +22,7 @@ namespace YUCP.Components.Editor.VisemePhrase
         // Bump whenever generated Animator semantics change. Content-addressed
         // folders may outlive a package update, so the parameter contract alone
         // is not a sufficient cache key for controller topology/timing changes.
-        internal const int ControllerGeneratorSchemaVersion = 4;
+        internal const int ControllerGeneratorSchemaVersion = 10;
         internal const float InitialNetworkSuppressionSeconds = 1.25f;
         internal const float DefaultPulseSeconds = 0.25f;
         internal const float MinimumNetworkCooldownSeconds = 1.25f;
@@ -129,6 +129,14 @@ namespace YUCP.Components.Editor.VisemePhrase
         // Context-derived paths are optional language bridges. The avatar-wide
         // budget fitter may remove them, but never a directly enrolled path.
         internal bool inferredContextPath;
+        // Generic one-confusion paths are lower-priority than profile/context
+        // paths and are therefore the first optional paths removed by the
+        // avatar-wide state fitter.
+        internal bool inferredConfusionPath;
+        // A synthesized timing midpoint is optional even when it belongs to a
+        // creator-recorded identity path. It must never make an otherwise valid
+        // avatar exceed the shared timed-state budget.
+        internal bool inferredTimingProfile;
         internal int canonicalStateCount;
         internal float minimumTotalSeconds;
         internal float maximumTotalSeconds = float.MaxValue;
@@ -153,6 +161,8 @@ namespace YUCP.Components.Editor.VisemePhrase
 
         internal string CanonicalFingerprint() =>
             (id ?? string.Empty) + (inferredContextPath ? "#inferred#" : "#enrolled#") +
+            (inferredConfusionPath ? "#confusion#" : "#profile#") +
+            (inferredTimingProfile ? "#timing-inference#" : "#timing-observed#") +
             CanonicalRuntimePathFingerprint();
     }
 
@@ -283,6 +293,20 @@ namespace YUCP.Components.Editor.VisemePhrase
                             return false;
                         }
 
+                        var allCandidates = root.candidates;
+                        if (cursor.acceptingCandidateIds.Any(id =>
+                                id >= 0 && id < allCandidates.Count &&
+                                allCandidates[id].phraseIndex == phraseIndex &&
+                                allCandidates[id].canonicalStateCount >
+                                cursor.depth))
+                        {
+                            error = $"Phrase '{phrase.prompt}' has a shortened optional " +
+                                    "path whose prefix is another pronunciation path. " +
+                                    "The Animator cannot delay that optional acceptance " +
+                                    "without changing the trained timing language.";
+                            return false;
+                        }
+
                         var state = variant.states[index];
                         var identity = state.TokenIdentity();
                         var child = cursor.children.FirstOrDefault(candidate =>
@@ -330,6 +354,15 @@ namespace YUCP.Components.Editor.VisemePhrase
                                 "phrase in the same speech context.";
                         return false;
                     }
+                    if (candidate.canonicalStateCount > cursor.depth &&
+                        cursor.children.Any(child =>
+                            child.phraseIndices.Contains(phraseIndex)))
+                    {
+                        error = $"Phrase '{phrase.prompt}' has a shortened optional " +
+                                "path that is a prefix of another pronunciation path. " +
+                                "Re-enroll it without the ambiguous optional deletion.";
+                        return false;
+                    }
                     cursor.acceptingPhraseIndices.Add(phraseIndex);
                     cursor.acceptingCandidateIds.Add(candidate.id);
                     }
@@ -375,6 +408,8 @@ namespace YUCP.Components.Editor.VisemePhrase
                     {
                         id = (source.id ?? string.Empty) + "_runtime_" + expandedVariants.Count,
                         inferredContextPath = source.inferredContextPath,
+                        inferredConfusionPath = source.inferredConfusionPath,
+                        inferredTimingProfile = source.inferredTimingProfile,
                         canonicalStateCount = canonicalCount,
                         minimumTotalSeconds = source.minimumTotalSeconds,
                         maximumTotalSeconds = source.maximumTotalSeconds,
@@ -427,6 +462,11 @@ namespace YUCP.Components.Editor.VisemePhrase
                 .OrderBy(variant => variant.CanonicalFingerprint(), StringComparer.Ordinal)
                 .ToList();
             if (variants.Count > 0) return true;
+            // Generic confusion arcs are speculative, unlike enrollment and
+            // creator-trained context paths. A later personalized calibration
+            // is allowed to make one unreachable; treat that as a pruned arc,
+            // not as a corrupt phrase model.
+            if (source.inferredConfusionPath) return true;
             error = $"Phrase '{phrase.prompt}' has no alias/skip path within its calibrated " +
                     "runtime acceptance budget. Recompile or re-record the enrollment.";
             return false;
@@ -580,6 +620,13 @@ namespace YUCP.Components.Editor.VisemePhrase
     /// </summary>
     internal static class VisemePhraseTimedSubsetPlanner
     {
+        // A label reaches this planner only after the stabilizer has already
+        // observed one uninterrupted 30 ms categorical run. That proof fully
+        // satisfies a learned minimum no greater than 30 ms. It is not an
+        // arithmetic credit against longer minima: subtracting it from every
+        // state would widen an N-phone path by N*30 ms beyond calibration.
+        internal const float CommittedRunEvidenceSeconds = 0.03f;
+
         internal sealed class Graph
         {
             internal VisemePhraseGlobalTrie.Node root;
@@ -762,7 +809,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                 .ToArray();
             var boundaries = new[] { 0f }.Concat(candidates.SelectMany(id => new[]
                 {
-                    node.candidateStates[id].minimumSeconds,
+                    EffectiveMinimumSeconds(node.candidateStates[id]),
                     node.candidateStates[id].maximumSeconds
                 }))
                 .Where(value => !float.IsNaN(value) && !float.IsInfinity(value) && value >= 0f)
@@ -783,12 +830,21 @@ namespace YUCP.Components.Editor.VisemePhrase
                     candidateIds = candidates.Where(id =>
                     {
                         var timing = node.candidateStates[id];
-                        return sample >= timing.minimumSeconds &&
+                        return sample >= EffectiveMinimumSeconds(timing) &&
                                sample <= timing.maximumSeconds;
                     }).ToArray()
                 });
             }
             return output;
+        }
+
+        internal static float EffectiveMinimumSeconds(
+            VisemePhraseBuildState state)
+        {
+            var minimum = Mathf.Max(0f, state?.minimumSeconds ?? 0f);
+            return minimum <= CommittedRunEvidenceSeconds + 0.000001f
+                ? 0f
+                : minimum;
         }
 
         internal static IReadOnlyList<TimingBucket> TimingBuckets(

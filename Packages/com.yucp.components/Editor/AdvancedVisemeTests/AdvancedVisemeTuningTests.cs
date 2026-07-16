@@ -6,7 +6,9 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
+using VRC.SDKBase;
 
 namespace YUCP.Components.Editor.Tests
 {
@@ -262,6 +264,78 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void CompactSyncUsesOneByteAndTheMinimumIndexBits()
+        {
+            Assert.That(AdvancedVisemeTuning.CompactSyncIndexBits(0), Is.Zero);
+            Assert.That(AdvancedVisemeTuning.CompactSyncBits(0), Is.Zero);
+
+            Assert.That(AdvancedVisemeTuning.CompactSyncIndexBits(1), Is.EqualTo(1));
+            Assert.That(AdvancedVisemeTuning.CompactSyncBits(1), Is.EqualTo(9));
+            Assert.That(AdvancedVisemeTuning.CompactSyncIndexBits(7), Is.EqualTo(3));
+            Assert.That(AdvancedVisemeTuning.CompactSyncBits(7), Is.EqualTo(11));
+            Assert.That(AdvancedVisemeTuning.CompactSyncIndexBits(8), Is.EqualTo(4));
+            Assert.That(AdvancedVisemeTuning.CompactSyncBits(8), Is.EqualTo(12));
+            Assert.That(AdvancedVisemeTuning.CompactSyncIndexBits(15), Is.EqualTo(4));
+            Assert.That(AdvancedVisemeTuning.CompactSyncBits(15), Is.EqualTo(12));
+            Assert.That(AdvancedVisemeTuning.CompactSyncIndexBits(16), Is.EqualTo(5));
+            Assert.That(AdvancedVisemeTuning.CompactSyncBits(16), Is.EqualTo(13));
+
+            Assert.That(AdvancedVisemeTuning.Controls.Count, Is.EqualTo(26));
+            Assert.That(AdvancedVisemeTuning.CompactSyncIndexBits(
+                    AdvancedVisemeTuning.Controls.Count),
+                Is.EqualTo(5));
+            Assert.That(AdvancedVisemeTuning.CompactSyncBits(
+                    AdvancedVisemeTuning.Controls.Count),
+                Is.EqualTo(13),
+                "All 26 saved controls must share one 8-bit payload and five index bits.");
+
+            Assert.That(AdvancedVisemeTuning.CompactSyncTransportIndexBits,
+                Is.EqualTo(5));
+            Assert.That(AdvancedVisemeTuning.CompactSyncTransportBits(0), Is.Zero);
+            Assert.That(AdvancedVisemeTuning.CompactSyncTransportBits(1), Is.EqualTo(13));
+            Assert.That(AdvancedVisemeTuning.CompactSyncTransportBits(8), Is.EqualTo(13));
+            Assert.That(AdvancedVisemeTuning.CompactSyncTransportBits(26), Is.EqualTo(13),
+                "Every non-empty platform uses the same wire width and channel namespace.");
+        }
+
+        [Test]
+        public void CompactSyncQuantizationIsClampedMonotonicAndRoundTripsEveryCode()
+        {
+            const int maximum = AdvancedVisemeTuning.CompactSyncQuantizationMaximum;
+            Assert.That(maximum, Is.EqualTo(254));
+            Assert.That(AdvancedVisemeTuning.QuantizeCompactSync(-1f), Is.Zero);
+            Assert.That(AdvancedVisemeTuning.QuantizeCompactSync(0f), Is.Zero);
+            Assert.That(AdvancedVisemeTuning.QuantizeCompactSync(1f), Is.EqualTo(maximum));
+            Assert.That(AdvancedVisemeTuning.QuantizeCompactSync(2f), Is.EqualTo(maximum));
+            Assert.That(AdvancedVisemeTuning.DequantizeCompactSync(-1), Is.Zero);
+            Assert.That(AdvancedVisemeTuning.DequantizeCompactSync(maximum + 1),
+                Is.EqualTo(1f).Within(1e-7f));
+            Assert.That(AdvancedVisemeTuning.QuantizeCompactSync(0.5f / maximum),
+                Is.EqualTo(1), "Exact half-code boundaries use the runtime's half-up rule.");
+            Assert.That(AdvancedVisemeTuning.QuantizeCompactSync(2.5f / maximum),
+                Is.EqualTo(3), "Quantization must not use banker's rounding.");
+
+            var previous = -1;
+            for (var sample = 0; sample <= 4096; sample++)
+            {
+                var value = sample / 4096f;
+                var code = AdvancedVisemeTuning.QuantizeCompactSync(value);
+                var decoded = AdvancedVisemeTuning.DequantizeCompactSync(code);
+                Assert.That(code, Is.InRange(0, maximum));
+                Assert.That(code, Is.GreaterThanOrEqualTo(previous));
+                Assert.That(decoded, Is.EqualTo(value).Within(0.5f / maximum + 1e-6f));
+                previous = code;
+            }
+
+            for (var code = 0; code <= maximum; code++)
+            {
+                var decoded = AdvancedVisemeTuning.DequantizeCompactSync(code);
+                Assert.That(AdvancedVisemeTuning.QuantizeCompactSync(decoded),
+                    Is.EqualTo(code), "Quantized code " + code);
+            }
+        }
+
+        [Test]
         public void DefaultControlValuesExactlyRepresentTheConfiguredProfile()
         {
             var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
@@ -305,6 +379,8 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(component.NormalizedPrefix, Is.EqualTo("Demo/AdvancedViseme"));
                 Assert.That(component.createTuningMenu, Is.True);
                 Assert.That(component.saveTuningValues, Is.True);
+                Assert.That(component.tuningSyncMode,
+                    Is.EqualTo(AdvancedVisemeTuningSyncMode.CompactSynced));
                 Assert.That(component.tuningMenuPath, Is.EqualTo("YUCP/Viseme Settings"));
                 Assert.That(component.tuningMenuSections, Is.EqualTo(AdvancedVisemeTuningMenuSections.All));
                 foreach (var control in AdvancedVisemeTuning.Controls)
@@ -314,10 +390,13 @@ namespace YUCP.Components.Editor.Tests
                 }
 
                 component.tuningMenuPath = " /Avatar/Voice/ ";
+                component.tuningSyncMode = (AdvancedVisemeTuningSyncMode)999;
                 component.tuningMenuSections = AdvancedVisemeTuningMenuSections.Speech |
                                                (AdvancedVisemeTuningMenuSections)(1 << 12);
                 InvokeOnValidate(component);
                 Assert.That(component.tuningMenuPath, Is.EqualTo("Avatar/Voice"));
+                Assert.That(component.tuningSyncMode,
+                    Is.EqualTo(AdvancedVisemeTuningSyncMode.CompactSynced));
                 Assert.That(component.tuningMenuSections, Is.EqualTo(AdvancedVisemeTuningMenuSections.Speech));
             }
             finally
@@ -400,6 +479,59 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void RuntimeMenuFocusChannelsAreCanonicalAndSharedBySimpleAliases()
+        {
+            var folderName = "__YUCP_AVR_TuningFocus_" + Guid.NewGuid().ToString("N");
+            var folder = "Assets/" + folderName;
+            var assetPath = folder + "/TuningMenu.asset";
+            const string focus = "Test/_TuningSync/Focused";
+            AssetDatabase.CreateFolder("Assets", folderName);
+            try
+            {
+                // Reverse insertion order deliberately: channel IDs are a serialized
+                // contract and may never depend on dictionary enumeration order.
+                var parameters = AdvancedVisemeTuning.Controls
+                    .Reverse()
+                    .ToDictionary(
+                        control => control,
+                        control => "Test/Tuning/" +
+                                   AdvancedVisemeTuning.ParameterSuffix(control));
+                var root = AdvancedVisemeRuntimeMenuBuilder.Build(
+                    assetPath, parameters, focus);
+                var radials = RadialControls(root).ToArray();
+
+                for (var index = 0; index < AdvancedVisemeTuning.Controls.Count; index++)
+                {
+                    var control = AdvancedVisemeTuning.Controls[index];
+                    var parameter = parameters[control];
+                    var aliases = radials.Where(radial =>
+                        radial.subParameters != null &&
+                        radial.subParameters.Length == 1 &&
+                        radial.subParameters[0].name == parameter).ToArray();
+                    var expectedAliasCount = AdvancedVisemeTuning.SimpleControls.Contains(control)
+                        ? 2
+                        : 1;
+
+                    Assert.That(AdvancedVisemeRuntimeMenuBuilder.ChannelId(control, parameters),
+                        Is.EqualTo(AdvancedVisemeTuning.CompactSyncChannelId(control)),
+                        control.ToString());
+                    Assert.That(AdvancedVisemeTuning.CompactSyncChannelId(control),
+                        Is.EqualTo(index + 1), control.ToString());
+                    Assert.That(aliases, Has.Length.EqualTo(expectedAliasCount), control.ToString());
+                    Assert.That(aliases, Has.All.Matches<VRCExpressionsMenu.Control>(radial =>
+                            radial.parameter != null &&
+                            radial.parameter.name == focus &&
+                            Mathf.Approximately(radial.value, index + 1)),
+                        control + " aliases must select one identical transport channel.");
+                }
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(folder);
+            }
+        }
+
+        [Test]
         public void SimpleRuntimeMenuFiltersUnavailableControlsWithoutReplacingThem()
         {
             var parameters = new Dictionary<AdvancedVisemeTuningControl, string>
@@ -421,6 +553,15 @@ namespace YUCP.Components.Editor.Tests
                     AdvancedVisemeTuningMenuSections.Tongue, parameters),
                 Is.EqualTo(new[] { AdvancedVisemeTuningControl.TongueArch }),
                 "Advanced must retain controls that are intentionally absent from Simple.");
+
+            foreach (var control in parameters.Keys)
+                Assert.That(AdvancedVisemeRuntimeMenuBuilder.ChannelId(control, parameters),
+                    Is.EqualTo(AdvancedVisemeTuning.CompactSyncChannelId(control)),
+                    control + " must not be renumbered when other platform controls are absent.");
+            Assert.That(AdvancedVisemeRuntimeMenuBuilder.ChannelId(
+                    AdvancedVisemeTuningControl.SpeechLiveliness, parameters),
+                Is.EqualTo(26),
+                "Sparse platform menus retain the full catalog's serialized channel IDs.");
         }
 
         [Test]
@@ -470,6 +611,122 @@ namespace YUCP.Components.Editor.Tests
             finally
             {
                 fixture.Dispose();
+            }
+        }
+
+        [Test]
+        public void CompactSyncMetadataCostsThirteenBitsAndAddsNoBlendTrees()
+        {
+            var compact = BuildGraph(
+                AdvancedVisemeTuningMenuSections.All,
+                saveValues: true,
+                createMenu: true,
+                beta: false,
+                tracking: false,
+                tuningSyncMode: AdvancedVisemeTuningSyncMode.CompactSynced);
+            var localOnly = BuildGraph(
+                AdvancedVisemeTuningMenuSections.All,
+                saveValues: true,
+                createMenu: true,
+                beta: false,
+                tracking: false,
+                tuningSyncMode: AdvancedVisemeTuningSyncMode.LocalOnly);
+            try
+            {
+                Assert.That(compact.result.tuningSyncBits, Is.EqualTo(13));
+                Assert.That(compact.result.tuningSyncDataParameter,
+                    Is.EqualTo(AdvancedVisemeTuning.CompactSyncDataParameter(
+                        compact.component.NormalizedPrefix)));
+                Assert.That(compact.result.tuningSyncFocusParameter,
+                    Is.EqualTo(AdvancedVisemeTuning.CompactSyncFocusParameter(
+                        compact.component.NormalizedPrefix)));
+                Assert.That(compact.result.tuningSyncIndexParameters,
+                    Is.EqualTo(Enumerable.Range(0, 5).Select(bit =>
+                        AdvancedVisemeTuning.CompactSyncIndexParameter(
+                            compact.component.NormalizedPrefix, bit))));
+
+                var parameters = compact.result.parameters.parameters
+                    .ToDictionary(parameter => parameter.name);
+                var data = parameters[compact.result.tuningSyncDataParameter];
+                Assert.That(data.valueType, Is.EqualTo(VRCExpressionParameters.ValueType.Int));
+                Assert.That(data.saved, Is.False);
+                Assert.That(data.networkSynced, Is.True);
+
+                var focus = parameters[compact.result.tuningSyncFocusParameter];
+                Assert.That(focus.valueType, Is.EqualTo(VRCExpressionParameters.ValueType.Int));
+                Assert.That(focus.saved, Is.False);
+                Assert.That(focus.networkSynced, Is.False);
+
+                foreach (var name in compact.result.tuningSyncIndexParameters)
+                {
+                    var index = parameters[name];
+                    Assert.That(index.valueType,
+                        Is.EqualTo(VRCExpressionParameters.ValueType.Bool), name);
+                    Assert.That(index.saved, Is.False, name);
+                    Assert.That(index.networkSynced, Is.True, name);
+                }
+
+                var carrierCost = compact.result.parameters.parameters
+                    .Where(parameter =>
+                        parameter.name == compact.result.tuningSyncDataParameter ||
+                        compact.result.tuningSyncIndexParameters.Contains(parameter.name))
+                    .Sum(parameter => parameter.valueType ==
+                                      VRCExpressionParameters.ValueType.Bool ? 1 : 8);
+                Assert.That(carrierCost, Is.EqualTo(13));
+
+                foreach (var name in compact.result.tuningParameters.Values)
+                {
+                    Assert.That(parameters[name].saved, Is.True, name);
+                    Assert.That(parameters[name].networkSynced, Is.False, name);
+                }
+
+                Assert.That(localOnly.result.tuningSyncBits, Is.Zero);
+                Assert.That(localOnly.result.tuningSyncDataParameter, Is.Null.Or.Empty);
+                Assert.That(localOnly.result.tuningSyncFocusParameter, Is.Null.Or.Empty);
+                Assert.That(localOnly.result.tuningSyncIndexParameters, Is.Empty);
+                Assert.That(localOnly.result.parameters.parameters.Any(parameter =>
+                    parameter.name.Contains("/_TuningSync/")), Is.False);
+
+                var compactTrees = AssetDatabase.LoadAllAssetsAtPath(compact.controllerPath)
+                    .OfType<BlendTree>().Count();
+                var localOnlyTrees = AssetDatabase.LoadAllAssetsAtPath(localOnly.controllerPath)
+                    .OfType<BlendTree>().Count();
+                Assert.That(compactTrees, Is.EqualTo(localOnlyTrees),
+                    "The compact transport must remain state/driver-only and add zero BlendTrees.");
+                var transport = compact.result.controller.layers.Single(layer =>
+                    layer.name == "YUCP AVR Compact Tuning Sync");
+                Assert.That(transport.defaultWeight, Is.Zero,
+                    "The state/driver transport must contribute no blended output.");
+                var drivers = transport.stateMachine.states
+                    .SelectMany(child => child.state.behaviours)
+                    .OfType<VRCAvatarParameterDriver>()
+                    .ToArray();
+                var senderCopy = drivers.Where(driver => driver.localOnly)
+                    .SelectMany(driver => driver.parameters)
+                    .First(parameter =>
+                        parameter.name == compact.result.tuningSyncDataParameter);
+                Assert.That(senderCopy.convertRange, Is.True);
+                Assert.That(senderCopy.sourceMin, Is.Zero);
+                Assert.That(senderCopy.sourceMax, Is.EqualTo(1f));
+                Assert.That(senderCopy.destMin, Is.EqualTo(0.5f));
+                Assert.That(senderCopy.destMax, Is.EqualTo(
+                    AdvancedVisemeTuning.CompactSyncQuantizationMaximum + 0.5f));
+                var receiverCopy = drivers.Where(driver => !driver.localOnly)
+                    .SelectMany(driver => driver.parameters)
+                    .First(parameter =>
+                        parameter.source == compact.result.tuningSyncDataParameter);
+                Assert.That(receiverCopy.sourceMin, Is.Zero);
+                Assert.That(receiverCopy.sourceMax, Is.EqualTo(
+                    AdvancedVisemeTuning.CompactSyncQuantizationMaximum));
+                Assert.That(receiverCopy.destMin, Is.Zero);
+                Assert.That(receiverCopy.destMax, Is.EqualTo(1f));
+                Assert.That(localOnly.result.controller.layers.Any(layer =>
+                    layer.name == "YUCP AVR Compact Tuning Sync"), Is.False);
+            }
+            finally
+            {
+                compact.Dispose();
+                localOnly.Dispose();
             }
         }
 
@@ -685,48 +942,41 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(historyTree, Is.Not.Null);
                 Assert.That(historyTree.blendParameter, Is.EqualTo(visemeIndex));
 
+                var gate = trees.SingleOrDefault(tree =>
+                    tree.name == "Vector transient-silence hold");
+                var strengthGate = trees.SingleOrDefault(tree =>
+                    tree.name == "Vector silence hold strength");
+                var historyGate = trees.SingleOrDefault(tree =>
+                    tree.name == "Vector silence hold history");
+                Assert.That(gate, Is.Not.Null,
+                    "All transient-silence lanes must share one vector router.");
+                Assert.That(gate.blendParameter, Is.EqualTo(visemeIndex));
+                Assert.That(strengthGate, Is.Not.Null);
+                Assert.That(strengthGate.blendParameter, Is.EqualTo(stability));
+                Assert.That(strengthGate.children.Select(child => child.threshold),
+                    Is.EquivalentTo(new[] { 0f, 0.5f, 1f }));
+                Assert.That(historyGate, Is.Not.Null);
+                Assert.That(historyGate.blendParameter, Is.EqualTo(history));
+                Assert.That(historyGate.children.Select(child => child.threshold),
+                    Is.EquivalentTo(new[]
+                    {
+                        AdvancedVisemeMath.SpeechHistoryHoldStart,
+                        AdvancedVisemeMath.SpeechHistoryHoldFull
+                    }));
+
                 for (var viseme = 0; viseme < VisemeReconstructionProfile.VisemeCount; viseme++)
                 {
                     var raw = internalPrefix + $"/Viseme/{viseme}/Raw";
                     var fast = internalPrefix + $"/Viseme/{viseme}/Fast";
-                    var gateName = $"Hold {fast} across transient sil";
-                    var gate = trees.SingleOrDefault(tree => tree.name == gateName);
-                    var strengthGate = trees.SingleOrDefault(tree =>
-                        tree.name == gateName + " (strength)");
-                    var historyGate = trees.SingleOrDefault(tree =>
-                        tree.name == gateName + " (history)");
-                    Assert.That(gate, Is.Not.Null, gateName);
-                    Assert.That(gate.blendParameter, Is.EqualTo(visemeIndex));
-                    Assert.That(strengthGate, Is.Not.Null, gateName + " strength");
-                    Assert.That(strengthGate.blendParameter, Is.EqualTo(stability));
-                    Assert.That(strengthGate.children.Select(child => child.threshold),
-                        Is.EquivalentTo(new[] { 0f, 0.5f, 1f }));
-                    Assert.That(historyGate, Is.Not.Null, gateName + " history");
-                    Assert.That(historyGate.blendParameter, Is.EqualTo(history));
-                    Assert.That(historyGate.children.Select(child => child.threshold),
-                        Is.EquivalentTo(new[]
-                        {
-                            AdvancedVisemeMath.SpeechHistoryHoldStart,
-                            AdvancedVisemeMath.SpeechHistoryHoldFull
-                        }));
-                    Assert.That(trees.Any(tree => tree.name == $"Smooth {fast} toward {raw}"),
-                        Is.True, $"Viseme {viseme} bypasses the release observer.");
+                    Assert.That(WritesParameter(gate, fast), Is.True,
+                        $"The shared router does not publish viseme {viseme}.");
+                    Assert.That(UsesParameter(gate, raw), Is.True,
+                        $"Viseme {viseme} bypasses the release observer.");
                 }
 
-                var activityTree = trees.SingleOrDefault(tree =>
-                    tree.name == $"Speech activity with transient-sil hold -> {talking}");
-                Assert.That(activityTree, Is.Not.Null);
-                Assert.That(activityTree.blendParameter, Is.EqualTo(visemeIndex));
-
                 var voiceGainBase = internalPrefix + "/Voice/GainBase";
-                var gainGateName = $"Hold {voiceGainBase} gain across transient sil";
-                var gainGate = trees.SingleOrDefault(tree => tree.name == gainGateName);
-                var gainHistoryGate = trees.SingleOrDefault(tree =>
-                    tree.name == gainGateName + " (history)");
-                Assert.That(gainGate, Is.Not.Null);
-                Assert.That(gainGate.blendParameter, Is.EqualTo(visemeIndex));
-                Assert.That(gainHistoryGate, Is.Not.Null);
-                Assert.That(gainHistoryGate.blendParameter, Is.EqualTo(history));
+                Assert.That(WritesParameter(gate, talking), Is.True);
+                Assert.That(WritesParameter(gate, voiceGainBase), Is.True);
             }
             finally
             {
@@ -749,32 +999,37 @@ namespace YUCP.Components.Editor.Tests
                 var visemeIndex = internalPrefix + "/Viseme/Index";
                 var trees = AssetDatabase.LoadAllAssetsAtPath(fixture.controllerPath)
                     .OfType<BlendTree>().ToArray();
-
-                var contextGates = trees.Where(tree =>
-                    tree.name.StartsWith("Hold " + internalPrefix +
-                                         "/BetaCoarticulation/Context/", StringComparison.Ordinal) &&
-                    !tree.name.EndsWith(" (history)", StringComparison.Ordinal) &&
-                    !tree.name.EndsWith(" (strength)", StringComparison.Ordinal)).ToArray();
+                var gate = trees.SingleOrDefault(tree =>
+                    tree.name == "Vector transient-silence hold");
+                Assert.That(gate, Is.Not.Null);
+                Assert.That(gate.blendParameter, Is.EqualTo(visemeIndex));
                 var distinctDecayCount = Enumerable.Range(
                         0, AdvancedVisemeTransitionRetention.GroupCount)
                     .Select(index => Mathf.RoundToInt(
                         AdvancedVisemeCoarticulationModel.DecaySeconds(
                             (AdvancedVisemeArticulatorGroup)index) * 1000000f))
                     .Distinct().Count();
-                Assert.That(contextGates.Length, Is.EqualTo(
+                var contextWeights = fixture.result.controller.parameters
+                    .Select(parameter => parameter.name)
+                    .Where(parameter => parameter.StartsWith(
+                        internalPrefix + "/BetaCoarticulation/Context/",
+                        StringComparison.Ordinal))
+                    .Where(parameter => int.TryParse(
+                        parameter.Substring(parameter.LastIndexOf('/') + 1), out _))
+                    .ToArray();
+                Assert.That(contextWeights.Length, Is.EqualTo(
                     distinctDecayCount * VisemeReconstructionProfile.VisemeCount));
-                Assert.That(contextGates.All(tree => tree.blendParameter == visemeIndex), Is.True);
+                Assert.That(contextWeights.All(parameter => WritesParameter(gate, parameter)),
+                    Is.True, "Every retained context lane must pass through the shared router.");
 
-                var leadGates = trees.Where(tree =>
-                    tree.name.StartsWith("Hold " + internalPrefix +
-                                         "/BetaCoarticulation/", StringComparison.Ordinal) &&
-                    tree.name.Contains(" coarticulation across transient sil") &&
-                    !tree.name.EndsWith(" (history)", StringComparison.Ordinal) &&
-                    !tree.name.EndsWith(" (strength)", StringComparison.Ordinal)).ToArray();
-                Assert.That(leadGates.Length, Is.EqualTo(
-                    (AdvancedVisemeTransitionRetention.GroupCount + 1) *
-                    VisemeReconstructionProfile.VisemeCount));
-                Assert.That(leadGates.All(tree => tree.blendParameter == visemeIndex), Is.True);
+                for (var viseme = 0; viseme < VisemeReconstructionProfile.VisemeCount; viseme++)
+                {
+                    Assert.That(WritesParameter(
+                            gate, internalPrefix + $"/Viseme/{viseme}/Fast"), Is.True);
+                    Assert.That(WritesParameter(
+                            gate, internalPrefix +
+                                  $"/BetaCoarticulation/Mean/Viseme/{viseme}/Fast"), Is.True);
+                }
             }
             finally
             {
@@ -957,7 +1212,9 @@ namespace YUCP.Components.Editor.Tests
             bool saveValues,
             bool createMenu,
             bool beta,
-            bool tracking)
+            bool tracking,
+            AdvancedVisemeTuningSyncMode tuningSyncMode =
+                AdvancedVisemeTuningSyncMode.CompactSynced)
         {
             var fixture = new GraphFixture();
             fixture.folderName = "__YUCP_AVR_TuningGraph_" + Guid.NewGuid().ToString("N");
@@ -978,6 +1235,7 @@ namespace YUCP.Components.Editor.Tests
             fixture.component.createTuningMenu = createMenu;
             fixture.component.saveTuningValues = saveValues;
             fixture.component.tuningMenuSections = sections;
+            fixture.component.tuningSyncMode = tuningSyncMode;
 
             fixture.result = AdvancedVisemeAnimatorBuilder.Build(
                 new AdvancedVisemeAnimatorBuilder.Request
@@ -1013,11 +1271,39 @@ namespace YUCP.Components.Editor.Tests
             return fixture;
         }
 
-        private static bool UsesParameter(BlendTree tree, string parameter)
+        private static IEnumerable<VRCExpressionsMenu.Control> RadialControls(
+            VRCExpressionsMenu menu)
         {
+            if (menu == null || menu.controls == null) yield break;
+            foreach (var control in menu.controls)
+            {
+                if (control.type == VRCExpressionsMenu.Control.ControlType.RadialPuppet)
+                    yield return control;
+                if (control.type != VRCExpressionsMenu.Control.ControlType.SubMenu ||
+                    control.subMenu == null)
+                    continue;
+                foreach (var child in RadialControls(control.subMenu)) yield return child;
+            }
+        }
+
+        private static bool UsesParameter(Motion motion, string parameter)
+        {
+            if (!(motion is BlendTree tree)) return false;
             return tree.blendParameter == parameter ||
                    tree.blendParameterY == parameter ||
-                   tree.children.Any(child => child.directBlendParameter == parameter);
+                   tree.children.Any(child =>
+                       child.directBlendParameter == parameter ||
+                       UsesParameter(child.motion, parameter));
+        }
+
+        private static bool WritesParameter(Motion motion, string parameter)
+        {
+            if (motion is AnimationClip clip)
+                return AnimationUtility.GetCurveBindings(clip).Any(binding =>
+                    binding.type == typeof(Animator) &&
+                    binding.propertyName == parameter);
+            return motion is BlendTree tree &&
+                   tree.children.Any(child => WritesParameter(child.motion, parameter));
         }
 
         private static bool IsSigned(AdvancedVisemeArticulator articulator)

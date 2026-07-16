@@ -16,6 +16,17 @@ namespace YUCP.Components.Editor.VisemePhrase
     {
         private const float PausedCommandLeadingSilenceSeconds = 0.18f;
         private const float PausedCommandTrailingSilenceSeconds = 0.22f;
+        // Enrollment timestamps audio blocks; the Animator observes the same
+        // categorical winner only after the 30 ms run filter. Widen the baked
+        // corridor by exactly that observer uncertainty instead of pretending
+        // render-frame boundaries are sample exact.
+        internal const float RuntimeObservationUncertaintySeconds =
+            VisemePhraseRuntimeLanguage.RuntimeObservationUncertaintySeconds;
+
+        internal static float RuntimeObservationUncertaintyPerState(
+            int retainedStateCount) =>
+            RuntimeObservationUncertaintySeconds /
+            Math.Max(1, retainedStateCount);
 
         internal static bool TryCreatePlan(
             GameObject avatarRoot,
@@ -258,17 +269,53 @@ namespace YUCP.Components.Editor.VisemePhrase
                             {
                                 id = (sourceVariant.id ?? string.Empty) +
                                      "_rectangle_" + rectangleIndex,
-                                inferredContextPath = sourceVariant.inferredContextPath,
+                                inferredContextPath =
+                                    sourceVariant.inferredContextPath ||
+                                    rectangle.inferredProfile,
+                                inferredConfusionPath =
+                                    sourceVariant.inferredConfusionPath,
+                                inferredTimingProfile = rectangle.inferredProfile,
                                 canonicalStateCount = sourceVariant.states.Count,
-                                minimumTotalSeconds = Math.Max(0f,
-                                    FiniteOr(sourceVariant.minimumDurationSeconds, 0f)),
-                                maximumTotalSeconds = Math.Max(0f,
-                                    FiniteOr(sourceVariant.maximumDurationSeconds,
-                                        float.MaxValue)),
-                                runtimeBaseCost = skipped >= 0
-                                    ? Mathf.Clamp01(sourceVariant.states[skipped].skipPenalty)
-                                    : 0f
+                                minimumTotalSeconds = rectangle
+                                    .includesRuntimeObservationUncertainty
+                                    ? VisemePhraseRuntimeLanguage
+                                        .RuntimeMinimumTotalSeconds(sourceVariant)
+                                    : Math.Max(0f, FiniteOr(
+                                        sourceVariant.minimumDurationSeconds, 0f) -
+                                        RuntimeObservationUncertaintySeconds),
+                                maximumTotalSeconds = rectangle
+                                    .includesRuntimeObservationUncertainty
+                                    ? VisemePhraseRuntimeLanguage
+                                        .RuntimeMaximumTotalSeconds(sourceVariant)
+                                    : Math.Max(0f, FiniteOr(
+                                        sourceVariant.maximumDurationSeconds,
+                                        float.MaxValue) +
+                                        RuntimeObservationUncertaintySeconds),
+                                runtimeBaseCost = Math.Max(
+                                    0f, FiniteOr(sourceVariant.inferencePenalty, 0f)) +
+                                    (skipped >= 0
+                                        ? Mathf.Clamp01(
+                                            sourceVariant.states[skipped].skipPenalty)
+                                        : 0f)
                             };
+                            var runtimeBudget = phrase.runtimeAcceptanceCost *
+                                Math.Max(1, variant.canonicalStateCount);
+                            // A generic confusion arc is optional. Personalized
+                            // negative calibration may tighten the budget after
+                            // it was proposed; silently omit that arc instead of
+                            // allowing it to make an enrolled model unbuildable.
+                            if (variant.inferredConfusionPath &&
+                                variant.runtimeBaseCost > runtimeBudget + 0.000001f)
+                                continue;
+                            // Observation uncertainty belongs to the phrase
+                            // boundary, not independently to every phone. Split
+                            // one fixed 30 ms allowance across retained states so
+                            // the Cartesian timing rectangle cannot grow once per state.
+                            var perStateObservationUncertainty =
+                                rectangle.includesRuntimeObservationUncertainty
+                                    ? 0f
+                                    : RuntimeObservationUncertaintyPerState(
+                                        retainedStateIndices.Length);
                             for (var pathIndex = 0;
                                  pathIndex < retainedStateIndices.Length;
                                  pathIndex++)
@@ -286,10 +333,12 @@ namespace YUCP.Components.Editor.VisemePhrase
                                 variant.states.Add(new VisemePhraseBuildState
                                 {
                                     aliases = aliases,
-                                    minimumSeconds = rectangle
-                                        .minimumDurationSeconds[stateIndex],
+                                    minimumSeconds = Math.Max(0f, rectangle
+                                        .minimumDurationSeconds[stateIndex] -
+                                        perStateObservationUncertainty),
                                     maximumSeconds = rectangle
-                                        .maximumDurationSeconds[stateIndex],
+                                        .maximumDurationSeconds[stateIndex] +
+                                        perStateObservationUncertainty,
                                     confidence = Mathf.Clamp01(sourceVariant.cohesion > 0f
                                         ? sourceVariant.cohesion
                                         : 1f),
@@ -318,6 +367,8 @@ namespace YUCP.Components.Editor.VisemePhrase
                             StringComparer.Ordinal)
                         .Select(group => group
                             .OrderBy(item => item.inferredContextPath)
+                            .ThenBy(item => item.inferredConfusionPath)
+                            .ThenBy(item => item.inferredTimingProfile)
                             .ThenBy(item => SourceVariantPriority(item.id))
                             .ThenBy(item => item.CanonicalFingerprint(), StringComparer.Ordinal)
                             .First())
@@ -327,6 +378,8 @@ namespace YUCP.Components.Editor.VisemePhrase
                         // the state-budget fitter removes the weakest bridge,
                         // rather than whichever content hash happens to sort last.
                         .OrderBy(item => item.inferredContextPath)
+                        .ThenBy(item => item.inferredConfusionPath)
+                        .ThenBy(item => item.inferredTimingProfile)
                         .ThenBy(item => SourceVariantPriority(item.id))
                         .ThenBy(item => item.CanonicalFingerprint(), StringComparer.Ordinal)
                         .ToList();
@@ -539,10 +592,11 @@ namespace YUCP.Components.Editor.VisemePhrase
         }
 
         /// <summary>
-        /// Fit optional context bridges to the actual shared timed-state plan.
-        /// Compiler ranking puts the strongest bridge first, so removal proceeds
-        /// from the end. Directly enrolled paths are immutable and therefore an
-        /// exact-only conflict or oversize language still fails loudly.
+        /// Fit optional generalized paths to the actual shared timed-state plan.
+        /// Generic confusion paths are removed before creator-trained context
+        /// bridges; compiler ranking then removes the weakest remaining bridge.
+        /// Directly enrolled paths are immutable, so an exact-only conflict or
+        /// oversize language still fails loudly.
         /// </summary>
         internal static bool TryFitRuntimeLanguage(
             VisemePhraseBuildPlan plan,
@@ -584,7 +638,12 @@ namespace YUCP.Components.Editor.VisemePhrase
                     .Where(item => item.variant != null &&
                                    item.variant.inferredContextPath &&
                                    item.phrase.variants.Count > 1)
-                    .OrderByDescending(item => SourceVariantPriority(item.variant.id))
+                    .OrderByDescending(item =>
+                        item.variant.inferredConfusionPath)
+                    .ThenByDescending(item =>
+                        item.variant.inferredTimingProfile)
+                    .ThenByDescending(item =>
+                        SourceVariantPriority(item.variant.id))
                     .ThenByDescending(item => item.variantIndex)
                     .ThenByDescending(item => item.phraseIndex)
                     .FirstOrDefault();
@@ -673,8 +732,13 @@ namespace YUCP.Components.Editor.VisemePhrase
             }
 
             const float tolerance = 0.0001f;
-            if (minimumSum + tolerance < variant.minimumDurationSeconds ||
-                maximumSum - tolerance > variant.maximumDurationSeconds)
+            var uncertainty = rectangle.includesRuntimeObservationUncertainty
+                ? RuntimeObservationUncertaintySeconds
+                : 0f;
+            if (minimumSum + tolerance <
+                    variant.minimumDurationSeconds - uncertainty ||
+                maximumSum - tolerance >
+                    variant.maximumDurationSeconds + uncertainty)
             {
                 error = "contains a runtime timing rectangle outside its whole-phrase bounds.";
                 return false;

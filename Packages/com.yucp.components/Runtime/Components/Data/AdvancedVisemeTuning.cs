@@ -53,6 +53,8 @@ namespace YUCP.Components
     /// </summary>
     public static class AdvancedVisemeTuning
     {
+        public const int CompactSyncQuantizationMaximum = 254;
+
         public static readonly IReadOnlyList<AdvancedVisemeTuningControl> Controls =
             (AdvancedVisemeTuningControl[])Enum.GetValues(
                 typeof(AdvancedVisemeTuningControl));
@@ -175,6 +177,84 @@ namespace YUCP.Components
         public static string ParameterSuffix(AdvancedVisemeTuningControl control)
         {
             return control.ToString();
+        }
+
+        public static string CompactSyncDataParameter(string prefix)
+        {
+            return NormalizePrefix(prefix) + "/_TuningSync/Data";
+        }
+
+        public static string CompactSyncIndexParameter(string prefix, int bit)
+        {
+            if (bit < 0) throw new ArgumentOutOfRangeException(nameof(bit));
+            return NormalizePrefix(prefix) + "/_TuningSync/Index" + bit;
+        }
+
+        public static string CompactSyncFocusParameter(string prefix)
+        {
+            return NormalizePrefix(prefix) + "/_TuningSync/Focused";
+        }
+
+        public static int CompactSyncIndexBits(int controlCount)
+        {
+            if (controlCount <= 0) return 0;
+            var requiredValues = controlCount + 1; // Channel zero is never applied.
+            var bits = 0;
+            for (var capacity = 1; capacity < requiredValues; capacity <<= 1) bits++;
+            return bits;
+        }
+
+        public static int CompactSyncBits(int controlCount)
+        {
+            return controlCount <= 0 ? 0 : 8 + CompactSyncIndexBits(controlCount);
+        }
+
+        /// <summary>
+        /// The on-wire channel id is tied to the serialized enum order rather
+        /// than the controls that happen to be relevant to one platform's rig.
+        /// This keeps PC and Quest carrier packets semantically identical even
+        /// when one mesh cannot expose one of the optional sliders.
+        /// </summary>
+        public static int CompactSyncChannelId(AdvancedVisemeTuningControl control)
+        {
+            for (var index = 0; index < Controls.Count; index++)
+                if (Controls[index] == control) return index + 1;
+            throw new ArgumentOutOfRangeException(nameof(control), control,
+                "The tuning control has no compact sync channel.");
+        }
+
+        public static int CompactSyncTransportIndexBits =>
+            CompactSyncIndexBits(Controls.Count);
+
+        public static int CompactSyncTransportBits(int activeControlCount)
+        {
+            return activeControlCount <= 0
+                ? 0
+                : 8 + CompactSyncTransportIndexBits;
+        }
+
+        public static int QuantizeCompactSync(float value)
+        {
+            // Match Avatar Parameter Driver exactly: the sender maps into
+            // [0.5, 254.5] and the Float-to-Int copy truncates the result.
+            // Floor(x + 0.5) is round-half-up, unlike Mathf.RoundToInt's
+            // round-half-to-even behavior at exact code boundaries.
+            return Mathf.FloorToInt(
+                Mathf.Clamp01(value) * CompactSyncQuantizationMaximum + 0.5f);
+        }
+
+        public static float DequantizeCompactSync(int value)
+        {
+            return Mathf.Clamp(value, 0, CompactSyncQuantizationMaximum) /
+                   (float)CompactSyncQuantizationMaximum;
+        }
+
+        private static string NormalizePrefix(string prefix)
+        {
+            prefix = (prefix ?? string.Empty).Trim().Trim('/');
+            return string.IsNullOrEmpty(prefix)
+                ? AdvancedVisemeParameterContract.DefaultAdvancedVisemePrefix
+                : prefix;
         }
 
         public static float DefaultValue(
