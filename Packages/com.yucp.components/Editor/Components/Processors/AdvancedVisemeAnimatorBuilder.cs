@@ -37,6 +37,11 @@ namespace YUCP.Components.Editor
             public Dictionary<AdvancedVisemeArticulator, AdvancedVisemeExternalPose> externalPoses;
             public Mesh targetMesh;
             public bool trackingEnabled;
+            // When the avatar owns a generic YUCP Parameter Compressor, tuning
+            // values are declared as ordinary synced parameters and the late
+            // compressor folds them into its shared transport. This avoids
+            // stacking AVR's private 13-bit bus with another compressor.
+            public bool useSharedParameterCompressor;
             public HashSet<string> existingExpressionParameters;
             public IReadOnlyList<LinkedRendererOutput> linkedRendererOutputs =
                 Array.Empty<LinkedRendererOutput>();
@@ -298,6 +303,57 @@ namespace YUCP.Components.Editor
                               AdvancedVisemeReconstructionMode.BetaCoarticulation;
             var betaFaceInferenceEnabled = betaEnabled &&
                                            CanBuildFaceConditionedTongueInference(request);
+            var betaProjectionCoefficients = new Dictionary<
+                AdvancedVisemeArticulator, float[]>();
+            var betaProjectionOffsets = new Dictionary<
+                AdvancedVisemeArticulator, float>();
+            var betaProjectionScales = new Dictionary<
+                AdvancedVisemeArticulator, float>();
+            var betaProjectedRaw = new Dictionary<
+                AdvancedVisemeArticulator, string>();
+            var betaProjectedFast = new Dictionary<
+                AdvancedVisemeArticulator, string>();
+            var betaProjectedSlow = new Dictionary<
+                AdvancedVisemeArticulator, string>();
+            var betaRetentionRowTargets = new Dictionary<
+                AdvancedVisemeArticulatorGroup, string[]>();
+            if (betaEnabled)
+            {
+                foreach (var articulator in SynthesizedArticulators())
+                {
+                    var coefficients = GetAdjustedSpeechCoefficients(
+                        request, articulator);
+                    if (!ShouldProjectBetaArticulationRow(
+                            articulator, coefficients)) continue;
+                    var encoded = EncodeBetaProjectionRow(
+                        articulator, coefficients, out var offset, out var scale);
+                    betaProjectionCoefficients[articulator] = encoded;
+                    betaProjectionOffsets[articulator] = offset;
+                    betaProjectionScales[articulator] = scale;
+                    betaProjectedRaw[articulator] = graph.Param(
+                        $"BetaCoarticulation/Projected/{articulator}/Raw",
+                        encoded[0]);
+                    betaProjectedFast[articulator] = graph.Param(
+                        $"BetaCoarticulation/Projected/{articulator}/Fast",
+                        encoded[0]);
+                    betaProjectedSlow[articulator] = graph.Param(
+                        $"BetaCoarticulation/Projected/{articulator}/Slow",
+                        encoded[0]);
+                }
+                for (var groupIndex = 0;
+                     groupIndex < AdvancedVisemeTransitionRetention.GroupCount;
+                     groupIndex++)
+                {
+                    var group = (AdvancedVisemeArticulatorGroup)groupIndex;
+                    betaRetentionRowTargets[group] = Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
+                        .Select(current => graph.Param(
+                            $"BetaCoarticulation/RetentionTarget/{group}/{current}",
+                            AdvancedVisemeCoarticulationModel.Retention(
+                                group, 0, current)))
+                        .ToArray();
+                }
+            }
             for (var i = 0; i < rawVisemes.Length; i++)
             {
                 var defaultValue = i == 0 ? 1f : 0f;
@@ -308,8 +364,25 @@ namespace YUCP.Components.Editor
                 // and the visible mesh share the same causal trajectory.
                 slowVisemes[i] = graph.Param($"Viseme/{i}/Slow", defaultValue);
             }
+            var decodedVisemeVectors = betaProjectedRaw.ToDictionary(
+                pair => pair.Value,
+                pair => betaProjectionCoefficients[pair.Key]);
+            foreach (var pair in betaRetentionRowTargets)
+            for (var current = 0;
+                 current < VisemeReconstructionProfile.VisemeCount;
+                 current++)
+            {
+                var group = pair.Key;
+                decodedVisemeVectors[pair.Value[current]] = Enumerable.Range(
+                        0, VisemeReconstructionProfile.VisemeCount)
+                    .Select(previous =>
+                        AdvancedVisemeCoarticulationModel.Retention(
+                            group, previous, current))
+                    .ToArray();
+            }
             AddIntToFloatLayer(
                 controller, graph, "Viseme", visemeIndex, rawVisemes,
+                decodedVisemeVectors,
                 "YUCP AVR Viseme Decoder");
 
             // VRChat emits sil both at a real utterance endpoint and in short gaps
@@ -323,14 +396,28 @@ namespace YUCP.Components.Editor
                 graph, mathRoot, frameTime, visemeIndex,
                 request.profile, tuning[AdvancedVisemeTuningControl.SilenceStability],
                 prefix, result);
+            var projectedOrder = betaProjectedRaw.Keys
+                .OrderBy(articulator => (int)articulator)
+                .ToArray();
+            var speechObserverRaw = rawVisemes.Concat(projectedOrder.Select(
+                articulator => betaProjectedRaw[articulator])).ToArray();
+            var speechObserverFast = fastVisemes.Concat(projectedOrder.Select(
+                articulator => betaProjectedFast[articulator])).ToArray();
+            var speechObserverSlow = slowVisemes.Concat(projectedOrder.Select(
+                articulator => betaProjectedSlow[articulator])).ToArray();
+            // C commutes with the shared linear observer. Selected dense
+            // articulation rows ride inside the existing nonnegative vector
+            // observer. Signed rows use an affine [0,1] coordinate and are
+            // decoded only at the corpus output, avoiding two-sided copy trees.
             graph.AddOperation(mathRoot, graph.SmoothVectorUnlessHeldSilence(
-                rawVisemes, fastVisemes, alphaViseme,
+                speechObserverRaw, speechObserverFast, alphaViseme,
                 visemeIndex, speechHangover.history,
                 tuning[AdvancedVisemeTuningControl.SilenceStability],
-                "Viseme fast observer"));
+                "Viseme and projected-articulation fast observer"));
             graph.AddOperation(mathRoot, graph.SmoothVector(
-                fastVisemes, slowVisemes, alphaViseme,
-                "Viseme slow observer"));
+                speechObserverFast, speechObserverSlow, alphaViseme,
+                "Viseme and projected-articulation slow observer"));
+
             var reconstructedFastVisemes = fastVisemes;
             var reconstructedSlowVisemes = slowVisemes;
             BetaCoarticulationGraph betaGraph = null;
@@ -340,6 +427,7 @@ namespace YUCP.Components.Editor
                     graph, mathRoot,
                     tuning[AdvancedVisemeTuningControl.Coarticulation], frameTime,
                     rawVisemes, fastVisemes, slowVisemes,
+                    betaRetentionRowTargets,
                     visemeIndex, speechHangover.history,
                     tuning[AdvancedVisemeTuningControl.SilenceStability],
                     betaFaceInferenceEnabled);
@@ -592,8 +680,15 @@ namespace YUCP.Components.Editor
             var calibratedTrackingPose = new Dictionary<AdvancedVisemeArticulator, string>();
             var calibratedTrackingLead = new Dictionary<AdvancedVisemeArticulator, string>();
             var trackingGains = new Dictionary<AdvancedVisemeArticulator, string>();
-            var articulators = SynthesizedArticulators().ToArray();
-
+            var allArticulators = SynthesizedArticulators().ToArray();
+            var articulators = allArticulators.Where(articulator =>
+                    IsArticulationLaneActive(
+                        request, articulator, trackingRaw,
+                        betaFaceInferenceEnabled))
+                .ToArray();
+            var inactiveArticulators = allArticulators
+                .Except(articulators)
+                .ToArray();
             // Build the complete speech prior first. Beta inference needs both the
             // visible speech center and calibrated visible tracking before tongue
             // channels are fused, so articulation cannot be constructed in one
@@ -623,7 +718,8 @@ namespace YUCP.Components.Editor
                     normalFastProjection[articulator] = speechFast;
                     normalSlowProjection[articulator] = speechSlow;
                 }
-                else
+                else if (GetAdjustedSpeechCoefficients(request, articulator)
+                         .Any(value => value != 0f))
                 {
                     var group = AdvancedVisemeCoarticulationModel.GroupFor(articulator);
                     if (!corpusFastProjection.TryGetValue(group, out var fastOutputs))
@@ -670,17 +766,28 @@ namespace YUCP.Components.Editor
                 foreach (var group in corpusFastProjection.Keys
                              .OrderBy(value => (int)value))
                     AddContractedBetaArticulationProjection(
-                        graph, mathRoot, request, group,
-                        betaGraph, corpusFastProjection[group],
+                        graph, mathRoot, request, group, betaGraph,
+                        betaProjectedRaw, betaProjectedFast, betaProjectedSlow,
+                        betaProjectionOffsets, betaProjectionScales,
+                        corpusFastProjection[group],
                         corpusSlowProjection[group], visemeIndex,
                         speechHangover.history,
                         tuning[AdvancedVisemeTuningControl.SilenceStability]);
-                graph.AddOperation(mathRoot, graph.ScaleArticulationVector(
-                    voiceGain, betaUnscaledFast, speechArticulationFast,
-                    "Voice-scaled corpus articulation fast"));
-                graph.AddOperation(mathRoot, graph.ScaleArticulationVector(
-                    voiceGain, betaUnscaledSlow, speechArticulationSlow,
-                    "Voice-scaled corpus articulation slow"));
+                if (betaUnscaledFast.Count > 0)
+                {
+                    var betaSpeechFastOutputs = betaUnscaledFast.Keys.ToDictionary(
+                        articulator => articulator,
+                        articulator => speechArticulationFast[articulator]);
+                    var betaSpeechSlowOutputs = betaUnscaledSlow.Keys.ToDictionary(
+                        articulator => articulator,
+                        articulator => speechArticulationSlow[articulator]);
+                    graph.AddOperation(mathRoot, graph.ScaleArticulationVector(
+                        voiceGain, betaUnscaledFast, betaSpeechFastOutputs,
+                        "Voice-scaled corpus articulation fast"));
+                    graph.AddOperation(mathRoot, graph.ScaleArticulationVector(
+                        voiceGain, betaUnscaledSlow, betaSpeechSlowOutputs,
+                        "Voice-scaled corpus articulation slow"));
+                }
             }
 
             foreach (var articulator in articulators)
@@ -733,6 +840,10 @@ namespace YUCP.Components.Editor
 
             var nativeTongueCapabilities = BuildNativeTongueCapabilities(
                 graph, mathRoot, request, frameTime, trackingBlend, trackingRaw);
+            var buildsLowerFaceOutput = request.component.mouthOwnership ==
+                                        AdvancedVisemeMouthOwnership.DriveLowerFace;
+            var usesResidualOutput = buildsLowerFaceOutput &&
+                                     UsesResidualOutputPath(request);
 
             foreach (var articulator in articulators)
             {
@@ -766,6 +877,12 @@ namespace YUCP.Components.Editor
                     request.directPoseArticulators != null &&
                     request.directPoseArticulators.Contains(articulator))
                     continue;
+                // The inverse is consumed only by the signed-ray reconciliation
+                // of an external calibrated basis. Ordinary residual ownership,
+                // fallback clips, and Outputs Only never read it.
+                if (!buildsLowerFaceOutput || !usesResidualOutput ||
+                    !UsesExternalCalibratedRayOutput(request, articulator))
+                    continue;
                 var inverseGain = graph.Param($"Tracking/{articulator}/InverseGain", 1f);
                 graph.AddOperation(mathRoot, graph.Linear(inverseGain, new[]
                 {
@@ -774,8 +891,10 @@ namespace YUCP.Components.Editor
                 result.inverseTrackingGainParameters[articulator] = inverseGain;
             }
 
-            var visibleSpeechWeights = BuildVisibleSpeechWeights(
-                graph, mathRoot, request, renderedSpeechWeights, trackingGains);
+            var visibleSpeechWeights = buildsLowerFaceOutput && !usesResidualOutput
+                ? BuildVisibleSpeechWeights(
+                    graph, mathRoot, request, renderedSpeechWeights, trackingGains)
+                : renderedSpeechWeights.ToArray();
 
             // The learned estimator is intentionally absent from Normal mode.
             // It is inserted here, before direct tongue measurements, so a real
@@ -838,9 +957,21 @@ namespace YUCP.Components.Editor
                     var calibratedPose = calibratedTrackingPose[articulator];
                     var calibratedLead = calibratedTrackingLead[articulator];
 
-                    var trackingContribution = graph.Param($"Tracking/{articulator}/Contribution", 0f);
-                    graph.AddOperation(mathRoot, graph.Multiply(gain, calibratedPose, trackingContribution, signed));
-                    result.trackingContributionParameters[articulator] = trackingContribution;
+                    // Calibrated residual output consumes the final fused
+                    // articulation and ownership gain directly. A separate
+                    // tracking product is needed only by fallback pose output or
+                    // external signed-ray reconciliation.
+                    if (buildsLowerFaceOutput &&
+                        (!usesResidualOutput ||
+                         UsesExternalCalibratedRayOutput(request, articulator)))
+                    {
+                        var trackingContribution = graph.Param(
+                            $"Tracking/{articulator}/Contribution", 0f);
+                        graph.AddOperation(mathRoot, graph.Multiply(
+                            gain, calibratedPose, trackingContribution, signed));
+                        result.trackingContributionParameters[articulator] =
+                            trackingContribution;
+                    }
 
                     finalSlow = graph.Param($"Articulation/{articulator}/FusedSlow", 0f);
                     finalFast = graph.Param($"Articulation/{articulator}/FusedFast", 0f);
@@ -883,6 +1014,19 @@ namespace YUCP.Components.Editor
                 new Dictionary<AdvancedVisemeArticulator, string>();
             var publicArticulationOutputs =
                 new Dictionary<AdvancedVisemeArticulator, string>();
+            // Keep the complete public contract even when a lane is provably
+            // constant zero for this build. A declared, unwritten Animator
+            // parameter stays at its zero default without paying for observers,
+            // fusion, velocity, or mesh-output motions.
+            foreach (var articulator in inactiveArticulators)
+            {
+                var output = graph.Param(
+                    prefix + "/Articulation/" + articulator, 0f, false);
+                var velocity = graph.Param(
+                    prefix + "/Velocity/" + articulator, 0f, false);
+                result.globalParameters.Add(output);
+                result.globalParameters.Add(velocity);
+            }
             foreach (var articulator in articulators)
             {
                 var signed = IsSigned(articulator);
@@ -1009,6 +1153,7 @@ namespace YUCP.Components.Editor
         {
             if (request.component.tuningSyncMode !=
                     AdvancedVisemeTuningSyncMode.CompactSynced ||
+                request.useSharedParameterCompressor ||
                 result.tuningParameters.Count == 0)
                 return;
 
@@ -3575,6 +3720,11 @@ namespace YUCP.Components.Editor
             Request request,
             AdvancedVisemeArticulatorGroup group,
             BetaCoarticulationGraph beta,
+            IReadOnlyDictionary<AdvancedVisemeArticulator, string> projectedRaw,
+            IReadOnlyDictionary<AdvancedVisemeArticulator, string> projectedFast,
+            IReadOnlyDictionary<AdvancedVisemeArticulator, string> projectedSlow,
+            IReadOnlyDictionary<AdvancedVisemeArticulator, float> projectedOffsets,
+            IReadOnlyDictionary<AdvancedVisemeArticulator, float> projectedScales,
             IReadOnlyDictionary<AdvancedVisemeArticulator, string> fastOutputs,
             IReadOnlyDictionary<AdvancedVisemeArticulator, string> slowOutputs,
             string visemeIndex,
@@ -3585,32 +3735,65 @@ namespace YUCP.Components.Editor
                 throw new InvalidOperationException(
                     $"Missing Beta coarticulation lead for {group}.");
 
+            var projectedFastOutputs = fastOutputs
+                .Where(pair => projectedFast.ContainsKey(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+            var projectedSlowOutputs = slowOutputs
+                .Where(pair => projectedSlow.ContainsKey(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+            if (projectedFastOutputs.Count > 0)
+            {
+                var fastRelease = graph.InterpolateAffineArticulationVector(
+                    projectedFast, projectedRaw, projectedFastOutputs, lead,
+                    projectedOffsets, projectedScales,
+                    $"Corpus {group} projected fast");
+                var fastFreeze = graph.CopyArticulationVector(
+                    projectedFastOutputs, projectedFastOutputs,
+                    $"Corpus {group} projected fast freeze");
+                graph.AddOperation(root, graph.SelectSilenceHoldMotion(
+                    fastRelease, fastRelease, fastFreeze,
+                    visemeIndex, speechHistory, silenceStability,
+                    $"Corpus {group} projected fast transient-sil hold"));
+                graph.AddOperation(root, graph.InterpolateAffineArticulationVector(
+                    projectedSlow, projectedFast, projectedSlowOutputs, lead,
+                    projectedOffsets, projectedScales,
+                    $"Corpus {group} projected slow"));
+            }
+
+            var matrixFastOutputs = fastOutputs
+                .Where(pair => !projectedFast.ContainsKey(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+            var matrixSlowOutputs = slowOutputs
+                .Where(pair => !projectedSlow.ContainsKey(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+            if (matrixFastOutputs.Count == 0) return;
+
             var fastFrom = BuildVisemeMatrixProjectionMotion(
-                graph, request, $"Corpus {group} fast source",
-                beta.fast, fastOutputs);
+                graph, request, $"Corpus {group} sparse fast source",
+                beta.fast, matrixFastOutputs);
             var fastTo = BuildVisemeMatrixProjectionMotion(
-                graph, request, $"Corpus {group} raw source",
-                beta.raw, fastOutputs);
-            var fastRelease = graph.InterpolateMotions(
+                graph, request, $"Corpus {group} sparse raw source",
+                beta.raw, matrixFastOutputs);
+            var matrixFastRelease = graph.InterpolateMotions(
                 fastFrom, fastTo, lead,
-                $"Corpus {group} contracted fast");
-            var fastFreeze = graph.CopyArticulationVector(
-                fastOutputs, fastOutputs,
-                $"Corpus {group} contracted fast freeze");
+                $"Corpus {group} sparse contracted fast");
+            var matrixFastFreeze = graph.CopyArticulationVector(
+                matrixFastOutputs, matrixFastOutputs,
+                $"Corpus {group} sparse contracted fast freeze");
             graph.AddOperation(root, graph.SelectSilenceHoldMotion(
-                fastRelease, fastRelease, fastFreeze,
+                matrixFastRelease, matrixFastRelease, matrixFastFreeze,
                 visemeIndex, speechHistory, silenceStability,
-                $"Corpus {group} contracted fast transient-sil hold"));
+                $"Corpus {group} sparse fast transient-sil hold"));
 
             var slowFrom = BuildVisemeMatrixProjectionMotion(
-                graph, request, $"Corpus {group} slow source",
-                beta.slow, slowOutputs);
+                graph, request, $"Corpus {group} sparse slow source",
+                beta.slow, matrixSlowOutputs);
             var slowTo = BuildVisemeMatrixProjectionMotion(
-                graph, request, $"Corpus {group} fast-to-slow source",
-                beta.fast, slowOutputs);
+                graph, request, $"Corpus {group} sparse fast-to-slow source",
+                beta.fast, matrixSlowOutputs);
             graph.AddOperation(root, graph.InterpolateMotions(
                 slowFrom, slowTo, lead,
-                $"Corpus {group} contracted slow"));
+                $"Corpus {group} sparse contracted slow"));
         }
 
         private static void AddElementwiseProductProjection(
@@ -3727,12 +3910,143 @@ namespace YUCP.Components.Editor
             return values;
         }
 
+        internal static bool ShouldProjectBetaArticulationRow(
+            AdvancedVisemeArticulator articulator,
+            IReadOnlyList<float> coefficients)
+        {
+            if (coefficients == null) return false;
+            var signed = IsSigned(articulator);
+            foreach (var value in coefficients)
+            {
+                if (float.IsNaN(value) || float.IsInfinity(value)) return false;
+                // Observer coordinates use nonnegative Direct weights. Signed
+                // rows are affine-normalized into [0,1] and decoded at output;
+                // keep unusual hand-authored domains on the general matrix path.
+                if ((!signed && value < 0f) || (signed && Mathf.Abs(value) > 2f))
+                    return false;
+            }
+            var nonzero = coefficients.Count(value => Mathf.Abs(value) >= 1e-8f);
+            if (signed && coefficients.Max() - coefficients.Min() < 1e-8f)
+                return false;
+            // Commuting C through the observer trades repeated 15-way matrix
+            // samples for three stateful articulation coordinates. Signed lanes
+            // need a two-sided copy map, so their profitable point is higher.
+            // Keep sparse rows in the shared matrix clips and project only rows
+            // safely beyond binding break-even; a merely equal curve count would
+            // still add BlendTree traversal and internal parameters.
+            return nonzero >= (signed ? 7 : 6);
+        }
+
+        internal static float[] EncodeBetaProjectionRow(
+            AdvancedVisemeArticulator articulator,
+            IReadOnlyList<float> coefficients,
+            out float offset,
+            out float scale)
+        {
+            if (!ShouldProjectBetaArticulationRow(articulator, coefficients))
+                throw new InvalidOperationException(
+                    $"{articulator} is not a safe dense Beta projection row.");
+
+            var encoded = coefficients.ToArray();
+            offset = 0f;
+            scale = 1f;
+            if (!IsSigned(articulator)) return encoded;
+
+            offset = encoded.Min();
+            scale = encoded.Max() - offset;
+            for (var index = 0; index < encoded.Length; index++)
+                encoded[index] = (encoded[index] - offset) / scale;
+            return encoded;
+        }
+
+        private static bool IsArticulationLaneActive(
+            Request request,
+            AdvancedVisemeArticulator articulator,
+            IReadOnlyDictionary<AdvancedVisemeArticulator, string> resolvedTracking,
+            bool faceConditionedTongueInference)
+        {
+            // This is an exact liveness test, not an epsilon-based visual
+            // approximation. A lane may be removed only when every possible
+            // source in the generated graph is identically zero.
+            if (GetAdjustedSpeechCoefficients(request, articulator)
+                .Any(value => value != 0f))
+                return true;
+            if (resolvedTracking != null && resolvedTracking.ContainsKey(articulator))
+                return true;
+            if (faceConditionedTongueInference &&
+                (articulator == AdvancedVisemeArticulator.TongueOut ||
+                 articulator == AdvancedVisemeArticulator.TongueY))
+                return true;
+
+            if (request?.trackingEnabled == true &&
+                request.component != null &&
+                request.component.fusionMode == AdvancedVisemeFusionMode.PhoneticAssist &&
+                request.profile != null)
+            {
+                if (articulator == AdvancedVisemeArticulator.LipClose &&
+                    request.profile.bilabialClosure != 0f)
+                    return true;
+                if (articulator == AdvancedVisemeArticulator.LipBite &&
+                    request.profile.labiodentalBite != 0f)
+                    return true;
+            }
+
+            return false;
+        }
+
         private static bool HasExternalPoseCalibration(Request request)
         {
             return request?.calibration != null && request.calibration.success &&
                    request.calibration.poseBasisAxes != null &&
                    request.calibration.poseBasisAxes.Length > 0 &&
                    request.calibration.coefficients != null;
+        }
+
+        private static bool UsesResidualOutputPath(Request request)
+        {
+            if (request == null || request.calibration == null ||
+                !request.calibration.success || request.profile == null)
+                return false;
+            var anyVisemeOverride = request.profile.visemePoses.Any(pose =>
+                pose != null && pose.animationOverride != null);
+            var anyArticulatorOverride = request.profile.articulatorBindings.Any(binding =>
+                binding != null &&
+                (binding.animationOverride != null ||
+                 binding.negativeAnimationOverride != null));
+            return !anyVisemeOverride && !anyArticulatorOverride &&
+                   (!request.reuseExistingTracking ||
+                   HasExternalPoseCalibration(request));
+        }
+
+        private static bool UsesExternalCalibratedRayOutput(
+            Request request,
+            AdvancedVisemeArticulator articulator)
+        {
+            if (!HasExternalPoseCalibration(request)) return false;
+            var axes = request.calibration.poseBasisAxes
+                .Where(axis => axis.articulator == articulator)
+                .ToArray();
+            if (axes.Length == 0) return false;
+
+            // This is the same fast path used by the output builder: a reused
+            // native proxy drives its calibrated rays atomically, so no
+            // generated tracking product or inverse gain is consumed.
+            if (request.reuseExistingTracking &&
+                request.directPoseArticulators != null &&
+                request.directPoseArticulators.Contains(articulator) &&
+                request.externalPoses != null &&
+                request.externalPoses.TryGetValue(articulator, out var external) &&
+                external != null &&
+                TryResolveTrackingParameter(
+                    request, articulator, request.profile.FindBinding(articulator),
+                    out _))
+                return false;
+
+            var positiveCount = axes.Count(axis => axis.direction > 0);
+            // One unsigned positive ray consumes the already-fused final
+            // articulation directly. Only signed/two-ray reconciliation needs
+            // separate generated speech and tracking magnitudes.
+            return IsSigned(articulator) || positiveCount != 1;
         }
 
         private static BetaCoarticulationGraph BuildBetaCoarticulationWeights(
@@ -3743,6 +4057,8 @@ namespace YUCP.Components.Editor
             IReadOnlyList<string> raw,
             IReadOnlyList<string> fast,
             IReadOnlyList<string> slow,
+            IReadOnlyDictionary<AdvancedVisemeArticulatorGroup, string[]>
+                retentionRowTargets,
             string visemeIndex,
             string speechHistory,
             string silenceStability,
@@ -3750,11 +4066,15 @@ namespace YUCP.Components.Editor
         {
             var output = new BetaCoarticulationGraph();
             var retentionParameters = new Dictionary<AdvancedVisemeArticulatorGroup, string>();
-            for (var groupIndex = 0; groupIndex < AdvancedVisemeTransitionRetention.GroupCount; groupIndex++)
+            for (var groupIndex = 0;
+                 groupIndex < AdvancedVisemeTransitionRetention.GroupCount;
+                 groupIndex++)
             {
                 var group = (AdvancedVisemeArticulatorGroup)groupIndex;
-                retentionParameters[group] = graph.Param($"BetaCoarticulation/Retention/{group}", 0f);
+                retentionParameters[group] = graph.Param(
+                    $"BetaCoarticulation/Retention/{group}", 0f);
             }
+
             var groupsByDecay = retentionParameters.Keys
                 .GroupBy(group => Mathf.RoundToInt(
                     AdvancedVisemeCoarticulationModel.DecaySeconds(group) * 1000000f))
@@ -3765,70 +4085,58 @@ namespace YUCP.Components.Editor
                 var decaySeconds = AdvancedVisemeCoarticulationModel.DecaySeconds(groups[0]);
                 var contextAlpha = graph.Param(
                     $"BetaCoarticulation/Context/{decayGrouping.Key}/Alpha", 0.25f);
-                graph.AddOperation(root, graph.AlphaFromDeltaTime(frameTime, contextAlpha, decaySeconds));
-                var contextWeights = new string[VisemeReconstructionProfile.VisemeCount];
-                for (var i = 0; i < contextWeights.Length; i++)
-                    contextWeights[i] = graph.Param(
-                        $"BetaCoarticulation/Context/{decayGrouping.Key}/{i}", i == 0 ? 1f : 0f);
-                graph.AddOperation(root, graph.SmoothVectorUnlessHeldSilence(
-                    raw, contextWeights, contextAlpha,
-                    visemeIndex, speechHistory, silenceStability,
-                    $"BetaCoarticulation context {decayGrouping.Key}"));
-
-                // Exact staged tensor contraction:
-                //   projected[g,c] = sum_p context[p] * R[g,p,c]
-                //   retention[g]   = sum_c fast[c] * projected[g,c]
-                //
-                // The former graph expanded every (previous,current) pair into
-                // 225 leaf clips per decay bucket. This factors the same full-rank
-                // table without an SVD or approximation: fifteen context rows are
-                // vector setters, followed by fifteen small destination vectors.
+                graph.AddOperation(root,
+                    graph.AlphaFromDeltaTime(frameTime, contextAlpha, decaySeconds));
                 var projected = groups.ToDictionary(
                     group => group,
-                    group => Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                    group => Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
                         .Select(current => graph.Param(
-                            $"BetaCoarticulation/RetentionProjected/{group}/{current}", 0f))
-                        .ToArray());
-                var projectedValues = projected
-                    .SelectMany(pair => pair.Value)
-                    .ToArray();
-                var contextProjection = graph.Direct(
-                    $"Corpus context projection ({decaySeconds:0.###}s)");
-                var contextChildren = new List<ChildMotion>();
-                for (var previous = 0;
-                     previous < VisemeReconstructionProfile.VisemeCount;
-                     previous++)
-                {
-                    var values = new List<KeyValuePair<string, float>>();
-                    foreach (var group in groups)
-                    for (var current = 0;
-                         current < VisemeReconstructionProfile.VisemeCount;
-                         current++)
-                        values.Add(new KeyValuePair<string, float>(
-                            projected[group][current],
+                            $"BetaCoarticulation/RetentionProjected/{group}/{current}",
                             AdvancedVisemeCoarticulationModel.Retention(
-                                group, previous, current)));
-                    contextChildren.Add(new ChildMotion
-                    {
-                        motion = graph.MultiSetter(
-                            "Corpus context row " +
-                            VisemeReconstructionProfile.VisemeNames[previous],
-                            values),
-                        directBlendParameter = contextWeights[previous],
-                        timeScale = 1f
-                    });
-                }
-                contextChildren.Add(new ChildMotion
-                {
-                    motion = graph.MultiSetter(
-                        "Corpus context projection safety zero",
-                        projectedValues.Select(parameter =>
-                            new KeyValuePair<string, float>(parameter, 0f))),
-                    directBlendParameter = MathGraph.AlwaysOneParameter,
-                    timeScale = 1f
-                });
-                contextProjection.children = contextChildren.ToArray();
-                graph.AddOperation(root, contextProjection);
+                                group, 0, current)))
+                        .ToArray());
+                var projectedState = groups.ToDictionary(
+                    group => group,
+                    group => Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
+                        .Select(current => graph.Param(
+                            $"BetaCoarticulation/RetentionState/{group}/{current}",
+                            AdvancedVisemeCoarticulationModel.Retention(
+                                group, 0, current)))
+                        .ToArray());
+                if (groups.Any(group =>
+                        retentionRowTargets == null ||
+                        !retentionRowTargets.TryGetValue(group, out var targets) ||
+                        targets == null ||
+                        targets.Length != VisemeReconstructionProfile.VisemeCount))
+                    throw new InvalidOperationException(
+                        "Beta retention row targets are incomplete.");
+
+                // Let c be the filtered hard-viseme context and R_g the learned
+                // transition matrix. The previous implementation materialized c
+                // and evaluated c^T R_g every frame. Linearity gives the exact
+                // recurrence
+                //   z_g = c^T R_g
+                //   z'_g = lerp(z_g, R_g[Viseme,:], alpha).
+                // Filtering the decoder's selected matrix row therefore removes
+                // the dense context-matrix contraction without changing the
+                // causal model, its silence hold, or any learned coefficient.
+                graph.AddOperation(root, graph.SmoothVectorUnlessHeldSilence(
+                    groups.SelectMany(group => retentionRowTargets[group]).ToArray(),
+                    groups.SelectMany(group => projectedState[group]).ToArray(),
+                    contextAlpha, visemeIndex, speechHistory, silenceStability,
+                    $"Projected corpus context {decayGrouping.Key}"));
+                // Preserve the existing Animator feedback phase. The previous
+                // graph updated c, projected c^T R, and contracted against f as
+                // sibling AAP operations, so the contraction observed a
+                // one-frame-delayed projection. Keeping that explicit delay
+                // makes the rewrite frame-for-frame equivalent while still
+                // eliminating the dense matrix evaluation.
+                graph.AddOperation(root, graph.CopyVector(
+                    groups.SelectMany(group => projectedState[group]).ToArray(),
+                    groups.SelectMany(group => projected[group]).ToArray(),
+                    $"Delayed projected corpus context {decayGrouping.Key}"));
 
                 var destinationContraction = graph.Direct(
                     $"Corpus destination contraction ({decaySeconds:0.###}s)");
@@ -3882,6 +4190,7 @@ namespace YUCP.Components.Editor
                 destinationContraction.children = destinationChildren.ToArray();
                 graph.AddOperation(root, destinationContraction);
             }
+
             output.raw = raw;
             output.fast = fast;
             output.slow = slow;
@@ -3894,10 +4203,6 @@ namespace YUCP.Components.Editor
             {
                 var lead = groupLeads[pair.Key];
                 output.leads[pair.Key] = lead;
-                // Face-conditioned inference observes only PP/nn for its nasal
-                // correction. The visible-tongue regressor additionally needs the
-                // complete TongueTip slow simplex. Materializing all four 15-wide
-                // stage vectors made 39 coordinates that no consumer could read.
                 if (!materializeTongueSimplexes ||
                     pair.Key != AdvancedVisemeArticulatorGroup.TongueTip &&
                     pair.Key != AdvancedVisemeArticulatorGroup.TongueBody)
@@ -4290,18 +4595,12 @@ namespace YUCP.Components.Editor
             string trackedSurfaceYield,
             IReadOnlyDictionary<AdvancedVisemeArticulator, string> trackingGains)
         {
-            var hasCalibration = request.calibration != null && request.calibration.success;
             var externalPoseCalibration = HasExternalPoseCalibration(request);
-            var anyVisemeOverride = request.profile.visemePoses.Any(p => p != null && p.animationOverride != null);
-            var anyArticulatorOverride = request.profile.articulatorBindings.Any(binding =>
-                binding != null &&
-                (binding.animationOverride != null || binding.negativeAnimationOverride != null));
             // Reused templates can contain a rig-specific linear mouth basis. Keep
             // that basis in the authoritative final layer instead of selecting a
             // separately auto-mapped calibration basis that may animate different
             // properties and leave the lower template visible.
-            var useResiduals = hasCalibration && !anyVisemeOverride && !anyArticulatorOverride &&
-                               (!request.reuseExistingTracking || externalPoseCalibration);
+            var useResiduals = UsesResidualOutputPath(request);
 
             if (request.trackingEnabled && request.reuseExistingTracking)
                 ValidateReusedTrackingPoses(request, result);
@@ -4843,8 +5142,11 @@ namespace YUCP.Components.Editor
             for (var viseme = 0; viseme < residualWeights.Count; viseme++)
             {
                 var values = projections.Select((projection, index) =>
-                    new KeyValuePair<string, float>(
-                        projected[index], projection.coefficients[viseme]));
+                        new KeyValuePair<string, float>(
+                            projected[index], projection.coefficients[viseme]))
+                    .Where(pair => pair.Value != 0f)
+                    .ToArray();
+                if (values.Length == 0) continue;
                 children.Add(new ChildMotion
                 {
                     motion = graph.MultiSetter(
@@ -5000,6 +5302,18 @@ namespace YUCP.Components.Editor
             IReadOnlyList<KeyValuePair<int, AdvancedVisemeMeshCalibrator.PoseBasisAxis>> negativeAxes,
             IReadOnlyDictionary<int, Motion> poses)
         {
+            // The multi-ray realization is algebraically
+            //   (1-g) * authoredRayMass + g * trackedRayMass.
+            // Unlike the unsigned one-ray fast path, both factors are required.
+            // Fail at build time if the liveness plan and output lowering ever
+            // disagree instead of silently falling back to additive speech.
+            if (result.trackingGainParameters.ContainsKey(articulator) &&
+                (!result.inverseTrackingGainParameters.ContainsKey(articulator) ||
+                 !result.trackingContributionParameters.ContainsKey(articulator)))
+                throw new InvalidOperationException(
+                    $"External calibrated rays for '{articulator}' require both " +
+                    "inverse speech authority and tracked contribution terms.");
+
             var positiveBase = BuildExternalRayBases(
                 request, result, graph, outputRoot, speechWeights,
                 articulator, "Positive", positiveAxes);
@@ -5378,7 +5692,7 @@ namespace YUCP.Components.Editor
                     VRCExpressionParameters.ValueType.Float,
                     AdvancedVisemeTuning.DefaultValue(request.profile, pair.Key),
                     request.component.saveTuningValues,
-                    false);
+                    request.useSharedParameterCompressor);
             }
 
             if (!string.IsNullOrEmpty(result.tuningSyncFocusParameter) &&
@@ -5629,6 +5943,7 @@ namespace YUCP.Components.Editor
             string source,
             string output,
             IReadOnlyList<string> oneHotOutputs,
+            IReadOnlyDictionary<string, float[]> decodedVectors,
             string layerName)
         {
             var stateMachine = AddStateLayer(controller, graph, layerName);
@@ -5644,6 +5959,17 @@ namespace YUCP.Components.Editor
                     for (var channel = 0; channel < oneHotOutputs.Count; channel++)
                         values.Add(new KeyValuePair<string, float>(
                             oneHotOutputs[channel], channel == i ? 1f : 0f));
+                if (decodedVectors != null)
+                    foreach (var pair in decodedVectors)
+                    {
+                        if (pair.Value == null ||
+                            pair.Value.Length != VisemeReconstructionProfile.VisemeCount)
+                            throw new InvalidOperationException(
+                                $"Decoded vector '{pair.Key}' must contain " +
+                                $"{VisemeReconstructionProfile.VisemeCount} values.");
+                        values.Add(new KeyValuePair<string, float>(
+                            pair.Key, pair.Value[i]));
+                    }
                 state.motion = graph.MultiSetter(
                     "Decode " + VisemeReconstructionProfile.VisemeNames[i],
                     values);
@@ -6422,6 +6748,68 @@ namespace YUCP.Components.Editor
                     });
             }
 
+            public Motion InterpolateAffineArticulationVector(
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> from,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> to,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> outputs,
+                string weight,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, float> offsets,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, float> scales,
+                string name)
+            {
+                if (from == null || to == null || outputs == null ||
+                    offsets == null || scales == null ||
+                    outputs.Keys.Any(key =>
+                        !from.ContainsKey(key) || !to.ContainsKey(key) ||
+                        !offsets.ContainsKey(key) || !scales.ContainsKey(key)))
+                    throw new InvalidOperationException(
+                        $"{name} requires matching affine articulation vectors.");
+
+                return OneDimensional(
+                    name, weight,
+                    new[]
+                    {
+                        Child(DecodeAffineArticulationVector(
+                            from, outputs, offsets, scales, name + " slow"), 0f),
+                        Child(DecodeAffineArticulationVector(
+                            to, outputs, offsets, scales, name + " fast"), 1f)
+                    });
+            }
+
+            private Motion DecodeAffineArticulationVector(
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> inputs,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> outputs,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, float> offsets,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, float> scales,
+                string name)
+            {
+                var ordered = outputs.OrderBy(pair => (int)pair.Key).ToArray();
+                var tree = Direct(name);
+                var children = new List<ChildMotion>(ordered.Length + 1);
+                foreach (var pair in ordered)
+                {
+                    children.Add(new ChildMotion
+                    {
+                        motion = Setter(pair.Value, scales[pair.Key]),
+                        directBlendParameter = inputs[pair.Key],
+                        timeScale = 1f
+                    });
+                }
+                // This is both the affine offset and the deterministic zero
+                // binder for rows whose minimum happens to be zero.
+                children.Add(new ChildMotion
+                {
+                    motion = MultiSetter(
+                        name + " affine baseline",
+                        ordered.Select(pair => new KeyValuePair<string, float>(
+                            pair.Value, offsets[pair.Key]))),
+                    directBlendParameter = AlwaysOne,
+                    timeScale = 1f
+                });
+                tree.children = children.ToArray();
+                return tree;
+            }
+
             public Motion WeightedSetter(string weight, string output, float value)
             {
                 var tree = Direct($"{output} <- {weight} * {value:0.###}");
@@ -6803,8 +7191,7 @@ namespace YUCP.Components.Editor
                     new[]
                     {
                         Child(silenceRelease, 0f),
-                        Child(byHistory, 0.5f),
-                        Child(byHistory, 1f)
+                        Child(byHistory, 0.5f)
                     });
 
                 var tree = OneDimensional(
@@ -6857,10 +7244,12 @@ namespace YUCP.Components.Editor
             {
                 var tree = Direct("Linear -> " + output);
                 var children = new List<ChildMotion>();
+                var hasUnconditionalBinding = false;
                 foreach (var term in terms)
                 {
                     if (term.constant)
                     {
+                        hasUnconditionalBinding = true;
                         children.Add(new ChildMotion
                         {
                             motion = Setter(output, term.multiplier),
@@ -6895,7 +7284,13 @@ namespace YUCP.Components.Editor
                         });
                     }
                 }
-                children.Add(new ChildMotion { motion = Setter(output, 0f), directBlendParameter = AlwaysOne, timeScale = 1f });
+                if (!hasUnconditionalBinding)
+                    children.Add(new ChildMotion
+                    {
+                        motion = Setter(output, 0f),
+                        directBlendParameter = AlwaysOne,
+                        timeScale = 1f
+                    });
                 tree.children = children.ToArray();
                 return tree;
             }
@@ -7375,8 +7770,7 @@ namespace YUCP.Components.Editor
                         new[]
                         {
                             Child(silenceRelease, 0f),
-                            Child(byHistory, 0.5f),
-                            Child(byHistory, 1f)
+                            Child(byHistory, 0.5f)
                         });
                     batch = new SilenceHoldBatch
                     {
@@ -7584,6 +7978,9 @@ namespace YUCP.Components.Editor
                     }
                     tree.children = optimizedChildren;
 
+                    if (tree.blendType == BlendTreeType.Simple1D)
+                        CanonicalizeSimple1DConstantKnots(tree);
+
                     if (tree.blendType == BlendTreeType.Direct)
                     {
                         var flattened = new List<ChildMotion>();
@@ -7648,6 +8045,8 @@ namespace YUCP.Components.Editor
                         {
                             tree.children = flattened.ToArray();
                         }
+
+                        FoldConstantAnimatorChildren(tree);
                     }
 
                     if (tree.blendType == BlendTreeType.Direct &&
@@ -7694,6 +8093,192 @@ namespace YUCP.Components.Editor
                     subAssets.Remove(motion);
                     UnityEngine.Object.DestroyImmediate(motion, true);
                 }
+            }
+
+            private static void CanonicalizeSimple1DConstantKnots(BlendTree tree)
+            {
+                if (tree == null || tree.blendType != BlendTreeType.Simple1D ||
+                    tree.children.Length < 2)
+                    return;
+
+                var children = tree.children.ToList();
+                bool SameMetadata(ChildMotion left, ChildMotion right) =>
+                    Mathf.Approximately(left.timeScale, right.timeScale) &&
+                    left.mirror == right.mirror &&
+                    Mathf.Approximately(left.cycleOffset, right.cycleOffset);
+
+                bool SameValues(ChildMotion left, ChildMotion right)
+                {
+                    if (!SameMetadata(left, right)) return false;
+                    var leftValues = TryReadConstantAnimatorClip(
+                        left.motion as AnimationClip);
+                    var rightValues = TryReadConstantAnimatorClip(
+                        right.motion as AnimationClip);
+                    return leftValues != null && rightValues != null &&
+                           leftValues.Count == rightValues.Count &&
+                           leftValues.All(pair =>
+                               rightValues.TryGetValue(pair.Key, out var value) &&
+                               value.Equals(pair.Value));
+                }
+
+                // Simple1D clamps outside its first/last thresholds. Equal
+                // plateau endpoints are therefore redundant at either edge.
+                while (children.Count > 1 && SameValues(children[0], children[1]))
+                    children.RemoveAt(0);
+                while (children.Count > 1 &&
+                       SameValues(children[children.Count - 2], children[children.Count - 1]))
+                    children.RemoveAt(children.Count - 1);
+
+                var index = 1;
+                while (index < children.Count - 1)
+                {
+                    var previous = children[index - 1];
+                    var current = children[index];
+                    var next = children[index + 1];
+                    if (!SameMetadata(previous, current) ||
+                        !SameMetadata(current, next))
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    var denominator = next.threshold - previous.threshold;
+                    if (!(denominator > 0f))
+                    {
+                        index++;
+                        continue;
+                    }
+                    var previousValues = TryReadConstantAnimatorClip(
+                        previous.motion as AnimationClip);
+                    var currentValues = TryReadConstantAnimatorClip(
+                        current.motion as AnimationClip);
+                    var nextValues = TryReadConstantAnimatorClip(
+                        next.motion as AnimationClip);
+                    if (previousValues == null || currentValues == null ||
+                        nextValues == null ||
+                        previousValues.Count != currentValues.Count ||
+                        previousValues.Count != nextValues.Count)
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    var position =
+                        (current.threshold - previous.threshold) / denominator;
+                    var collinear = previousValues.All(pair =>
+                        currentValues.TryGetValue(pair.Key, out var currentValue) &&
+                        nextValues.TryGetValue(pair.Key, out var nextValue) &&
+                        currentValue.Equals(Mathf.LerpUnclamped(
+                            pair.Value, nextValue, position)));
+                    if (collinear)
+                        children.RemoveAt(index);
+                    else
+                        index++;
+                }
+
+                tree.children = children.ToArray();
+            }
+
+            private void FoldConstantAnimatorChildren(BlendTree tree)
+            {
+                if (tree == null || tree.blendType != BlendTreeType.Direct ||
+                    UsesNormalizedBlendValues(tree))
+                    return;
+
+                var indexed = tree.children
+                    .Select((child, index) => (child, index))
+                    .Where(item =>
+                        Mathf.Approximately(item.child.timeScale, 1f) &&
+                        !item.child.mirror &&
+                        Mathf.Approximately(item.child.cycleOffset, 0f) &&
+                        item.child.motion is AnimationClip)
+                    .Select(item =>
+                    {
+                        var values = TryReadConstantAnimatorClip(
+                            item.child.motion as AnimationClip);
+                        return (item.child, item.index, values);
+                    })
+                    .Where(item => item.values != null)
+                    .GroupBy(item => item.child.directBlendParameter,
+                        StringComparer.Ordinal);
+
+                var replacements = new Dictionary<int, ChildMotion>();
+                var removed = new HashSet<int>();
+                foreach (var group in indexed)
+                {
+                    var items = group.OrderBy(item => item.index).ToArray();
+                    if (items.Length < 2) continue;
+
+                    // A non-normalized Direct tree is a linear sum. Children
+                    // sharing one weight therefore satisfy
+                    //   w*A + w*B = w*(A+B)
+                    // even when A and B write the same AAP. Folding those
+                    // overlaps turns independent affine terms into one sampled
+                    // constant vector instead of leaving one clip per term.
+                    var sums = new Dictionary<string, float>(StringComparer.Ordinal);
+                    foreach (var item in items)
+                    foreach (var pair in item.values)
+                        sums[pair.Key] = sums.TryGetValue(pair.Key, out var value)
+                            ? value + pair.Value
+                            : pair.Value;
+
+                    // Keep exact-zero cancellations bound. An unbound Animator
+                    // parameter retains its previous value, which is not the same
+                    // as this weighted group explicitly contributing zero.
+                    var folded = sums.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                        .ToArray();
+                    var first = items[0];
+                    var replacement = first.child;
+                    replacement.motion = MultiSetter(
+                        "Folded constants by " + group.Key, folded);
+                    replacements[first.index] = replacement;
+                    foreach (var item in items.Skip(1)) removed.Add(item.index);
+                }
+
+                if (removed.Count == 0) return;
+                var rewritten = new List<ChildMotion>();
+                for (var index = 0; index < tree.children.Length; index++)
+                {
+                    if (removed.Contains(index)) continue;
+                    rewritten.Add(replacements.TryGetValue(index, out var replacement)
+                        ? replacement
+                        : tree.children[index]);
+                }
+                tree.children = rewritten.ToArray();
+            }
+
+            private static IReadOnlyDictionary<string, float>
+                TryReadConstantAnimatorClip(AnimationClip clip)
+            {
+                if (clip == null || clip.events.Length != 0 ||
+                    AnimationUtility.GetObjectReferenceCurveBindings(clip).Length != 0)
+                    return null;
+                var bindings = AnimationUtility.GetCurveBindings(clip);
+                if (bindings.Length == 0 || bindings.Any(binding =>
+                        binding.type != typeof(Animator) ||
+                        !string.IsNullOrEmpty(binding.path)))
+                    return null;
+
+                var values = new Dictionary<string, float>(StringComparer.Ordinal);
+                foreach (var binding in bindings)
+                {
+                    var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                    if (curve == null || curve.keys.Length == 0)
+                        return null;
+                    var value = curve.keys[0].value;
+                    if (curve.keys.Any(key => key.value != value) ||
+                        values.ContainsKey(binding.propertyName))
+                        return null;
+                    values[binding.propertyName] = value;
+                }
+                return values;
+            }
+
+            private static bool UsesNormalizedBlendValues(BlendTree tree)
+            {
+                var serializedTree = new SerializedObject(tree);
+                var normalized = serializedTree.FindProperty("m_NormalizedBlendValues");
+                return normalized != null && normalized.boolValue;
             }
 
             public void SubAsset(UnityEngine.Object obj)

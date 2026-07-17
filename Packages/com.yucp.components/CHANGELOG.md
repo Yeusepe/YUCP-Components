@@ -4,6 +4,20 @@ All notable changes to YUCP Components will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.43] - 2026-07-16
+
+### Added
+- Parameter Compressor, an avatar-wide generic replacement transport for persistent VRChat Bool, Int, and Float settings. It inspects the final VRCFury-merged menu and FX controller, protects momentary and sensor-driven inputs, and reduces selected parameters to a delay-insensitive constant-weight Bool bus with exact framing, late-join replay, and atomic snapshot-block commits.
+- A mixed enumerative codec and deterministic radix planner. Six Bool wires form 20 weight-three symbols; reserving one for synchronization leaves radix 19, so all 26 native 255-level Advanced Viseme settings fit in three payload digits per focused record without separate parameter-index bits.
+- Simple and Advanced YUCP inspector modes, reusable compression profiles, per-parameter inclusion, update priority, precision, numeric range, atomic group metadata, reserved-space planning, and build summaries.
+- EditMode proofs for constant-weight alphabets, torn-wire transitions, frame resynchronization, exact VRChat Float quantization, deterministic planning, and the six-wire `26 x 255` capacity result.
+- An Automatic Gain switch for the Viseme Test Emulator, allowing creators to preserve the microphone's original level while keeping automatic boost as the default.
+
+### Changed
+- Advanced Viseme Reconstructor detects the generic Parameter Compressor and registers its saved avatar-menu settings with the shared final-asset planner instead of generating the private 13-bit tuning transport. Without the generic component, existing Compact Synced and Local Only behavior is unchanged.
+- Parameter compression now runs immediately before VRCFury's compressor against cloned final assets. Successful YUCP plans make VRCFury naturally no-op; source controllers, expression assets, menus, prefabs, and meshes remain untouched.
+- Advanced Viseme's generated Animator now uses exact projected observers, output-liveness pruning, sparse articulation lanes, shared constant folding, and canonical piecewise-linear maps. A full reference-avatar A/B reduced the enabled `ProcessGraph` plus `ProcessAnimations` markers by 1.8852 ms; the remaining conservative AVR-only delta measured 0.5633 ms. Source meshes and authored blendshapes are never rewritten.
+
 ## [0.3.42] - 2026-07-15
 
 ### Changed

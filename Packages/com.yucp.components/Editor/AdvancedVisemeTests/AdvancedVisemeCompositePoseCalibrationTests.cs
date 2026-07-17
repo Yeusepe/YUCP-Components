@@ -744,6 +744,19 @@ namespace YUCP.Components.Editor.Tests
                     .Select(parameter => parameter.name).ToArray();
                 var trees = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
                     .OfType<BlendTree>().ToArray();
+                var dependencies = BuildParameterDependencies(result.controller);
+                var inverseGain = parameters.Single(parameter => parameter.EndsWith(
+                    "/Tracking/MouthX/InverseGain", StringComparison.Ordinal));
+                var trackingContribution = parameters.Single(parameter => parameter.EndsWith(
+                    "/Tracking/MouthX/Contribution", StringComparison.Ordinal));
+                var speechParts = parameters.Where(parameter => parameter.Contains(
+                        "/ExternalBasis/MouthX/", StringComparison.Ordinal) &&
+                    parameter.EndsWith("/SpeechPart", StringComparison.Ordinal)).ToArray();
+                Assert.That(speechParts, Is.Not.Empty,
+                    "Signed calibrated rays must retain their (1-g) speech terms.");
+                Assert.That(speechParts.All(parameter => DependsOn(
+                        dependencies, parameter, inverseGain)), Is.True,
+                    "Every authored ray must yield through the shared inverse tracking gain.");
                 foreach (var direction in new[] { "Positive", "Negative" })
                 {
                     var targetRaw = parameters.Single(parameter => parameter.EndsWith(
@@ -758,6 +771,9 @@ namespace YUCP.Components.Editor.Tests
                     var primaryWeight = parameters.Single(parameter => parameter.EndsWith(
                         $"/ExternalBasis/MouthX/{direction}/PrimaryWeight",
                         StringComparison.Ordinal));
+                    var withTracking = parameters.Single(parameter => parameter.EndsWith(
+                        $"/ExternalBasis/MouthX/{direction}/WithTracking",
+                        StringComparison.Ordinal));
 
                     var clamp = trees.SingleOrDefault(tree =>
                         tree.blendType == BlendTreeType.Simple1D &&
@@ -768,8 +784,13 @@ namespace YUCP.Components.Editor.Tests
                     AssertMapEndpoints(
                         clamp,
                         targetClamped,
-                        (-1f, 0f), (0f, 0f), (1f, 1f), (2f, 1f));
-                    var dependencies = BuildParameterDependencies(result.controller);
+                        // Simple1D already clamps outside its end knots, so the
+                        // optimizer removes the duplicate -1/0 and 2/1 plateau
+                        // samples without changing this saturating map.
+                        (0f, 0f), (1f, 1f));
+                    Assert.That(DependsOn(
+                            dependencies, withTracking, trackingContribution), Is.True,
+                        "Each signed ray must receive the generated g*f tracking term.");
                     Assert.That(DependsOn(
                             dependencies, reconciliation, targetClamped), Is.True,
                         "Reconciliation must consume the clamped coordinate, not the raw sum.");

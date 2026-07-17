@@ -21,6 +21,7 @@ namespace YUCP.Components.Editor
         private SerializedProperty inputProp;
         private SerializedProperty microphoneProp;
         private SerializedProperty backendProp;
+        private SerializedProperty automaticGainProp;
         private SerializedProperty gainProp;
         private SerializedProperty gateProp;
         private SerializedProperty manualVisemeProp;
@@ -46,6 +47,7 @@ namespace YUCP.Components.Editor
             inputProp = serializedObject.FindProperty("input");
             microphoneProp = serializedObject.FindProperty("microphoneDevice");
             backendProp = serializedObject.FindProperty("analysisBackend");
+            automaticGainProp = serializedObject.FindProperty("automaticGain");
             gainProp = serializedObject.FindProperty("microphoneGain");
             gateProp = serializedObject.FindProperty("noiseGate");
             manualVisemeProp = serializedObject.FindProperty("manualViseme");
@@ -77,6 +79,7 @@ namespace YUCP.Components.Editor
             microphoneContainer.Add(microphonePickerRoot);
             BuildMicrophonePicker();
             microphoneContainer.Add(YUCPUIToolkitHelper.CreateField(backendProp, "Classifier"));
+            microphoneContainer.Add(YUCPUIToolkitHelper.CreateField(automaticGainProp, "Automatic Gain"));
             source.Add(microphoneContainer);
             root.Add(sourceCard);
 
@@ -282,7 +285,7 @@ namespace YUCP.Components.Editor
                     ? "Listening · input is very quiet"
                     : $"{VisemeTestMath.VisemeNames[state.currentViseme]}  ·  {state.engineName}";
                 voiceMeter.value = state.currentVoice;
-                voiceMeter.title = state.automaticInputGain > 1.25f
+                voiceMeter.title = data.automaticGain && state.automaticInputGain > 1.25f
                     ? $"Voice {state.currentVoice:0.00} · auto boost {state.automaticInputGain:0.0}×"
                     : $"Voice {state.currentVoice:0.00}";
             }

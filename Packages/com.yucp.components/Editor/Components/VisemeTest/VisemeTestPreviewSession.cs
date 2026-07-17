@@ -498,17 +498,25 @@ namespace YUCP.Components.Editor
 
             if (speechEvidence) state.speechHangoverFrames = 6;
             else if (state.speechHangoverFrames > 0) state.speechHangoverFrames--;
-            var desiredGain = speechEvidence
-                ? VisemeTestMath.AutomaticInputGain(rms, gate)
-                : 1f;
-            state.automaticInputGain = VisemeTestMath.ExpSmooth(
-                state.automaticInputGain,
-                desiredGain,
-                deltaTime,
-                desiredGain > state.automaticInputGain ? 0.08f : 0.8f);
-            var analysisGain = speechEvidence || state.speechHangoverFrames > 0
-                ? state.automaticInputGain
-                : 1f;
+            if (state.data.automaticGain)
+            {
+                var desiredGain = speechEvidence
+                    ? VisemeTestMath.AutomaticInputGain(rms, gate)
+                    : 1f;
+                state.automaticInputGain = VisemeTestMath.ExpSmooth(
+                    state.automaticInputGain,
+                    desiredGain,
+                    deltaTime,
+                    desiredGain > state.automaticInputGain ? 0.08f : 0.8f);
+            }
+            else
+            {
+                state.automaticInputGain = 1f;
+            }
+            var analysisGain = ResolveAnalysisGain(
+                state.data.automaticGain,
+                speechEvidence || state.speechHangoverFrames > 0,
+                state.automaticInputGain);
             if (analysisGain > 1.0001f)
                 for (var index = 0; index < state.analysisFrame.Length; index++)
                     state.analysisFrame[index] *= analysisGain;
@@ -553,6 +561,16 @@ namespace YUCP.Components.Editor
                 state.analysisSampleClock,
                 state.sampleRate,
                 state.engineName));
+        }
+
+        internal static float ResolveAnalysisGain(
+            bool automaticGainEnabled,
+            bool speechActive,
+            float automaticInputGain)
+        {
+            return automaticGainEnabled && speechActive
+                ? Mathf.Clamp(automaticInputGain, 1f, 15f)
+                : 1f;
         }
 
         private static void PublishAnalysisSample(AnalysisSample sample)

@@ -256,10 +256,16 @@ namespace YUCP.Components.Editor
                 if (renderer != null && !HasUniqueAnimatorRendererBinding(
                         avatarRoot, renderer, out var rendererBindingError))
                     return Fail(component, rendererBindingError);
+                var useSharedParameterCompressor =
+                    component.tuningSyncMode ==
+                    AdvancedVisemeTuningSyncMode.CompactSynced &&
+                    avatarRoot.GetComponentsInChildren<ParameterCompressorData>(true)
+                        .Length == 1;
                 var hash = StableHash(
                     component, profile, sourceMesh, rendererPath,
                     catalog.DependencyFingerprint,
-                    blendShapeLinkCatalog.DependencyFingerprint);
+                    blendShapeLinkCatalog.DependencyFingerprint,
+                    useSharedParameterCompressor);
                 // Keep primary calibration identities stable when a creator adds,
                 // removes, or retargets a BlendShape Link. Linked geometry still
                 // participates in the full build hash/folder, but it must not
@@ -267,7 +273,8 @@ namespace YUCP.Components.Editor
                 var primaryHash = StableHash(
                     component, profile, sourceMesh, rendererPath,
                     catalog.DependencyFingerprint,
-                    string.Empty);
+                    string.Empty,
+                    useSharedParameterCompressor);
                 var finalFolder =
                     $"{GeneratedRoot}/{Sanitize(avatarRoot.name)}_{hash.Substring(0, 12)}";
                 var folder = transaction.StageGeneratedFolder(finalFolder);
@@ -413,6 +420,7 @@ namespace YUCP.Components.Editor
                     externalPoses = externalPoses,
                     targetMesh = sourceMesh,
                     trackingEnabled = trackingEnabled,
+                    useSharedParameterCompressor = useSharedParameterCompressor,
                     existingExpressionParameters = new HashSet<string>(existing.Keys, StringComparer.Ordinal)
                 };
                 if (!ValidateTuningParameters(request, existing, out var tuningError))
@@ -467,8 +475,11 @@ namespace YUCP.Components.Editor
                 var trackingText = trackingResolution != null ? $", {trackingResolution.Summary}" : string.Empty;
                 var tuningText = built.tuningParameters.Count > 0
                     ? component.tuningSyncMode == AdvancedVisemeTuningSyncMode.CompactSynced
-                        ? $", {built.tuningParameters.Count} saved sliders shared through " +
-                          $"{built.tuningSyncBits} compact synced bits"
+                        ? useSharedParameterCompressor
+                            ? $", {built.tuningParameters.Count} saved sliders registered " +
+                              "with the shared Parameter Compressor"
+                            : $", {built.tuningParameters.Count} saved sliders shared through " +
+                              $"{built.tuningSyncBits} compact synced bits"
                         : $", {built.tuningParameters.Count} saved local sliders (0 synced bits)"
                     : string.Empty;
                 component.SetBuildSummary($"Built {built.globalParameters.Distinct().Count()} reusable outputs, +{trackingBits + built.tuningSyncBits} synced bits{tuningText}{trackingText}{calibrationText}{linkedRendererSummary.Text}");
@@ -1313,7 +1324,8 @@ namespace YUCP.Components.Editor
                             $"{parameter.valueType}. Change its type or use another parameter prefix.";
                     return false;
                 }
-                if (parameter.networkSynced)
+                if (parameter.networkSynced &&
+                    !request.useSharedParameterCompressor)
                 {
                     error = $"Existing tuning parameter '{name}' is synced. Tuning sliders are " +
                             "local-only by design; make it unsynced or use another parameter prefix.";
@@ -1332,6 +1344,11 @@ namespace YUCP.Components.Editor
                     AdvancedVisemeTuningSyncMode.CompactSynced ||
                 generatedControls.Count == 0)
                 return true;
+
+            // The generic compressor runs against the final merged assets. AVR
+            // must expose its saved tuning values as ordinary synchronized
+            // candidates here instead of reserving its private carrier budget.
+            if (request.useSharedParameterCompressor) return true;
 
             var dataParameter = AdvancedVisemeTuning.CompactSyncDataParameter(
                 request.component.NormalizedPrefix);
@@ -1992,7 +2009,8 @@ namespace YUCP.Components.Editor
             Mesh mesh,
             string rendererPath,
             string trackingDependencies,
-            string blendShapeLinkDependencies)
+            string blendShapeLinkDependencies,
+            bool useSharedParameterCompressor)
         {
             var meshPath = mesh != null ? AssetDatabase.GetAssetPath(mesh) : string.Empty;
             var dependency = mesh == null
@@ -2018,7 +2036,8 @@ namespace YUCP.Components.Editor
                                    component.tuningMenuPath + ":" +
                                    component.saveTuningValues + ":" +
                                    component.tuningSyncMode + ":" +
-                                   component.tuningMenuSections;
+                                   component.tuningMenuSections + ":shared:" +
+                                   useSharedParameterCompressor;
             var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|{component.existingTrackingPrefix}";
             return Hash128.Compute(settings).ToString();
         }

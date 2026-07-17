@@ -1,0 +1,27 @@
+{
+    "name": "com.yucp.components.ParameterCompressor.Editor.Tests",
+    "rootNamespace": "YUCP.Components.Editor.Tests",
+    "references": [
+        "com.yucp.components.Runtime",
+        "com.yucp.components.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [
+        "VRCSDKBase.dll",
+        "VRCSDK3A.dll",
+        "VRC.Dynamics.dll",
+        "VRC.SDK3.Dynamics.Contact.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}

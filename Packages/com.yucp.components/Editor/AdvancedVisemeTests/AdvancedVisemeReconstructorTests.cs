@@ -1487,6 +1487,15 @@ namespace YUCP.Components.Editor.Tests
                     name.EndsWith("/TrackingSlowPart", StringComparison.Ordinal) ||
                     name.EndsWith("/TrackingFastPart", StringComparison.Ordinal)), Is.False,
                     "Convex fusion must not materialize scalar product temporaries.");
+                Assert.That(parameters.Any(name => name.Contains(
+                    "/VisibleSpeechWeight", StringComparison.Ordinal)), Is.False,
+                    "Outputs Only must not build mesh-ownership suppression weights.");
+                Assert.That(parameters.Any(name => name.EndsWith(
+                    "/Contribution", StringComparison.Ordinal)), Is.False,
+                    "Outputs Only must not multiply a tracking pose that no output consumes.");
+                Assert.That(parameters.Any(name => name.EndsWith(
+                    "/InverseGain", StringComparison.Ordinal)), Is.False,
+                    "External calibrated-ray inverses must remain demand driven.");
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
                     .OfType<BlendTree>().ToArray();
@@ -1662,6 +1671,48 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void BetaProjectionOnlySelectsDomainSafeProfitableRows()
+        {
+            float[] WithNonzero(int count, float value = 0.5f)
+            {
+                var coefficients = new float[VisemeReconstructionProfile.VisemeCount];
+                for (var index = 0; index < count; index++) coefficients[index] = value;
+                return coefficients;
+            }
+
+            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
+                AdvancedVisemeArticulator.JawOpen, WithNonzero(5)), Is.False);
+            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
+                AdvancedVisemeArticulator.JawOpen, WithNonzero(6)), Is.True);
+            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
+                AdvancedVisemeArticulator.TongueY, WithNonzero(6)), Is.False);
+            var signedDense = WithNonzero(7, -0.5f);
+            signedDense[1] = 0.5f;
+            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
+                AdvancedVisemeArticulator.TongueY, signedDense), Is.True);
+            var encodedSigned = AdvancedVisemeAnimatorBuilder.EncodeBetaProjectionRow(
+                AdvancedVisemeArticulator.TongueY, signedDense,
+                out var signedOffset, out var signedScale);
+            Assert.That(encodedSigned.All(value => value >= 0f && value <= 1f), Is.True);
+            for (var index = 0; index < signedDense.Length; index++)
+                Assert.That(signedOffset + signedScale * encodedSigned[index],
+                    Is.EqualTo(signedDense[index]).Within(1e-7f));
+
+            var negativeUnsigned = WithNonzero(6);
+            negativeUnsigned[0] = -0.1f;
+            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
+                AdvancedVisemeArticulator.JawOpen, negativeUnsigned), Is.False);
+            var outOfRangeSigned = WithNonzero(7);
+            outOfRangeSigned[0] = 2.01f;
+            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
+                AdvancedVisemeArticulator.TongueY, outOfRangeSigned), Is.False);
+            var nonFinite = WithNonzero(7);
+            nonFinite[0] = float.NaN;
+            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
+                AdvancedVisemeArticulator.TongueY, nonFinite), Is.False);
+        }
+
+        [Test]
         public void GeneratedBetaGraphUsesContinuousContextAndDenoisedTongueInference()
         {
             var root = new GameObject("Generated Beta Graph Test");
@@ -1709,8 +1760,20 @@ namespace YUCP.Components.Editor.Tests
                 var parameterNames = result.controller.parameters.Select(parameter => parameter.name).ToArray();
                 Assert.That(parameterNames.Count(name => name.Contains(
                     "/BetaCoarticulation/Context/", StringComparison.Ordinal)),
-                    Is.GreaterThanOrEqualTo(VisemeReconstructionProfile.VisemeCount),
-                    "Every previous viseme must remain available to the continuous context projection.");
+                    Is.EqualTo(2),
+                    "Only one alpha per learned decay should survive context projection.");
+                Assert.That(parameterNames.Count(name => name.Contains(
+                    "/BetaCoarticulation/RetentionTarget/", StringComparison.Ordinal)),
+                    Is.EqualTo(AdvancedVisemeTransitionRetention.GroupCount *
+                        VisemeReconstructionProfile.VisemeCount));
+                Assert.That(parameterNames.Count(name => name.Contains(
+                    "/BetaCoarticulation/RetentionState/", StringComparison.Ordinal)),
+                    Is.EqualTo(AdvancedVisemeTransitionRetention.GroupCount *
+                        VisemeReconstructionProfile.VisemeCount),
+                    "The EMA must run directly in the learned matrix row space.");
+                Assert.That(trees.Any(tree => tree.name.StartsWith(
+                    "Corpus context projection", StringComparison.Ordinal)), Is.False,
+                    "The dense c^T R contraction must not return.");
                 Assert.That(trees.Any(tree => tree.name.StartsWith(
                     "Previous context ->", StringComparison.Ordinal)), Is.False,
                     "The old 15x15 nested table expansion must not return.");
@@ -1745,15 +1808,15 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(tongueBodyFast.Length, Is.EqualTo(2));
                 Assert.That(tongueBodySlow.Length, Is.EqualTo(2),
                     "Consumer-driven projection must not publish unobserved tongue coordinates.");
-                Assert.That(trees.Length, Is.LessThan(750),
+                Assert.That(trees.Length, Is.LessThan(850),
                     "The generated graph must stay vector-lowered instead of returning to scalar expansion.");
                 var curveBindingCount = AssetDatabase
                     .LoadAllAssetsAtPath(folder + "/AdvancedViseme.controller")
                     .OfType<AnimationClip>()
                     .Sum(clip => AnimationUtility.GetCurveBindings(clip).Length);
-                Assert.That(curveBindingCount, Is.LessThan(5500),
+                Assert.That(curveBindingCount, Is.LessThan(6000),
                     "The generated math graph must not republish zero or dead AAP curves.");
-                Assert.That(parameterNames.Length, Is.LessThan(1150),
+                Assert.That(parameterNames.Length, Is.LessThan(1200),
                     "Internal parameter growth is a proxy for additional frame-staged math.");
                 Assert.That(parameterNames.Any(name => name.Contains(
                     "/FallbackCommonSpeechSlow", StringComparison.Ordinal) ||
@@ -1819,9 +1882,18 @@ namespace YUCP.Components.Editor.Tests
                     .Select(child => child.motion as AnimationClip)
                     .Select(clip => clip == null ? 0 : AnimationUtility.GetCurveBindings(clip).Length)
                     .ToArray();
-                Assert.That(alphaBindingCounts.Min(), Is.GreaterThan(5),
-                    "Each shared alpha knot must carry the complete response vector.");
-                Assert.That(alphaBindingCounts.Distinct().Count(), Is.EqualTo(1));
+                var alphaBindingUnion = alphaVectors[0].children
+                    .Select(child => child.motion as AnimationClip)
+                    .Where(clip => clip != null)
+                    .SelectMany(AnimationUtility.GetCurveBindings)
+                    .Select(binding => binding.propertyName)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count();
+                Assert.That(alphaBindingUnion, Is.GreaterThan(5),
+                    "The shared lookup must still publish every response-time alpha.");
+                Assert.That(alphaBindingCounts.Sum(),
+                    Is.LessThanOrEqualTo(alphaBindingUnion * alphaBindingCounts.Length),
+                    "The alpha lookup must not duplicate a parameter binding within a knot.");
                 Assert.That(result.globalParameters, Does.Contain(
                     component.NormalizedPrefix + "/Speech/Hypothesis/M"));
                 Assert.That(result.globalParameters, Does.Contain(
@@ -1843,8 +1915,8 @@ namespace YUCP.Components.Editor.Tests
                     .Select(index => component.NormalizedPrefix +
                         $"/_Internal/Viseme/{index}/VisibleSpeechWeight")
                     .ToArray();
-                Assert.That(visibleWeightNames.All(parameterNames.Contains), Is.True,
-                    "Mixed-support visible rows must all have one phase-aligned output stage.");
+                Assert.That(visibleWeightNames.Any(parameterNames.Contains), Is.False,
+                    "Outputs Only must not build mesh-ownership suppression weights.");
 
                 var runtimeRoot = new GameObject("Generated Beta Graph Runtime Test");
                 try
@@ -1856,12 +1928,48 @@ namespace YUCP.Components.Editor.Tests
                     animator.Update(0f);
 
                     var internalPrefix = component.NormalizedPrefix + "/_Internal";
-                    var renderedWeightNames = Enumerable.Range(
-                            0, VisemeReconstructionProfile.VisemeCount)
-                        .Select(index => internalPrefix +
-                            $"/Viseme/{index}/RenderedSpeechWeight")
+                    var projectedRows = Enum.GetValues(typeof(AdvancedVisemeArticulator))
+                        .Cast<AdvancedVisemeArticulator>()
+                        .Select(articulator => new
+                        {
+                            articulator,
+                            coefficients = Enumerable.Range(
+                                    0, VisemeReconstructionProfile.VisemeCount)
+                                .Select(viseme => profile.visemePoses[viseme]
+                                    .Get(articulator) *
+                                    profile.GetVisemeArticulationMultiplier(
+                                        viseme, articulator))
+                                .ToArray()
+                        })
+                        .Where(row => AdvancedVisemeAnimatorBuilder
+                            .ShouldProjectBetaArticulationRow(
+                                row.articulator, row.coefficients))
+                        .Select(row =>
+                        {
+                            var encoded = AdvancedVisemeAnimatorBuilder
+                                .EncodeBetaProjectionRow(
+                                    row.articulator, row.coefficients,
+                                    out var offset, out var scale);
+                            return new
+                            {
+                                row.articulator,
+                                row.coefficients,
+                                encoded,
+                                offset,
+                                scale
+                            };
+                        })
                         .ToArray();
-                    var jawGainName = internalPrefix + "/Tracking/JawOpen/BaseGain";
+                    Assert.That(projectedRows, Is.Not.Empty,
+                        "The fixture must exercise the exact articulation-observer projection.");
+                    var projectedVisemeStages = new[] { "Raw", "Fast", "Slow" };
+                    var silenceStabilityName = parameterNames.Single(name =>
+                        name.EndsWith("/Tuning/SilenceStability",
+                            StringComparison.Ordinal));
+                    Assert.That(projectedRows.All(row => projectedVisemeStages.All(stage =>
+                            parameterNames.Contains(internalPrefix +
+                                $"/BetaCoarticulation/Projected/{row.articulator}/{stage}"))),
+                        Is.True);
                     var candidateName = internalPrefix +
                         "/PhonePosterior/Residual/CandidateMass";
                     var shareName = internalPrefix +
@@ -1878,9 +1986,6 @@ namespace YUCP.Components.Editor.Tests
                             name.StartsWith("YUCP/TestFaceTracking/", StringComparison.Ordinal))
                         .ToArray();
                     var frames = new List<(
-                        float[] rendered,
-                        float[] visible,
-                        float jawGain,
                         float candidate,
                         float share,
                         float confidence,
@@ -1900,11 +2005,22 @@ namespace YUCP.Components.Editor.Tests
                         float[] share,
                         float confidence,
                         float[] delta)>();
+                    var projectedFrames = new List<(
+                        int viseme,
+                        float history,
+                        float stability,
+                        float[] raw,
+                        float[] fast,
+                        float[] slow,
+                        float[] lead,
+                        float[] corpusFast,
+                        float[] corpusSlow)>();
                     for (var frame = 0; frame < 96; frame++)
                     {
-                        animator.SetInteger("Viseme", frame % 11 < 2
+                        var decodedViseme = frame % 11 < 2
                             ? 0
-                            : 1 + (frame * 7 + frame / 9) % 14);
+                            : 1 + (frame * 7 + frame / 9) % 14;
+                        animator.SetInteger("Viseme", decodedViseme);
                         animator.SetFloat("Voice", 0.2f +
                             0.75f * Mathf.Abs(Mathf.Sin(frame * 0.17f)));
                         animator.SetFloat("IsLocal", 1f);
@@ -1920,10 +2036,25 @@ namespace YUCP.Components.Editor.Tests
                         }
                         animator.Update(frame % 3 == 0 ? 1f / 15f :
                             frame % 3 == 1 ? 1f / 60f : 1f / 144f);
+                        foreach (var row in projectedRows)
+                        foreach (var stage in projectedVisemeStages)
+                        {
+                            var expectedProjection = 0f;
+                            for (var viseme = 0;
+                                 viseme < VisemeReconstructionProfile.VisemeCount;
+                                 viseme++)
+                            {
+                                expectedProjection += row.encoded[viseme] *
+                                    animator.GetFloat(internalPrefix +
+                                        $"/Viseme/{viseme}/{stage}");
+                            }
+                            var actualProjection = animator.GetFloat(internalPrefix +
+                                $"/BetaCoarticulation/Projected/{row.articulator}/{stage}");
+                            Assert.That(actualProjection,
+                                Is.EqualTo(expectedProjection).Within(2e-5f),
+                                $"Projected {row.articulator}/{stage} diverged at frame {frame}.");
+                        }
                         frames.Add((
-                            renderedWeightNames.Select(animator.GetFloat).ToArray(),
-                            visibleWeightNames.Select(animator.GetFloat).ToArray(),
-                            animator.GetFloat(jawGainName),
                             animator.GetFloat(candidateName),
                             animator.GetFloat(shareName),
                             animator.GetFloat(confidenceName),
@@ -1944,25 +2075,42 @@ namespace YUCP.Components.Editor.Tests
                             nasalChannels.Select(channel => animator.GetFloat(
                                 $"{internalPrefix}/PhonePosterior/{channel.group}" +
                                 $"/{channel.stage}/Delta")).ToArray()));
+                        projectedFrames.Add((
+                            decodedViseme,
+                            animator.GetFloat(internalPrefix +
+                                "/Speech/Hangover/History"),
+                            animator.GetFloat(silenceStabilityName),
+                            projectedRows.Select(row => animator.GetFloat(
+                                    internalPrefix +
+                                    $"/BetaCoarticulation/Projected/{row.articulator}/Raw"))
+                                .ToArray(),
+                            projectedRows.Select(row => animator.GetFloat(
+                                    internalPrefix +
+                                    $"/BetaCoarticulation/Projected/{row.articulator}/Fast"))
+                                .ToArray(),
+                            projectedRows.Select(row => animator.GetFloat(
+                                    internalPrefix +
+                                    $"/BetaCoarticulation/Projected/{row.articulator}/Slow"))
+                                .ToArray(),
+                            projectedRows.Select(row => animator.GetFloat(
+                                    internalPrefix + "/BetaCoarticulation/Lead/" +
+                                    AdvancedVisemeCoarticulationModel.GroupFor(
+                                        row.articulator)))
+                                .ToArray(),
+                            projectedRows.Select(row => animator.GetFloat(
+                                    internalPrefix +
+                                    $"/Articulation/{row.articulator}/CorpusFast"))
+                                .ToArray(),
+                            projectedRows.Select(row => animator.GetFloat(
+                                    internalPrefix +
+                                    $"/Articulation/{row.articulator}/CorpusSlow"))
+                                .ToArray()));
                     }
 
                     for (var frame = 4; frame < frames.Count; frame++)
                     {
                         var sampled = frames[frame - 1];
                         var actual = frames[frame];
-                        for (var viseme = 0;
-                             viseme < VisemeReconstructionProfile.VisemeCount;
-                             viseme++)
-                        {
-                            var supported = Mathf.Abs(profile.visemePoses[viseme]
-                                .Get(AdvancedVisemeArticulator.JawOpen)) >= 1e-6f;
-                            var expected = sampled.rendered[viseme] *
-                                (supported ? 1f - sampled.jawGain : 1f);
-                            Assert.That(actual.visible[viseme],
-                                Is.EqualTo(expected).Within(2e-5f),
-                                $"Visible viseme {viseme} mixed Animator frames at {frame}.");
-                        }
-
                         var expectedM = sampled.confidence * sampled.share *
                             sampled.candidate;
                         var expectedN = sampled.confidence * (1f - sampled.share) *
@@ -2002,7 +2150,54 @@ namespace YUCP.Components.Editor.Tests
                             Assert.That(actualNasal.delta[channel],
                                 Is.LessThanOrEqualTo(
                                     sampledNasal.confidence * sampledNasal.nn[channel] +
-                                    2e-5f));
+                                2e-5f));
+                        }
+
+                        var sampledProjected = projectedFrames[frame - 1];
+                        var actualProjected = projectedFrames[frame];
+                        for (var row = 0; row < projectedRows.Length; row++)
+                        {
+                            var releaseFast = projectedRows[row].offset +
+                                projectedRows[row].scale * Mathf.LerpUnclamped(
+                                    sampledProjected.fast[row],
+                                    sampledProjected.raw[row],
+                                    sampledProjected.lead[row]);
+                            var expectedFast = releaseFast;
+                            // Viseme/Index is decoded by the preceding Animator
+                            // layer, so this Math-layer selector intentionally
+                            // observes the previous frame's decoded index.
+                            if (sampledProjected.viseme == 0)
+                            {
+                                var historyBlend = Mathf.InverseLerp(
+                                    AdvancedVisemeMath.SpeechHistoryHoldStart,
+                                    AdvancedVisemeMath.SpeechHistoryHoldFull,
+                                    sampledProjected.history);
+                                var heldFast = Mathf.LerpUnclamped(
+                                    releaseFast,
+                                    sampledProjected.corpusFast[row],
+                                    historyBlend);
+                                var holdStrength = Mathf.Clamp01(
+                                    sampledProjected.stability / 0.5f);
+                                expectedFast = Mathf.LerpUnclamped(
+                                    releaseFast, heldFast, holdStrength);
+                            }
+                            var expectedSlow = projectedRows[row].offset +
+                                projectedRows[row].scale * Mathf.LerpUnclamped(
+                                    sampledProjected.slow[row],
+                                    sampledProjected.fast[row],
+                                    sampledProjected.lead[row]);
+                            Assert.That(actualProjected.corpusFast[row],
+                                Is.EqualTo(expectedFast).Within(3e-5f),
+                                $"Projected {projectedRows[row].articulator} fast output " +
+                                $"changed Animator stage at frame {frame}. " +
+                                $"viseme={actualProjected.viseme}, previousViseme=" +
+                                $"{sampledProjected.viseme}, history={sampledProjected.history}, " +
+                                $"stability={sampledProjected.stability}, release={releaseFast}, " +
+                                $"previous={sampledProjected.corpusFast[row]}");
+                            Assert.That(actualProjected.corpusSlow[row],
+                                Is.EqualTo(expectedSlow).Within(3e-5f),
+                                $"Projected {projectedRows[row].articulator} slow output " +
+                                $"changed Animator stage at frame {frame}.");
                         }
                     }
                 }
@@ -2016,6 +2211,117 @@ namespace YUCP.Components.Editor.Tests
                 AssetDatabase.DeleteAsset(folder);
                 UnityEngine.Object.DestroyImmediate(profile);
                 UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void BlendTreeMissingAnimatorBindingsContributeNeutralZero()
+        {
+            var folderName = "__YUCP_AVR_ZeroWeight_" + Guid.NewGuid().ToString("N");
+            var folder = "Assets/" + folderName;
+            AssetDatabase.CreateFolder("Assets", folderName);
+            var runtimeRoot = new GameObject("Direct Zero Weight Runtime");
+            try
+            {
+                var controller = AnimatorController.CreateAnimatorControllerAtPath(
+                    folder + "/ZeroWeight.controller");
+                controller.AddParameter("Weight", AnimatorControllerParameterType.Float);
+                controller.AddParameter("Output", AnimatorControllerParameterType.Float);
+                controller.AddParameter("Branch", AnimatorControllerParameterType.Float);
+                controller.AddParameter("BranchOutput", AnimatorControllerParameterType.Float);
+                var clip = new AnimationClip { name = "One" };
+                AnimationUtility.SetEditorCurve(clip,
+                    EditorCurveBinding.FloatCurve("", typeof(Animator), "Output"),
+                    AnimationCurve.Constant(0f, 0f, 1f));
+                AssetDatabase.AddObjectToAsset(clip, controller);
+                var tree = new BlendTree
+                {
+                    name = "Unnormalized Direct",
+                    blendType = BlendTreeType.Direct,
+                    useAutomaticThresholds = false,
+                    children = new[]
+                    {
+                        new ChildMotion
+                        {
+                            motion = clip,
+                            directBlendParameter = "Weight",
+                            timeScale = 1f
+                        }
+                    }
+                };
+                AssetDatabase.AddObjectToAsset(tree, controller);
+                var serialized = new SerializedObject(tree);
+                serialized.FindProperty("m_NormalizedBlendValues").boolValue = false;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                var state = controller.layers[0].stateMachine.AddState("Direct");
+                state.motion = tree;
+                controller.layers[0].stateMachine.defaultState = state;
+
+                controller.AddLayer("Missing Branch Binding");
+                var branchLayer = controller.layers[1];
+                branchLayer.defaultWeight = 1f;
+                var branchOne = new AnimationClip { name = "Branch One" };
+                AnimationUtility.SetEditorCurve(branchOne,
+                    EditorCurveBinding.FloatCurve("", typeof(Animator), "BranchOutput"),
+                    AnimationCurve.Constant(0f, 0f, 1f));
+                var branchEmpty = new AnimationClip { name = "Branch Empty" };
+                AssetDatabase.AddObjectToAsset(branchOne, controller);
+                AssetDatabase.AddObjectToAsset(branchEmpty, controller);
+                var branchTree = new BlendTree
+                {
+                    name = "Missing branch binding",
+                    blendType = BlendTreeType.Simple1D,
+                    blendParameter = "Branch",
+                    useAutomaticThresholds = false,
+                    children = new[]
+                    {
+                        new ChildMotion { motion = branchOne, threshold = 0f, timeScale = 1f },
+                        new ChildMotion { motion = branchEmpty, threshold = 1f, timeScale = 1f }
+                    }
+                };
+                AssetDatabase.AddObjectToAsset(branchTree, controller);
+                var branchState = branchLayer.stateMachine.AddState("Branch");
+                branchState.motion = branchTree;
+                branchLayer.stateMachine.defaultState = branchState;
+                var layers = controller.layers;
+                layers[1] = branchLayer;
+                controller.layers = layers;
+                AssetDatabase.SaveAssets();
+
+                var animator = runtimeRoot.AddComponent<Animator>();
+                animator.runtimeAnimatorController = controller;
+                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                animator.Rebind();
+                animator.Update(0f);
+                var initial = animator.GetFloat("Output");
+                animator.SetFloat("Weight", 1f);
+                animator.Update(1f / 60f);
+                var weighted = animator.GetFloat("Output");
+                animator.SetFloat("Weight", 0f);
+                animator.Update(1f / 60f);
+                var zero = animator.GetFloat("Output");
+                animator.SetFloat("Weight", 0.25f);
+                animator.Update(1f / 60f);
+                var quarter = animator.GetFloat("Output");
+                animator.SetFloat("Branch", 0f);
+                animator.Update(1f / 60f);
+                var branchBound = animator.GetFloat("BranchOutput");
+                animator.SetFloat("Branch", 1f);
+                animator.Update(1f / 60f);
+                var branchMissing = animator.GetFloat("BranchOutput");
+                Assert.That(initial, Is.EqualTo(0f).Within(1e-6f));
+                Assert.That(weighted, Is.EqualTo(1f).Within(1e-6f));
+                Assert.That(zero, Is.EqualTo(0f).Within(1e-6f),
+                    "A zero-weight Direct child must contribute the property's neutral value.");
+                Assert.That(quarter, Is.EqualTo(0.25f).Within(1e-6f));
+                Assert.That(branchBound, Is.EqualTo(1f).Within(1e-6f));
+                Assert.That(branchMissing, Is.EqualTo(0f).Within(1e-6f),
+                    "An unbound Simple1D branch must contribute the property's neutral value.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(runtimeRoot);
+                AssetDatabase.DeleteAsset(folder);
             }
         }
 

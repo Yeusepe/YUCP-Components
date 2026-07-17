@@ -52,6 +52,29 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void AutomaticGain_CanBeDisabledAndDefaultsToEnabled()
+        {
+            var root = new GameObject("AutomaticGainTest");
+            try
+            {
+                var component = root.AddComponent<VisemeTestEmulatorData>();
+                Assert.That(component.automaticGain, Is.True);
+                Assert.That(VisemeTestPreviewSession.ResolveAnalysisGain(
+                    component.automaticGain, true, 15f), Is.EqualTo(15f));
+
+                component.automaticGain = false;
+                Assert.That(component.automaticGain, Is.False);
+                Assert.That(VisemeTestPreviewSession.ResolveAnalysisGain(
+                    component.automaticGain, true, 15f), Is.EqualTo(1f),
+                    "Disabling automatic gain must bypass an existing boost immediately.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
         public void AdaptiveNoiseFloor_FreezesDuringSpeechAndTracksSilenceAsymmetrically()
         {
             const float floor = 0.001f;
