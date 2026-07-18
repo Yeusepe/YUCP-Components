@@ -15,6 +15,8 @@ namespace YUCP.Components.Editor.Tests
 {
     public sealed class AdvancedVisemeReconstructorTests
     {
+        public static string GeneratedBetaGraphProfileCopyPath;
+
         [Test]
         public void ObserverRemainsASimplexAcrossFrameRatesAndInterruptions()
         {
@@ -30,6 +32,69 @@ namespace YUCP.Components.Editor.Tests
                     AssertSimplex(fast);
                     AssertSimplex(slow);
                 }
+            }
+        }
+
+        [Test]
+        public void MapBatchActiveBindingGuardRejectsConstantLaneExpansion()
+        {
+            Assert.That(
+                AdvancedVisemeAnimatorBuilder.MapBatchPreservesActiveBindingBound(
+                    new[] { 7, 7 }, 12, 2),
+                Is.True,
+                "Two ordinary maps retain the same four-active-binding bound.");
+            Assert.That(
+                AdvancedVisemeAnimatorBuilder.MapBatchPreservesActiveBindingBound(
+                    new[] { 1, 7 }, 7, 2),
+                Is.False,
+                "A one-point constant map must not expand from one to two active bindings.");
+            Assert.That(
+                AdvancedVisemeAnimatorBuilder.MapBatchPreservesActiveBindingBound(
+                    new[] { 1, 1 }, 1, 2),
+                Is.True,
+                "Constant maps sharing one knot retain one active binding per output.");
+        }
+
+        [Test]
+        public void SimplexEmissionSparsifierIsContinuousBoundedAndEndpointExact()
+        {
+            var epsilon = AdvancedVisemeMath.SimplexCullingEpsilon;
+            Assert.That(AdvancedVisemeMath.SparsifySimplexCoordinate(0f), Is.Zero);
+            Assert.That(AdvancedVisemeMath.SparsifySimplexCoordinate(epsilon), Is.Zero);
+            Assert.That(AdvancedVisemeMath.SparsifySimplexCoordinate(1f), Is.EqualTo(1f));
+
+            var previous = 0f;
+            for (var sample = 0; sample <= 100000; sample++)
+            {
+                var value = sample / 100000f;
+                var sparse = AdvancedVisemeMath.SparsifySimplexCoordinate(value);
+                Assert.That(sparse, Is.GreaterThanOrEqualTo(previous));
+                Assert.That(sparse, Is.InRange(0f, 1f));
+                Assert.That(Mathf.Abs(sparse - value),
+                    Is.LessThanOrEqualTo(epsilon / (1f - epsilon) + 1e-7f));
+                previous = sparse;
+            }
+        }
+
+        [Test]
+        public void SimplexEmissionSparsifierHasACertifiedRandomVectorError()
+        {
+            var random = new System.Random(7319);
+            var epsilon = AdvancedVisemeMath.SimplexCullingEpsilon;
+            var coordinateBound = epsilon / (1f - epsilon) + 1e-7f;
+            for (var trial = 0; trial < 10000; trial++)
+            {
+                var values = Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                    .Select(_ => (float)random.NextDouble()).ToArray();
+                var sum = values.Sum();
+                for (var i = 0; i < values.Length; i++) values[i] /= sum;
+
+                var sparse = values.Select(value =>
+                    AdvancedVisemeMath.SparsifySimplexCoordinate(value)).ToArray();
+                Assert.That(sparse.Sum(), Is.InRange(0f, 1.000001f));
+                for (var i = 0; i < values.Length; i++)
+                    Assert.That(Mathf.Abs(sparse[i] - values[i]),
+                        Is.LessThanOrEqualTo(coordinateBound));
             }
         }
 
@@ -666,6 +731,87 @@ namespace YUCP.Components.Editor.Tests
                     }
                     Assert.That(contracted, Is.EqualTo(expected).Within(2e-5f),
                         $"Contracted {kind}/{output} tensor changed the fitted model.");
+                }
+            }
+        }
+
+        [Test]
+        public void CollapsedUnitFeatureKernelAndRankOneNasalUpdateMatchTheFullModel()
+        {
+            var random = new System.Random(0x554E4954);
+            foreach (AdvancedVisemeVisibleTongueModelKind kind in Enum.GetValues(
+                         typeof(AdvancedVisemeVisibleTongueModelKind)))
+            for (var iteration = 0; iteration < 400; iteration++)
+            {
+                var weights = new float[VisemeReconstructionProfile.VisemeCount];
+                var weightSum = 0f;
+                for (var viseme = 0; viseme < weights.Length; viseme++)
+                {
+                    weights[viseme] = (float)random.NextDouble();
+                    weightSum += weights[viseme];
+                }
+                for (var viseme = 0; viseme < weights.Length; viseme++)
+                    weights[viseme] /= weightSum;
+
+                AdvancedVisemeMath.ConditionMergedNasalPair(
+                    weights[1], weights[8],
+                    (float)random.NextDouble(), (float)random.NextDouble(),
+                    out var conditionedPp, out var conditionedNn);
+                var delta = conditionedPp - weights[1];
+                var conditioned = (float[])weights.Clone();
+                conditioned[1] = conditionedPp;
+                conditioned[8] = conditionedNn;
+
+                var featureCount = AdvancedVisemeVisibleTongueResidual.FeatureCount(kind);
+                var features = Enumerable.Range(0, featureCount)
+                    .Select(feature =>
+                    {
+                        var bound = AdvancedVisemeVisibleTongueResidual
+                            .FeatureSafeBound(kind, feature);
+                        return Mathf.Lerp(-bound, bound, (float)random.NextDouble());
+                    })
+                    .ToArray();
+                var featureUnits = features.Select((feature, index) =>
+                        0.5f + 0.5f * feature /
+                        AdvancedVisemeVisibleTongueResidual.FeatureSafeBound(kind, index))
+                    .ToArray();
+                var expected = new float[AdvancedVisemeVisibleTongueResidual.OutputCount];
+                AdvancedVisemeVisibleTongueResidual.PredictUnclamped(
+                    kind, conditioned, features, expected);
+
+                var reliability = 0f;
+                for (var viseme = 0; viseme < weights.Length; viseme++)
+                    reliability += weights[viseme] *
+                                   AdvancedVisemeVisibleTongueResidual.Reliability(
+                                       kind, viseme);
+                reliability += delta *
+                    (AdvancedVisemeVisibleTongueResidual.Reliability(kind, 1) -
+                     AdvancedVisemeVisibleTongueResidual.Reliability(kind, 8));
+
+                foreach (AdvancedVisemeVisibleTongueOutput output in Enum.GetValues(
+                             typeof(AdvancedVisemeVisibleTongueOutput)))
+                {
+                    float Conditional(int viseme)
+                    {
+                        var value = AdvancedVisemeAnimatorBuilder.CollapsedTongueUnitBias(
+                            kind, viseme, output);
+                        for (var feature = 0; feature < featureCount; feature++)
+                            value += featureUnits[feature] *
+                                     AdvancedVisemeAnimatorBuilder
+                                         .CollapsedTongueUnitFeatureCoefficient(
+                                             kind, viseme, feature, output);
+                        return value;
+                    }
+
+                    var kernel = 0f;
+                    for (var viseme = 0; viseme < weights.Length; viseme++)
+                        kernel += weights[viseme] * Conditional(viseme);
+                    kernel += delta * (Conditional(1) - Conditional(8));
+                    var actual = reliability * kernel;
+                    Assert.That(actual,
+                        Is.EqualTo(expected[(int)output]).Within(3e-5f),
+                        $"Collapsed {kind}/{output} unit-feature kernel changed " +
+                        "the fitted model or its PP-to-nn correction.");
                 }
             }
         }
@@ -1720,6 +1866,13 @@ namespace YUCP.Components.Editor.Tests
             var folderName = "__YUCP_AVR_GraphTest_" + Guid.NewGuid().ToString("N");
             var folder = "Assets/" + folderName;
             AssetDatabase.CreateFolder("Assets", folderName);
+            // This test asserts the lowering's structure (per-decay alphas,
+            // retention rows). Congruence interning may legitimately share
+            // identical values across subsystems and is verified separately.
+            var previousSkipCongruence = AdvancedVisemeAnimatorGraphOptimizer
+                .SkipCongruenceInterningForStructureTests;
+            AdvancedVisemeAnimatorGraphOptimizer
+                .SkipCongruenceInterningForStructureTests = true;
             try
             {
                 var component = root.AddComponent<AdvancedVisemeReconstructorData>();
@@ -1757,7 +1910,55 @@ namespace YUCP.Components.Editor.Tests
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(folder + "/AdvancedViseme.controller")
                     .OfType<BlendTree>().ToArray();
+                var generatedClips = AssetDatabase.LoadAllAssetsAtPath(
+                        folder + "/AdvancedViseme.controller")
+                    .OfType<AnimationClip>().ToArray();
+                Debug.Log(
+                    $"AVR sparse fixture inventory: trees={trees.Length}, " +
+                    $"clips={generatedClips.Length}, curves=" +
+                    $"{generatedClips.Sum(clip => AnimationUtility.GetCurveBindings(clip).Length)}");
+                if (!string.IsNullOrEmpty(GeneratedBetaGraphProfileCopyPath))
+                {
+                    AssetDatabase.DeleteAsset(GeneratedBetaGraphProfileCopyPath);
+                    Assert.That(AssetDatabase.CopyAsset(
+                        folder + "/AdvancedViseme.controller",
+                        GeneratedBetaGraphProfileCopyPath), Is.True);
+                    AssetDatabase.ImportAsset(GeneratedBetaGraphProfileCopyPath);
+                }
+                Assert.That(result.optimizerReport, Is.Not.Null);
+                Assert.That(result.optimizerReport.internalParametersAfter,
+                    Is.EqualTo(result.optimizerReport.internalParametersBefore -
+                               result.optimizerReport.removedInternalParameters));
+                Assert.That(result.optimizerReport.animatorCurvesAfter,
+                    Is.EqualTo(result.optimizerReport.animatorCurvesBefore -
+                               result.optimizerReport.removedAnimatorCurves));
+                Assert.That(result.optimizerReport.removedNeutralZeroCurves,
+                    Is.GreaterThanOrEqualTo(240),
+                    "The exact lowerer should remove the remaining proven " +
+                    "neutral-zero binders after constructive baseline hoisting.");
+                Assert.That(generatedClips.Any(clip => clip.name ==
+                    "Projected destination safety zero"), Is.False,
+                    "A weighted destination row must reuse its enclosing vector binder.");
                 var parameterNames = result.controller.parameters.Select(parameter => parameter.name).ToArray();
+                Assert.That(parameterNames.Count(name => name.EndsWith(
+                        "/ProductAccumulator", StringComparison.Ordinal)),
+                    Is.EqualTo(2),
+                    "The visible-tongue bilinear stage should publish one fused accumulator per output.");
+                Assert.That(parameterNames.Any(name => name.Contains(
+                        "/TongueInference/Model/TongueOut/Product/", StringComparison.Ordinal) ||
+                    name.Contains(
+                        "/TongueInference/Model/TongueY/Product/", StringComparison.Ordinal)),
+                    Is.False,
+                    "The fused tongue graph must not rematerialize eight scalar product AAPs.");
+                foreach (var direct in trees.Where(tree =>
+                             tree.blendType == BlendTreeType.Direct))
+                {
+                    var serializedTree = new SerializedObject(direct);
+                    var normalized = serializedTree.FindProperty("m_NormalizedBlendValues");
+                    if (normalized != null)
+                        Assert.That(normalized.boolValue, Is.False,
+                            $"Direct BlendTree '{direct.name}' must not normalize mathematical weights.");
+                }
                 Assert.That(parameterNames.Count(name => name.Contains(
                     "/BetaCoarticulation/Context/", StringComparison.Ordinal)),
                     Is.EqualTo(2),
@@ -1765,7 +1966,8 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(parameterNames.Count(name => name.Contains(
                     "/BetaCoarticulation/RetentionTarget/", StringComparison.Ordinal)),
                     Is.EqualTo(AdvancedVisemeTransitionRetention.GroupCount *
-                        VisemeReconstructionProfile.VisemeCount));
+                        VisemeReconstructionProfile.VisemeCount),
+                    "Every learned retention row must remain available to the observer.");
                 Assert.That(parameterNames.Count(name => name.Contains(
                     "/BetaCoarticulation/RetentionState/", StringComparison.Ordinal)),
                     Is.EqualTo(AdvancedVisemeTransitionRetention.GroupCount *
@@ -2208,6 +2410,9 @@ namespace YUCP.Components.Editor.Tests
             }
             finally
             {
+                AdvancedVisemeAnimatorGraphOptimizer
+                    .SkipCongruenceInterningForStructureTests =
+                    previousSkipCongruence;
                 AssetDatabase.DeleteAsset(folder);
                 UnityEngine.Object.DestroyImmediate(profile);
                 UnityEngine.Object.DestroyImmediate(root);

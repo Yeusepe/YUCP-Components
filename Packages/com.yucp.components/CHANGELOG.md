@@ -4,6 +4,11 @@ All notable changes to YUCP Components will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Advanced Viseme's graph optimizer now interns congruent private parameters: an Alpern-Wegman-Zadeck partition refinement over complete write-site multisets (layer, state, full BlendTree context, curve keys, defaults) merges private AAPs that provably carry identical values on every frame, rewrites their readers, and lets liveness collect the duplicates. Direct children are treated as an unordered sum while threshold and normalized-Direct contexts keep their full sibling geometry, so no evaluation epoch moves. On the profiling baseline this removes 13 parameters and 60 curves (shared frame-rate alpha vectors, duplicated support magnitudes, duplicated signed splits); a 170,000-frame randomized causal replay across five frame rates reports exactly zero difference on every public parameter and physical output, and same-session interleaved captures measured a small consistent `Animator.ProcessGraph` win under a speech-pattern load.
+- Advanced Viseme's generated Animator now performs epoch-preserving closed-world liveness and a topology-proven neutral-zero reduction after graph lowering. Private AAP curves outside the observable cone are removed, and redundant zero bindings are omitted only in the nonnegative Beta-retention observer while every BlendTree child, threshold, and feedback stage remains intact. The representative Beta fixture drops 52 private parameters and 451 of 4,958 Animator curves while retaining mixed-frame-rate replay parity; meshes remain untouched.
+- Approximate Beta-retention models now have a build-time acceptance certificate covering active-binding savings, Animator staging, steady endpoints, mandatory phonetic constraints, held-out trajectory error, and a universal simplex coefficient bound. The exact commuted model remains the fallback and current default.
+
 ## [0.3.43] - 2026-07-16
 
 ### Added

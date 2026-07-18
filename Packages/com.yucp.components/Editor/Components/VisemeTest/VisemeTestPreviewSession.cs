@@ -54,21 +54,13 @@ namespace YUCP.Components.Editor
         internal sealed class State
         {
             internal VisemeTestEmulatorData data;
-            internal VRCAvatarDescriptor descriptor;
+            internal TargetState[] targets = Array.Empty<TargetState>();
             internal AudioClip microphoneClip;
             internal string microphone;
             internal int sampleRate = 48000;
             internal int lastMicrophonePosition;
             internal readonly Queue<float> pendingSamples = new Queue<float>();
             internal readonly float[] analysisFrame = new float[1024];
-            internal readonly Dictionary<int, float> originalBlendShapes = new Dictionary<int, float>();
-            internal Quaternion originalJawRotation;
-            internal bool hasJawSnapshot;
-            internal Animator animator;
-            internal bool hasVisemeParameter;
-            internal bool hasVoiceParameter;
-            internal int originalViseme;
-            internal float originalVoice;
             internal int currentViseme;
             internal float currentVoice;
             internal readonly float[] currentWeights = new float[VisemeTestMath.VisemeCount];
@@ -82,6 +74,19 @@ namespace YUCP.Components.Editor
             internal float automaticInputGain = 1f;
             internal int speechHangoverFrames;
             internal int noiseCalibrationFrames = 12;
+        }
+
+        internal sealed class TargetState
+        {
+            internal VRCAvatarDescriptor descriptor;
+            internal readonly Dictionary<int, float> originalBlendShapes = new Dictionary<int, float>();
+            internal Quaternion originalJawRotation;
+            internal bool hasJawSnapshot;
+            internal Animator animator;
+            internal bool hasVisemeParameter;
+            internal bool hasVoiceParameter;
+            internal int originalViseme;
+            internal float originalVoice;
         }
 
         private static readonly Dictionary<int, State> Sessions = new Dictionary<int, State>();
@@ -140,16 +145,19 @@ namespace YUCP.Components.Editor
             if (data == null) { error = "Component is missing."; return false; }
             Stop(data);
 
-            if (!TryResolveDescriptor(data, out var descriptor, out _, out error)) return false;
+            if (!TryResolveDescriptors(data, out var descriptors, out _, out error)) return false;
 
             var state = new State
             {
                 data = data,
-                descriptor = descriptor,
-                animator = descriptor.GetComponent<Animator>(),
+                targets = descriptors.Select(descriptor => new TargetState
+                {
+                    descriptor = descriptor,
+                    animator = descriptor.GetComponent<Animator>()
+                }).ToArray(),
                 lastUpdateTime = EditorApplication.timeSinceStartup
             };
-            Snapshot(state);
+            foreach (var target in state.targets) Snapshot(target);
 
             if (data.input == VisemeTestInput.Microphone)
             {
@@ -179,13 +187,13 @@ namespace YUCP.Components.Editor
             return true;
         }
 
-        internal static bool TryResolveDescriptor(
+        internal static bool TryResolveDescriptors(
             VisemeTestEmulatorData data,
-            out VRCAvatarDescriptor descriptor,
+            out VRCAvatarDescriptor[] descriptors,
             out DescriptorTargetSource source,
             out string error)
         {
-            descriptor = null;
+            descriptors = Array.Empty<VRCAvatarDescriptor>();
             source = DescriptorTargetSource.Parent;
             error = string.Empty;
             if (data == null)
@@ -197,7 +205,7 @@ namespace YUCP.Components.Editor
             var parent = data.GetComponentInParent<VRCAvatarDescriptor>();
             if (parent != null)
             {
-                descriptor = parent;
+                descriptors = new[] { parent };
                 source = DescriptorTargetSource.Parent;
                 return true;
             }
@@ -207,33 +215,31 @@ namespace YUCP.Components.Editor
                     FindObjectsSortMode.None)
                 .Where(IsActiveSceneDescriptor)
                 .ToArray();
-            var gestureManagerTargets = sceneDescriptors.Length > 1
-                ? GestureManagerBridge.FindTargetedDescriptors(sceneDescriptors)
-                : Array.Empty<VRCAvatarDescriptor>();
-            return TrySelectDescriptor(
+            var gestureManagerTargets = GestureManagerBridge.FindTargetedDescriptors(sceneDescriptors);
+            return TrySelectDescriptors(
                 parent,
                 sceneDescriptors,
                 gestureManagerTargets,
-                out descriptor,
+                out descriptors,
                 out source,
                 out error);
         }
 
-        internal static bool TrySelectDescriptor(
+        internal static bool TrySelectDescriptors(
             VRCAvatarDescriptor parent,
             IReadOnlyCollection<VRCAvatarDescriptor> sceneDescriptors,
             IReadOnlyCollection<VRCAvatarDescriptor> gestureManagerTargets,
-            out VRCAvatarDescriptor descriptor,
+            out VRCAvatarDescriptor[] descriptors,
             out DescriptorTargetSource source,
             out string error)
         {
-            descriptor = null;
+            descriptors = Array.Empty<VRCAvatarDescriptor>();
             source = DescriptorTargetSource.Parent;
             error = string.Empty;
 
             if (parent != null)
             {
-                descriptor = parent;
+                descriptors = new[] { parent };
                 return true;
             }
 
@@ -243,16 +249,16 @@ namespace YUCP.Components.Editor
                 .Where(candidate => candidateIds.Contains(candidate.GetInstanceID()))
                 .ToArray();
 
-            if (targeted.Length == 1)
+            if (targeted.Length > 0)
             {
-                descriptor = targeted[0];
+                descriptors = targeted;
                 source = DescriptorTargetSource.GestureManager;
                 return true;
             }
 
             if (candidates.Length == 1)
             {
-                descriptor = candidates[0];
+                descriptors = new[] { candidates[0] };
                 source = DescriptorTargetSource.SoleSceneAvatar;
                 return true;
             }
@@ -263,9 +269,7 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            error = targeted.Length > 1
-                ? $"Gesture Managers currently target {targeted.Length} different avatars. Place this component below the Avatar Descriptor you want to preview."
-                : $"Found {candidates.Length} active VRChat avatars and no unambiguous Gesture Manager target. Place this component below the Avatar Descriptor you want to preview.";
+            error = $"Found {candidates.Length} active VRChat avatars and no Gesture Manager targets. Place this component below the Avatar Descriptor you want to preview, or target the avatars with Gesture Manager.";
             return false;
         }
 
@@ -313,7 +317,10 @@ namespace YUCP.Components.Editor
             if (Sessions.Count == 0) return;
             foreach (var state in Sessions.Values.ToArray())
             {
-                if (state.data == null || state.descriptor == null || !state.data.isActiveAndEnabled)
+                if (state.data == null ||
+                    !state.data.isActiveAndEnabled ||
+                    state.targets == null ||
+                    !state.targets.Any(target => target != null && target.descriptor != null))
                 {
                     Sessions.Remove(state.data != null ? state.data.GetInstanceID() : Sessions.First(x => x.Value == state).Key);
                     Dispose(state);
@@ -599,7 +606,7 @@ namespace YUCP.Components.Editor
             return result;
         }
 
-        private static void ApplyFrame(State state, int viseme, float voice, float[] weights = null)
+        internal static void ApplyFrame(State state, int viseme, float voice, float[] weights = null)
         {
             viseme = Mathf.Clamp(viseme, 0, 14);
             voice = Mathf.Clamp01(voice);
@@ -613,13 +620,21 @@ namespace YUCP.Components.Editor
             for (var i = 0; i < state.currentWeights.Length; i++)
                 state.currentWeights[i] = i < weights.Length ? Mathf.Clamp01(weights[i]) : 0f;
 
-            if (!GestureManagerBridge.MouthTrackingEnabled(state.descriptor, state.data.driveGestureManager))
-                return;
+            foreach (var target in state.targets)
+            {
+                if (target == null || target.descriptor == null) continue;
+                if (!GestureManagerBridge.MouthTrackingEnabled(
+                        target.descriptor,
+                        state.data.driveGestureManager)) continue;
 
-            var parameterViseme = IsJawFlap(state.descriptor.lipSync) ? Mathf.RoundToInt(voice * 100f) : viseme;
-            if (state.data.driveAnimator) ApplyAnimator(state, parameterViseme, voice);
-            if (state.data.driveGestureManager) GestureManagerBridge.SetParameters(state.descriptor, parameterViseme, voice);
-            ApplyDescriptor(state.descriptor, state.currentWeights, viseme, voice);
+                var parameterViseme = IsJawFlap(target.descriptor.lipSync)
+                    ? Mathf.RoundToInt(voice * 100f)
+                    : viseme;
+                if (state.data.driveAnimator) ApplyAnimator(target, parameterViseme, voice);
+                if (state.data.driveGestureManager)
+                    GestureManagerBridge.SetParameters(target.descriptor, parameterViseme, voice);
+                ApplyDescriptor(target.descriptor, state.currentWeights, viseme, voice);
+            }
             EditorApplication.QueuePlayerLoopUpdate();
             SceneView.RepaintAll();
         }
@@ -666,7 +681,7 @@ namespace YUCP.Components.Editor
             style == VRC_AvatarDescriptor.LipSyncStyle.JawFlapBone ||
             style == VRC_AvatarDescriptor.LipSyncStyle.JawFlapBlendShape;
 
-        private static void Snapshot(State state)
+        private static void Snapshot(TargetState state)
         {
             var descriptor = state.descriptor;
             var renderer = descriptor.VisemeSkinnedMesh;
@@ -701,7 +716,7 @@ namespace YUCP.Components.Editor
             if (state.hasVoiceParameter) state.originalVoice = state.animator.GetFloat("Voice");
         }
 
-        private static void Restore(State state)
+        private static void Restore(TargetState state)
         {
             var renderer = state.descriptor != null ? state.descriptor.VisemeSkinnedMesh : null;
             if (renderer != null)
@@ -718,10 +733,17 @@ namespace YUCP.Components.Editor
             }
         }
 
+        private static void Restore(State state)
+        {
+            if (state?.targets == null) return;
+            foreach (var target in state.targets)
+                if (target != null) Restore(target);
+        }
+
         private static bool HasAnimatorParameter(Animator animator, string name, AnimatorControllerParameterType type) =>
             animator.parameters.Any(parameter => parameter.name == name && parameter.type == type);
 
-        private static void ApplyAnimator(State state, int viseme, float voice)
+        private static void ApplyAnimator(TargetState state, int viseme, float voice)
         {
             if (state.animator == null) return;
             if (state.hasVisemeParameter) state.animator.SetInteger("Viseme", viseme);
@@ -938,9 +960,15 @@ namespace YUCP.Components.Editor
 
         internal static class GestureManagerBridge
         {
-            private static Component cachedManager;
-            private static object cachedModule;
-            private static int cachedDescriptorId;
+            private static readonly Dictionary<int, Component[]> CachedManagersByDescriptor =
+                new Dictionary<int, Component[]>();
+            private static readonly Dictionary<int, int> InferredDescriptorByManager =
+                new Dictionary<int, int>();
+
+            static GestureManagerBridge()
+            {
+                EditorApplication.hierarchyChanged += ClearCaches;
+            }
 
             internal static VRCAvatarDescriptor[] FindTargetedDescriptors(
                 IEnumerable<VRCAvatarDescriptor> candidates)
@@ -952,71 +980,142 @@ namespace YUCP.Components.Editor
                 if (descriptors.Count == 0) return Array.Empty<VRCAvatarDescriptor>();
 
                 var targets = new Dictionary<int, VRCAvatarDescriptor>();
-                var managers = UnityEngine.Object.FindObjectsByType<MonoBehaviour>(
-                        FindObjectsInactive.Include,
-                        FindObjectsSortMode.None)
-                    .Where(component => component != null &&
-                                        component.gameObject.activeInHierarchy &&
-                                        component.gameObject.scene.IsValid() &&
-                                        component.gameObject.scene.isLoaded &&
-                                        component.GetType().Name == "GestureManager");
+                var bindings = new Dictionary<int, List<Component>>();
+                var managers = FindLoadedManagers();
+                var unboundManagers = new List<Component>();
+                InferredDescriptorByManager.Clear();
 
                 foreach (var manager in managers)
                 {
                     var target = DescriptorFromModule(manager) ?? DescriptorFromFavourite(manager);
-                    if (target == null || !descriptors.ContainsKey(target.GetInstanceID())) continue;
-                    targets[target.GetInstanceID()] = target;
+                    if (target == null)
+                    {
+                        unboundManagers.Add(manager);
+                        continue;
+                    }
+                    if (!descriptors.TryGetValue(target.GetInstanceID(), out var candidate)) continue;
+                    AddBinding(bindings, candidate, manager);
+                    targets[candidate.GetInstanceID()] = candidate;
                 }
 
+                var unassignedDescriptors = descriptors.Values
+                    .Where(candidate => !targets.ContainsKey(candidate.GetInstanceID()))
+                    .OrderBy(candidate => candidate.gameObject.scene.handle)
+                    .ThenBy(candidate => candidate.transform.GetSiblingIndex())
+                    .ThenBy(candidate => candidate.name)
+                    .ToArray();
+                var orderedUnboundManagers = unboundManagers
+                    .OrderBy(manager => manager.gameObject.scene.handle)
+                    .ThenBy(manager => manager.transform.GetSiblingIndex())
+                    .ThenBy(manager => manager.name)
+                    .ToArray();
+
+                if (unassignedDescriptors.Length == 1)
+                {
+                    foreach (var manager in orderedUnboundManagers)
+                        AddInferredBinding(bindings, targets, unassignedDescriptors[0], manager);
+                }
+                else if (unassignedDescriptors.Length > 1 &&
+                         unassignedDescriptors.Length == orderedUnboundManagers.Length)
+                {
+                    for (var index = 0; index < unassignedDescriptors.Length; index++)
+                        AddInferredBinding(
+                            bindings,
+                            targets,
+                            unassignedDescriptors[index],
+                            orderedUnboundManagers[index]);
+                }
+
+                foreach (var descriptorId in descriptors.Keys)
+                {
+                    if (bindings.TryGetValue(descriptorId, out var descriptorManagers))
+                        CachedManagersByDescriptor[descriptorId] = descriptorManagers.ToArray();
+                    else
+                        CachedManagersByDescriptor.Remove(descriptorId);
+                }
                 return targets.Values.ToArray();
+            }
+
+            private static void AddInferredBinding(
+                IDictionary<int, List<Component>> bindings,
+                IDictionary<int, VRCAvatarDescriptor> targets,
+                VRCAvatarDescriptor descriptor,
+                Component manager)
+            {
+                InferredDescriptorByManager[manager.GetInstanceID()] = descriptor.GetInstanceID();
+                AddBinding(bindings, descriptor, manager);
+                targets[descriptor.GetInstanceID()] = descriptor;
+            }
+
+            private static void AddBinding(
+                IDictionary<int, List<Component>> bindings,
+                VRCAvatarDescriptor descriptor,
+                Component manager)
+            {
+                if (!bindings.TryGetValue(descriptor.GetInstanceID(), out var managers))
+                {
+                    managers = new List<Component>();
+                    bindings[descriptor.GetInstanceID()] = managers;
+                }
+                managers.Add(manager);
+            }
+
+            private static void ClearCaches()
+            {
+                CachedManagersByDescriptor.Clear();
+                InferredDescriptorByManager.Clear();
             }
 
             internal static void SetParameters(VRCAvatarDescriptor descriptor, int viseme, float voice)
             {
-                try
+                foreach (var manager in FindManagers(descriptor))
                 {
-                    if (!EnsureModule(descriptor)) return;
-                    Set("Viseme", viseme);
-                    Set("Voice", voice);
+                    try
+                    {
+                        if (!EnsureModule(manager, descriptor, out var module)) continue;
+                        Set(module, "Viseme", viseme);
+                        Set(module, "Voice", voice);
+                    }
+                    catch { /* Gesture Manager is optional and versioned independently. */ }
                 }
-                catch { /* Gesture Manager is optional and versioned independently. */ }
             }
 
             internal static bool MouthTrackingEnabled(VRCAvatarDescriptor descriptor, bool consultGestureManager = true)
             {
-                try
+                if (TrackingControlBridge.TryGet(descriptor, out var directState)) return directState;
+                if (!consultGestureManager) return true;
+
+                foreach (var manager in FindManagers(descriptor))
                 {
-                    if (TrackingControlBridge.TryGet(descriptor, out var directState)) return directState;
-                    if (!consultGestureManager) return true;
-                    if (!EnsureModule(descriptor)) return true;
-                    var trackingField = cachedModule.GetType().GetField(
-                        "TrackingControls", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    var tracking = trackingField?.GetValue(cachedModule) as IDictionary;
-                    if (tracking == null || !tracking.Contains("Mouth & Jaw")) return true;
-                    return !string.Equals(tracking["Mouth & Jaw"]?.ToString(), "Animation", StringComparison.Ordinal);
+                    try
+                    {
+                        if (!EnsureModule(manager, descriptor, out var module)) continue;
+                        var trackingField = module.GetType().GetField(
+                            "TrackingControls", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        var tracking = trackingField?.GetValue(module) as IDictionary;
+                        if (tracking != null && tracking.Contains("Mouth & Jaw") &&
+                            string.Equals(tracking["Mouth & Jaw"]?.ToString(), "Animation", StringComparison.Ordinal))
+                            return false;
+                    }
+                    catch { /* A broken manager must not prevent the other targets from updating. */ }
                 }
-                catch { return true; }
+                return true;
             }
 
-            private static bool EnsureModule(VRCAvatarDescriptor descriptor)
+            private static bool EnsureModule(
+                Component manager,
+                VRCAvatarDescriptor descriptor,
+                out object module)
             {
-                if (descriptor == null) return false;
-                if (cachedManager == null || cachedDescriptorId != descriptor.GetInstanceID())
-                {
-                    cachedManager = FindManager(descriptor);
-                    cachedModule = null;
-                    cachedDescriptorId = descriptor.GetInstanceID();
-                }
-                if (cachedManager == null) return false;
-                var moduleField = cachedManager.GetType().GetField(
+                module = null;
+                if (manager == null || descriptor == null) return false;
+                var moduleField = manager.GetType().GetField(
                     "Module", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                var managerModule = moduleField?.GetValue(cachedManager);
-                if (managerModule != null && ModuleTargets(managerModule, descriptor)) cachedModule = managerModule;
-                else cachedModule = null;
-                if (cachedModule != null) return true;
-                TryInitializeModule(cachedManager, descriptor);
-                cachedModule = moduleField?.GetValue(cachedManager);
-                return cachedModule != null && ModuleTargets(cachedModule, descriptor);
+                module = moduleField?.GetValue(manager);
+                if (module != null && ModuleTargets(module, descriptor)) return true;
+                TryInitializeModule(manager, descriptor);
+                module = moduleField?.GetValue(manager);
+                return module != null && ModuleTargets(module, descriptor);
             }
 
             private static VRCAvatarDescriptor DescriptorFromModule(Component manager)
@@ -1057,18 +1156,52 @@ namespace YUCP.Components.Editor
                 return null;
             }
 
-            private static Component FindManager(VRCAvatarDescriptor descriptor)
+            private static Component[] FindManagers(VRCAvatarDescriptor descriptor)
             {
+                if (descriptor == null) return Array.Empty<Component>();
+                var descriptorId = descriptor.GetInstanceID();
+                if (CachedManagersByDescriptor.TryGetValue(descriptorId, out var cached) &&
+                    cached.Length > 0 &&
+                    cached.All(manager => manager != null && ManagerTargets(manager, descriptor)))
+                    return cached;
+
                 var root = descriptor.transform;
-                var managers = UnityEngine.Object.FindObjectsByType<MonoBehaviour>(
-                        FindObjectsInactive.Include, FindObjectsSortMode.None)
-                    .Where(component => component != null && component.GetType().Name == "GestureManager")
+                var managers = FindLoadedManagers();
+                var matches = managers.Where(manager => ManagerTargets(manager, descriptor)).ToArray();
+                if (matches.Length == 0)
+                    matches = managers.Where(manager =>
+                        manager.transform == root ||
+                        manager.transform.IsChildOf(root) ||
+                        root.IsChildOf(manager.transform)).ToArray();
+                if (matches.Length == 0 && managers.Length == 1) matches = managers;
+
+                if (matches.Length > 0) CachedManagersByDescriptor[descriptorId] = matches;
+                else CachedManagersByDescriptor.Remove(descriptorId);
+                return matches;
+            }
+
+            private static Component[] FindLoadedManagers()
+            {
+                return UnityEngine.Object.FindObjectsByType<MonoBehaviour>(
+                        FindObjectsInactive.Include,
+                        FindObjectsSortMode.None)
+                    .Where(component => component != null &&
+                                        component.gameObject.activeInHierarchy &&
+                                        component.gameObject.scene.IsValid() &&
+                                        component.gameObject.scene.isLoaded &&
+                                        component.GetType().Name == "GestureManager")
                     .Cast<Component>()
                     .ToArray();
+            }
 
-                return managers.FirstOrDefault(manager =>
-                           manager.transform == root || manager.transform.IsChildOf(root) || root.IsChildOf(manager.transform))
-                       ?? (managers.Length == 1 ? managers[0] : null);
+            private static bool ManagerTargets(Component manager, VRCAvatarDescriptor descriptor)
+            {
+                var target = DescriptorFromModule(manager) ?? DescriptorFromFavourite(manager);
+                if (target != null)
+                    return descriptor != null && target.GetInstanceID() == descriptor.GetInstanceID();
+                return descriptor != null &&
+                       InferredDescriptorByManager.TryGetValue(manager.GetInstanceID(), out var descriptorId) &&
+                       descriptorId == descriptor.GetInstanceID();
             }
 
             private static void TryInitializeModule(Component manager, VRCAvatarDescriptor descriptor)
@@ -1097,14 +1230,19 @@ namespace YUCP.Components.Editor
 
             private static bool ModuleTargets(object module, VRCAvatarDescriptor descriptor)
             {
-                var avatarField = module.GetType().GetField("Avatar", BindingFlags.Public | BindingFlags.Instance);
-                return avatarField == null || avatarField.GetValue(module) as GameObject == descriptor.gameObject;
+                var avatarField = module.GetType().GetField(
+                    "Avatar", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (avatarField == null) return true;
+                var target = DescriptorFromTarget(avatarField.GetValue(module));
+                return target != null && descriptor != null &&
+                       target.GetInstanceID() == descriptor.GetInstanceID();
             }
 
-            private static void Set(string name, float value)
+            private static void Set(object module, string name, float value)
             {
-                var paramsMember = cachedModule.GetType().GetField("Params", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                var dictionary = paramsMember?.GetValue(cachedModule);
+                var paramsMember = module.GetType().GetField(
+                    "Params", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var dictionary = paramsMember?.GetValue(module);
                 if (dictionary == null) return;
                 var contains = dictionary.GetType().GetMethod("ContainsKey", new[] { typeof(string) });
                 var item = dictionary.GetType().GetProperty("Item");
@@ -1115,8 +1253,8 @@ namespace YUCP.Components.Editor
                     .FirstOrDefault(method => method.Name == "Set" && method.GetParameters().Length >= 2);
                 if (set == null) return;
                 var arguments = set.GetParameters().Length == 2
-                    ? new[] { cachedModule, (object)value }
-                    : new[] { cachedModule, (object)value, null };
+                    ? new[] { module, (object)value }
+                    : new[] { module, (object)value, null };
                 set.Invoke(parameter, arguments);
             }
         }

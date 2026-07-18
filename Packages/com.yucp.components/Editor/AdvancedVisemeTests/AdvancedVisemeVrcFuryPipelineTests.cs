@@ -17,6 +17,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
+using VRC.SDKBase;
 
 namespace YUCP.Components.Editor.Tests
 {
@@ -128,6 +129,221 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(AssetDatabase.GetAssetDependencyHash(primarySourcePath),
                     Is.EqualTo(sourceDependencyBefore),
                     "The real pipeline changed the persistent source mesh asset.");
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(sourceFolder);
+            }
+        }
+
+        [Test]
+        public void RealPipelinePreservesPureMathConditionalLearnedDetailGate()
+        {
+            var previous = AdvancedVisemeAnimatorBuilder
+                .EnableConditionalLearnedDetailSleepForTests;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = true;
+                using (var fixture = new PipelineFixture(withRootLink: false))
+                {
+                    fixture.component.reconstructionMode =
+                        AdvancedVisemeReconstructionMode.BetaCoarticulation;
+                    fixture.component.trackingInputs =
+                        AdvancedVisemeTrackingInputs.Balanced8;
+                    fixture.Build();
+
+                    var controller = fixture.FxController;
+                    var conditionalLayers = controller.layers
+                        .Where(layer =>
+                            layer.name.IndexOf(
+                                "Conditional", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            layer.name.IndexOf(
+                                "Observer Reset", StringComparison.OrdinalIgnoreCase) >= 0)
+                        .Select(layer => layer.name)
+                        .ToArray();
+                    Assert.That(conditionalLayers, Is.Empty,
+                        "The pure-Math gate must remain inside the Math Direct BlendTree " +
+                        "after VRCFury merges and optimizes the controller.");
+
+                    var allStates = controller.layers
+                        .SelectMany(layer => DescendantStates(layer.stateMachine))
+                        .ToArray();
+                    var conditionalDrivers = allStates
+                        .SelectMany(state => state.behaviours ??
+                            Array.Empty<StateMachineBehaviour>())
+                        .OfType<VRCAvatarParameterDriver>()
+                        .Where(driver => ContainsConditionalControl(driver.name) ||
+                                         driver.parameters.Any(parameter =>
+                                             ContainsConditionalControl(parameter.name) ||
+                                             ContainsConditionalControl(parameter.source)))
+                        .ToArray();
+                    Assert.That(conditionalDrivers, Is.Empty,
+                        "Conditional learned detail must not regain a state-behaviour " +
+                        "dependency in the installed VRCFury pipeline.");
+
+                    var internalPrefix = Prefix + "/_Internal/";
+                    var sourceCompute = internalPrefix +
+                        "ConditionalLearnedDetail/Compute";
+                    var sourceAuthority = internalPrefix +
+                        "ConditionalLearnedDetail/Authority";
+                    var compute = FindPrivateParameter(controller, sourceCompute);
+                    var authority = FindPrivateParameter(controller, sourceAuthority);
+                    foreach (var parameter in new[] { compute, authority })
+                    {
+                        Assert.That(parameter.type,
+                            Is.EqualTo(AnimatorControllerParameterType.Float));
+                        Assert.That(parameter.name,
+                            Does.StartWith("VF").And.EndWith(parameter == compute
+                                ? sourceCompute
+                                : sourceAuthority),
+                            "VRCFury must preserve the private parameter identity while " +
+                            "giving it a collision-free feature namespace.");
+                    }
+
+                    var expressionNames = (fixture.descriptor.expressionParameters?.parameters ??
+                                           Array.Empty<VRCExpressionParameters.Parameter>())
+                        .Where(parameter => parameter != null)
+                        .Select(parameter => parameter.name)
+                        .ToArray();
+                    foreach (var sourceName in new[] { sourceCompute, sourceAuthority })
+                        Assert.That(expressionNames.Any(name =>
+                                !string.IsNullOrEmpty(name) &&
+                                name.EndsWith(sourceName, StringComparison.Ordinal)),
+                            Is.False,
+                            "Math feedback controls are private Animator parameters, not " +
+                            "avatar expression parameters.");
+
+                    var mathLayer = controller.layers.Single(layer =>
+                        layer.name == "YUCP AVR Math");
+                    var mathState = mathLayer.stateMachine.defaultState;
+                    Assert.That(mathState, Is.Not.Null);
+                    Assert.That(mathState.writeDefaultValues, Is.True,
+                        "VRCFury Direct BlendTree math must remain Write Defaults On.");
+                    var mathRoot = mathState.motion as BlendTree;
+                    Assert.That(mathRoot, Is.Not.Null);
+                    Assert.That(mathRoot.blendType, Is.EqualTo(BlendTreeType.Direct));
+
+                    var gatedLearnedMotions = DescendantBlendTrees(mathRoot)
+                        .SelectMany(tree => tree.children)
+                        .Where(child => child.directBlendParameter == compute.name)
+                        .Select(child => child.motion)
+                        .Where(motion => motion != null)
+                        .ToArray();
+                    Assert.That(gatedLearnedMotions, Is.Not.Empty,
+                        "VRCFury rewrote the private Compute parameter but disconnected " +
+                        "the learned conditional subtree.");
+                    Assert.That(gatedLearnedMotions.Any(motion =>
+                            motion.name.IndexOf(
+                                "Conditional learned inference",
+                                StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            DescendantBlendTrees(motion).Any(tree =>
+                                tree.name.IndexOf(
+                                    "Conditional learned inference",
+                                    StringComparison.OrdinalIgnoreCase) >= 0)),
+                        Is.True,
+                        "The Compute-gated motion must still be the learned inference " +
+                        "subtree after VRCFury optimization.");
+                }
+            }
+            finally
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = previous;
+            }
+        }
+
+        [Test]
+        public void RealPipelineKeepsLocalAffineExpertsStructurallyDisconnected()
+        {
+            var sourceFolderName = "__YUCP_AVR_ExpertPipeline_" +
+                                   Guid.NewGuid().ToString("N");
+            var sourceFolder = "Assets/" + sourceFolderName;
+            AssetDatabase.CreateFolder("Assets", sourceFolderName);
+            try
+            {
+                var reference = AdvancedVisemeExpertPosePrototype.CreateReferenceModel();
+                var fitted = AdvancedVisemeExpertPosePrototype.Fit(
+                    AdvancedVisemeExpertPosePrototype.CreateSamples(
+                        reference, 96, 0x51A7E),
+                    1e-10, 1e-7f);
+                using (var prototype =
+                       AdvancedVisemeExpertPosePrototype.CreateController(fitted))
+                {
+                    prototype.Persist(sourceFolder + "/Expert.controller");
+                    using (var fixture = new PipelineFixture(withRootLink: false))
+                    {
+                        AddFullController(
+                            fixture.root,
+                            prototype.controller,
+                            prototype.controller.parameters.Select(parameter => parameter.name));
+                        fixture.Build();
+
+                        var controller = fixture.FxController;
+                        var layerNames = controller.layers.Select(layer => layer.name).ToArray();
+                        var expertLayer = controller.layers.SingleOrDefault(layer =>
+                            layer.name.IndexOf("Expert Prototype",
+                                StringComparison.OrdinalIgnoreCase) >= 0);
+                        Assert.That(expertLayer, Is.Not.Null,
+                            "Merged layers: " + string.Join(", ", layerNames));
+                        var states = DescendantStates(expertLayer.stateMachine).ToArray();
+                        Assert.That(states, Has.Length.EqualTo(
+                            VisemeReconstructionProfile.VisemeCount),
+                            "VRCFury flattened the 15-way hard router back into one hot Direct tree.");
+                        Assert.That(states.Select(state => state.motion).Distinct().Count(),
+                            Is.EqualTo(states.Length),
+                            "VRCFury connected every expert through a shared state motion.");
+                        Assert.That(states.SelectMany(state => state.transitions).Count(),
+                            Is.EqualTo(VisemeReconstructionProfile.VisemeCount *
+                                       (VisemeReconstructionProfile.VisemeCount - 1)),
+                            "The interruptible viseme trellis changed during the real merge.");
+
+                        var stateLeaves = states.Select(state =>
+                                AdvancedVisemeExpertPosePrototype.CountClipLeaves(state.motion))
+                            .ToArray();
+                        Assert.That(stateLeaves.Max(), Is.LessThanOrEqualTo(12),
+                            "An expert state gained references to inactive experts after merging.");
+
+                        const string prototypeOutputPrefix = "YUCP/ExpertTest/Out/";
+                        var composeLayer = controller.layers.SingleOrDefault(layer =>
+                            DescendantStates(layer.stateMachine).Any(state =>
+                                DescendantClips(state.motion).Any(clip =>
+                                    AnimationUtility.GetCurveBindings(clip).Any(binding =>
+                                        binding.type == typeof(Animator) &&
+                                        binding.propertyName.StartsWith(
+                                            prototypeOutputPrefix,
+                                            StringComparison.Ordinal)))));
+                        Assert.That(composeLayer, Is.Not.Null,
+                            "Merged layers: " + string.Join(", ", layerNames));
+                        var composeStates = DescendantStates(composeLayer.stateMachine).ToArray();
+                        Assert.That(composeStates, Has.Length.EqualTo(1));
+                        // VRCFury intentionally folds all eligible one-state
+                        // layers into its shared LayerToTreeService layer. Count
+                        // only this prototype's final-output leaves; the same
+                        // merged motion also contains the production AVR fixture.
+                        var composeLeaves = DescendantClips(composeStates[0].motion)
+                            .Count(clip => AnimationUtility.GetCurveBindings(clip).Any(binding =>
+                                binding.type == typeof(Animator) &&
+                                binding.propertyName.StartsWith(
+                                    prototypeOutputPrefix,
+                                    StringComparison.Ordinal)));
+                        Assert.That(composeLeaves, Is.LessThanOrEqualTo(32));
+                        var transitionLeaves = composeLeaves + stateLeaves
+                            .OrderByDescending(value => value).Take(2).Sum();
+                        TestContext.WriteLine(
+                            $"post-vrcfury expertStates={states.Length} " +
+                            $"residualLeaves={stateLeaves.Min()}-{stateLeaves.Max()} " +
+                            $"composeLeaves={composeLeaves} " +
+                            $"steadyLeaves<={composeLeaves + stateLeaves.Max()} " +
+                            $"transitionLeaves<={transitionLeaves}");
+                        UnityEngine.Debug.Log(
+                            $"[YUCP AVR Expert VRCFury] states={states.Length} " +
+                            $"residualLeaves={stateLeaves.Min()}-{stateLeaves.Max()} " +
+                            $"composeLeaves={composeLeaves} " +
+                            $"steadyLeaves={composeLeaves + stateLeaves.Max()} " +
+                            $"transitionLeaves={transitionLeaves}");
+                    }
+                }
             }
             finally
             {
@@ -596,6 +812,62 @@ namespace YUCP.Components.Editor.Tests
             return output.OrderBy(value => value, StringComparer.Ordinal).ToArray();
         }
 
+        private static bool ContainsConditionalControl(string value)
+        {
+            return !string.IsNullOrEmpty(value) &&
+                   value.IndexOf(
+                       "Conditional", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static AnimatorControllerParameter FindPrivateParameter(
+            AnimatorController controller,
+            string sourceName)
+        {
+            var matches = controller.parameters
+                .Where(parameter => parameter.name.EndsWith(
+                    sourceName, StringComparison.Ordinal))
+                .ToArray();
+            Assert.That(matches, Has.Length.EqualTo(1),
+                $"Expected exactly one VRCFury-private rewrite of '{sourceName}'.");
+            Assert.That(matches[0].name, Is.Not.EqualTo(sourceName),
+                "The conditional math control was accidentally exported as global.");
+            return matches[0];
+        }
+
+        private static IEnumerable<AnimatorState> DescendantStates(
+            AnimatorStateMachine stateMachine)
+        {
+            if (stateMachine == null) yield break;
+            foreach (var child in stateMachine.states)
+                if (child.state != null)
+                    yield return child.state;
+            foreach (var child in stateMachine.stateMachines)
+            foreach (var state in DescendantStates(child.stateMachine))
+                yield return state;
+        }
+
+        private static IEnumerable<BlendTree> DescendantBlendTrees(Motion motion)
+        {
+            if (!(motion is BlendTree tree)) yield break;
+            yield return tree;
+            foreach (var child in tree.children)
+            foreach (var descendant in DescendantBlendTrees(child.motion))
+                yield return descendant;
+        }
+
+        private static IEnumerable<AnimationClip> DescendantClips(Motion motion)
+        {
+            if (motion is AnimationClip clip)
+            {
+                yield return clip;
+                yield break;
+            }
+            if (!(motion is BlendTree tree)) yield break;
+            foreach (var child in tree.children)
+            foreach (var descendant in DescendantClips(child.motion))
+                yield return descendant;
+        }
+
         private static string[] ExpressionParameterFingerprint(
             VRCAvatarDescriptor descriptor)
         {
@@ -694,6 +966,37 @@ namespace YUCP.Components.Editor.Tests
             ((IList)ReadField(feature, "linkSkins")).Add(link);
             WriteField(component, "content", feature);
             return component;
+        }
+
+        private static void AddFullController(
+            GameObject host,
+            RuntimeAnimatorController controller,
+            IEnumerable<string> globalParameters)
+        {
+            var components = FindType("com.vrcfury.api.FuryComponents");
+            var create = components.GetMethod(
+                "CreateFullController",
+                BindingFlags.Public | BindingFlags.Static,
+                null,
+                new[] { typeof(GameObject) },
+                null);
+            Assert.That(create, Is.Not.Null,
+                "Installed VRCFury no longer exposes its public FullController factory.");
+            var fullController = create.Invoke(null, new object[] { host });
+            var type = fullController.GetType();
+            var addController = type.GetMethod("AddController", BindingFlags.Public |
+                                                               BindingFlags.Instance);
+            var addGlobal = type.GetMethod("AddGlobalParam", BindingFlags.Public |
+                                                             BindingFlags.Instance);
+            Assert.That(addController, Is.Not.Null);
+            Assert.That(addGlobal, Is.Not.Null);
+            addController.Invoke(fullController, new object[]
+            {
+                controller,
+                VRCAvatarDescriptor.AnimLayerType.FX
+            });
+            foreach (var parameter in globalParameters.Distinct(StringComparer.Ordinal))
+                addGlobal.Invoke(fullController, new object[] { parameter });
         }
 
         private static Type FindType(string fullName)

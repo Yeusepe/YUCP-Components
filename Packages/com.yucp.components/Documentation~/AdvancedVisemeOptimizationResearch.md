@@ -48,6 +48,35 @@ The paired ablation set only **2,103 AVR-provenance clip inputs** to zero, retai
 
 Relative to the earlier enabled capture of the same reference harness (`3.4954 ms` graph and `3.2368 ms` animations), the two enabled markers fell by **1.8852 ms combined**. Editor captures are not device guarantees, and the ablation delta is a lower bound because 273 bindings in the shared FT/AVR clip remained enabled. No source mesh, calibrated mesh, blendshape frame, normal, or tangent was modified by this optimization.
 
+### Exact liveness continuation (2026-07-17)
+
+The lowered Animator now receives a second, epoch-preserving closed-world pass. It traces every physical curve, public parameter, state transition, parameter driver, state-time control, and private feedback dependency backward through BlendTree weights. It removes only private AAP curves outside that observable cone; it never composes, reorders, or shortens an Animator feedback stage. Empty non-normalized Direct branches are then pruned and nested state machines are traversed recursively.
+
+On the representative generated Beta/Balanced8 fixture, closed-world liveness removed **52 private parameters** and **147 Animator curves**. A second exact rule removes 304 constant-zero bindings from the nonnegative Beta-retention observer only. Unity's runtime test proves that missing bindings contribute neutral zero inside `Simple1D` and non-normalized Direct trees; the optimizer additionally requires every reachable use to stay in that proven topology, keeps every child/knot, and requires a nonzero writer for the same property in the state. Signed and affine articulation cones are explicitly excluded after the broad form failed replay. Together the two accepted passes remove **451 of 4,958 Animator curves** (about 9.1%), leaving 4,507, while the mixed 15/60/144 FPS generated-controller replay remains within its `2e-5` to `3e-5` staging tolerances.
+
+The same Unity session then ran two 120-frame post-generation A/B captures with four hidden standalone AVR Animators to amplify the signal. The full graph's two principal Animator markers averaged **6.7142 ms** after the pass, versus **7.1063 ms** before it: a **0.3921 ms** aggregate reduction, or about **0.0980 ms per AVR instance** in this Editor harness (**5.5%**). Isolating the Math layer averaged **4.4586 ms** after versus **5.1299 ms** before: **0.6713 ms** aggregate, about **0.1678 ms per instance** (**13.1%**). Property writes remained about `0.012 ms` for all four instances. `AnimationClipPlayable.EvaluateClip` still occurred 250,080 times over the full 120-frame capture, confirming that this pass makes sampled clips narrower but does not remove their active evaluations. The result is accepted as an exact incremental improvement, but it does **not** satisfy the 1.0-1.5 ms target. A paired capture of the fully merged VRCFury controller remains required before treating these Editor numbers as an in-game saving.
+
+A build-time reduction certificate now prevents an approximate Beta model from being selected merely because it is small on disk. A candidate must lower estimated active bindings, preserve Animator epochs/endpoints/mandatory constraints, pass held-out replay limits (`RMS <= 0.01`, `p99 <= 0.025`, `max <= 0.05`, velocity `RMS <= 0.02`), and satisfy the universal simplex bound
+
+```text
+abs(c^T (R-Rhat) f) <= max_ij abs(R_ij-Rhat_ij).
+```
+
+The first shared nonnegative-CP student was deliberately rejected. With structured group-sparse rank-one patches and a strict 240-binding cap, the best tested candidate (`H=12`) still produced `0.06261` RMS, `0.18103` p99, and `0.34694` maximum retention error across the 223,802-frame replay. The exact commuted teacher therefore remains the generated default.
+
+### Operation-local neutral realization (2026-07-18)
+
+The neutral-zero pass now also recognizes an exact operation-local case outside the specialized Beta observer. A removable binding must target an AVR-private Float with a bitwise positive-zero default; its curve must be one flat positive-zero key at time zero; and a nonzero clip for the same property must be a direct sibling at the same `Simple1D` or unnormalized `Direct` BlendTree site. Every occurrence of a shared clip must pass, synced layers and external clips are rejected, and the folded root binder remains intact. This is a reachable-state, closed-world optimization: externally injecting arbitrary values into `_Internal` parameters is outside the contract and intentionally fails the adversarial sentinel replay.
+
+In the final VRCFury-merged Balanced8/Beta fixture, the pass reduced the controller from **5,047 to 4,453 Animator curves** and from **2,336 to 2,248 clips**, with the same 667 BlendTrees and 1,147 parameters. Paired manual evaluation at 90 FPS measured:
+
+- local active: `2.789522 ms` to `2.526170 ms`, a **0.311844 ms** median saving;
+- remote active: `2.856343 ms` to `2.530743 ms`, a **0.291570 ms** median saving;
+- local idle: a **0.269136 ms** median saving;
+- remote idle: a **0.270559 ms** median saving.
+
+The paired merged-controller replay compared 1,080 shared Float parameters and produced **zero bit mismatches** for local and remote streams at 15, 24, 25, 30, 45, 60, 90, and 144 FPS. The optimizer model version was advanced so stable generated-asset hashes rebuild existing avatars automatically. These Editor measurements are directional rather than headset guarantees, but they isolate the final merged Animator graph and preserve all reachable tested outputs exactly.
+
 ## Non-negotiable deployment constraints
 
 1. The shipping result must be an ordinary VRChat avatar Animator generated through supported VRCFury APIs.

@@ -147,6 +147,56 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void PreviewFrame_DrivesEveryResolvedTarget()
+        {
+            var firstObject = new GameObject("FirstPreviewTarget");
+            var secondObject = new GameObject("SecondPreviewTarget");
+            var driverObject = new GameObject("PreviewDriver");
+            var mesh = CreateVisemeMesh();
+            try
+            {
+                var firstRenderer = firstObject.AddComponent<SkinnedMeshRenderer>();
+                firstRenderer.sharedMesh = mesh;
+                var first = firstObject.AddComponent<VRCAvatarDescriptor>();
+                first.lipSync = VRC_AvatarDescriptor.LipSyncStyle.VisemeBlendShape;
+                first.VisemeSkinnedMesh = firstRenderer;
+                first.VisemeBlendShapes = (string[])VisemeTestMath.VisemeNames.Clone();
+
+                var secondRenderer = secondObject.AddComponent<SkinnedMeshRenderer>();
+                secondRenderer.sharedMesh = mesh;
+                var second = secondObject.AddComponent<VRCAvatarDescriptor>();
+                second.lipSync = VRC_AvatarDescriptor.LipSyncStyle.VisemeBlendShape;
+                second.VisemeSkinnedMesh = secondRenderer;
+                second.VisemeBlendShapes = (string[])VisemeTestMath.VisemeNames.Clone();
+
+                var data = driverObject.AddComponent<VisemeTestEmulatorData>();
+                data.driveGestureManager = false;
+                data.driveAnimator = false;
+                var state = new VisemeTestPreviewSession.State
+                {
+                    data = data,
+                    targets = new[]
+                    {
+                        new VisemeTestPreviewSession.TargetState { descriptor = first },
+                        new VisemeTestPreviewSession.TargetState { descriptor = second }
+                    }
+                };
+
+                VisemeTestPreviewSession.ApplyFrame(state, 6, 0.42f);
+
+                Assert.That(firstRenderer.GetBlendShapeWeight(6), Is.EqualTo(100f).Within(1e-5f));
+                Assert.That(secondRenderer.GetBlendShapeWeight(6), Is.EqualTo(100f).Within(1e-5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(firstObject);
+                Object.DestroyImmediate(secondObject);
+                Object.DestroyImmediate(driverObject);
+                Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
         public void JawFlapBlendShape_UsesVoiceAsZeroToOneHundred()
         {
             var root = new GameObject("JawFlapTest");
@@ -229,14 +279,15 @@ namespace YUCP.Components.Editor.Tests
                 var parent = parentObject.AddComponent<VRCAvatarDescriptor>();
                 var other = otherObject.AddComponent<VRCAvatarDescriptor>();
 
-                Assert.That(VisemeTestPreviewSession.TrySelectDescriptor(
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptors(
                     parent,
                     new[] { parent, other },
                     new[] { other },
                     out var selected,
                     out var source,
                     out var error), Is.True, error);
-                Assert.That(selected, Is.SameAs(parent));
+                Assert.That(selected, Has.Length.EqualTo(1));
+                Assert.That(selected[0], Is.SameAs(parent));
                 Assert.That(source, Is.EqualTo(VisemeTestPreviewSession.DescriptorTargetSource.Parent));
             }
             finally
@@ -256,14 +307,15 @@ namespace YUCP.Components.Editor.Tests
                 var first = firstObject.AddComponent<VRCAvatarDescriptor>();
                 var second = secondObject.AddComponent<VRCAvatarDescriptor>();
 
-                Assert.That(VisemeTestPreviewSession.TrySelectDescriptor(
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptors(
                     null,
                     new[] { first, second },
                     new[] { second },
                     out var selected,
                     out var source,
                     out var error), Is.True, error);
-                Assert.That(selected, Is.SameAs(second));
+                Assert.That(selected, Has.Length.EqualTo(1));
+                Assert.That(selected[0], Is.SameAs(second));
                 Assert.That(source, Is.EqualTo(VisemeTestPreviewSession.DescriptorTargetSource.GestureManager));
             }
             finally
@@ -274,20 +326,51 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void DescriptorTargets_UseAllGestureManagerTargets()
+        {
+            var firstObject = new GameObject("FirstAvatar");
+            var secondObject = new GameObject("SecondAvatar");
+            var untargetedObject = new GameObject("UntargetedAvatar");
+            try
+            {
+                var first = firstObject.AddComponent<VRCAvatarDescriptor>();
+                var second = secondObject.AddComponent<VRCAvatarDescriptor>();
+                var untargeted = untargetedObject.AddComponent<VRCAvatarDescriptor>();
+
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptors(
+                    null,
+                    new[] { first, second, untargeted },
+                    new[] { first, second },
+                    out var selected,
+                    out var source,
+                    out var error), Is.True, error);
+                Assert.That(selected, Is.EquivalentTo(new[] { first, second }));
+                Assert.That(source, Is.EqualTo(VisemeTestPreviewSession.DescriptorTargetSource.GestureManager));
+            }
+            finally
+            {
+                Object.DestroyImmediate(firstObject);
+                Object.DestroyImmediate(secondObject);
+                Object.DestroyImmediate(untargetedObject);
+            }
+        }
+
+        [Test]
         public void DescriptorTarget_UsesSoleActiveSceneAvatar()
         {
             var avatarObject = new GameObject("OnlyAvatar");
             try
             {
                 var avatar = avatarObject.AddComponent<VRCAvatarDescriptor>();
-                Assert.That(VisemeTestPreviewSession.TrySelectDescriptor(
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptors(
                     null,
                     new[] { avatar },
                     new VRCAvatarDescriptor[0],
                     out var selected,
                     out var source,
                     out var error), Is.True, error);
-                Assert.That(selected, Is.SameAs(avatar));
+                Assert.That(selected, Has.Length.EqualTo(1));
+                Assert.That(selected[0], Is.SameAs(avatar));
                 Assert.That(source, Is.EqualTo(VisemeTestPreviewSession.DescriptorTargetSource.SoleSceneAvatar));
             }
             finally
@@ -306,7 +389,7 @@ namespace YUCP.Components.Editor.Tests
                 var first = firstObject.AddComponent<VRCAvatarDescriptor>();
                 var second = secondObject.AddComponent<VRCAvatarDescriptor>();
 
-                Assert.That(VisemeTestPreviewSession.TrySelectDescriptor(
+                Assert.That(VisemeTestPreviewSession.TrySelectDescriptors(
                     null,
                     new[] { first, second },
                     new VRCAvatarDescriptor[0],

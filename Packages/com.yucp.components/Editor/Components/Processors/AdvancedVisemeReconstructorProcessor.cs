@@ -2038,7 +2038,7 @@ namespace YUCP.Components.Editor
                                    component.tuningSyncMode + ":" +
                                    component.tuningMenuSections + ":shared:" +
                                    useSharedParameterCompressor;
-            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|{component.existingTrackingPrefix}";
+            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|optimizer:{AdvancedVisemeAnimatorGraphOptimizer.Version}|{component.existingTrackingPrefix}";
             return Hash128.Compute(settings).ToString();
         }
 

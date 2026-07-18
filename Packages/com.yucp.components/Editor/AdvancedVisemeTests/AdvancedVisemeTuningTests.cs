@@ -825,6 +825,93 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void CollapsedVisibleTongueKernelIsOptInAndRemovesTheLegacyFactorGraph()
+        {
+            var previous = AdvancedVisemeAnimatorBuilder
+                .UseCollapsedVisibleTongueKernelForTests;
+            GraphFixture fixture = null;
+            try
+            {
+                Assert.That(previous, Is.False,
+                    "The collapsed-kernel A/B seam must remain disabled in production.");
+                AdvancedVisemeAnimatorBuilder.UseCollapsedVisibleTongueKernelForTests = true;
+                fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: true,
+                    createMenu: true,
+                    beta: true,
+                    tracking: true);
+
+                var trees = AssetDatabase.LoadAllAssetsAtPath(fixture.controllerPath)
+                    .OfType<BlendTree>().ToArray();
+                var parameterNames = fixture.result.controller.parameters
+                    .Select(parameter => parameter.name).ToArray();
+                var internalPrefix = fixture.component.NormalizedPrefix + "/_Internal/";
+                var featureCount = AdvancedVisemeVisibleTongueResidual.FeatureCount(
+                    AdvancedVisemeVisibleTongueModelKind.Quality);
+
+                Assert.That(parameterNames.Count(name => name.StartsWith(
+                        internalPrefix + "TongueInference/Model/FeatureUnit/",
+                        StringComparison.Ordinal)),
+                    Is.EqualTo(featureCount));
+                Assert.That(parameterNames.Count(name => name.EndsWith(
+                        "/TongueInference/Model/TongueOut/Normalized",
+                        StringComparison.Ordinal) || name.EndsWith(
+                        "/TongueInference/Model/TongueY/Normalized",
+                        StringComparison.Ordinal)),
+                    Is.EqualTo(2));
+                Assert.That(parameterNames,
+                    Does.Contain(internalPrefix + "TongueInference/Model/Reliability"));
+                foreach (var output in new[] { "TongueOut", "TongueY" })
+                foreach (var suffix in new[]
+                         {
+                             "/Reliable", string.Empty, "/StableFast", "/Stable"
+                         })
+                    Assert.That(parameterNames, Does.Contain(
+                        internalPrefix + "TongueInference/Model/" + output + suffix),
+                        output + suffix + " must retain scaling, clamp, and stabilization.");
+                Assert.That(parameterNames.Any(name => name.Contains(
+                    "/TongueInference/Model/Visible/", StringComparison.Ordinal)), Is.False);
+                Assert.That(parameterNames.Any(name => name.Contains(
+                    "/MixUnit/", StringComparison.Ordinal)), Is.False);
+                Assert.That(parameterNames.Any(name => name.EndsWith(
+                    "/ProductAccumulator", StringComparison.Ordinal)), Is.False);
+
+                var featureLanes = trees.Where(tree =>
+                        tree.name.StartsWith("Tongue inference collapsed lane ",
+                            StringComparison.Ordinal) &&
+                        !tree.name.EndsWith("rank-one correction",
+                            StringComparison.Ordinal))
+                    .ToArray();
+                Assert.That(featureLanes, Has.Length.EqualTo(featureCount),
+                    "The constant lane is lowered directly; one weighted Direct lane " +
+                    "must remain for each unit feature.");
+                Assert.That(featureLanes.All(tree =>
+                    tree.blendType == BlendTreeType.Direct), Is.True);
+                Assert.That(trees.Count(tree => tree.name.StartsWith(
+                                "Tongue inference collapsed lane ",
+                                StringComparison.Ordinal) &&
+                            tree.name.EndsWith("rank-one correction",
+                                StringComparison.Ordinal)),
+                    Is.EqualTo(featureCount + 1),
+                    "Every unit-feature lane, including the constant lane, must " +
+                    "carry the exact signed PP-to-nn correction.");
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Tongue inference visible latent contraction"), Is.False);
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Tongue inference viseme contraction"), Is.False);
+                Assert.That(trees.Any(tree => tree.name ==
+                    "Tongue inference two-output bilinear accumulator"), Is.False);
+            }
+            finally
+            {
+                fixture?.Dispose();
+                AdvancedVisemeAnimatorBuilder.UseCollapsedVisibleTongueKernelForTests =
+                    previous;
+            }
+        }
+
+        [Test]
         public void GeneratedLivelinessPublishesOneSharedLedSimplexAndArticulationVector()
         {
             foreach (var beta in new[] { false, true })
@@ -1207,6 +1294,714 @@ namespace YUCP.Components.Editor.Tests
             }
         }
 
+        [Test]
+        public void ConditionalLearnedDetailSleepRemainsOptIn()
+        {
+            var previous = AdvancedVisemeAnimatorBuilder
+                .EnableConditionalLearnedDetailSleepForTests;
+            GraphFixture fixture = null;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = false;
+                fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: false,
+                    createMenu: false,
+                    beta: true,
+                    tracking: false,
+                    tuningSyncMode: AdvancedVisemeTuningSyncMode.LocalOnly);
+
+                Assert.That(fixture.result.controller.layers.Any(layer =>
+                    layer.name.IndexOf(
+                        "Conditional Beta", StringComparison.Ordinal) >= 0),
+                    Is.False);
+                Assert.That(fixture.result.controller.layers.Any(layer =>
+                    layer.name.IndexOf(
+                        "Observer Reset", StringComparison.Ordinal) >= 0),
+                    Is.False);
+                Assert.That(fixture.result.controller.parameters.Any(parameter =>
+                    parameter.name.Contains(
+                        "/ConditionalLearnedDetail/",
+                        StringComparison.Ordinal)), Is.False);
+            }
+            finally
+            {
+                fixture?.Dispose();
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = previous;
+            }
+        }
+
+        [Test]
+        public void ConditionalMathGateAddsNoStateLayersWithoutInferenceLanes()
+        {
+            var previous = AdvancedVisemeAnimatorBuilder
+                .EnableConditionalLearnedDetailSleepForTests;
+            GraphFixture fixture = null;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = true;
+                fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: false,
+                    createMenu: false,
+                    beta: true,
+                    tracking: false,
+                    tuningSyncMode: AdvancedVisemeTuningSyncMode.LocalOnly);
+
+                Assert.That(fixture.result.controller.layers.Any(layer =>
+                    layer.name.IndexOf(
+                        "Conditional Beta", StringComparison.Ordinal) >= 0),
+                    Is.False);
+                Assert.That(fixture.result.controller.layers.Any(layer =>
+                    layer.name.IndexOf(
+                        "Observer Reset", StringComparison.Ordinal) >= 0),
+                    Is.False,
+                    "The pure-Math gate must never generate a reset layer.");
+                var prefix = fixture.component.NormalizedPrefix + "/_Internal/";
+                Assert.That(fixture.result.controller.parameters.Any(parameter =>
+                    parameter.name == prefix +
+                    "ConditionalLearnedDetail/Compute"), Is.True);
+                foreach (var deadInferenceControl in new[]
+                         {
+                             "ConditionalLearnedDetail/Warmth",
+                             "ConditionalLearnedDetail/Authority"
+                         })
+                    Assert.That(fixture.result.controller.parameters.Any(parameter =>
+                        parameter.name == prefix + deadInferenceControl),
+                        Is.False,
+                        "Inference-only control must be pruned when no learned " +
+                        "inference consumer exists.");
+            }
+            finally
+            {
+                fixture?.Dispose();
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = previous;
+            }
+        }
+
+        [Test]
+        public void ConditionalMathControlHasExactCullAndBoundedAuthorityEndpoints()
+        {
+            var epsilon = AdvancedVisemeMath.SimplexCullingEpsilon;
+            var normalFrame = 1f / 60f;
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailComputeTarget(
+                        0, 1f, normalFrame),
+                Is.EqualTo(0f).Within(1e-7f),
+                "Certified silence must cull the inference child exactly.");
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailComputeTarget(
+                        10, 1f, normalFrame),
+                Is.EqualTo(1f).Within(1e-7f),
+                "A hard phone must wake compute even before the sparse tail moves.");
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailComputeTarget(
+                        0, 1f - epsilon, normalFrame),
+                Is.EqualTo(1f).Within(1e-7f));
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailComputeTarget(
+                        0, 1f - epsilon * 0.5f, normalFrame),
+                Is.EqualTo(0f).Within(1e-7f));
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailComputeTarget(
+                        0, 1f,
+                        AdvancedVisemeAnimatorBuilder
+                            .ConditionalLearnedDetailLowFpsBypassFrameSeconds),
+                Is.EqualTo(1f).Within(1e-7f),
+                "Low frame rates must fail open.");
+            foreach (var lowRate in new[] { 15f, 22f, 23f, 24f })
+                Assert.That(AdvancedVisemeAnimatorBuilder
+                        .ConditionalLearnedDetailComputeTarget(
+                            0, 1f, 1f / lowRate),
+                    Is.EqualTo(1f).Within(1e-7f),
+                    $"The gate must fail open at {lowRate:0} FPS.");
+            foreach (var normalRate in new[] { 25f, 30f, 60f, 90f, 144f })
+                Assert.That(AdvancedVisemeAnimatorBuilder
+                        .ConditionalLearnedDetailComputeTarget(
+                            0, 1f, 1f / normalRate),
+                    Is.EqualTo(0f).Within(1e-7f),
+                    $"Stable silence at {normalRate:0} FPS must still cull.");
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailComputeTarget(
+                        0, 1f, normalFrame, 0f),
+                Is.EqualTo(1f).Within(1e-7f),
+                "Cold startup must remain fail-open until the decoded viseme is valid.");
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailComputeTarget(
+                        0, 1f, normalFrame,
+                        AdvancedVisemeAnimatorBuilder
+                            .ConditionalLearnedDetailStartupHotSeconds + 0.01f),
+                Is.EqualTo(0f).Within(1e-7f),
+                "Startup must not keep inference awake after initialization.");
+
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromWarmth(
+                        AdvancedVisemeAnimatorBuilder
+                            .ConditionalLearnedDetailAuthorityStart,
+                        normalFrame),
+                Is.EqualTo(0f).Within(1e-7f));
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromWarmth(
+                        AdvancedVisemeAnimatorBuilder
+                            .ConditionalLearnedDetailAuthorityFull,
+                        normalFrame),
+                Is.EqualTo(1f).Within(1e-7f));
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromWarmth(
+                        (AdvancedVisemeAnimatorBuilder
+                             .ConditionalLearnedDetailAuthorityStart +
+                         AdvancedVisemeAnimatorBuilder
+                             .ConditionalLearnedDetailAuthorityFull) * 0.5f,
+                        normalFrame),
+                Is.EqualTo(0.5f).Within(1e-6f),
+                "The authority admission curve must use smoothstep.");
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromWarmth(
+                        0f,
+                        AdvancedVisemeAnimatorBuilder
+                            .ConditionalLearnedDetailLowFpsBypassFrameSeconds),
+                Is.EqualTo(1f).Within(1e-7f));
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromWarmth(
+                        0f, normalFrame, 0f),
+                Is.EqualTo(1f).Within(1e-7f),
+                "Cold startup must publish the legacy endpoint.");
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromReadiness(
+                        AdvancedVisemeAnimatorBuilder
+                            .ConditionalLearnedDetailReadinessStart,
+                        normalFrame),
+                Is.EqualTo(0f).Within(1e-7f));
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromReadiness(
+                        AdvancedVisemeAnimatorBuilder
+                            .ConditionalLearnedDetailReadinessFull,
+                        normalFrame),
+                Is.EqualTo(1f).Within(1e-7f));
+            Assert.That(AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromReadiness(
+                        (AdvancedVisemeAnimatorBuilder
+                             .ConditionalLearnedDetailReadinessStart +
+                         AdvancedVisemeAnimatorBuilder
+                             .ConditionalLearnedDetailReadinessFull) * 0.5f,
+                        normalFrame),
+                Is.EqualTo(0.5f).Within(1e-6f));
+
+            var previousAuthority = 0f;
+            var previousReadinessAuthority = 0f;
+            for (var index = 0; index <= 1000; index++)
+            {
+                var sparseSilence = index / 1000f;
+                var compute = AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailComputeTarget(
+                        0, sparseSilence, normalFrame);
+                Assert.That(float.IsNaN(compute) || float.IsInfinity(compute),
+                    Is.False);
+                Assert.That(compute, Is.InRange(0f, 1f));
+
+                var warmth = index / 1000f;
+                var authority = AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromWarmth(
+                        warmth, normalFrame);
+                Assert.That(float.IsNaN(authority) ||
+                            float.IsInfinity(authority), Is.False);
+                Assert.That(authority, Is.InRange(0f, 1f));
+                Assert.That(authority + 1e-7f,
+                    Is.GreaterThanOrEqualTo(previousAuthority),
+                    "Authority must be monotone in observer warmth.");
+                previousAuthority = authority;
+
+                var readinessAuthority = AdvancedVisemeAnimatorBuilder
+                    .ConditionalLearnedDetailAuthorityFromReadiness(
+                        warmth, normalFrame);
+                Assert.That(float.IsNaN(readinessAuthority) ||
+                            float.IsInfinity(readinessAuthority), Is.False);
+                Assert.That(readinessAuthority, Is.InRange(0f, 1f));
+                Assert.That(readinessAuthority + 1e-7f,
+                    Is.GreaterThanOrEqualTo(previousReadinessAuthority),
+                    "Authority must be monotone in model readiness.");
+                previousReadinessAuthority = readinessAuthority;
+            }
+
+            float WarmFor(float framesPerSecond, float seconds)
+            {
+                var warmth = 0f;
+                var deltaTime = 1f / framesPerSecond;
+                var steps = Mathf.RoundToInt(seconds * framesPerSecond);
+                for (var step = 0; step < steps; step++)
+                {
+                    var alpha = AdvancedVisemeMath.Alpha(
+                        deltaTime,
+                        AdvancedVisemeAnimatorBuilder
+                            .ConditionalLearnedDetailWarmthSeconds);
+                    warmth += alpha * (1f - warmth);
+                }
+                return warmth;
+            }
+
+            var referenceWarmth = WarmFor(60f, 0.25f);
+            foreach (var frameRate in new[] { 15f, 30f, 60f, 90f, 144f })
+                Assert.That(WarmFor(frameRate, 0.25f),
+                    Is.EqualTo(referenceWarmth).Within(0.025f),
+                    "The warmth pole must remain frame-rate-correct.");
+        }
+
+        [Test]
+        public void ConditionalBetaMathGateWarmsAndPublishesSafeFallbacks()
+        {
+            var previous = AdvancedVisemeAnimatorBuilder
+                .EnableConditionalLearnedDetailSleepForTests;
+            GraphFixture fixture = null;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = true;
+                fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: false,
+                    createMenu: false,
+                    beta: true,
+                    tracking: true,
+                    tuningSyncMode: AdvancedVisemeTuningSyncMode.LocalOnly,
+                    includeSoftPalate: true);
+
+                var controller = fixture.result.controller;
+                var internalPrefix = fixture.component.NormalizedPrefix + "/_Internal/";
+                var computeName = internalPrefix +
+                                  "ConditionalLearnedDetail/Compute";
+                var authorityName = internalPrefix +
+                                    "ConditionalLearnedDetail/Authority";
+                var stageClockName = internalPrefix +
+                                     "ConditionalLearnedDetail/StageClock";
+                var resetStageClockName = internalPrefix +
+                    "ConditionalLearnedDetail/ResetStageClock";
+                var frameTimeName = internalPrefix + "FrameTime";
+                foreach (var name in new[] { computeName, authorityName })
+                {
+                    var parameter = controller.parameters.Single(candidate =>
+                        candidate.name == name);
+                    Assert.That(parameter.type,
+                        Is.EqualTo(AnimatorControllerParameterType.Float));
+                    Assert.That(parameter.defaultFloat,
+                        Is.EqualTo(1f).Within(1e-6f),
+                        "Hot initialization must match the default Active state.");
+                }
+                Assert.That(controller.parameters.Any(parameter =>
+                    parameter.name.EndsWith(
+                        "/ConditionalLearnedDetail/ResetMode",
+                        StringComparison.Ordinal)), Is.False,
+                    "Reset must not add a selector parameter to the active math path.");
+
+                var hasLegacyConditionalLayer = controller.layers.Any(layer =>
+                    layer.name.IndexOf(
+                        "Conditional Beta", StringComparison.Ordinal) >= 0 ||
+                    layer.name.IndexOf(
+                        "Observer Reset", StringComparison.Ordinal) >= 0);
+                if (!hasLegacyConditionalLayer)
+                {
+                    Assert.That(controller.layers.Any(layer =>
+                        layer.name.IndexOf(
+                            "Observer Reset", StringComparison.Ordinal) >= 0),
+                        Is.False,
+                        "The WDon-safe candidate must contain no reset state layer.");
+                    Assert.That(controller.parameters.Any(parameter =>
+                        parameter.name == stageClockName ||
+                        parameter.name == resetStageClockName), Is.False,
+                        "Pure Math control needs no state timing clocks.");
+
+                    var warmthName = internalPrefix +
+                        "ConditionalLearnedDetail/Warmth";
+                    foreach (var name in new[]
+                             {
+                                 computeName, authorityName, warmthName
+                             })
+                    {
+                        var parameter = controller.parameters.Single(candidate =>
+                            candidate.name == name);
+                        Assert.That(parameter.type,
+                            Is.EqualTo(AnimatorControllerParameterType.Float));
+                        Assert.That(parameter.defaultFloat,
+                            Is.EqualTo(1f).Within(1e-6f),
+                            "Layer-free control must initialize hot.");
+                    }
+
+                    var conditionalDrivers = controller.layers
+                        .SelectMany(layer => layer.stateMachine.states)
+                        .SelectMany(child => child.state.behaviours)
+                        .OfType<VRC_AvatarParameterDriver>()
+                        .Where(driver => driver.name.IndexOf(
+                            "Conditional", StringComparison.OrdinalIgnoreCase) >= 0)
+                        .ToArray();
+                    Assert.That(conditionalDrivers, Is.Empty,
+                        "The Math-root gate must not depend on state behaviours.");
+
+                    var mathLayer = controller.layers.Single(layer =>
+                        layer.name == "YUCP AVR Math");
+                    var mathRoot = mathLayer.stateMachine.defaultState.motion as
+                        BlendTree;
+                    Assert.That(mathRoot, Is.Not.Null);
+                    Assert.That(UsesNormalizedBlendValues(mathRoot), Is.False);
+                    var trees = DescendantBlendTrees(mathRoot).ToArray();
+                    var sparseFastSilence = internalPrefix +
+                        "Viseme/0/SparseFast";
+                    var sparseEvidence = trees.Single(tree =>
+                        tree.blendParameter == sparseFastSilence &&
+                        WritesParameter(tree, computeName));
+                    Assert.That(WritesConstantParameter(
+                        sparseEvidence, computeName, 0f), Is.True,
+                        "Sparse evidence must retain an exact idle cull endpoint.");
+                    Assert.That(WritesConstantParameter(
+                        sparseEvidence, computeName, 1f), Is.True,
+                        "Sparse evidence must retain an exact active endpoint.");
+                    var hardWake = trees.Single(tree =>
+                        tree.name ==
+                        "Conditional learned-detail hard-speech wake");
+                    Assert.That(hardWake.blendParameter,
+                        Is.EqualTo(internalPrefix + "Viseme/Index"));
+                    Assert.That(WritesParameter(hardWake, computeName), Is.True);
+                    var computeByRate = trees.Single(tree =>
+                        tree.name ==
+                        "Conditional learned-detail low-FPS compute bypass");
+                    Assert.That(computeByRate.blendParameter,
+                        Is.EqualTo(frameTimeName));
+                    Assert.That(WritesParameter(computeByRate, computeName),
+                        Is.True);
+
+                    var warmthPole = trees.Where(tree =>
+                            WritesParameter(tree, warmthName) &&
+                            UsesParameter(tree, computeName) &&
+                            UsesParameter(tree, warmthName))
+                        .OrderBy(tree => DescendantBlendTrees(tree).Count())
+                        .First();
+                    Assert.That(warmthPole, Is.Not.Null,
+                        "Warmth must be one recurrent pole toward Compute.");
+                    var authorityByRate = trees.Single(tree =>
+                        tree.name ==
+                        "Conditional learned-detail low-FPS authority bypass");
+                    Assert.That(authorityByRate.blendParameter,
+                        Is.EqualTo(frameTimeName));
+                    Assert.That(WritesParameter(
+                        authorityByRate, authorityName), Is.True);
+
+                    var gatedInference = mathRoot.children.Where(child =>
+                        child.directBlendParameter == computeName).ToArray();
+                    Assert.That(gatedInference, Has.Length.EqualTo(1));
+                    Assert.That(gatedInference[0].motion, Is.TypeOf<BlendTree>());
+                    Assert.That(gatedInference[0].motion.name,
+                        Is.EqualTo("Conditional learned inference compute"));
+                    var retentionState = internalPrefix +
+                        "BetaCoarticulation/RetentionState/Jaw/0";
+                    Assert.That(trees.Any(tree =>
+                        tree.blendParameter == computeName &&
+                        WritesParameter(tree, retentionState)), Is.True,
+                        "Beta context must select its exact idle equilibrium by C.");
+                    Assert.That(UsesParameter(mathRoot, authorityName), Is.True);
+                    return;
+                }
+                Assert.That(hasLegacyConditionalLayer, Is.False,
+                    "Legacy conditional state layers must never be generated.");
+            }
+            finally
+            {
+                fixture?.Dispose();
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = previous;
+            }
+        }
+
+        [Test]
+        public void ConditionalImmediateAuthoritySharesComputeAndDropsWarmth()
+        {
+            var previousSleep = AdvancedVisemeAnimatorBuilder
+                .EnableConditionalLearnedDetailSleepForTests;
+            var previousImmediate = AdvancedVisemeAnimatorBuilder
+                .UseImmediateConditionalLearnedDetailAuthorityForTests;
+            GraphFixture fixture = null;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = true;
+                AdvancedVisemeAnimatorBuilder
+                    .UseImmediateConditionalLearnedDetailAuthorityForTests = true;
+                fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: false,
+                    createMenu: false,
+                    beta: true,
+                    tracking: true,
+                    tuningSyncMode: AdvancedVisemeTuningSyncMode.LocalOnly,
+                    includeSoftPalate: true);
+
+                var controller = fixture.result.controller;
+                var internalPrefix = fixture.component.NormalizedPrefix +
+                                     "/_Internal/ConditionalLearnedDetail/";
+                var compute = internalPrefix + "Compute";
+                Assert.That(controller.parameters.Count(parameter =>
+                    parameter.name == compute), Is.EqualTo(1));
+                foreach (var removed in new[]
+                         {
+                             "Authority", "Warmth", "WarmthAlpha"
+                         })
+                    Assert.That(controller.parameters.Any(parameter =>
+                            parameter.name == internalPrefix + removed),
+                        Is.False,
+                        $"Immediate authority must not retain {removed}.");
+
+                var mathRoot = controller.layers.Single(layer =>
+                    layer.name == "YUCP AVR Math").stateMachine.defaultState
+                    .motion as BlendTree;
+                Assert.That(mathRoot, Is.Not.Null);
+                Assert.That(DescendantBlendTrees(mathRoot).Any(tree =>
+                    tree.name.IndexOf(
+                        "low-FPS authority", StringComparison.OrdinalIgnoreCase) >= 0),
+                    Is.False);
+                var gatedInference = mathRoot.children.Single(child =>
+                    child.directBlendParameter == compute);
+                Assert.That(gatedInference.motion.name,
+                    Is.EqualTo("Conditional learned inference compute"));
+                Assert.That(UsesParameter(mathRoot, compute), Is.True,
+                    "The same exact scalar must own compute and publication endpoints.");
+            }
+            finally
+            {
+                fixture?.Dispose();
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = previousSleep;
+                AdvancedVisemeAnimatorBuilder
+                    .UseImmediateConditionalLearnedDetailAuthorityForTests =
+                    previousImmediate;
+            }
+        }
+
+        [Test]
+        public void ConditionalModelMatchedReadinessReusesLearnedObserverAlpha()
+        {
+            var previousSleep = AdvancedVisemeAnimatorBuilder
+                .EnableConditionalLearnedDetailSleepForTests;
+            var previousImmediate = AdvancedVisemeAnimatorBuilder
+                .UseImmediateConditionalLearnedDetailAuthorityForTests;
+            var previousReadiness = AdvancedVisemeAnimatorBuilder
+                .UseModelMatchedConditionalLearnedDetailReadinessForTests;
+            GraphFixture fixture = null;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = true;
+                AdvancedVisemeAnimatorBuilder
+                    .UseImmediateConditionalLearnedDetailAuthorityForTests = false;
+                AdvancedVisemeAnimatorBuilder
+                    .UseModelMatchedConditionalLearnedDetailReadinessForTests = true;
+                fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: false,
+                    createMenu: false,
+                    beta: true,
+                    tracking: true,
+                    tuningSyncMode: AdvancedVisemeTuningSyncMode.LocalOnly,
+                    includeSoftPalate: true);
+
+                var controller = fixture.result.controller;
+                var prefix = fixture.component.NormalizedPrefix + "/_Internal/";
+                var conditional = prefix + "ConditionalLearnedDetail/";
+                var compute = conditional + "Compute";
+                var authority = conditional + "Authority";
+                var readinessFast = conditional + "ReadinessFast";
+                var readiness = conditional + "Readiness";
+                foreach (var name in new[]
+                         {
+                             compute, authority, readinessFast, readiness
+                         })
+                    Assert.That(controller.parameters.Count(parameter =>
+                        parameter.name == name), Is.EqualTo(1), name);
+                foreach (var removed in new[] { "Warmth", "WarmthAlpha" })
+                    Assert.That(controller.parameters.Any(parameter =>
+                            parameter.name == conditional + removed),
+                        Is.False);
+                var mathRoot = controller.layers.Single(layer =>
+                    layer.name == "YUCP AVR Math").stateMachine.defaultState
+                    .motion as BlendTree;
+                Assert.That(mathRoot, Is.Not.Null);
+                var trees = DescendantBlendTrees(mathRoot).ToArray();
+                Assert.That(trees.Any(tree =>
+                    WritesParameter(tree, readinessFast) &&
+                    UsesParameter(tree, compute)), Is.True);
+                Assert.That(trees.Any(tree =>
+                    WritesParameter(tree, readiness) &&
+                    UsesParameter(tree, readinessFast)), Is.True);
+                var readinessObserver = trees.Single(tree =>
+                    tree.name == "Vector blend by " + prefix +
+                    "TongueInference/Observer/Alpha" &&
+                    WritesParameter(tree, readinessFast) &&
+                    WritesParameter(tree, readiness));
+                Assert.That(readinessObserver.blendParameter,
+                    Is.EqualTo(prefix + "Alpha/Viseme/Configured"),
+                    "The optimizer must merge the identical generated 24 ms " +
+                    "alpha into AVR's existing configured viseme alpha.");
+                Assert.That(controller.parameters.Any(parameter =>
+                    parameter.name == prefix +
+                    "TongueInference/Observer/Alpha"), Is.False,
+                    "A redundant observer-alpha parameter must not survive lowering.");
+                var lowFpsAuthority = trees.Single(tree =>
+                    tree.name ==
+                    "Conditional learned-detail low-FPS readiness authority bypass");
+                Assert.That(WritesParameter(lowFpsAuthority, authority), Is.True);
+                Assert.That(controller.layers.Any(layer =>
+                    layer.name.StartsWith(
+                        "YUCP AVR Conditional", StringComparison.Ordinal)),
+                    Is.False);
+            }
+            finally
+            {
+                fixture?.Dispose();
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = previousSleep;
+                AdvancedVisemeAnimatorBuilder
+                    .UseImmediateConditionalLearnedDetailAuthorityForTests =
+                    previousImmediate;
+                AdvancedVisemeAnimatorBuilder
+                    .UseModelMatchedConditionalLearnedDetailReadinessForTests =
+                    previousReadiness;
+            }
+        }
+
+        [Test]
+        public void ConditionalLearnedDetailSleepCanKeepCoreBetaContextHot()
+        {
+            var previousSleep = AdvancedVisemeAnimatorBuilder
+                .EnableConditionalLearnedDetailSleepForTests;
+            var previousImmediate = AdvancedVisemeAnimatorBuilder
+                .UseImmediateConditionalLearnedDetailAuthorityForTests;
+            var previousReadiness = AdvancedVisemeAnimatorBuilder
+                .UseModelMatchedConditionalLearnedDetailReadinessForTests;
+            var previousHotCore = AdvancedVisemeAnimatorBuilder
+                .KeepConditionalBetaContextAlwaysHotForTests;
+            GraphFixture fixture = null;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = true;
+                AdvancedVisemeAnimatorBuilder
+                    .UseImmediateConditionalLearnedDetailAuthorityForTests = false;
+                AdvancedVisemeAnimatorBuilder
+                    .UseModelMatchedConditionalLearnedDetailReadinessForTests = true;
+                AdvancedVisemeAnimatorBuilder
+                    .KeepConditionalBetaContextAlwaysHotForTests = true;
+                fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: false,
+                    createMenu: false,
+                    beta: true,
+                    tracking: true,
+                    tuningSyncMode: AdvancedVisemeTuningSyncMode.LocalOnly,
+                    includeSoftPalate: true);
+
+                var controller = fixture.result.controller;
+                var prefix = fixture.component.NormalizedPrefix + "/_Internal/";
+                var compute = prefix +
+                              "ConditionalLearnedDetail/Compute";
+                var mathRoot = controller.layers.Single(layer =>
+                    layer.name == "YUCP AVR Math").stateMachine.defaultState
+                    .motion as BlendTree;
+                Assert.That(mathRoot, Is.Not.Null);
+                var gatedInference = mathRoot.children.Single(child =>
+                    child.directBlendParameter == compute);
+                Assert.That(gatedInference.motion.name,
+                    Is.EqualTo("Conditional learned inference compute"));
+
+                var trees = DescendantBlendTrees(mathRoot).ToArray();
+                Assert.That(trees.Any(tree => tree.name.IndexOf(
+                        "Conditional Beta context",
+                        StringComparison.Ordinal) >= 0), Is.False,
+                    "The exact core coarticulation observer must not be gated.");
+                Assert.That(controller.layers.Any(layer =>
+                    layer.name.StartsWith(
+                        "YUCP AVR Conditional", StringComparison.Ordinal)),
+                    Is.False);
+            }
+            finally
+            {
+                fixture?.Dispose();
+                AdvancedVisemeAnimatorBuilder
+                    .EnableConditionalLearnedDetailSleepForTests = previousSleep;
+                AdvancedVisemeAnimatorBuilder
+                    .UseImmediateConditionalLearnedDetailAuthorityForTests =
+                    previousImmediate;
+                AdvancedVisemeAnimatorBuilder
+                    .UseModelMatchedConditionalLearnedDetailReadinessForTests =
+                    previousReadiness;
+                AdvancedVisemeAnimatorBuilder
+                    .KeepConditionalBetaContextAlwaysHotForTests = previousHotCore;
+            }
+        }
+
+        [Test]
+        public void BalancedSupportReductionUsesUnitIdentityAndLogarithmicDepth()
+        {
+            var previous = AdvancedVisemeAnimatorBuilder
+                .UseBalancedNeutralSupportReductionForTests;
+            GraphFixture fixture = null;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .UseBalancedNeutralSupportReductionForTests = true;
+                fixture = BuildGraph(
+                    AdvancedVisemeTuningMenuSections.All,
+                    saveValues: false,
+                    createMenu: false,
+                    beta: true,
+                    tracking: true,
+                    tuningSyncMode: AdvancedVisemeTuningSyncMode.LocalOnly,
+                    includeSoftPalate: true);
+
+                var controller = fixture.result.controller;
+                var balanced = controller.parameters.Where(parameter =>
+                        parameter.name.Contains(
+                            "/OodConfidence/Raw/Balanced/",
+                            StringComparison.Ordinal))
+                    .ToArray();
+                Assert.That(balanced, Is.Not.Empty);
+                Assert.That(balanced.All(parameter =>
+                        parameter.type == AnimatorControllerParameterType.Float &&
+                        Mathf.Abs(parameter.defaultFloat - 1f) <= 1e-6f),
+                    Is.True,
+                    "Every min intermediate must initialize to the unit-confidence identity.");
+
+                var sequential = controller.parameters.Where(parameter =>
+                    parameter.name.Contains(
+                        "/OodConfidence/Raw/", StringComparison.Ordinal) &&
+                    !parameter.name.Contains(
+                        "/OodConfidence/Raw/Balanced/", StringComparison.Ordinal) &&
+                    int.TryParse(parameter.name.Substring(
+                            parameter.name.LastIndexOf('/') + 1), out _))
+                    .ToArray();
+                Assert.That(sequential, Is.Empty,
+                    "The serial n-1 publication chain must be absent.");
+
+                var maximumDepth = balanced.Select(parameter =>
+                    {
+                        var marker = parameter.name.IndexOf(
+                            "/Balanced/", StringComparison.Ordinal) +
+                                     "/Balanced/".Length;
+                        var separator = parameter.name.IndexOf('/', marker);
+                        return int.Parse(parameter.name.Substring(
+                            marker, separator - marker));
+                    })
+                    .Max();
+                Assert.That(maximumDepth, Is.LessThanOrEqualTo(3),
+                    "Twelve confidence factors require at most four reduction levels.");
+            }
+            finally
+            {
+                fixture?.Dispose();
+                AdvancedVisemeAnimatorBuilder
+                    .UseBalancedNeutralSupportReductionForTests = previous;
+            }
+        }
+
         private static GraphFixture BuildGraph(
             AdvancedVisemeTuningMenuSections sections,
             bool saveValues,
@@ -1214,7 +2009,8 @@ namespace YUCP.Components.Editor.Tests
             bool beta,
             bool tracking,
             AdvancedVisemeTuningSyncMode tuningSyncMode =
-                AdvancedVisemeTuningSyncMode.CompactSynced)
+                AdvancedVisemeTuningSyncMode.CompactSynced,
+            bool includeSoftPalate = false)
         {
             var fixture = new GraphFixture();
             fixture.folderName = "__YUCP_AVR_TuningGraph_" + Guid.NewGuid().ToString("N");
@@ -1253,14 +2049,25 @@ namespace YUCP.Components.Editor.Tests
                     trackingActiveAnimatorType = AnimatorControllerParameterType.Float,
                     trackingActiveDefault = tracking ? 1f : 0f,
                     trackingParameterNames = new Dictionary<AdvancedVisemeArticulator, string>(),
-                    auxiliaryTrackingParameterNames = new Dictionary<string, string>(),
+                    auxiliaryTrackingParameterNames = includeSoftPalate
+                        ? new Dictionary<string, string>
+                        {
+                            {
+                                "SoftPalateClose",
+                                "YUCP/TestTracking/SoftPalateClose"
+                            }
+                        }
+                        : new Dictionary<string, string>(),
                     sourceVisemeBlendShapes = new string[VisemeReconstructionProfile.VisemeCount],
                     calibration = new MeshUtils.AdvancedVisemeMeshCalibrator.Result
                     {
                         mesh = fixture.calibrationMesh,
                         coefficients = new float[VisemeReconstructionProfile.VisemeCount, 0],
                         residualBlendShapeNames = new string[VisemeReconstructionProfile.VisemeCount],
-                        hiddenPhoneResidualBlendShapeName = "SyntheticHiddenPhoneResidual"
+                        hiddenPhoneResidualBlendShapeName = "SyntheticHiddenPhoneResidual",
+                        hiddenPhoneResidualNegativeBlendShapeName = includeSoftPalate
+                            ? "SyntheticHiddenPhoneResidualNegative"
+                            : null
                     },
                     calibrationBasis = Array.Empty<MeshUtils.AdvancedVisemeMeshCalibrator.BasisInput>(),
                     resolvedBlendShapes = new Dictionary<AdvancedVisemeArticulator, string>(),
@@ -1296,6 +2103,40 @@ namespace YUCP.Components.Editor.Tests
                        UsesParameter(child.motion, parameter));
         }
 
+        private static bool DirectlyUsesParameter(
+            BlendTree tree,
+            string parameter)
+        {
+            return tree != null &&
+                   (tree.blendParameter == parameter ||
+                    tree.blendParameterY == parameter ||
+                    tree.children.Any(child =>
+                        child.directBlendParameter == parameter));
+        }
+
+        private static IEnumerable<BlendTree> DescendantBlendTrees(Motion motion)
+        {
+            if (!(motion is BlendTree tree)) yield break;
+            yield return tree;
+            foreach (var child in tree.children)
+            foreach (var descendant in DescendantBlendTrees(child.motion))
+                yield return descendant;
+        }
+
+        private static IEnumerable<AnimationClip> DescendantAnimationClips(
+            Motion motion)
+        {
+            if (motion is AnimationClip clip)
+            {
+                yield return clip;
+                yield break;
+            }
+            if (!(motion is BlendTree tree)) yield break;
+            foreach (var child in tree.children)
+            foreach (var descendant in DescendantAnimationClips(child.motion))
+                yield return descendant;
+        }
+
         private static bool WritesParameter(Motion motion, string parameter)
         {
             if (motion is AnimationClip clip)
@@ -1304,6 +2145,34 @@ namespace YUCP.Components.Editor.Tests
                     binding.propertyName == parameter);
             return motion is BlendTree tree &&
                    tree.children.Any(child => WritesParameter(child.motion, parameter));
+        }
+
+        private static bool WritesConstantParameter(
+            Motion motion,
+            string parameter,
+            float value)
+        {
+            if (motion is AnimationClip clip)
+            {
+                var binding = AnimationUtility.GetCurveBindings(clip)
+                    .FirstOrDefault(candidate =>
+                        candidate.type == typeof(Animator) &&
+                        candidate.propertyName == parameter);
+                if (string.IsNullOrEmpty(binding.propertyName)) return false;
+                var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                return curve != null && curve.keys.Length > 0 &&
+                       curve.keys.All(key => Mathf.Approximately(key.value, value));
+            }
+            return motion is BlendTree tree && tree.children.Any(child =>
+                WritesConstantParameter(child.motion, parameter, value));
+        }
+
+        private static bool UsesNormalizedBlendValues(BlendTree tree)
+        {
+            var serialized = new SerializedObject(tree);
+            var normalized = serialized.FindProperty("m_NormalizedBlendValues");
+            Assert.That(normalized, Is.Not.Null);
+            return normalized.boolValue;
         }
 
         private static bool IsSigned(AdvancedVisemeArticulator articulator)
