@@ -13,7 +13,10 @@ namespace YUCP.Components
         public const float SpeechHistoryHoldFull = 0.55f;
         public const float SpeechPresenceAttackSeconds = 0.009f;
         public const float SpeechPresenceReleaseSeconds = 0.055f;
-        public const float MaximumSpeechLivelinessLead = 0.85f;
+        // The learned target now supplies the onset motion. Keep optional style
+        // lead deliberately bounded: a large fast-stage share re-exposes the
+        // categorical step that the duration model is intended to remove.
+        public const float MaximumSpeechLivelinessLead = 0.20f;
         // The observer remains exact. This tiny output dead-zone turns only its
         // numerically negligible tails into exact zero so Direct BlendTrees can
         // skip dormant children. The affine upper branch preserves both 0 and 1.

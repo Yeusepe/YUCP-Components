@@ -1,6 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using Object = UnityEngine.Object;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 
@@ -16,6 +20,114 @@ namespace YUCP.Components.Editor.Tests
             weights[7] = 0.6f;
             weights[11] = 0.9f;
             Assert.That(VisemeTestMath.DominantViseme(weights), Is.EqualTo(11));
+        }
+
+        [Test]
+        public void AnalysisSampleOwnsExactSubUnitOculusTeacherSnapshot()
+        {
+            var reusableOculusFrame = new float[VisemeTestMath.VisemeCount];
+            reusableOculusFrame[0] = 0.18f;
+            reusableOculusFrame[10] = 0.12f;
+            var sample = new VisemeTestPreviewSession.AnalysisSample(
+                null,
+                0,
+                0f,
+                4096L,
+                48000,
+                1024,
+                "Oculus LipSync",
+                VisemeTestPreviewSession.AnalysisWeightSource.OculusLipSync,
+                reusableOculusFrame);
+
+            reusableOculusFrame[0] = 0f;
+            reusableOculusFrame[10] = 1f;
+
+            Assert.That(sample.hasExactOculusTeacher, Is.True);
+            Assert.That(sample.continuousVisemeWeights,
+                Has.Count.EqualTo(VisemeTestMath.VisemeCount));
+            Assert.That(sample.continuousVisemeWeights[0],
+                Is.EqualTo(0.18f));
+            Assert.That(sample.continuousVisemeWeights[10],
+                Is.EqualTo(0.12f));
+            Assert.That(sample.continuousWeightMass,
+                Is.EqualTo(0.30f).Within(1e-7f),
+                "The native onset envelope must not be simplex-normalized.");
+            Assert.That(sample.frameStartSampleClock, Is.EqualTo(3072L));
+            Assert.That(sample.timeSeconds,
+                Is.EqualTo(4096d / 48000d).Within(1e-12d));
+            Assert.That(() =>
+                    ((IList<float>)sample.continuousVisemeWeights)[0] = 1f,
+                Throws.TypeOf<NotSupportedException>(),
+                "Subscribers must not be able to mutate another subscriber's frame.");
+        }
+
+        [Test]
+        public void AnalysisSampleSanitizesMalformedWeightsAndRevokesExactness()
+        {
+            var malformed = new float[VisemeTestMath.VisemeCount];
+            malformed[1] = float.NaN;
+            malformed[2] = float.PositiveInfinity;
+            malformed[3] = -0.25f;
+            malformed[4] = 1.25f;
+            malformed[8] = 0.4f;
+            var sample = new VisemeTestPreviewSession.AnalysisSample(
+                null,
+                8,
+                0.5f,
+                1024L,
+                48000,
+                1024,
+                "Oculus LipSync",
+                VisemeTestPreviewSession.AnalysisWeightSource.OculusLipSync,
+                malformed);
+
+            Assert.That(sample.hasExactOculusTeacher, Is.False);
+            Assert.That(sample.continuousWeightsValid, Is.False);
+            Assert.That(sample.continuousVisemeWeights.All(value =>
+                    !float.IsNaN(value) && !float.IsInfinity(value) &&
+                    value >= 0f && value <= 1f),
+                Is.True);
+            Assert.That(sample.continuousVisemeWeights[1], Is.Zero);
+            Assert.That(sample.continuousVisemeWeights[2], Is.Zero);
+            Assert.That(sample.continuousVisemeWeights[3], Is.Zero);
+            Assert.That(sample.continuousVisemeWeights[4], Is.EqualTo(1f));
+            Assert.That(sample.continuousVisemeWeights[8], Is.EqualTo(0.4f));
+        }
+
+        [Test]
+        public void AnalysisSampleMissingWeightsFallsBackToHardViseme()
+        {
+            var sample = new VisemeTestPreviewSession.AnalysisSample(
+                null,
+                12,
+                0.4f,
+                1024L,
+                48000,
+                1024,
+                "YUCP fallback",
+                VisemeTestPreviewSession.AnalysisWeightSource.ApproximateFallback,
+                null);
+
+            Assert.That(sample.hasExactOculusTeacher, Is.False);
+            Assert.That(sample.continuousWeightsValid, Is.False);
+            Assert.That(sample.continuousVisemeWeights.Sum(),
+                Is.EqualTo(1f).Within(1e-7f));
+            Assert.That(sample.continuousVisemeWeights[12], Is.EqualTo(1f));
+        }
+
+        [Test]
+        public void QuietOculusFramesRunOnlyForContinuousCapture()
+        {
+            Assert.That(VisemeTestPreviewSession.ShouldProcessOculusFrame(
+                true, 0.01f, false), Is.False,
+                "Ordinary preview must preserve its historical silence cost.");
+            Assert.That(VisemeTestPreviewSession.ShouldProcessOculusFrame(
+                true, 0.01f, true), Is.True,
+                "Teacher capture must retain native onset and release tails.");
+            Assert.That(VisemeTestPreviewSession.ShouldProcessOculusFrame(
+                true, 0.4f, false), Is.True);
+            Assert.That(VisemeTestPreviewSession.ShouldProcessOculusFrame(
+                false, 0.4f, true), Is.False);
         }
 
         [Test]

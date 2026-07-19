@@ -25,6 +25,7 @@ namespace YUCP.Components.Editor.Tests
         public void CorpusTableCoversEveryTransitionGroupAndStaysBounded()
         {
             Assert.Greater(AdvancedVisemeCoarticulationModel.ModelVersion, 0);
+            Assert.Greater(AdvancedVisemeCoarticulationModel.ReconstructionVersion, 0);
             Assert.That(AdvancedVisemeCoarticulationModel.ContentSha256, Has.Length.EqualTo(64));
             for (var groupIndex = 0; groupIndex < AdvancedVisemeTransitionRetention.GroupCount; groupIndex++)
             {
@@ -74,6 +75,88 @@ namespace YUCP.Components.Editor.Tests
                     sum += output[i];
                 }
                 Assert.That(sum, Is.EqualTo(1f).Within(1e-6f));
+            }
+        }
+
+        [Test]
+        public void RrToAaDoesNotBypassTheContinuousObserver()
+        {
+            const int rr = 9;
+            const int aa = 10;
+            var heldRr = new float[AdvancedVisemeCoarticulationModel.VisemeCount];
+            heldRr[rr] = 1f;
+            var reconstructed = new float[heldRr.Length];
+            var profile = ScriptableObject.CreateInstance<VisemeReconstructionProfile>();
+            try
+            {
+                profile.EnsureDefaults();
+                AdvancedVisemeCoarticulationModel.ReconstructWeights(
+                    heldRr, heldRr, aa, AdvancedVisemeArticulatorGroup.Jaw,
+                    1f, reconstructed);
+
+                for (var viseme = 0; viseme < reconstructed.Length; viseme++)
+                    Assert.That(reconstructed[viseme],
+                        Is.EqualTo(heldRr[viseme]).Within(1e-7f),
+                        "Changing only the hard winner must not bypass an observer " +
+                        "whose fast and slow states are still identical.");
+
+                var lead = AdvancedVisemeCoarticulationModel.TransitionLead(
+                    AdvancedVisemeArticulatorGroup.Jaw, heldRr, aa);
+                var rrJaw = profile.visemePoses[rr].Get(
+                    AdvancedVisemeArticulator.JawOpen);
+                var aaJaw = profile.visemePoses[aa].Get(
+                    AdvancedVisemeArticulator.JawOpen);
+                var legacyRawShortcutJump = lead * Mathf.Abs(aaJaw - rrJaw);
+                Assert.That(legacyRawShortcutJump, Is.GreaterThan(0.5f),
+                    "The fixture must detect the removed RR-to-aa hard jaw step.");
+
+                var reconstructedJaw = 0f;
+                for (var viseme = 0; viseme < reconstructed.Length; viseme++)
+                    reconstructedJaw += reconstructed[viseme] *
+                                        profile.visemePoses[viseme].Get(
+                                            AdvancedVisemeArticulator.JawOpen);
+                Assert.That(reconstructedJaw, Is.EqualTo(rrJaw).Within(1e-7f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(profile);
+            }
+        }
+
+        [Test]
+        public void BetaLeadChangeIsBoundedByExistingObserverSeparation()
+        {
+            var random = new System.Random(0xC0171);
+            var first = new float[AdvancedVisemeCoarticulationModel.VisemeCount];
+            var second = new float[first.Length];
+            for (var sample = 0; sample < 256; sample++)
+            {
+                var slow = RandomSimplex(random);
+                var fast = RandomSimplex(random);
+                var group = (AdvancedVisemeArticulatorGroup)(sample %
+                    AdvancedVisemeTransitionRetention.GroupCount);
+                var destination = sample % first.Length;
+                const float firstStrength = 0.2f;
+                const float secondStrength = 0.9f;
+                var firstLead = AdvancedVisemeCoarticulationModel.TransitionLead(
+                    group, slow, destination, firstStrength);
+                var secondLead = AdvancedVisemeCoarticulationModel.TransitionLead(
+                    group, slow, destination, secondStrength);
+                AdvancedVisemeCoarticulationModel.ReconstructWeights(
+                    slow, fast, destination, group, firstStrength, first);
+                AdvancedVisemeCoarticulationModel.ReconstructWeights(
+                    slow, fast, destination, group, secondStrength, second);
+
+                for (var viseme = 0; viseme < first.Length; viseme++)
+                {
+                    var expectedDelta = (secondLead - firstLead) *
+                                        (fast[viseme] - slow[viseme]);
+                    Assert.That(second[viseme] - first[viseme],
+                        Is.EqualTo(expectedDelta).Within(2e-7f));
+                    Assert.That(Mathf.Abs(second[viseme] - first[viseme]),
+                        Is.LessThanOrEqualTo(
+                            Mathf.Abs(fast[viseme] - slow[viseme]) + 2e-7f));
+                }
             }
         }
 

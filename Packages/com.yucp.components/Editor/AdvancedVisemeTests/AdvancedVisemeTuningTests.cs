@@ -76,12 +76,12 @@ namespace YUCP.Components.Editor.Tests
         };
 
         [Test]
-        public void VersionEightProfileDefaultsAreNeutralAndBackwardCompatible()
+        public void VersionElevenProfileDefaultsUseLearnedSmoothTrajectoryObserver()
         {
             var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
             try
             {
-                Assert.That(profile.visemeResponseSeconds, Is.EqualTo(0.024f).Within(1e-6f));
+                Assert.That(profile.visemeResponseSeconds, Is.EqualTo(0.017f).Within(1e-6f));
                 Assert.That(profile.speechHangoverSeconds, Is.EqualTo(0.16f).Within(1e-6f));
                 Assert.That(profile.localTrackingResponseSeconds, Is.EqualTo(0.018f).Within(1e-6f));
                 Assert.That(profile.remoteTrackingResponseSeconds, Is.EqualTo(0.065f).Within(1e-6f));
@@ -91,7 +91,7 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(profile.voiceNoiseFloor, Is.EqualTo(0.05f).Within(1e-6f));
                 Assert.That(profile.voiceFullScale, Is.EqualTo(0.25f).Within(1e-6f));
                 Assert.That(profile.BetaCoarticulationStrength, Is.EqualTo(1f).Within(1e-6f));
-                Assert.That(profile.speechLiveliness, Is.EqualTo(0.5f).Within(1e-6f));
+                Assert.That(profile.speechLiveliness, Is.Zero.Within(1e-6f));
 
                 foreach (var fieldName in VersionSixUnitFields)
                 {
@@ -133,20 +133,44 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void VersionEightMigrationInitializesSpeechLivelinessOnlyOnce()
+        public void VersionElevenMigrationUpgradesFormerRecommendedPairOnlyOnce()
         {
             var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
             try
             {
-                SetPrivateInt(profile, "defaultsVersion", 7);
-                profile.speechLiveliness = 0f;
+                SetPrivateInt(profile, "defaultsVersion", 10);
+                profile.visemeResponseSeconds = 0.024f;
+                profile.speechLiveliness = 1f;
                 profile.EnsureDefaults();
-                Assert.That(profile.speechLiveliness, Is.EqualTo(0.5f).Within(1e-6f));
+                Assert.That(profile.visemeResponseSeconds,
+                    Is.EqualTo(0.017f).Within(1e-6f));
+                Assert.That(profile.speechLiveliness, Is.Zero.Within(1e-6f));
 
-                profile.speechLiveliness = 0f;
+                profile.visemeResponseSeconds = 0.024f;
+                profile.speechLiveliness = 1f;
                 profile.EnsureDefaults();
-                Assert.That(profile.speechLiveliness, Is.Zero.Within(1e-6f),
-                    "Zero is a deliberate legacy-response preference after migration.");
+                Assert.That(profile.visemeResponseSeconds,
+                    Is.EqualTo(0.024f).Within(1e-6f));
+                Assert.That(profile.speechLiveliness, Is.EqualTo(1f).Within(1e-6f),
+                    "The former pair can be a deliberate preference after migration.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(profile);
+            }
+        }
+
+        [Test]
+        public void VersionTenMigrationPreservesCustomSpeechLiveliness()
+        {
+            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
+            try
+            {
+                SetPrivateInt(profile, "defaultsVersion", 9);
+                profile.speechLiveliness = 0.37f;
+                profile.EnsureDefaults();
+                Assert.That(profile.speechLiveliness, Is.EqualTo(0.37f).Within(1e-6f),
+                    "Version 10 may upgrade only the former recommended midpoint.");
             }
             finally
             {
@@ -947,6 +971,14 @@ namespace YUCP.Components.Editor.Tests
                     Assert.That(articulation, Is.Not.Null);
                     Assert.That(renderVector.blendParameter, Is.EqualTo(lead));
                     Assert.That(articulation.blendParameter, Is.EqualTo(lead));
+                    if (beta)
+                    {
+                        Assert.That(trees.Any(tree => tree.name.EndsWith(
+                                "coarticulated slow trajectory",
+                                StringComparison.Ordinal)), Is.False,
+                            "Beta context must not bypass the persistent physical " +
+                            "viseme observer; Speech Liveliness is the only visible lead.");
+                    }
 
                     foreach (var viseme in VisemeReconstructionProfile.VisemeNames)
                     {
@@ -1072,7 +1104,7 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void BetaCoarticulationGatesBothRawSilenceIngressPaths()
+        public void BetaCoarticulationGatesContinuousFastAndRetentionContext()
         {
             var fixture = BuildGraph(
                 AdvancedVisemeTuningMenuSections.Speech,
@@ -1086,37 +1118,117 @@ namespace YUCP.Components.Editor.Tests
                 var visemeIndex = internalPrefix + "/Viseme/Index";
                 var trees = AssetDatabase.LoadAllAssetsAtPath(fixture.controllerPath)
                     .OfType<BlendTree>().ToArray();
+                var parameterNames = fixture.result.controller.parameters
+                    .Select(parameter => parameter.name).ToArray();
                 var gate = trees.SingleOrDefault(tree =>
                     tree.name == "Vector transient-silence hold");
                 Assert.That(gate, Is.Not.Null);
                 Assert.That(gate.blendParameter, Is.EqualTo(visemeIndex));
-                var distinctDecayCount = Enumerable.Range(
-                        0, AdvancedVisemeTransitionRetention.GroupCount)
-                    .Select(index => Mathf.RoundToInt(
-                        AdvancedVisemeCoarticulationModel.DecaySeconds(
-                            (AdvancedVisemeArticulatorGroup)index) * 1000000f))
-                    .Distinct().Count();
-                var contextWeights = fixture.result.controller.parameters
+                var silenceRouters = trees.Where(tree =>
+                        tree.name == "Vector transient-silence hold" ||
+                        tree.name == "Vector compact transient-silence hold")
+                    .ToArray();
+                var contextAlphas = fixture.result.controller.parameters
                     .Select(parameter => parameter.name)
                     .Where(parameter => parameter.StartsWith(
                         internalPrefix + "/BetaCoarticulation/Context/",
                         StringComparison.Ordinal))
-                    .Where(parameter => int.TryParse(
-                        parameter.Substring(parameter.LastIndexOf('/') + 1), out _))
+                    .Where(parameter => parameter.EndsWith(
+                        "/Alpha", StringComparison.Ordinal))
                     .ToArray();
-                Assert.That(contextWeights.Length, Is.EqualTo(
-                    distinctDecayCount * VisemeReconstructionProfile.VisemeCount));
-                Assert.That(contextWeights.All(parameter => WritesParameter(gate, parameter)),
-                    Is.True, "Every retained context lane must pass through the shared router.");
+                var retentionStates = parameterNames.Where(parameter =>
+                        parameter.Contains("/BetaCoarticulation/RetentionState/",
+                            StringComparison.Ordinal))
+                    .ToArray();
+                const string retentionMarker =
+                    "/BetaCoarticulation/RetentionState/";
+                var liveGroups = retentionStates
+                    .Select(parameter => parameter.Substring(
+                        parameter.IndexOf(retentionMarker,
+                            StringComparison.Ordinal) + retentionMarker.Length))
+                    .Select(suffix => suffix.Substring(0,
+                        suffix.IndexOf('/')))
+                    .Distinct(StringComparer.Ordinal)
+                    .Select(name => (AdvancedVisemeArticulatorGroup)Enum.Parse(
+                        typeof(AdvancedVisemeArticulatorGroup), name))
+                    .ToArray();
+                Assert.That(liveGroups, Is.Not.Empty,
+                    "At least one corpus-retention family must survive liveness.");
+                foreach (var group in liveGroups)
+                {
+                    var marker = retentionMarker + group + "/";
+                    Assert.That(retentionStates.Count(parameter =>
+                            parameter.Contains(marker, StringComparison.Ordinal)),
+                        Is.EqualTo(VisemeReconstructionProfile.VisemeCount),
+                        $"Live {group} retention must keep one complete viseme row.");
+                }
+                var expectedAlphaNames = liveGroups
+                    .Select(group => Mathf.RoundToInt(
+                        AdvancedVisemeCoarticulationModel.DecaySeconds(group) *
+                        1000000f))
+                    .Distinct()
+                    .Select(decay => internalPrefix +
+                        $"/BetaCoarticulation/Context/{decay}/Alpha")
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToArray();
+                var declaredParameters = parameterNames.ToHashSet(
+                    StringComparer.Ordinal);
+                foreach (var expectedAlpha in expectedAlphaNames)
+                {
+                    var representative = expectedAlpha;
+                    if (!declaredParameters.Contains(expectedAlpha))
+                    {
+                        Assert.That(fixture.result.optimizerReport
+                                .internedParameterMappings.TryGetValue(
+                                    expectedAlpha, out representative), Is.True,
+                            expectedAlpha +
+                            " was neither retained nor exactly interned.");
+                    }
+                    Assert.That(declaredParameters, Does.Contain(representative),
+                        "An interned response-time alpha needs a declared representative.");
+                    Assert.That(trees.Any(tree =>
+                            DirectlyUsesParameter(tree, representative)), Is.True,
+                        "Every surviving decay family needs an active alpha reader.");
+                }
+                Assert.That(contextAlphas.All(parameter => trees.Any(tree =>
+                        DirectlyUsesParameter(tree, parameter))), Is.True,
+                    "A retained family-specific alpha must remain live in the graph.");
+                Assert.That(retentionStates.All(parameter =>
+                        silenceRouters.Any(router =>
+                            WritesParameter(router, parameter))), Is.True,
+                    "Every retained transition-row state must pass through the shared router.");
+
+                string RepresentativeFor(string parameter)
+                {
+                    var visited = new HashSet<string>(StringComparer.Ordinal);
+                    while (visited.Add(parameter) &&
+                           fixture.result.optimizerReport
+                               .internedParameterMappings.TryGetValue(
+                                   parameter, out var representative))
+                        parameter = representative;
+                    return parameter;
+                }
 
                 for (var viseme = 0; viseme < VisemeReconstructionProfile.VisemeCount; viseme++)
                 {
-                    Assert.That(WritesParameter(
-                            gate, internalPrefix + $"/Viseme/{viseme}/Fast"), Is.True);
-                    Assert.That(WritesParameter(
-                            gate, internalPrefix +
-                                  $"/BetaCoarticulation/Mean/Viseme/{viseme}/Fast"), Is.True);
+                    var visibleFast = RepresentativeFor(
+                        internalPrefix + $"/Viseme/{viseme}/Fast");
+                    Assert.That(silenceRouters.Any(router => WritesParameter(
+                            router, visibleFast)),
+                        Is.True);
+                    var betaFast = RepresentativeFor(
+                        internalPrefix +
+                        $"/BetaCoarticulation/Mean/Viseme/{viseme}/Fast");
+                    Assert.That(silenceRouters.Any(router => WritesParameter(
+                            router, betaFast)),
+                        Is.True);
                 }
+                Assert.That(trees.Any(tree => tree.name.Contains(
+                    "sparse raw source", StringComparison.Ordinal)), Is.False,
+                    "Visible Beta articulation must never project toward the raw winner.");
+                Assert.That(parameterNames.Any(parameter => parameter.EndsWith(
+                    "/PhoneObservationFast", StringComparison.Ordinal)), Is.False,
+                    "A no-tracking build must not materialize the hidden-phone model feature.");
             }
             finally
             {
@@ -1178,8 +1290,9 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void SpeechLivelinessMakesSpeechOnlyTransitionsEarlierWithoutOvershoot()
+        public void SpeechLivelinessNeverAddsDelayAndCanAdvanceRenderedTransitions()
         {
+            var advancedAtARepresentableRate = false;
             foreach (var fps in new[] { 15f, 30f, 60f, 90f, 144f })
             {
                 var fast = new float[VisemeReconstructionProfile.VisemeCount];
@@ -1205,13 +1318,16 @@ namespace YUCP.Components.Editor.Tests
                         slowNinety = elapsed;
                 }
 
-                Assert.That(renderedNinety, Is.LessThan(slowNinety),
-                    $"Speech Liveliness did not improve the 90% transition at {fps} FPS.");
+                Assert.That(renderedNinety, Is.LessThanOrEqualTo(slowNinety),
+                    $"Speech Liveliness delayed the 90% transition at {fps} FPS.");
+                advancedAtARepresentableRate |= renderedNinety < slowNinety;
                 Assert.That(AdvancedVisemeMath.ApplySpeechLiveliness(
                         slow[10], fast[10], 1f, 1f),
                     Is.EqualTo(slow[10]).Within(1e-7f),
                     "Fully active tracking must recover the exact slow prior.");
             }
+            Assert.That(advancedAtARepresentableRate, Is.True,
+                "The bounded lead never advanced a transition at any tested render rate.");
         }
 
         [Test]

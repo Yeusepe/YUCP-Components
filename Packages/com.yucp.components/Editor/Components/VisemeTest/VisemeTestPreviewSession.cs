@@ -23,6 +23,13 @@ namespace YUCP.Components.Editor
             SoleSceneAvatar
         }
 
+        internal enum AnalysisWeightSource
+        {
+            SyntheticSilence,
+            OculusLipSync,
+            ApproximateFallback
+        }
+
         internal readonly struct AnalysisSample
         {
             internal readonly VisemeTestEmulatorData source;
@@ -30,7 +37,12 @@ namespace YUCP.Components.Editor
             internal readonly float voice;
             internal readonly long sampleClock;
             internal readonly int sampleRate;
+            internal readonly int frameSampleCount;
             internal readonly string engineName;
+            internal readonly AnalysisWeightSource weightSource;
+            internal readonly IReadOnlyList<float> continuousVisemeWeights;
+            internal readonly float continuousWeightMass;
+            internal readonly bool continuousWeightsValid;
 
             internal AnalysisSample(
                 VisemeTestEmulatorData source,
@@ -38,17 +50,70 @@ namespace YUCP.Components.Editor
                 float voice,
                 long sampleClock,
                 int sampleRate,
-                string engineName)
+                int frameSampleCount,
+                string engineName,
+                AnalysisWeightSource weightSource,
+                IReadOnlyList<float> continuousVisemeWeights)
             {
                 this.source = source;
                 this.viseme = viseme;
                 this.voice = voice;
                 this.sampleClock = sampleClock;
                 this.sampleRate = sampleRate;
+                this.frameSampleCount = Math.Max(0, frameSampleCount);
                 this.engineName = engineName;
+                this.weightSource = weightSource;
+
+                var snapshot = SnapshotWeights(
+                    continuousVisemeWeights,
+                    Mathf.Clamp(viseme, 0, VisemeTestMath.VisemeCount - 1),
+                    out continuousWeightsValid,
+                    out continuousWeightMass);
+                this.continuousVisemeWeights = Array.AsReadOnly(snapshot);
             }
 
             internal double timeSeconds => sampleRate > 0 ? sampleClock / (double)sampleRate : 0d;
+            internal long frameStartSampleClock => Math.Max(
+                0L, sampleClock - frameSampleCount);
+            internal bool hasExactOculusTeacher =>
+                weightSource == AnalysisWeightSource.OculusLipSync &&
+                continuousWeightsValid;
+
+            private static float[] SnapshotWeights(
+                IReadOnlyList<float> weights,
+                int fallbackViseme,
+                out bool valid,
+                out float mass)
+            {
+                var snapshot = new float[VisemeTestMath.VisemeCount];
+                valid = weights != null &&
+                        weights.Count >= VisemeTestMath.VisemeCount;
+                mass = 0f;
+                if (!valid)
+                {
+                    snapshot[fallbackViseme] = 1f;
+                    mass = 1f;
+                    return snapshot;
+                }
+
+                for (var index = 0;
+                     index < VisemeTestMath.VisemeCount;
+                     index++)
+                {
+                    var value = weights[index];
+                    if (float.IsNaN(value) || float.IsInfinity(value) ||
+                        value < 0f || value > 1f)
+                    {
+                        valid = false;
+                        value = float.IsNaN(value) || float.IsInfinity(value)
+                            ? 0f
+                            : Mathf.Clamp01(value);
+                    }
+                    snapshot[index] = value;
+                    mass += value;
+                }
+                return snapshot;
+            }
         }
 
         internal sealed class State
@@ -91,7 +156,8 @@ namespace YUCP.Components.Editor
 
         private static readonly Dictionary<int, State> Sessions = new Dictionary<int, State>();
         private static readonly HashSet<int> AutoStartAttempted = new HashSet<int>();
-        private static readonly HashSet<int> LosslessAnalysisSources = new HashSet<int>();
+        private static readonly Dictionary<int, int> LosslessAnalysisSources =
+            new Dictionary<int, int>();
 
         /// <summary>
         /// Raised once for every analyzed audio block. The sample clock, rather than
@@ -108,7 +174,8 @@ namespace YUCP.Components.Editor
         {
             if (data == null) throw new ArgumentNullException(nameof(data));
             var id = data.GetInstanceID();
-            LosslessAnalysisSources.Add(id);
+            LosslessAnalysisSources.TryGetValue(id, out var count);
+            LosslessAnalysisSources[id] = count + 1;
             return new LosslessAnalysisScope(id);
         }
 
@@ -430,7 +497,7 @@ namespace YUCP.Components.Editor
                 state.lastMicrophonePosition,
                 position,
                 clipSamples);
-            var lossless = state.data != null && LosslessAnalysisSources.Contains(state.data.GetInstanceID());
+            var lossless = IsLosslessAnalysis(state.data);
             if (!lossless) available = Mathf.Min(available, state.sampleRate / 2);
             if (available <= 0) return;
 
@@ -459,9 +526,17 @@ namespace YUCP.Components.Editor
 
         internal static int MicrophoneBufferSeconds(VisemeTestEmulatorData data)
         {
-            return data != null && LosslessAnalysisSources.Contains(data.GetInstanceID())
+            return IsLosslessAnalysis(data)
                 ? LosslessMicrophoneBufferSeconds
                 : PreviewMicrophoneBufferSeconds;
+        }
+
+        private static bool IsLosslessAnalysis(VisemeTestEmulatorData data)
+        {
+            return data != null &&
+                   LosslessAnalysisSources.TryGetValue(
+                       data.GetInstanceID(), out var count) &&
+                   count > 0;
         }
 
         internal static int AvailableMicrophoneSamples(
@@ -535,39 +610,71 @@ namespace YUCP.Components.Editor
             var response = targetVoice > state.currentVoice ? 0.025f : 0.09f;
             var voice = VisemeTestMath.ExpSmooth(state.currentVoice, targetVoice, deltaTime, response);
             int viseme;
-            float[] weights = null;
+            float[] weights;
+            float[] analysisWeights = null;
+            var weightSource = AnalysisWeightSource.SyntheticSilence;
+            // Ordinary preview keeps its historical low-cost silence gate.
+            // A sample subscriber, however, needs Oculus' native onset/release
+            // envelope, so keep the classifier's causal state moving through
+            // every audio block while capture is active.
+            var oculusAttempted = ShouldProcessOculusFrame(
+                state.oculus != null,
+                voice,
+                IsLosslessAnalysis(state.data));
+            var oculusSucceeded = oculusAttempted &&
+                                  state.oculus.TryProcess(
+                                      state.analysisFrame,
+                                      out analysisWeights);
+            if (oculusAttempted && !oculusSucceeded)
+            {
+                state.oculus.Dispose();
+                state.oculus = null;
+                state.engineName = "YUCP fallback";
+            }
 
             if (voice < 0.025f)
             {
                 viseme = 0;
                 weights = new float[VisemeTestMath.VisemeCount];
                 weights[0] = 1f;
+                if (oculusSucceeded)
+                    weightSource = AnalysisWeightSource.OculusLipSync;
             }
-            else if (state.oculus != null && state.oculus.TryProcess(state.analysisFrame, out weights))
+            else if (oculusSucceeded)
             {
+                weights = analysisWeights;
                 viseme = VisemeTestMath.DominantViseme(weights);
+                weightSource = AnalysisWeightSource.OculusLipSync;
             }
             else
             {
-                if (state.oculus != null)
-                {
-                    state.oculus.Dispose();
-                    state.oculus = null;
-                    state.engineName = "YUCP fallback";
-                }
                 viseme = VisemeTestMath.ApproximateViseme(state.analysisFrame, state.sampleRate, voice, state.currentViseme);
                 weights = BuildFallbackWeights(state, viseme, voice, deltaTime);
+                analysisWeights = weights;
+                weightSource = AnalysisWeightSource.ApproximateFallback;
             }
 
             ApplyFrame(state, viseme, voice, weights);
             state.analysisSampleClock += state.analysisFrame.Length;
-            PublishAnalysisSample(new AnalysisSample(
+            PublishAnalysisSample(
                 state.data,
                 viseme,
                 voice,
                 state.analysisSampleClock,
                 state.sampleRate,
-                state.engineName));
+                state.analysisFrame.Length,
+                state.engineName,
+                weightSource,
+                oculusSucceeded ? analysisWeights : weights);
+        }
+
+        internal static bool ShouldProcessOculusFrame(
+            bool oculusAvailable,
+            float voice,
+            bool continuousCaptureRequested)
+        {
+            return oculusAvailable &&
+                   (voice >= 0.025f || continuousCaptureRequested);
         }
 
         internal static float ResolveAnalysisGain(
@@ -580,10 +687,29 @@ namespace YUCP.Components.Editor
                 : 1f;
         }
 
-        private static void PublishAnalysisSample(AnalysisSample sample)
+        private static void PublishAnalysisSample(
+            VisemeTestEmulatorData source,
+            int viseme,
+            float voice,
+            long sampleClock,
+            int sampleRate,
+            int frameSampleCount,
+            string engineName,
+            AnalysisWeightSource weightSource,
+            IReadOnlyList<float> continuousVisemeWeights)
         {
             var subscribers = AnalysisFrameProcessed;
             if (subscribers == null) return;
+            var sample = new AnalysisSample(
+                source,
+                viseme,
+                voice,
+                sampleClock,
+                sampleRate,
+                frameSampleCount,
+                engineName,
+                weightSource,
+                continuousVisemeWeights);
             foreach (Action<AnalysisSample> subscriber in subscribers.GetInvocationList())
             {
                 try { subscriber(sample); }
@@ -785,7 +911,10 @@ namespace YUCP.Components.Editor
             {
                 if (disposed) return;
                 disposed = true;
-                LosslessAnalysisSources.Remove(sourceId);
+                if (!LosslessAnalysisSources.TryGetValue(
+                        sourceId, out var count)) return;
+                if (count <= 1) LosslessAnalysisSources.Remove(sourceId);
+                else LosslessAnalysisSources[sourceId] = count - 1;
             }
         }
 

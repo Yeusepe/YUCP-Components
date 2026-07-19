@@ -1760,7 +1760,7 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void BetaArticulatorContractionCommutesWithVisemeInterpolation()
+        public void BetaArticulatorContractionCommutesWithContinuousObserverLead()
         {
             var random = new System.Random(0x425443);
             const int articulatorCount = 7;
@@ -1769,14 +1769,41 @@ namespace YUCP.Components.Editor.Tests
                 var raw = RandomSimplex();
                 var fast = RandomSimplex();
                 var slow = RandomSimplex();
-                var lead = (float)random.NextDouble();
+                var lead = Mathf.Lerp(0.2f, 1f, (float)random.NextDouble());
                 var matrix = new float[articulatorCount, VisemeReconstructionProfile.VisemeCount];
                 for (var articulator = 0; articulator < articulatorCount; articulator++)
                 for (var viseme = 0; viseme < VisemeReconstructionProfile.VisemeCount; viseme++)
                     matrix[articulator, viseme] = (float)(random.NextDouble() * 2d - 1d);
 
-                AssertStage(fast, raw, lead);
+                AssertFastStage(fast, raw, lead);
                 AssertStage(slow, fast, lead);
+
+                void AssertFastStage(float[] values, float[] rawTarget, float amount)
+                {
+                    var detectedLegacyShortcut = false;
+                    for (var articulator = 0; articulator < articulatorCount; articulator++)
+                    {
+                        var projectedFast = 0f;
+                        var projectedRaw = 0f;
+                        for (var viseme = 0;
+                             viseme < VisemeReconstructionProfile.VisemeCount;
+                             viseme++)
+                        {
+                            projectedFast += matrix[articulator, viseme] * values[viseme];
+                            projectedRaw += matrix[articulator, viseme] * rawTarget[viseme];
+                        }
+                        var correctedFast = projectedFast;
+                        var legacyRawAdvanced = Mathf.LerpUnclamped(
+                            projectedFast, projectedRaw, amount);
+                        Assert.That(correctedFast,
+                            Is.EqualTo(projectedFast).Within(1e-7f));
+                        detectedLegacyShortcut |= Mathf.Abs(
+                            legacyRawAdvanced - correctedFast) > 1e-4f;
+                    }
+                    Assert.That(detectedLegacyShortcut, Is.True,
+                        "The randomized fixture must distinguish direct observer-fast " +
+                        "projection from the removed raw-advanced projection.");
+                }
 
                 void AssertStage(float[] from, float[] to, float amount)
                 {
@@ -1940,6 +1967,11 @@ namespace YUCP.Components.Editor.Tests
                     "Projected destination safety zero"), Is.False,
                     "A weighted destination row must reuse its enclosing vector binder.");
                 var parameterNames = result.controller.parameters.Select(parameter => parameter.name).ToArray();
+                Assert.That(parameterNames.Count(name => name.EndsWith(
+                        "/PhoneObservationFast", StringComparison.Ordinal)),
+                    Is.EqualTo(VisemeReconstructionProfile.VisemeCount),
+                    "Face-conditioned inference keeps one trained private observation " +
+                    "simplex, separate from the visible continuous-fast simplex.");
                 Assert.That(parameterNames.Count(name => name.EndsWith(
                         "/ProductAccumulator", StringComparison.Ordinal)),
                     Is.EqualTo(2),
@@ -2217,6 +2249,19 @@ namespace YUCP.Components.Editor.Tests
                         float[] lead,
                         float[] corpusFast,
                         float[] corpusSlow)>();
+                    var commonFrames = new List<(
+                        int viseme,
+                        float history,
+                        float stability,
+                        float meanLead,
+                        float renderLead,
+                        float[] raw,
+                        float[] sparseFast,
+                        float[] sparseSlow,
+                        float[] visibleFast,
+                        float[] phoneObservationFast,
+                        float[] commonSlow,
+                        float[] rendered)>();
                     for (var frame = 0; frame < 96; frame++)
                     {
                         var decodedViseme = frame % 11 < 2
@@ -2307,8 +2352,48 @@ namespace YUCP.Components.Editor.Tests
                                     internalPrefix +
                                     $"/Articulation/{row.articulator}/CorpusSlow"))
                                 .ToArray()));
+                        commonFrames.Add((
+                            decodedViseme,
+                            animator.GetFloat(internalPrefix +
+                                "/Speech/Hangover/History"),
+                            animator.GetFloat(silenceStabilityName),
+                            animator.GetFloat(internalPrefix +
+                                "/BetaCoarticulation/Lead/Mean"),
+                            animator.GetFloat(internalPrefix +
+                                "/Speech/RenderLead"),
+                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                                .Select(viseme => animator.GetFloat(internalPrefix +
+                                    $"/Viseme/{viseme}/Raw")).ToArray(),
+                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                                .Select(viseme => animator.GetFloat(internalPrefix +
+                                    $"/Viseme/{viseme}/SparseFast")).ToArray(),
+                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                                .Select(viseme => animator.GetFloat(internalPrefix +
+                                    $"/Viseme/{viseme}/SparseSlow")).ToArray(),
+                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                                .Select(viseme => animator.GetFloat(internalPrefix +
+                                    $"/BetaCoarticulation/Mean/Viseme/{viseme}/Fast"))
+                                .ToArray(),
+                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                                .Select(viseme => animator.GetFloat(internalPrefix +
+                                    $"/BetaCoarticulation/Mean/Viseme/{viseme}" +
+                                    "/PhoneObservationFast")).ToArray(),
+                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                                .Select(viseme => animator.GetFloat(internalPrefix +
+                                    $"/BetaCoarticulation/Mean/Viseme/{viseme}/Slow"))
+                                .ToArray(),
+                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
+                                .Select(viseme => animator.GetFloat(
+                                    AdvancedVisemeParameterContract.Viseme(
+                                        component.NormalizedPrefix, viseme))).ToArray()));
                     }
 
+                    var privateObservationDiffersFromVisible = false;
+                    var maximumPrivateVisibleDifference = 0f;
+                    var maximumMeanLead = 0f;
+                    var maximumRawFastDifference = 0f;
+                    var maximumRawStep = 0f;
+                    var maximumSparseFastStep = 0f;
                     for (var frame = 4; frame < frames.Count; frame++)
                     {
                         var sampled = frames[frame - 1];
@@ -2360,10 +2445,7 @@ namespace YUCP.Components.Editor.Tests
                         for (var row = 0; row < projectedRows.Length; row++)
                         {
                             var releaseFast = projectedRows[row].offset +
-                                projectedRows[row].scale * Mathf.LerpUnclamped(
-                                    sampledProjected.fast[row],
-                                    sampledProjected.raw[row],
-                                    sampledProjected.lead[row]);
+                                projectedRows[row].scale * sampledProjected.fast[row];
                             var expectedFast = releaseFast;
                             // Viseme/Index is decoded by the preceding Animator
                             // layer, so this Math-layer selector intentionally
@@ -2401,7 +2483,106 @@ namespace YUCP.Components.Editor.Tests
                                 $"Projected {projectedRows[row].articulator} slow output " +
                                 $"changed Animator stage at frame {frame}.");
                         }
+
+                        var sampledCommon = commonFrames[frame - 1];
+                        var actualCommon = commonFrames[frame];
+                        for (var viseme = 0;
+                             viseme < VisemeReconstructionProfile.VisemeCount;
+                             viseme++)
+                        {
+                            var visibleRelease = sampledCommon.sparseFast[viseme];
+                            var expectedVisibleFast = visibleRelease;
+                            var phoneRelease = Mathf.LerpUnclamped(
+                                sampledCommon.sparseFast[viseme],
+                                sampledCommon.raw[viseme],
+                                sampledCommon.meanLead);
+                            var expectedPhoneObservation = phoneRelease;
+                            if (sampledCommon.viseme == 0)
+                            {
+                                var historyBlend = Mathf.InverseLerp(
+                                    AdvancedVisemeMath.SpeechHistoryHoldStart,
+                                    AdvancedVisemeMath.SpeechHistoryHoldFull,
+                                    sampledCommon.history);
+                                var holdStrength = Mathf.Clamp01(
+                                    sampledCommon.stability / 0.5f);
+                                expectedVisibleFast = Mathf.LerpUnclamped(
+                                    visibleRelease,
+                                    Mathf.LerpUnclamped(
+                                        visibleRelease,
+                                        sampledCommon.visibleFast[viseme],
+                                        historyBlend),
+                                    holdStrength);
+                                expectedPhoneObservation = Mathf.LerpUnclamped(
+                                    phoneRelease,
+                                    Mathf.LerpUnclamped(
+                                        phoneRelease,
+                                        sampledCommon.phoneObservationFast[viseme],
+                                        historyBlend),
+                                    holdStrength);
+                            }
+                            var expectedCommonSlow =
+                                sampledCommon.sparseSlow[viseme];
+                            var expectedRendered = Mathf.LerpUnclamped(
+                                sampledCommon.commonSlow[viseme],
+                                sampledCommon.visibleFast[viseme],
+                                sampledCommon.renderLead);
+                            Assert.That(actualCommon.visibleFast[viseme],
+                                Is.EqualTo(expectedVisibleFast).Within(3e-5f),
+                                $"Visible Beta fast lane used a raw endpoint at frame " +
+                                $"{frame}, viseme {viseme}.");
+                            Assert.That(actualCommon.phoneObservationFast[viseme],
+                                Is.EqualTo(expectedPhoneObservation).Within(3e-5f),
+                                $"Private phone observation lost training parity at " +
+                                $"frame {frame}, viseme {viseme}.");
+                            Assert.That(actualCommon.commonSlow[viseme],
+                                Is.EqualTo(expectedCommonSlow).Within(3e-5f));
+                            Assert.That(actualCommon.rendered[viseme],
+                                Is.EqualTo(expectedRendered).Within(3e-5f),
+                                $"Public viseme rendering consumed the private phone " +
+                                $"observation at frame {frame}, viseme {viseme}.");
+                            var privateVisibleDifference = Mathf.Abs(
+                                sampledCommon.phoneObservationFast[viseme] -
+                                sampledCommon.visibleFast[viseme]);
+                            maximumPrivateVisibleDifference = Mathf.Max(
+                                maximumPrivateVisibleDifference,
+                                privateVisibleDifference);
+                            maximumMeanLead = Mathf.Max(
+                                maximumMeanLead,
+                                Mathf.Abs(sampledCommon.meanLead));
+                            maximumRawFastDifference = Mathf.Max(
+                                maximumRawFastDifference,
+                                Mathf.Abs(sampledCommon.raw[viseme] -
+                                          sampledCommon.sparseFast[viseme]));
+                            maximumRawStep = Mathf.Max(
+                                maximumRawStep,
+                                Mathf.Abs(actualCommon.raw[viseme] -
+                                          sampledCommon.raw[viseme]));
+                            maximumSparseFastStep = Mathf.Max(
+                                maximumSparseFastStep,
+                                Mathf.Abs(actualCommon.sparseFast[viseme] -
+                                          sampledCommon.sparseFast[viseme]));
+                            privateObservationDiffersFromVisible |=
+                                privateVisibleDifference > 1e-4f;
+                        }
                     }
+                    var allRawParametersPresent = Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
+                        .All(viseme => parameterNames.Contains(
+                            internalPrefix + $"/Viseme/{viseme}/Raw"));
+                    var allSparseFastParametersPresent = Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
+                        .All(viseme => parameterNames.Contains(
+                            internalPrefix + $"/Viseme/{viseme}/SparseFast"));
+                    Assert.That(privateObservationDiffersFromVisible, Is.True,
+                        "The runtime trace must distinguish the visible and private " +
+                        "fast simplexes or it cannot detect accidental routing. " +
+                        $"maxPrivateVisible={maximumPrivateVisibleDifference:R}, " +
+                        $"maxMeanLead={maximumMeanLead:R}, " +
+                        $"maxRawFast={maximumRawFastDifference:R}, " +
+                        $"maxRawStep={maximumRawStep:R}, " +
+                        $"maxSparseFastStep={maximumSparseFastStep:R}, " +
+                        $"rawPresent={allRawParametersPresent}, " +
+                        $"sparseFastPresent={allSparseFastParametersPresent}.");
                 }
                 finally
                 {
@@ -3573,7 +3754,7 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(component.profile.speechMotionStrength,
                     Is.EqualTo(1f).Within(1e-6f));
                 Assert.That(component.profile.visemeResponseSeconds,
-                    Is.EqualTo(0.024f).Within(1e-6f),
+                    Is.EqualTo(0.017f).Within(1e-6f),
                     "Copy-on-edit must preserve every unrelated recommended default.");
             }
             finally
@@ -3759,7 +3940,9 @@ namespace YUCP.Components.Editor.Tests
                         null,
                         "Face",
                         "tracking",
-                        "links"
+                        "links",
+                        false,
+                        false
                     });
                 }
 
@@ -3867,7 +4050,9 @@ namespace YUCP.Components.Editor.Tests
                         mesh,
                         "Face",
                         "tracking",
-                        "links"
+                        "links",
+                        false,
+                        false
                     });
                 }
 

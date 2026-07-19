@@ -158,6 +158,52 @@ The held-out all-phone eligibility gate reached NLL 0.376876 versus 0.396702 for
 
 A closed mouth supplies evidence for bilabial place, not proof of `/m/`; `/p/` and `/b/` can look the same. Likewise, visible lower-face motion cannot safely recover voicing pairs (`p/b`, `t/d`, `k/g`, `s/z`) or guarantee `n/l`. The model therefore exposes a confidence-gated compatibility posterior and must abstain smoothly, never present inferred tongue motion as native tongue tracking.
 
+## Sparse Oculus shape halo
+
+`train_oculus_viseme_halo.py` reconstructs a bounded average of the continuous Oculus shape that VRChat discards when it publishes only the dominant `Viseme` index. It runs the pinned Oculus LipSync 1.54 Enhanced analyzer directly over the paired corpus audio and copies every native 15-weight block. Raw weight mass is retained only for diagnostics; the fitting target is each frame divided by its positive mass.
+
+For hard winner `j`, the fit first computes the conditional barycenter `C[j] = E[normalizedWeights | winner=j]`. Each row is then projected onto an exact cardinality-constrained probability simplex following [Kyrillidis et al.](https://proceedings.mlr.press/v28/kyrillidis13.html): keep the `k` largest coordinates and apply the Euclidean simplex projection to that support. This is not proportional top-k renormalization. The emitted target is `H = (1-h)I + hC_k`, with exact one-hot silence and a unique diagonal maximum.
+
+Both `k` and `h` are selected on development speakers only. The strength objective replays the generated Animator's 24 ms two-pole observer, decoder-before-math publication phase, `0.0003` sparse-emission dead-zone, and default `0.85` fast-observer speech render lead. It penalizes falling below 90% of the teacher's temporal variation. Cardinality selection then chooses the smallest table that preserves at least 90% of the dense model's overall, four-block transition, and velocity gains without regressing against identity. A separate zero-order-hold sweep at 15, 30, 60, 90, and 144 FPS validates the selected table without retuning it.
+
+To reproduce the checked audit and generated C#:
+
+```powershell
+& "$env:TEMP\yucp-avt-venv\Scripts\python.exe" Tools\AdvancedVisemeTraining\train_oculus_viseme_halo.py all --cache-dir "$env:LOCALAPPDATA\YUCP\AdvancedVisemeTraining\SPIRE_EMA_CORPUS"
+```
+
+Generated outputs:
+
+- `Tools/AdvancedVisemeTraining/Generated/advanced_viseme_oculus_halo.json` — complete pins, split counts, cardinality/strength grids, support diagnostics, native-clock metrics, and render-rate audits.
+- `Packages/com.yucp.components/Runtime/Components/Data/Generated/AdvancedVisemeOculusHalo.generated.cs` — the compact build-time row table and provenance API.
+
+The reviewed development fit selects `k = 5` and `h = 0.79`. This audit emits the sparse static support used by the duration model below. Its historical render comparison uses the then-current 24 ms observer and `0.85` fast-stage lead; those values are retained in this audit for reproducibility and are not the current speech-only runtime defaults.
+
+The table is a conditional visual estimate, not recovered VRChat data or a phoneme classifier. It cannot infer distinctions absent from the hard winner and contains no audio or per-frame traces.
+
+## Duration-conditioned causal Oculus trajectory
+
+`train_oculus_viseme_dynamics.py` fits the evolution that a static winner-conditioned barycenter cannot represent. For each current hard winner it learns five nonnegative, sum-to-one control points. The first four form a 168 ms cubic Bezier; the fifth supplies a positive linear continuation to 224 ms. The objective combines pose error, first-difference error, boundary anchors, cubic curvature, seam continuity, and terminal-difference penalties. Candidate replay uses Unity's actual fixed-duration state transitions at 15, 30, 60, 90, and 144 FPS, including nested destination interruptions. Hyperparameters and timing were frozen by nested speaker cross-validation; fit speakers determine coefficients, development speakers enforce fixed acceptance gates, and held-out speakers are report-only.
+
+This follows the trajectory-modeling principle of relating static and dynamic speech features described by [Tokuda, Zen, and Kitamura](https://www.isca-archive.org/eurospeech_2003/tokuda03_eurospeech.html), the visual-speech application of dynamic trajectory generation by [Tamura et al.](https://www.isca-archive.org/avsp_1998/tamura98_avsp.html), and the broader evidence for learned viseme curves in [Bao et al.](https://arxiv.org/abs/2301.06059). Explicit-duration speech models motivate using elapsed winner time rather than a single static state ([Zen et al.](https://www.isca-archive.org/interspeech_2004/zen04b_interspeech.html)); recent phonetic-context work reports that independent frame reconstruction produces jitter and that a five-frame motion window improves viseme transitions ([Kim and Kim](https://arxiv.org/abs/2507.20568)). Dynamic-viseme research likewise evaluates mean absolute jerk rather than pose error alone ([Li, Huang, and Li](https://arxiv.org/abs/2604.01756)). YUCP does not deploy those neural systems: it distils their continuous-trajectory principle into a bounded causal positive spline that Unity Animator can evaluate natively.
+
+At build time, the cubic Bernstein coordinate is represented exactly by Hermite endpoint tangents `3(P1-P0)/T` and `3(P3-P2)/T`; a third key continues linearly from `P3` to `P4`. Existing decoder states provide elapsed state time. Pairwise 72 ms destination-interruptible transitions convexly blend the still-advancing source and destination motions, including a second winner change before the first transition completes. The no-tracker public simplex and physical mouth consume this curve directly. Hard identity, Beta context, face-tracking fusion, and the full-tracking endpoint do not use this elapsed target.
+
+To reproduce the checked audit and generated C# from the reviewed Oculus cache:
+
+```powershell
+& "$env:TEMP\yucp-avt-venv\Scripts\python.exe" Tools\AdvancedVisemeTraining\train_oculus_viseme_dynamics.py train
+```
+
+Generated outputs:
+
+- `Tools/AdvancedVisemeTraining/Generated/advanced_viseme_oculus_dynamics.json` — pins, constrained control points, selection gates, development diagnostics, held-out reports, and render-rate audits.
+- `Packages/com.yucp.components/Runtime/Components/Data/Generated/AdvancedVisemeOculusDynamics.generated.cs` — the compact five-control runtime table and provenance API.
+
+Every one of the six inner and three outer timing-selection folds chose the 224 ms trajectory with a 72 ms transition. Relative to the earlier 128 ms direct cubic, outer-fold false plateaus fell by 64-67%, first- through third-difference error by roughly 2-5%, the 99.9th-percentile step by 4-5%, and maximum L1 step by about 7%, with a 4-5% pose-MSE tradeoff. The untouched held-out aggregate at 30-144 FPS reports pose MSE `0.00610`, first-/second-/third-difference MSE `0.00222`/`0.00380`/`0.00981`, false-plateau rate `0.02046`, and maximum L1 step `0.63675`. These are offline corpus metrics, not a perceptual user study. The hard winner has already discarded the native 15-float frame, so exact native reconstruction remains impossible; elapsed winner time supplies a conditional trajectory, not future-phone anticipation.
+
+The generated curve reuses the existing decoder states and adds no synced bit or mesh operation. Linear viseme-to-articulator rows are commuted into the same decoder clips, so the calibrated basis and residual both consume one temporal epoch instead of paying for a runtime matrix or a delayed observer copy. Face-tracking inputs and the full-authority endpoint remain unchanged.
+
 ## Deterministic subset and evaluation
 
 Prompt IDs use the full-period affine permutation

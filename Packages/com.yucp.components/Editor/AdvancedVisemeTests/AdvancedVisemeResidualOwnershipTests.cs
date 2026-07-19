@@ -132,20 +132,39 @@ namespace YUCP.Components.Editor.Tests
                     });
 
                 var parameters = result.controller.parameters.Select(item => item.name).ToArray();
+                var internalPrefix = component.NormalizedPrefix + "/_Internal/";
+                string ResolveGeneratedParameter(string relative)
+                {
+                    var parameter = internalPrefix + relative;
+                    var mappings = result.optimizerReport?.internedParameterMappings;
+                    var visited = new HashSet<string>(StringComparer.Ordinal);
+                    while (mappings != null &&
+                           mappings.TryGetValue(parameter, out var representative))
+                    {
+                        Assert.That(visited.Add(parameter), Is.True,
+                            "Optimizer congruence mappings contain a cycle at " +
+                            parameter + ".");
+                        parameter = representative;
+                    }
+                    Assert.That(parameters, Does.Contain(parameter),
+                        $"Generated ownership parameter '{relative}' resolved to " +
+                        $"missing representative '{parameter}'.");
+                    return parameter;
+                }
                 var jawGain = result.trackingGainParameters[AdvancedVisemeArticulator.JawOpen];
                 var lipGain = result.trackingGainParameters[AdvancedVisemeArticulator.LipClose];
-                var jawYield = parameters.Single(name => name.EndsWith(
-                    "/Residual/Ownership/JawOpen/Yield", StringComparison.Ordinal));
-                var lipYield = parameters.Single(name => name.EndsWith(
-                    "/Residual/Ownership/LipClose/Yield", StringComparison.Ordinal));
-                var primaryJawProjected = parameters.Single(name => name.EndsWith(
-                    "/Primary/Ownership/0/Subtract/Projected", StringComparison.Ordinal));
-                var primaryLipProjected = parameters.Single(name => name.EndsWith(
-                    "/Primary/Ownership/1/Add/Projected", StringComparison.Ordinal));
-                var linkedJawProjected = parameters.Single(name => name.EndsWith(
-                    "/LinkedRenderer/0/Ownership/0/Subtract/Projected", StringComparison.Ordinal));
-                var linkedLipProjected = parameters.Single(name => name.EndsWith(
-                    "/LinkedRenderer/0/Ownership/1/Subtract/Projected", StringComparison.Ordinal));
+                var jawYield = ResolveGeneratedParameter(
+                    "Residual/Ownership/JawOpen/Yield");
+                var lipYield = ResolveGeneratedParameter(
+                    "Residual/Ownership/LipClose/Yield");
+                var primaryJawProjected = ResolveGeneratedParameter(
+                    "Primary/Ownership/0/Subtract/Projected");
+                var primaryLipProjected = ResolveGeneratedParameter(
+                    "Primary/Ownership/1/Add/Projected");
+                var linkedJawProjected = ResolveGeneratedParameter(
+                    "LinkedRenderer/0/Ownership/0/Subtract/Projected");
+                var linkedLipProjected = ResolveGeneratedParameter(
+                    "LinkedRenderer/0/Ownership/1/Subtract/Projected");
                 Assert.That(parameters.Any(name =>
                         name.Contains("/Ownership/", StringComparison.Ordinal) &&
                         name.EndsWith("/Correction", StringComparison.Ordinal)),

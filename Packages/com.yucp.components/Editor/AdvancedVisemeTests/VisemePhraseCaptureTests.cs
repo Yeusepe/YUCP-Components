@@ -118,6 +118,41 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void NestedLosslessScopesRemainActiveUntilTheLastOwnerDisposes()
+        {
+            var root = new GameObject("Nested Lossless Capture Test");
+            try
+            {
+                var emulator = root.AddComponent<VisemeTestEmulatorData>();
+                var first = VisemeTestPreviewSession.BeginLosslessAnalysis(emulator);
+                var second = VisemeTestPreviewSession.BeginLosslessAnalysis(emulator);
+                try
+                {
+                    Assert.That(VisemeTestPreviewSession.MicrophoneBufferSeconds(
+                        emulator), Is.EqualTo(
+                        VisemeTestPreviewSession.LosslessMicrophoneBufferSeconds));
+                    first.Dispose();
+                    Assert.That(VisemeTestPreviewSession.MicrophoneBufferSeconds(
+                        emulator), Is.EqualTo(
+                        VisemeTestPreviewSession.LosslessMicrophoneBufferSeconds));
+                    second.Dispose();
+                    Assert.That(VisemeTestPreviewSession.MicrophoneBufferSeconds(
+                        emulator), Is.EqualTo(
+                        VisemeTestPreviewSession.PreviewMicrophoneBufferSeconds));
+                }
+                finally
+                {
+                    first.Dispose();
+                    second.Dispose();
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
         public void EnrollmentRequiresExactlyFourUsefulTakes()
         {
             var takes = new List<VisemePhraseCapturedTake>

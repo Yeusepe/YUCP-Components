@@ -603,7 +603,7 @@ namespace YUCP.Components.Editor
                 value => value, value => value,
                 "How boldly speech moves the mouth. Face tracking still owns movement it actually measures.");
             simpleSpeechLivelinessSlider = AddSimpleProfileSlider(
-                "simple-speech-liveliness", "Speech Liveliness", "speechLiveliness", 0.5f,
+                "simple-speech-liveliness", "Speech Liveliness", "speechLiveliness", 0f,
                 value => value, value => value,
                 "Keeps speech-only mouth shapes quick and distinct. Lower is calmer; higher is livelier. Tracked movement stays unchanged.");
             simpleQuietSpeechSlider = AddSimpleProfileSlider(
@@ -611,7 +611,7 @@ namespace YUCP.Components.Editor
                 value => value, value => value,
                 "Keeps mouth shapes visible while speaking softly or mumbling. This does not change the microphone threshold.");
             simpleReactionSpeedSlider = AddSimpleProfileSlider(
-                "simple-reaction-speed", "Reaction Speed", "visemeResponseSeconds", 0.024f,
+                "simple-reaction-speed", "Reaction Speed", "visemeResponseSeconds", 0.017f,
                 ReactionSpeedFromSeconds, SecondsFromReactionSpeed,
                 "How quickly the mouth catches each new sound. Faster is crisper; slower is softer.");
             simplePauseStabilitySlider = AddSimpleProfileSlider(
@@ -1386,11 +1386,11 @@ namespace YUCP.Components.Editor
             RefreshSimpleProfileSlider(
                 simpleSpeechMovementSlider, "speechMotionStrength", 1f, value => value);
             RefreshSimpleProfileSlider(
-                simpleSpeechLivelinessSlider, "speechLiveliness", 0.5f, value => value);
+                simpleSpeechLivelinessSlider, "speechLiveliness", 0f, value => value);
             RefreshSimpleProfileSlider(
                 simpleQuietSpeechSlider, "quietSpeechFloor", 0.55f, value => value);
             RefreshSimpleProfileSlider(
-                simpleReactionSpeedSlider, "visemeResponseSeconds", 0.024f,
+                simpleReactionSpeedSlider, "visemeResponseSeconds", 0.017f,
                 ReactionSpeedFromSeconds);
             RefreshSimpleProfileSlider(
                 simplePauseStabilitySlider, "speechHangoverSeconds", 0.16f,

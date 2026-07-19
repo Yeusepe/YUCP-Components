@@ -45,6 +45,9 @@ namespace YUCP.Components.Editor
             public int removedCongruentCurves;
             public int liveInternalParameters;
             public int deadInternalParameters;
+            internal readonly Dictionary<string, string>
+                internedParameterMappings =
+                    new Dictionary<string, string>(StringComparer.Ordinal);
             public readonly Dictionary<string, int> removedCurvesByGroup =
                 new Dictionary<string, int>(StringComparer.Ordinal);
         }
@@ -324,6 +327,7 @@ namespace YUCP.Components.Editor
                 foreach (var duplicate in members.Skip(1))
                 {
                     rename[duplicate] = representative;
+                    report.internedParameterMappings[duplicate] = representative;
                     report.internedCongruentParameters++;
                     foreach (var site in sites[duplicate])
                     {
