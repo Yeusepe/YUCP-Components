@@ -5,7 +5,6 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
-using System.Text;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -743,125 +742,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             Directory.CreateDirectory(destinationDirectory);
 
             using var fileStream = File.OpenRead(unityPackagePath);
-            using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
-            byte[] header = new byte[512];
-            while (TryReadTarHeader(gzipStream, header))
+            TarGZipArchiveExtractor.Extract(fileStream, entryName =>
             {
-                string entryName = ReadTarString(header, 0, 100);
-                if (string.IsNullOrEmpty(entryName))
-                {
-                    continue;
-                }
-
-                long entrySize = ReadTarOctal(header, 124, 12);
-                char entryType = (char)header[156];
                 string destinationPath = GetValidatedExtractionPath(destinationDirectory, entryName, unityPackagePath);
-                bool isDirectory = entryType == '5' || entryName.EndsWith("/", StringComparison.Ordinal);
-                if (isDirectory)
-                {
-                    EnsureCreatorFriendlyPathLength(destinationPath, packageLabel);
-                    Directory.CreateDirectory(destinationPath);
-                    continue;
-                }
-
                 EnsureCreatorFriendlyPathLength(destinationPath, packageLabel);
-                string parentDirectory = Path.GetDirectoryName(destinationPath);
-                if (!string.IsNullOrEmpty(parentDirectory))
-                {
-                    EnsureCreatorFriendlyPathLength(parentDirectory, packageLabel);
-                    Directory.CreateDirectory(parentDirectory);
-                }
-
-                using Stream output = File.Create(destinationPath);
-                CopyTarEntryContents(gzipStream, output, entrySize);
-                SkipTarPadding(gzipStream, entrySize);
-            }
-        }
-
-        private static bool TryReadTarHeader(Stream stream, byte[] header)
-        {
-            int totalRead = 0;
-            while (totalRead < header.Length)
-            {
-                int bytesRead = stream.Read(header, totalRead, header.Length - totalRead);
-                if (bytesRead == 0)
-                {
-                    if (totalRead == 0)
-                    {
-                        return false;
-                    }
-
-                    throw new InvalidDataException("Authorized unitypackage archive ended before the next TAR header was complete.");
-                }
-
-                totalRead += bytesRead;
-            }
-
-            return header.Any(value => value != 0);
-        }
-
-        private static string ReadTarString(byte[] header, int offset, int length)
-        {
-            return Encoding.ASCII.GetString(header, offset, length).Trim('\0', ' ');
-        }
-
-        private static long ReadTarOctal(byte[] header, int offset, int length)
-        {
-            string rawValue = ReadTarString(header, offset, length);
-            if (string.IsNullOrEmpty(rawValue))
-            {
-                return 0;
-            }
-
-            try
-            {
-                return Convert.ToInt64(rawValue, 8);
-            }
-            catch (FormatException ex)
-            {
-                throw new InvalidDataException(
-                    $"Authorized unitypackage TAR header contained an invalid size field '{rawValue}'.",
-                    ex);
-            }
-        }
-
-        private static void CopyTarEntryContents(Stream input, Stream output, long bytesToCopy)
-        {
-            byte[] buffer = new byte[81920];
-            long remaining = bytesToCopy;
-            while (remaining > 0)
-            {
-                int read = input.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
-                if (read == 0)
-                {
-                    throw new InvalidDataException("Authorized unitypackage archive ended before a TAR entry was fully read.");
-                }
-
-                output.Write(buffer, 0, read);
-                remaining -= read;
-            }
-        }
-
-        private static void SkipTarPadding(Stream input, long entrySize)
-        {
-            long remainder = entrySize % 512;
-            if (remainder == 0)
-            {
-                return;
-            }
-
-            long padding = 512 - remainder;
-            byte[] buffer = new byte[512];
-            while (padding > 0)
-            {
-                int read = input.Read(buffer, 0, (int)Math.Min(buffer.Length, padding));
-                if (read == 0)
-                {
-                    throw new InvalidDataException("Authorized unitypackage archive ended before TAR padding was fully skipped.");
-                }
-
-                padding -= read;
-            }
+                return destinationPath;
+            });
         }
 
         private static void MoveDirectoryIntoPlace(string sourceDirectory, string destinationDirectory)
