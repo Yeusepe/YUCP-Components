@@ -1,0 +1,21 @@
+{
+    "name": "com.yucp.importer.Editor.Tests",
+    "rootNamespace": "YUCP.Importer.Editor.Tests",
+    "references": [
+        "com.yucp.importer.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}

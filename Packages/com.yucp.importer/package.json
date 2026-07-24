@@ -1,9 +1,12 @@
 {
   "name": "com.yucp.importer",
   "displayName": "YUCP Package Importer",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "unity": "2022.3",
   "description": "Intercepts Unity package imports to verify signatures and validate licenses for YUCP-signed packages. Required for importing protected packages with FBX-derived content.",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  },
   "author": {
     "name": "YUCP Club",
     "url": "http://vpm.yucp.club/"

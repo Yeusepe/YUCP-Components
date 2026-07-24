@@ -2,8 +2,6 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
-using ICSharpCode.SharpZipLib.GZip;
-using ICSharpCode.SharpZipLib.Tar;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -307,41 +305,21 @@ namespace YUCP.Importer.Editor.PackageManager
             try
             {
                 using var memory = new MemoryStream(unityPackageBytes, writable: false);
-                using var gzipStream = new GZipInputStream(memory);
-                using var tarStream = new TarInputStream(gzipStream, Encoding.UTF8);
-                TarEntry entry;
-                while ((entry = tarStream.GetNextEntry()) != null)
+                Core.TarGZipArchiveExtractor.Extract(memory, entryName =>
                 {
-                    if (entry == null || string.IsNullOrEmpty(entry.Name))
-                        continue;
-
                     if (!Core.RuntimeExecutionSecurityUtility.TryResolveContainedDirectoryPath(
                             extractRoot,
-                            entry.Name,
+                            entryName,
                             "Authorized unitypackage entry",
                             out string destinationPath,
-                            out error))
+                            out string pathError))
                     {
-                        return false;
+                        throw new InvalidDataException(pathError);
                     }
-
-                    if (entry.IsDirectory)
-                    {
-                        Directory.CreateDirectory(destinationPath);
-                        continue;
-                    }
-
-                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? extractRoot);
-                    using FileStream outputStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-                    tarStream.CopyEntryContents(outputStream);
-                }
+                    return destinationPath;
+                });
 
                 return true;
-            }
-            catch (TarException ex)
-            {
-                error = $"Authorized unitypackage archive could not be extracted: {ex.Message}";
-                return false;
             }
             catch (InvalidDataException ex)
             {

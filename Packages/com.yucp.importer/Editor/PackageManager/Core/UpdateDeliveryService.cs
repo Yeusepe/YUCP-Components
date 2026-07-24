@@ -274,6 +274,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new Exception("Alias install plan is missing.");
             }
 
+            if (string.Equals(installPlan.kind, AliasInstallPlanKind, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The alias-install-plan-v1 adapter is read-only. " +
+                    "A signed InstallSessionV2 and the native transfer helper are required before project mutation.");
+            }
+
             if (!string.Equals(installPlan.kind, AliasInstallPlanKind, StringComparison.Ordinal))
             {
                 throw new Exception("Alias install plan response used an unexpected contract kind.");

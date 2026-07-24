@@ -10,6 +10,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 {
     internal static class CouplingRuntimeShimService
     {
+        internal static bool IsProtectedMaterializationPlatformSupported(
+            RuntimePlatform platform)
+        {
+            return platform == RuntimePlatform.WindowsEditor;
+        }
+
         internal static RuntimeStatus GetRuntimeStatus()
         {
             var status = new RuntimeStatus
@@ -47,6 +53,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         internal static bool TryValidateProtectedMaterializationRuntime(out string error)
         {
+            return TryValidateProtectedMaterializationRuntime(
+                Application.platform,
+                out error);
+        }
+
+        internal static bool TryValidateProtectedMaterializationRuntime(
+            RuntimePlatform platform,
+            out string error)
+        {
+            if (!IsProtectedMaterializationPlatformSupported(platform))
+            {
+                error = "Protected materialization requires the Windows Editor.";
+                return false;
+            }
+
             RuntimeStatus status = GetRuntimeStatus();
             if (string.Equals(status.status, "healthy", StringComparison.OrdinalIgnoreCase) &&
                 status.supportsProtectedImport &&
