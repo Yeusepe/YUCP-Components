@@ -139,46 +139,44 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void LegacyAliasInstallPlanCannotMutateTheProject()
+        public void MaterializationReceiptGoldenVectorBindsExactServerRendition()
         {
-            bool mutationAttempted = false;
-            UpdateDeliveryServiceTestHooks.ApplyAuthorizedInstallPlanHandler =
-                _ => mutationAttempted = true;
-            UpdateDeliveryServiceTestHooks.PersistInstallStateHandler = _ => { };
-            UpdateDeliveryServiceTestHooks.RegisterInstalledPackageHandler = _ => { };
+            GoldenVectorDocument document = LoadVectors();
+            GoldenVector vector = document.vectors.Single(
+                item => item.purpose == PackageContractV2.MaterializationReceiptPurpose);
 
-            try
-            {
-                var plan = new UpdateDeliveryService.AliasInstallPlan
+            MaterializationReceiptV2 receipt = MaterializationReceiptV2Verifier.VerifyAndValidate(
+                ParseHex(vector.coseSign1Hex),
+                ParseHex(document.keyIdHex),
+                ParseHex(document.publicKeyHex),
+                new MaterializationReceiptValidationContext
                 {
-                    kind = UpdateDeliveryService.AliasInstallPlanKind,
-                    repositoryUrl = "https://api.example.test/vpm.json",
-                    packages = new[]
-                    {
-                        new UpdateDeliveryService.AliasInstallPlanPackage
-                        {
-                            packageId = "creator.avatar-tools",
-                            version = "1.2.3",
-                            sourceKind = "zip",
-                            packageSha256 = new string('1', 64),
-                            downloadAuthorizationUrl =
-                                "https://api.example.test/v1/packages/authorize",
-                        },
-                    },
-                };
+                    Now = 1300,
+                    ProductId = "product-1",
+                    ReleaseRoot = RepeatByte(0x11),
+                    RenditionSha256 = RepeatByte(0x77),
+                    RenditionBytes = 2048,
+                });
 
-                bool applied = UpdateDeliveryService.TryApplyAuthorizedInstallPlan(
-                    plan,
-                    out string error);
+            Assert.That(receipt.ReceiptId, Is.EqualTo("receipt-1"));
+            Assert.That(receipt.Rendition.StorageRole, Is.EqualTo("renditions"));
+            Assert.That(receipt.Rendition.ProviderVersion, Is.EqualTo("01JVERSION"));
+            Assert.That(receipt.OutputFiles.Select(file => file.NormalizedPath), Is.EqualTo(
+                new[] { "Assets/Product/protected.png" }));
 
-                Assert.That(applied, Is.False);
-                Assert.That(error, Does.Contain("read-only"));
-                Assert.That(mutationAttempted, Is.False);
-            }
-            finally
+            var substitutedRendition = new MaterializationReceiptValidationContext
             {
-                UpdateDeliveryServiceTestHooks.Reset();
-            }
+                Now = 1300,
+                ProductId = "product-1",
+                ReleaseRoot = RepeatByte(0x11),
+                RenditionSha256 = RepeatByte(0x66),
+                RenditionBytes = 2048,
+            };
+            Assert.Throws<FormatException>(() => MaterializationReceiptV2Verifier.VerifyAndValidate(
+                ParseHex(vector.coseSign1Hex),
+                ParseHex(document.keyIdHex),
+                ParseHex(document.publicKeyHex),
+                substitutedRendition));
         }
 
         [Test]

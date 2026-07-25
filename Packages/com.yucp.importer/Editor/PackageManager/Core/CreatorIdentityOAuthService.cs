@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
-using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -10,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -20,8 +20,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         private const string UnityOAuthScopeRejectionMarker = "This YUCP server has not enabled Unity purchase verification yet.";
         private const string CurrentSessionVersion = "2";
-        private const string LegacySharedStoragePrefix = "YUCP_OAuth";
-        private const string LegacySharedSessionFileName = "unity-oauth-session-v2.dat";
         private const int AccessTokenSkewSeconds = 60;
         private static readonly object SessionLock = new object();
         private static Task _backgroundRefreshTask;
@@ -65,7 +63,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static readonly OAuthDomainConfig Domain = new OAuthDomainConfig(
             clientId: "yucp-unity-user",
-            requestedScopes: new[] { "verification:read", "products:read" },
+            requestedScopes: new[]
+            {
+                "verification:read",
+                "products:read",
+                "offline_access",
+            },
             requiredScope: "verification:read",
             editorPrefsPrefix: "YUCP_UserOAuth",
             sessionFileName: "unity-user-oauth-session-v2.dat",
@@ -220,13 +223,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
             }
 
-            if (TryGetLegacyAccessToken(out string legacyToken, out long legacyExpiry))
-            {
-                Debug.LogWarning(
-                    $"[YUCP OAuth] Discarding legacy shared Unity session because it cannot prove required scope '{Domain.RequiredScope}'.");
-                ClearLegacySharedSessionArtifacts();
-            }
-
             return null;
         }
 
@@ -261,7 +257,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             ClearAuthorizationCaches(installedPackages);
             ClearPersistentSession();
             ClearCurrentDomainKeys();
-            ClearLegacySharedSessionArtifacts();
         }
 
         private static List<InstalledPackageInfo> LoadInstalledPackagesForCacheEviction()
@@ -273,7 +268,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         private static void ClearAuthorizationCaches(IReadOnlyList<InstalledPackageInfo> installedPackages)
         {
             var packageIds = new List<string>();
-            var protectedUnlockKeys = new List<(string packageId, string protectedAssetId)>();
 
             if (installedPackages != null)
             {
@@ -285,21 +279,29 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     }
 
                     packageIds.Add(package.packageId);
-
-                    string protectedAssetId = package.protectedPayload?.protectedAssetId;
-                    if (!string.IsNullOrWhiteSpace(protectedAssetId))
-                    {
-                        protectedUnlockKeys.Add((package.packageId, protectedAssetId));
-                    }
                 }
             }
 
             LicenseTokenCache.ClearAll(packageIds);
-            ProtectedAssetUnlockService.ClearAll(protectedUnlockKeys);
         }
 
-        public static async Task SignInAsync(
+        public static Task SignInAsync(
             string serverUrl,
+            Action onSuccess,
+            Action<string> onError,
+            bool focusUnityOnSuccess = true)
+        {
+            return SignInWithAuthorizationHandlerAsync(
+                serverUrl,
+                Application.OpenURL,
+                onSuccess,
+                onError,
+                focusUnityOnSuccess);
+        }
+
+        internal static async Task SignInWithAuthorizationHandlerAsync(
+            string serverUrl,
+            Action<string> onAuthorizationUrl,
             Action onSuccess,
             Action<string> onError,
             bool focusUnityOnSuccess = true)
@@ -330,20 +332,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 string state = Base64UrlEncode(stateBytes);
 
-                int port;
-                var probe = new TcpListener(IPAddress.Loopback, 0);
-                probe.Start();
-                port = ((IPEndPoint)probe.LocalEndpoint).Port;
-                probe.Stop();
-
-                string redirectUri = $"http://127.0.0.1:{port}/callback";
+                HttpListener listener = StartLoopbackListener(
+                    out string redirectUri);
                 string authUrl = BuildAuthUrl(serverUrl, codeChallenge, state, redirectUri);
-
-                var listener = new HttpListener();
-                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-                listener.Start();
-
-                Application.OpenURL(authUrl);
+                onAuthorizationUrl?.Invoke(authUrl);
 
                 HttpListenerContext context = null;
                 string authCode = null;
@@ -452,6 +444,47 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 Debug.LogError($"[YUCP OAuth] Sign-in exception: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                 onError?.Invoke($"Sign-in error: {ex.Message}");
             }
+        }
+
+        private static HttpListener StartLoopbackListener(
+            out string redirectUri)
+        {
+            const int attemptLimit = 10;
+            Exception lastError = null;
+            for (int attempt = 0; attempt < attemptLimit; attempt++)
+            {
+                int port;
+                var probe = new System.Net.Sockets.TcpListener(
+                    IPAddress.Loopback,
+                    0);
+                try
+                {
+                    probe.Start();
+                    port = ((IPEndPoint)probe.LocalEndpoint).Port;
+                }
+                finally
+                {
+                    probe.Stop();
+                }
+
+                var listener = new HttpListener();
+                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                try
+                {
+                    listener.Start();
+                    redirectUri = $"http://127.0.0.1:{port}/callback";
+                    return listener;
+                }
+                catch (HttpListenerException exception)
+                {
+                    lastError = exception;
+                    listener.Close();
+                }
+            }
+
+            throw new InvalidOperationException(
+                "A secure loopback callback listener could not start.",
+                lastError);
         }
 
         private static void QueueFocusRelevantWindows()
@@ -583,21 +616,39 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static OAuthSessionV2 BuildSessionFromTokenResponse(string tokenJson, OAuthSessionV2 previousSession)
         {
-            string accessToken = ExtractJsonString(tokenJson, "access_token");
+            JObject token;
+            try
+            {
+                token = JObject.Parse(tokenJson);
+            }
+            catch
+            {
+                return null;
+            }
+
+            string accessToken = token.Value<string>("access_token");
             if (string.IsNullOrEmpty(accessToken))
             {
                 return null;
             }
 
-            long accessTokenExpiresAt = ResolveExpiryTimestamp(tokenJson, "expires_in", "expires_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600 - AccessTokenSkewSeconds);
-            string refreshToken = ExtractJsonString(tokenJson, "refresh_token");
+            long accessTokenExpiresAt = ResolveExpiryTimestamp(
+                token,
+                "expires_in",
+                "expires_at",
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds() +
+                    3600 -
+                    AccessTokenSkewSeconds);
+            string refreshToken = token.Value<string>("refresh_token");
             if (string.IsNullOrEmpty(refreshToken))
             {
                 refreshToken = previousSession?.refreshToken;
             }
 
-            long refreshTokenExpiresAt = ResolveRefreshExpiryTimestamp(tokenJson, previousSession?.refreshTokenExpiresAt ?? 0);
-            string scope = ExtractJsonString(tokenJson, "scope");
+            long refreshTokenExpiresAt = ResolveRefreshExpiryTimestamp(
+                token,
+                previousSession?.refreshTokenExpiresAt ?? 0);
+            string scope = token.Value<string>("scope");
             if (string.IsNullOrEmpty(scope))
             {
                 scope = previousSession?.scope;
@@ -628,35 +679,46 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             };
         }
 
-        private static long ResolveExpiryTimestamp(string tokenJson, string expiresInKey, string expiresAtKey, long fallback)
+        private static long ResolveExpiryTimestamp(
+            JObject token,
+            string expiresInKey,
+            string expiresAtKey,
+            long fallback)
         {
-            string expiresAtRaw = ExtractJsonValue(tokenJson, expiresAtKey);
-            if (long.TryParse(expiresAtRaw, out long absoluteExpiry) && absoluteExpiry > 0)
+            long? absoluteExpiry = token.Value<long?>(expiresAtKey);
+            if (absoluteExpiry > 0)
             {
-                return absoluteExpiry;
+                return absoluteExpiry.Value;
             }
 
-            string expiresInRaw = ExtractJsonValue(tokenJson, expiresInKey);
-            if (int.TryParse(expiresInRaw, out int expiresInSeconds) && expiresInSeconds > 0)
+            int? expiresInSeconds = token.Value<int?>(expiresInKey);
+            if (expiresInSeconds > 0)
             {
-                return DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiresInSeconds - AccessTokenSkewSeconds;
+                return DateTimeOffset.UtcNow.ToUnixTimeSeconds() +
+                    expiresInSeconds.Value -
+                    AccessTokenSkewSeconds;
             }
 
             return fallback;
         }
 
-        private static long ResolveRefreshExpiryTimestamp(string tokenJson, long previousValue)
+        private static long ResolveRefreshExpiryTimestamp(
+            JObject token,
+            long previousValue)
         {
-            string refreshExpiresAtRaw = ExtractJsonValue(tokenJson, "refresh_token_expires_at");
-            if (long.TryParse(refreshExpiresAtRaw, out long absoluteExpiry) && absoluteExpiry > 0)
+            long? absoluteExpiry = token.Value<long?>(
+                "refresh_token_expires_at");
+            if (absoluteExpiry > 0)
             {
-                return absoluteExpiry;
+                return absoluteExpiry.Value;
             }
 
-            string refreshExpiresInRaw = ExtractJsonValue(tokenJson, "refresh_token_expires_in");
-            if (int.TryParse(refreshExpiresInRaw, out int expiresInSeconds) && expiresInSeconds > 0)
+            int? expiresInSeconds = token.Value<int?>(
+                "refresh_token_expires_in");
+            if (expiresInSeconds > 0)
             {
-                return DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiresInSeconds;
+                return DateTimeOffset.UtcNow.ToUnixTimeSeconds() +
+                    expiresInSeconds.Value;
             }
 
             return previousValue;
@@ -673,13 +735,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
             }
 
-            if (TryGetLegacyAccessToken(out string legacyToken, out long legacyExpiry))
-            {
-                Debug.LogWarning(
-                    $"[YUCP OAuth] Clearing legacy shared Unity session because it cannot prove required scope '{Domain.RequiredScope}'.");
-                ClearLegacySharedSessionArtifacts();
-            }
-
             session = null;
             return false;
         }
@@ -688,26 +743,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             session = LoadPersistentSession();
             return session != null;
-        }
-
-        private static bool TryGetLegacyAccessToken(out string token, out long expiry)
-        {
-            token = null;
-            expiry = 0;
-
-            if (!EditorPrefs.HasKey(GetLegacySharedKey("AccessToken")) || !EditorPrefs.HasKey(GetLegacySharedKey("TokenExpiry")))
-            {
-                return false;
-            }
-
-            token = EditorPrefs.GetString(GetLegacySharedKey("AccessToken"), string.Empty);
-            expiry = EditorPrefs.GetInt(GetLegacySharedKey("TokenExpiry"), 0);
-            if (string.IsNullOrEmpty(token))
-            {
-                return false;
-            }
-
-            return expiry > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + AccessTokenSkewSeconds;
         }
 
         private static bool HasUsableAccessToken(OAuthSessionV2 session)
@@ -807,7 +842,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             ClearCurrentDomainKeys();
-            ClearLegacySharedSessionArtifacts();
             PersistPresenceHints(session);
 
             if (!SupportsProtectedSessionStorage())
@@ -931,38 +965,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             EditorPrefs.DeleteKey(KeySessionVersion);
         }
 
-        private static string GetLegacySharedKey(string suffix)
-        {
-            return $"{LegacySharedStoragePrefix}_{suffix}";
-        }
-
-        private static void ClearLegacySharedSessionArtifacts()
-        {
-            EditorPrefs.DeleteKey(GetLegacySharedKey("AccessToken"));
-            EditorPrefs.DeleteKey(GetLegacySharedKey("TokenExpiry"));
-            EditorPrefs.DeleteKey(GetLegacySharedKey("UserId"));
-            EditorPrefs.DeleteKey(GetLegacySharedKey("DisplayName"));
-            EditorPrefs.DeleteKey(GetLegacySharedKey("SessionVersion"));
-
-            if (!SupportsProtectedSessionStorage())
-            {
-                return;
-            }
-
-            try
-            {
-                string legacySessionPath = GetLegacySharedSessionFilePath();
-                if (File.Exists(legacySessionPath))
-                {
-                    File.Delete(legacySessionPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP OAuth] Failed to clear legacy shared session: {ex.Message}");
-            }
-        }
-
         private static bool SupportsProtectedSessionStorage()
         {
 #if UNITY_EDITOR_WIN
@@ -976,12 +978,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             return Path.Combine(localAppData, "YUCP", "Auth", Domain.SessionFileName);
-        }
-
-        private static string GetLegacySharedSessionFilePath()
-        {
-            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            return Path.Combine(localAppData, "YUCP", "Auth", LegacySharedSessionFileName);
         }
 
 #if UNITY_EDITOR_WIN
@@ -1074,7 +1070,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return false;
             }
 
-            string error = ExtractJsonString(responseBody, "error");
+            string error = null;
+            try
+            {
+                error = JObject.Parse(responseBody).Value<string>("error");
+            }
+            catch
+            {
+            }
             if (string.Equals(error, "invalid_grant", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
@@ -1109,9 +1112,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        private static string BuildAuthUrl(string serverUrl, string codeChallenge, string state, string redirectUri)
+        internal static string BuildAuthUrl(
+            string serverUrl,
+            string codeChallenge,
+            string state,
+            string redirectUri)
         {
-            return $"{serverUrl.TrimEnd('/')}/api/yucp/oauth/authorize"
+            return $"{serverUrl.TrimEnd('/')}/api/auth/oauth2/authorize"
                 + $"?client_id={Uri.EscapeDataString(ClientId)}"
                 + "&response_type=code"
                 + $"&code_challenge={Uri.EscapeDataString(codeChallenge)}"
@@ -1150,95 +1157,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return result;
         }
 
-        private static string ExtractJsonString(string json, string key)
-        {
-            string needle = $"\"{key}\"";
-            int index = json.IndexOf(needle, StringComparison.Ordinal);
-            if (index < 0)
-            {
-                return null;
-            }
-
-            index += needle.Length;
-            while (index < json.Length && (json[index] == ' ' || json[index] == ':' || json[index] == '\t'))
-            {
-                index++;
-            }
-
-            if (index >= json.Length || json[index] != '"')
-            {
-                return null;
-            }
-
-            index++;
-            var builder = new StringBuilder();
-            while (index < json.Length && json[index] != '"')
-            {
-                if (json[index] == '\\' && index + 1 < json.Length)
-                {
-                    index++;
-                    switch (json[index])
-                    {
-                        case '"':
-                            builder.Append('"');
-                            break;
-                        case '\\':
-                            builder.Append('\\');
-                            break;
-                        case 'n':
-                            builder.Append('\n');
-                            break;
-                        case 'r':
-                            builder.Append('\r');
-                            break;
-                        case 't':
-                            builder.Append('\t');
-                            break;
-                        default:
-                            builder.Append(json[index]);
-                            break;
-                    }
-                }
-                else
-                {
-                    builder.Append(json[index]);
-                }
-
-                index++;
-            }
-
-            return builder.ToString();
-        }
-
-        private static string ExtractJsonValue(string json, string key)
-        {
-            string needle = $"\"{key}\"";
-            int index = json.IndexOf(needle, StringComparison.Ordinal);
-            if (index < 0)
-            {
-                return null;
-            }
-
-            index += needle.Length;
-            while (index < json.Length && (json[index] == ' ' || json[index] == ':' || json[index] == '\t'))
-            {
-                index++;
-            }
-
-            if (index >= json.Length)
-            {
-                return null;
-            }
-
-            var builder = new StringBuilder();
-            while (index < json.Length && json[index] != ',' && json[index] != '}' && json[index] != '\r' && json[index] != '\n')
-            {
-                builder.Append(json[index++]);
-            }
-
-            return builder.ToString().Trim().Trim('"');
-        }
-
         private static string ParseJwtClaim(string jwt, string claim)
         {
             try
@@ -1260,8 +1178,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         break;
                 }
 
-                string decoded = Encoding.UTF8.GetString(Convert.FromBase64String(payload));
-                return ExtractJsonString(decoded, claim);
+                string decoded = Encoding.UTF8.GetString(
+                    Convert.FromBase64String(payload));
+                return JObject.Parse(decoded).Value<string>(claim);
             }
             catch
             {

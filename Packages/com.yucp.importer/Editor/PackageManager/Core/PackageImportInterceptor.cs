@@ -37,6 +37,10 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             try
             {
+                if (Application.isBatchMode)
+                {
+                    return;
+                }
                 if (!PackageManagerRuntimeSettings.IsEnabled())
                 {
                     Debug.Log("[YUCP PackageManager] Package Manager is disabled in settings; import interception will not initialize.");

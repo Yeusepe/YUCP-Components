@@ -6,7 +6,7 @@ namespace YUCP.Importer.Editor.PackageManager
     [Serializable]
     public class AliasPackageInstallStateManifest
     {
-        public string formatVersion = "1";
+        public string formatVersion = "2";
         public string aliasId = "";
         public string aliasVersion = "";
         public string packageId = "";
@@ -14,9 +14,6 @@ namespace YUCP.Importer.Editor.PackageManager
         public string packageDisplayName = "";
         public string installedVersion = "";
         public string installedAt = "";
-        public AliasResolvedReleaseIdentity resolvedRelease = new AliasResolvedReleaseIdentity();
-        public AliasResolvedArtifactIdentity resolvedArtifact = new AliasResolvedArtifactIdentity();
-        public AliasInstallPlanMetadata installPlan = new AliasInstallPlanMetadata();
         public List<string> managedPaths = new List<string>();
         public List<string> generatedPaths = new List<string>();
         public List<string> sharedPaths = new List<string>();

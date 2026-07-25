@@ -50,7 +50,6 @@ namespace YUCP.Importer.Editor.PackageManager
                 assetBreakdown = CloneAssetBreakdown(metadata.assetBreakdown),
                 exportDate = metadata.exportDate ?? string.Empty,
                 fileHashes = CloneFileHashes(metadata.fileHashes),
-                protectedPayload = metadata.protectedPayload?.Clone(),
                 aliasPackage = metadata.aliasPackage?.Clone(),
                 packageId = packageId ?? string.Empty,
                 archiveSha256 = archiveSha256 ?? string.Empty,

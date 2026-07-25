@@ -1154,11 +1154,11 @@
 }
 
 /* Licensed / protected badge */
-.yucp-tree-badge-protected {
+.yucp-tree-badge-licensed {
     background-color: rgba(99, 130, 220, 0.26);
 }
 
-.yucp-tree-badge-protected Label {
+.yucp-tree-badge-licensed Label {
     color: rgba(210, 225, 255, 1.0);
 }
 
@@ -1354,7 +1354,7 @@
 /* ============================================================================
    PROTECTED SUMMARY — amber left-border accent, minimal chrome
    ============================================================================ */
-.yucp-protected-summary-card {
+.yucp-licensed-summary-card {
     flex-direction: column;
     background-color: rgba(250, 176, 5, 0.04);
     border-top-left-radius: 8px;
@@ -1373,14 +1373,14 @@
     margin-bottom: 12px;
 }
 
-.yucp-protected-summary-title {
+.yucp-licensed-summary-title {
     font-size: 9px;
     -unity-font-style: bold;
     color: rgba(250, 176, 5, 0.65);
     margin-bottom: 0;
 }
 
-.yucp-protected-summary-count {
+.yucp-licensed-summary-count {
     font-size: 10px;
     color: rgba(250, 176, 5, 0.45);
     flex-shrink: 0;
@@ -1390,12 +1390,12 @@
     display: none;
 }
 
-.yucp-protected-preview-list {
+.yucp-licensed-preview-list {
     flex-direction: column;
     margin-top: 4px;
 }
 
-.yucp-protected-preview-item {
+.yucp-licensed-preview-item {
     flex-direction: row;
     align-items: center;
     background-color: transparent;
@@ -1409,7 +1409,7 @@
     margin-bottom: 0;
 }
 
-.yucp-protected-preview-icon {
+.yucp-licensed-preview-icon {
     font-size: 10px;
     color: rgba(250, 176, 5, 0.45);
     margin-right: 6px;
@@ -1418,7 +1418,7 @@
     -unity-text-align: middle-center;
 }
 
-.yucp-protected-preview-more {
+.yucp-licensed-preview-more {
     color: rgba(210, 210, 216, 0.30);
     font-size: 10px;
     margin-top: 3px;

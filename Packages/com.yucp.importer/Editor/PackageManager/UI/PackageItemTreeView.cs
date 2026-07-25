@@ -216,9 +216,9 @@ namespace YUCP.Importer.Editor.PackageManager
             nameLabel.tooltip = node.FullPath;
             content.Add(nameLabel);
 
-            if (HasProtectedDescendants(node))
+            if (HasLicensedDescendants(node))
             {
-                content.Add(CreateBadge("Licensed", "yucp-tree-badge-protected"));
+                content.Add(CreateBadge("Licensed", "yucp-tree-badge-licensed"));
             }
 
             row.Add(content);
@@ -301,9 +301,9 @@ namespace YUCP.Importer.Editor.PackageManager
             nameLabel.tooltip = node.FullPath;
             content.Add(nameLabel);
 
-            if (PackageManagerWindow.IsProtectedPayloadPath(node.FullPath))
+            if (PackageManagerWindow.IsLicensedAssetPath(node.FullPath))
             {
-                content.Add(CreateBadge("Licensed", "yucp-tree-badge-protected"));
+                content.Add(CreateBadge("Licensed", "yucp-tree-badge-licensed"));
             }
 
             if (hasConflict || exists || isChanged)
@@ -320,16 +320,16 @@ namespace YUCP.Importer.Editor.PackageManager
             return row;
         }
 
-        private bool HasProtectedDescendants(PackageItemNode node)
+        private bool HasLicensedDescendants(PackageItemNode node)
         {
             foreach (var child in node.Children)
             {
-                if (!child.IsFolder && PackageManagerWindow.IsProtectedPayloadPath(child.FullPath))
+                if (!child.IsFolder && PackageManagerWindow.IsLicensedAssetPath(child.FullPath))
                 {
                     return true;
                 }
 
-                if (child.IsFolder && HasProtectedDescendants(child))
+                if (child.IsFolder && HasLicensedDescendants(child))
                 {
                     return true;
                 }

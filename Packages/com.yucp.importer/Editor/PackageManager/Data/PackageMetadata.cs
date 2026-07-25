@@ -34,7 +34,6 @@ namespace YUCP.Importer.Editor.PackageManager
         public string exportDate = "";
         public List<PackageFileHashEntry> fileHashes = new List<PackageFileHashEntry>();
 
-        public ProtectedPayloadDescriptor protectedPayload;
         public AliasPackageContract aliasPackage;
 
         public PackageMetadata()
