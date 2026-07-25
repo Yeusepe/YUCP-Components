@@ -1,7 +1,4 @@
-using System;
-using System.IO;
 using NUnit.Framework;
-using UnityEngine;
 using YUCP.Importer.Editor.PackageManager;
 using YUCP.Importer.Editor.PackageManager.Core;
 
@@ -10,28 +7,18 @@ namespace YUCP.Importer.Editor.Tests
     public sealed class VpmAliasTriggerTests
     {
         [Test]
-        public void OfficialVpmAliasIsRegisteredAndEntersTheAuthorizedFlow()
+        public void OfficialVpmAliasContractEntersTheAuthorizedFlow()
         {
-            string packageId = Environment.GetEnvironmentVariable(
-                "YUCP_VPM_ALIAS_TRIGGER_PACKAGE_ID");
-            string expectedAliasId = Environment.GetEnvironmentVariable(
-                "YUCP_VPM_ALIAS_TRIGGER_ALIAS_ID");
-            if (string.IsNullOrWhiteSpace(packageId) ||
-                string.IsNullOrWhiteSpace(expectedAliasId))
-            {
-                Assert.Ignore("The focused VPM alias trigger environment is not active.");
-            }
+            const string packageId = "com.yucp.jammr.alias";
+            const string expectedAliasId = "jammr";
+            const string packageJson = "{\"name\":\"com.yucp.jammr.alias\"," +
+                "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"," +
+                "\"catalogProductIds\":[\"jinxxy-jammr\",\"gumroad-jammr\"]}}";
 
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            string packageJsonPath = Path.Combine(
-                projectRoot,
-                "Packages",
-                packageId,
-                "package.json");
-            Assert.That(File.Exists(packageJsonPath), Is.True);
-            string packageJson = File.ReadAllText(packageJsonPath);
-
-            bool built = AliasPackageAutoInstaller.TryBuildAliasPackageMetadata(
+            bool built = AliasPackageDiscovery.TryBuildMetadata(
                 packageId,
                 packageJson,
                 out PackageMetadata metadata,
@@ -42,10 +29,26 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(metadata.aliasPackage.aliasId, Is.EqualTo(expectedAliasId));
             Assert.That(
                 metadata.aliasPackage.installStrategy,
-                Is.EqualTo(UpdateDeliveryService.ServerAuthorizedInstallStrategy));
-            Assert.That(
-                AliasPackageAutoInstaller.AnyServerAuthorizedAliasPackageRegistered(),
-                Is.True);
+                Is.EqualTo(AliasPackageDiscovery.ServerAuthorizedInstallStrategy));
+        }
+
+        [Test]
+        public void LegacyInstallPlanMetadataIsRejected()
+        {
+            const string packageJson = "{\"name\":\"com.example.alias\",\"version\":\"1.0.0\"," +
+                "\"displayName\":\"Alias\",\"yucp\":{\"kind\":\"alias-v1\"," +
+                "\"aliasId\":\"example\",\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\",\"catalogProductIds\":[\"catalog-1\"]," +
+                "\"installPlan\":{\"id\":\"unsigned\"}}}";
+
+            bool built = AliasPackageDiscovery.TryBuildMetadata(
+                "com.example.alias",
+                packageJson,
+                out _,
+                out string error);
+
+            Assert.That(built, Is.False);
+            Assert.That(error, Does.Contain("removed delivery field"));
         }
     }
 }

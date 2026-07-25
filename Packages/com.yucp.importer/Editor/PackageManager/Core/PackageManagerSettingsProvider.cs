@@ -36,9 +36,7 @@ namespace YUCP.Importer.Editor.PackageManager
                      "Creator Identity",
                      "Trusted",
                      "URL",
-                     "Authority",
-                     "Coupling",
-                     "Runtime"
+                     "Authority"
                  }
              };
         }
@@ -188,17 +186,6 @@ namespace YUCP.Importer.Editor.PackageManager
             };
             useSigningSettingsButton.style.marginBottom = 16;
             rootElement.Add(useSigningSettingsButton);
-
-            var runtimeTitle = new Label("Server-First Delivery");
-            runtimeTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
-            runtimeTitle.style.marginBottom = 4;
-            rootElement.Add(runtimeTitle);
-
-            var runtimeDescription = new HelpBox(
-                "Legacy protected-shell runtime settings were removed. Imports now expect server-first releases instead of a locally installed coupling runtime.",
-                HelpBoxMessageType.Info);
-            runtimeDescription.style.marginBottom = 16;
-            rootElement.Add(runtimeDescription);
 
             var trustTitle = new Label("Trusted Servers");
             trustTitle.style.unityFontStyleAndWeight = FontStyle.Bold;

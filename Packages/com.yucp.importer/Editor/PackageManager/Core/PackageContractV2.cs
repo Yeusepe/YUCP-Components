@@ -15,6 +15,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal const int CoseAlgorithmEdDsa = -8;
         internal const int PurposeHeader = 1001;
         internal const string InstallSessionPurpose = "install-session-v2";
+        internal const string MaterializationReceiptPurpose = "materialization-receipt-v2";
         private static readonly Regex HashPurposePattern = new Regex(
             "^yucp:[a-z0-9-]+:v[0-9]+$",
             RegexOptions.CultureInvariant);
@@ -565,6 +566,398 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             if (string.IsNullOrWhiteSpace(value) || value.Length > 512)
                 throw new FormatException($"InstallSessionV2 {name} must contain 1 through 512 characters.");
+        }
+    }
+
+    internal sealed class MaterializedFileV2
+    {
+        internal string AttributionId;
+        internal string NormalizedPath;
+        internal long OutputBytes;
+        internal byte[] OutputSha256;
+    }
+
+    internal sealed class ExactRenditionVersionV2
+    {
+        internal string BucketName;
+        internal string FileIdentifier;
+        internal long ObjectBytes;
+        internal string ObjectKey;
+        internal byte[] ObjectSha256;
+        internal string ProviderVersion;
+        internal string StorageRole;
+    }
+
+    internal sealed class MaterializationReceiptV2
+    {
+        internal string BuyerSubjectPseudonym;
+        internal string CapabilityId;
+        internal string CodecBuild;
+        internal string[] CreatedPaths;
+        internal string CreatorId;
+        internal long ExpiresAt;
+        internal string GrantId;
+        internal string HelperBuild;
+        internal long IssuedAt;
+        internal string JobId;
+        internal long KeyEpoch;
+        internal long LeaseGeneration;
+        internal string MaterializationAlgorithm;
+        internal string MaterializerId;
+        internal MaterializedFileV2[] OutputFiles;
+        internal byte[] OutputTreeRoot;
+        internal string PluginVersion;
+        internal string ProductId;
+        internal byte[] ProtectedSourceRoot;
+        internal string PseudonymMethod;
+        internal string ReceiptId;
+        internal byte[] ReleaseRoot;
+        internal ExactRenditionVersionV2 Rendition;
+        internal string RuntimeBuild;
+        internal string TraceId;
+    }
+
+    internal sealed class MaterializationReceiptValidationContext
+    {
+        internal long Now;
+        internal string ProductId;
+        internal byte[] ReleaseRoot;
+        internal long RenditionBytes;
+        internal byte[] RenditionSha256;
+    }
+
+    internal static class MaterializationReceiptV2Verifier
+    {
+        internal static MaterializationReceiptV2 VerifyAndValidate(
+            byte[] coseSign1,
+            byte[] expectedKeyId,
+            byte[] publicKey,
+            MaterializationReceiptValidationContext context)
+        {
+            if (context == null) throw new ArgumentNullException(nameof(context));
+            byte[] payload = PackageContractV2.VerifySignedPayload(
+                coseSign1,
+                PackageContractV2.MaterializationReceiptPurpose,
+                expectedKeyId,
+                publicKey);
+            MaterializationReceiptV2 receipt = Parse(payload);
+            Validate(receipt, context);
+            return receipt;
+        }
+
+        private static MaterializationReceiptV2 Parse(byte[] payload)
+        {
+            try
+            {
+                return ParseCanonical(payload);
+            }
+            catch (CborContentException exception)
+            {
+                throw new FormatException(
+                    "MaterializationReceiptV2 contains invalid CBOR.",
+                    exception);
+            }
+        }
+
+        private static MaterializationReceiptV2 ParseCanonical(byte[] payload)
+        {
+            var reader = new CborReader(
+                payload,
+                CborConformanceMode.Canonical,
+                allowMultipleRootLevelValues: false);
+            PackageContractV2.RequireLength(
+                reader.ReadStartMap(),
+                26,
+                "MaterializationReceiptV2 map");
+
+            PackageContractV2.RequireLabel(reader, 0);
+            if (reader.ReadInt32() != PackageContractV2.Version)
+                throw new FormatException("MaterializationReceiptV2 schema version is invalid.");
+
+            var receipt = new MaterializationReceiptV2();
+            PackageContractV2.RequireLabel(reader, 1);
+            receipt.ReceiptId = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 2);
+            receipt.CapabilityId = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 3);
+            receipt.CreatorId = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 4);
+            receipt.BuyerSubjectPseudonym = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 5);
+            receipt.PseudonymMethod = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 6);
+            receipt.ProductId = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 7);
+            receipt.ReleaseRoot = ReadDigest(reader, "release root");
+            PackageContractV2.RequireLabel(reader, 8);
+            receipt.ProtectedSourceRoot = ReadDigest(reader, "protected source root");
+            PackageContractV2.RequireLabel(reader, 9);
+            receipt.OutputTreeRoot = ReadDigest(reader, "output tree root");
+            PackageContractV2.RequireLabel(reader, 10);
+            receipt.OutputFiles = ReadOutputFiles(reader);
+            PackageContractV2.RequireLabel(reader, 11);
+            receipt.GrantId = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 12);
+            receipt.JobId = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 13);
+            receipt.LeaseGeneration = ReadNonnegativeInteger(reader, "lease generation");
+            PackageContractV2.RequireLabel(reader, 14);
+            receipt.Rendition = ReadRendition(reader);
+            PackageContractV2.RequireLabel(reader, 15);
+            receipt.MaterializationAlgorithm = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 16);
+            receipt.PluginVersion = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 17);
+            receipt.CodecBuild = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 18);
+            receipt.KeyEpoch = ReadNonnegativeInteger(reader, "key epoch");
+            PackageContractV2.RequireLabel(reader, 19);
+            receipt.HelperBuild = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 20);
+            receipt.RuntimeBuild = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 21);
+            receipt.CreatedPaths = ReadTextArray(reader, "created paths");
+            PackageContractV2.RequireLabel(reader, 22);
+            receipt.IssuedAt = ReadNonnegativeInteger(reader, "issued-at");
+            PackageContractV2.RequireLabel(reader, 23);
+            receipt.ExpiresAt = ReadNonnegativeInteger(reader, "expires-at");
+            PackageContractV2.RequireLabel(reader, 24);
+            receipt.MaterializerId = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 25);
+            receipt.TraceId = reader.ReadTextString();
+            reader.ReadEndMap();
+            PackageContractV2.RequireFinished(reader, "MaterializationReceiptV2");
+            return receipt;
+        }
+
+        private static MaterializedFileV2[] ReadOutputFiles(CborReader reader)
+        {
+            int? count = reader.ReadStartArray();
+            if (!count.HasValue || count.Value < 1 || count.Value > 512)
+                throw new FormatException(
+                    "MaterializationReceiptV2 output file count must be between 1 and 512.");
+
+            var files = new MaterializedFileV2[count.Value];
+            for (int index = 0; index < files.Length; index++)
+            {
+                PackageContractV2.RequireLength(
+                    reader.ReadStartMap(),
+                    4,
+                    $"MaterializationReceiptV2 output file {index}");
+                PackageContractV2.RequireLabel(reader, 0);
+                string normalizedPath = reader.ReadTextString();
+                PackageContractV2.RequireLabel(reader, 1);
+                byte[] outputSha256 = ReadDigest(reader, $"output file {index} digest");
+                PackageContractV2.RequireLabel(reader, 2);
+                long outputBytes = ReadNonnegativeInteger(
+                    reader,
+                    $"output file {index} byte count");
+                PackageContractV2.RequireLabel(reader, 3);
+                string attributionId = reader.ReadTextString();
+                reader.ReadEndMap();
+                files[index] = new MaterializedFileV2
+                {
+                    AttributionId = attributionId,
+                    NormalizedPath = normalizedPath,
+                    OutputBytes = outputBytes,
+                    OutputSha256 = outputSha256,
+                };
+            }
+            reader.ReadEndArray();
+            return files;
+        }
+
+        private static ExactRenditionVersionV2 ReadRendition(CborReader reader)
+        {
+            PackageContractV2.RequireLength(
+                reader.ReadStartMap(),
+                7,
+                "MaterializationReceiptV2 rendition");
+            PackageContractV2.RequireLabel(reader, 0);
+            string storageRole = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 1);
+            string bucketName = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 2);
+            string objectKey = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 3);
+            string providerVersion = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 4);
+            string fileIdentifier = reader.ReadTextString();
+            PackageContractV2.RequireLabel(reader, 5);
+            byte[] objectSha256 = ReadDigest(reader, "rendition digest");
+            PackageContractV2.RequireLabel(reader, 6);
+            long objectBytes = ReadNonnegativeInteger(reader, "rendition byte count");
+            reader.ReadEndMap();
+            return new ExactRenditionVersionV2
+            {
+                BucketName = bucketName,
+                FileIdentifier = fileIdentifier,
+                ObjectBytes = objectBytes,
+                ObjectKey = objectKey,
+                ObjectSha256 = objectSha256,
+                ProviderVersion = providerVersion,
+                StorageRole = storageRole,
+            };
+        }
+
+        private static string[] ReadTextArray(CborReader reader, string name)
+        {
+            int? count = reader.ReadStartArray();
+            if (!count.HasValue || count.Value < 1 || count.Value > 512)
+                throw new FormatException(
+                    $"MaterializationReceiptV2 {name} count must be between 1 and 512.");
+            var values = new string[count.Value];
+            for (int index = 0; index < values.Length; index++)
+                values[index] = reader.ReadTextString();
+            reader.ReadEndArray();
+            return values;
+        }
+
+        private static byte[] ReadDigest(CborReader reader, string name)
+        {
+            byte[] digest = reader.ReadByteString();
+            if (digest.Length != 32)
+                throw new FormatException(
+                    $"MaterializationReceiptV2 {name} must contain 32 bytes.");
+            return digest;
+        }
+
+        private static long ReadNonnegativeInteger(CborReader reader, string name)
+        {
+            ulong value = reader.ReadUInt64();
+            if (value > long.MaxValue)
+                throw new FormatException(
+                    $"MaterializationReceiptV2 {name} exceeds the supported range.");
+            return (long)value;
+        }
+
+        private static void Validate(
+            MaterializationReceiptV2 receipt,
+            MaterializationReceiptValidationContext context)
+        {
+            RequireText(receipt.ReceiptId, "receipt ID");
+            RequireText(receipt.CapabilityId, "capability ID");
+            RequireText(receipt.CreatorId, "creator ID");
+            RequireText(receipt.BuyerSubjectPseudonym, "buyer pseudonym");
+            RequireText(receipt.PseudonymMethod, "pseudonym method");
+            RequireText(receipt.ProductId, "product ID");
+            RequireText(receipt.GrantId, "grant ID");
+            RequireText(receipt.JobId, "job ID");
+            RequireText(receipt.MaterializationAlgorithm, "materialization algorithm");
+            RequireText(receipt.PluginVersion, "plugin version");
+            RequireText(receipt.CodecBuild, "codec build");
+            RequireText(receipt.HelperBuild, "helper build");
+            RequireText(receipt.RuntimeBuild, "runtime build");
+            RequireText(receipt.MaterializerId, "materializer ID");
+            RequireText(receipt.TraceId, "trace ID");
+
+            if (receipt.IssuedAt < 0 ||
+                receipt.ExpiresAt <= receipt.IssuedAt ||
+                context.Now < receipt.IssuedAt ||
+                context.Now >= receipt.ExpiresAt)
+                throw new FormatException("MaterializationReceiptV2 is not active.");
+            if (!string.Equals(receipt.ProductId, context.ProductId, StringComparison.Ordinal) ||
+                !PackageContractV2.FixedTimeEquals(receipt.ReleaseRoot, context.ReleaseRoot))
+                throw new FormatException(
+                    "MaterializationReceiptV2 does not match the requested release.");
+            if (receipt.Rendition == null ||
+                !string.Equals(receipt.Rendition.StorageRole, "renditions", StringComparison.Ordinal) ||
+                receipt.Rendition.ObjectBytes != context.RenditionBytes ||
+                !PackageContractV2.FixedTimeEquals(
+                    receipt.Rendition.ObjectSha256,
+                    context.RenditionSha256))
+                throw new FormatException(
+                    "MaterializationReceiptV2 does not match the downloaded rendition.");
+
+            ValidateOutputFiles(receipt);
+        }
+
+        private static void ValidateOutputFiles(MaterializationReceiptV2 receipt)
+        {
+            if (receipt.OutputFiles == null ||
+                receipt.CreatedPaths == null ||
+                receipt.OutputFiles.Length != receipt.CreatedPaths.Length)
+                throw new FormatException(
+                    "MaterializationReceiptV2 created paths do not match its output files.");
+
+            for (int index = 0; index < receipt.OutputFiles.Length; index++)
+            {
+                MaterializedFileV2 file = receipt.OutputFiles[index];
+                RequireMaterializedPath(file.NormalizedPath);
+                RequireText(file.AttributionId, "attribution ID");
+                if (!string.Equals(
+                        receipt.CreatedPaths[index],
+                        file.NormalizedPath,
+                        StringComparison.Ordinal))
+                    throw new FormatException(
+                        "MaterializationReceiptV2 created paths do not match its output files.");
+                if (index > 0 &&
+                    CompareUtf8(
+                        receipt.OutputFiles[index - 1].NormalizedPath,
+                        file.NormalizedPath) >= 0)
+                    throw new FormatException(
+                        "MaterializationReceiptV2 output files are not strictly ordered.");
+            }
+
+            byte[] computedRoot = PackageContractV2.HashFields(
+                "yucp:output-tree:v2",
+                receipt.OutputFiles
+                    .SelectMany(file => new[]
+                    {
+                        Encoding.UTF8.GetBytes(file.NormalizedPath),
+                        file.OutputSha256,
+                        EncodeUnsignedBigEndian((ulong)file.OutputBytes),
+                    })
+                    .ToArray());
+            if (!PackageContractV2.FixedTimeEquals(receipt.OutputTreeRoot, computedRoot))
+                throw new FormatException(
+                    "MaterializationReceiptV2 output tree root is invalid.");
+        }
+
+        private static int CompareUtf8(string left, string right)
+        {
+            byte[] leftBytes = Encoding.UTF8.GetBytes(left);
+            byte[] rightBytes = Encoding.UTF8.GetBytes(right);
+            int commonLength = Math.Min(leftBytes.Length, rightBytes.Length);
+            for (int index = 0; index < commonLength; index++)
+            {
+                int comparison = leftBytes[index].CompareTo(rightBytes[index]);
+                if (comparison != 0)
+                    return comparison;
+            }
+            return leftBytes.Length.CompareTo(rightBytes.Length);
+        }
+
+        private static byte[] EncodeUnsignedBigEndian(ulong value)
+        {
+            var bytes = new byte[8];
+            for (int index = bytes.Length - 1; index >= 0; index--)
+            {
+                bytes[index] = (byte)(value & 0xff);
+                value >>= 8;
+            }
+            return bytes;
+        }
+
+        private static void RequireMaterializedPath(string value)
+        {
+            RequireText(value, "output path");
+            if (value.Length > 1024 ||
+                value.StartsWith("/", StringComparison.Ordinal) ||
+                value.Contains("\\") ||
+                value.Split('/').Any(segment =>
+                    segment.Length == 0 ||
+                    string.Equals(segment, ".", StringComparison.Ordinal) ||
+                    string.Equals(segment, "..", StringComparison.Ordinal)))
+                throw new FormatException(
+                    "MaterializationReceiptV2 output path is not normalized.");
+        }
+
+        private static void RequireText(string value, string name)
+        {
+            if (string.IsNullOrWhiteSpace(value) || value.Length > 512)
+                throw new FormatException(
+                    $"MaterializationReceiptV2 {name} must contain 1 through 512 characters.");
         }
     }
 }

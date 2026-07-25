@@ -99,15 +99,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             AliasPackageContract aliasPackage = packageInfo.aliasPackage.Clone();
-            AliasInstallPlanMetadata plan = aliasPackage.installPlan?.Clone() ?? new AliasInstallPlanMetadata();
-
-            List<string> managedPaths = NormalizeDistinctPaths(plan.managedPaths);
-            if (managedPaths.Count == 0)
-            {
-                managedPaths = NormalizeDistinctPaths(packageInfo.installedFiles);
-            }
-
-            List<string> generatedPaths = NormalizeDistinctPaths(plan.generatedPaths);
+            List<string> managedPaths = NormalizeDistinctPaths(packageInfo.installedFiles);
+            var generatedPaths = new List<string>();
             if (!string.IsNullOrWhiteSpace(manifestRelativePath))
             {
                 string normalizedManifestPath = NormalizeRelativePath(manifestRelativePath);
@@ -117,7 +110,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
             }
 
-            List<string> sharedPaths = NormalizeDistinctPaths(plan.sharedPaths);
+            var sharedPaths = new List<string>();
             var manifest = new AliasPackageInstallStateManifest
             {
                 aliasId = aliasPackage.aliasId ?? string.Empty,
@@ -131,9 +124,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     : packageInfo.packageName ?? string.Empty,
                 installedVersion = packageInfo.installedVersion ?? packageInfo.version ?? string.Empty,
                 installedAt = packageInfo.installedDate ?? string.Empty,
-                resolvedRelease = aliasPackage.resolvedRelease?.Clone() ?? new AliasResolvedReleaseIdentity(),
-                resolvedArtifact = aliasPackage.resolvedArtifact?.Clone() ?? new AliasResolvedArtifactIdentity(),
-                installPlan = plan,
                 managedPaths = managedPaths,
                 generatedPaths = generatedPaths,
                 sharedPaths = sharedPaths,

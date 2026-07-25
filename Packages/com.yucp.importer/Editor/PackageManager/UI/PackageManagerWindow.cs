@@ -107,14 +107,16 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool _isCreatorIdentitySigningIn;
         private bool _creatorIdentityNeedsReauthentication;
         private bool _creatorIdentityNeedsSignInRetry;
-        private readonly List<ProtectedDerivedDescriptor> _protectedDerivedDescriptors = new List<ProtectedDerivedDescriptor>();
-        private static readonly HashSet<string> s_protectedDerivedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<LicensedAssetDescriptor> _licensedAssetDescriptors =
+            new List<LicensedAssetDescriptor>();
+        private static readonly HashSet<string> s_licensedAssetPaths =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        private class ProtectedDerivedDescriptor
+        private class LicensedAssetDescriptor
         {
             public string destinationPath;
-            public string licensePackageId;
             public string displayName;
+            public string licensePackageId;
             public string sourceFolder;
         }
 
@@ -175,7 +177,6 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             // Initialize update checker
-            EditorApplication.update += PackageUpdater.Update;
             
             CreateGUI();
             LoadResources();
@@ -203,7 +204,6 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void OnDisable()
         {
-            EditorApplication.update -= PackageUpdater.Update;
             AssetDatabase.importPackageStarted -= OnImportPackageStarted;
             AssetDatabase.importPackageCompleted -= OnImportPackageCompleted;
             DestroyCreatedTextures();
@@ -2079,7 +2079,8 @@ namespace YUCP.Importer.Editor.PackageManager
             detailsTitle.AddToClassList("yucp-details-title");
             detailsHeader.Add(detailsTitle);
 
-            var detailsSubtitle = new Label("Review files, licensed derived content, and any existing-file conflicts before installing.");
+            var detailsSubtitle = new Label(
+                "Review files and existing-file conflicts before installing.");
             detailsSubtitle.AddToClassList("yucp-details-subtitle");
             detailsSubtitle.style.whiteSpace = WhiteSpace.Normal;
             detailsHeader.Add(detailsSubtitle);
@@ -2089,9 +2090,9 @@ namespace YUCP.Importer.Editor.PackageManager
             dependenciesContainer.name = "dependencies-container";
             section.Add(dependenciesContainer);
 
-            var protectedSummaryContainer = new VisualElement();
-            protectedSummaryContainer.name = "protected-summary-container";
-            section.Add(protectedSummaryContainer);
+            var licensedSummaryContainer = new VisualElement();
+            licensedSummaryContainer.name = "licensed-summary-container";
+            section.Add(licensedSummaryContainer);
 
             _conflictModeSection = new VisualElement();
             _conflictModeSection.AddToClassList("yucp-conflict-mode-section");
@@ -2231,29 +2232,29 @@ namespace YUCP.Importer.Editor.PackageManager
             _keepExistingModeButton.EnableInClassList("yucp-conflict-option-selected", !overwriteExisting);
         }
 
-        private void RefreshProtectedSummarySection()
+        private void RefreshLicensedAssetSummarySection()
         {
             if (_contentsSection == null)
             {
                 return;
             }
 
-            var container = _contentsSection.Q<VisualElement>("protected-summary-container");
+            var container = _contentsSection.Q<VisualElement>("licensed-summary-container");
             if (container == null)
             {
                 return;
             }
 
             container.Clear();
-            RefreshProtectedDerivedDescriptors();
+            RefreshLicensedAssetDescriptors();
 
-            if (_protectedDerivedDescriptors.Count == 0)
+            if (_licensedAssetDescriptors.Count == 0)
             {
                 return;
             }
 
             var card = new VisualElement();
-            card.AddToClassList("yucp-protected-summary-card");
+            card.AddToClassList("yucp-licensed-summary-card");
 
             // Header: eyebrow + count
             var cardHeader = new VisualElement();
@@ -2262,28 +2263,28 @@ namespace YUCP.Importer.Editor.PackageManager
             cardHeader.style.marginBottom = 4;
 
             var title = new Label("LICENSED CONTENT");
-            title.AddToClassList("yucp-protected-summary-title");
+            title.AddToClassList("yucp-licensed-summary-title");
             title.style.flexGrow = 1;
             cardHeader.Add(title);
 
-            int assetCount = _protectedDerivedDescriptors.Count;
+            int assetCount = _licensedAssetDescriptors.Count;
             var countLabel = new Label($"{assetCount} asset{(assetCount == 1 ? "" : "s")} locked");
-            countLabel.AddToClassList("yucp-protected-summary-count");
+            countLabel.AddToClassList("yucp-licensed-summary-count");
             cardHeader.Add(countLabel);
 
             card.Add(cardHeader);
 
             var previewList = new VisualElement();
-            previewList.AddToClassList("yucp-protected-preview-list");
+            previewList.AddToClassList("yucp-licensed-preview-list");
 
-            foreach (var descriptor in _protectedDerivedDescriptors.Take(4))
+            foreach (var descriptor in _licensedAssetDescriptors.Take(4))
             {
                 var row = new VisualElement();
-                row.AddToClassList("yucp-protected-preview-item");
+                row.AddToClassList("yucp-licensed-preview-item");
                 row.tooltip = descriptor.destinationPath;
 
                 var lockIcon = new Label("◈");
-                lockIcon.AddToClassList("yucp-protected-preview-icon");
+                lockIcon.AddToClassList("yucp-licensed-preview-icon");
                 row.Add(lockIcon);
 
                 var nameLabel = new Label(descriptor.displayName);
@@ -2294,10 +2295,10 @@ namespace YUCP.Importer.Editor.PackageManager
                 previewList.Add(row);
             }
 
-            if (_protectedDerivedDescriptors.Count > 4)
+            if (_licensedAssetDescriptors.Count > 4)
             {
-                var moreLabel = new Label($"+ {_protectedDerivedDescriptors.Count - 4} more");
-                moreLabel.AddToClassList("yucp-protected-preview-more");
+                var moreLabel = new Label($"+ {_licensedAssetDescriptors.Count - 4} more");
+                moreLabel.AddToClassList("yucp-licensed-preview-more");
                 previewList.Add(moreLabel);
             }
 
@@ -2321,10 +2322,10 @@ namespace YUCP.Importer.Editor.PackageManager
             return chip;
         }
 
-        private void RefreshProtectedDerivedDescriptors()
+        private void RefreshLicensedAssetDescriptors()
         {
-            _protectedDerivedDescriptors.Clear();
-            s_protectedDerivedPaths.Clear();
+            _licensedAssetDescriptors.Clear();
+            s_licensedAssetPaths.Clear();
 
             var items = _allImportItems ?? _currentImportItems;
             if (items == null || items.Length == 0)
@@ -2334,7 +2335,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
             foreach (var item in items)
             {
-                if (!TryBuildProtectedDerivedDescriptor(item, out var descriptor))
+                if (!TryBuildLicensedAssetDescriptor(item, out var descriptor))
                 {
                     continue;
                 }
@@ -2345,14 +2346,16 @@ namespace YUCP.Importer.Editor.PackageManager
                     continue;
                 }
 
-                if (s_protectedDerivedPaths.Add(descriptor.destinationPath))
+                if (s_licensedAssetPaths.Add(descriptor.destinationPath))
                 {
-                    _protectedDerivedDescriptors.Add(descriptor);
+                    _licensedAssetDescriptors.Add(descriptor);
                 }
             }
         }
 
-        private static bool TryBuildProtectedDerivedDescriptor(object item, out ProtectedDerivedDescriptor descriptor)
+        private static bool TryBuildLicensedAssetDescriptor(
+            object item,
+            out LicensedAssetDescriptor descriptor)
         {
             descriptor = null;
             if (item == null)
@@ -2400,7 +2403,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     : fileName;
             }
 
-            descriptor = new ProtectedDerivedDescriptor
+            descriptor = new LicensedAssetDescriptor
             {
                 destinationPath = destinationPath,
                 licensePackageId = licensePackageId.Trim(),
@@ -2630,13 +2633,13 @@ namespace YUCP.Importer.Editor.PackageManager
             return value is bool b && b;
         }
 
-        private List<string> GetProtectedPayloadPaths(System.Array items)
+        private List<string> GetLicensedAssetPaths(System.Array items)
         {
-            RefreshProtectedDerivedDescriptors();
-            return _protectedDerivedDescriptors.Select(descriptor => descriptor.destinationPath).ToList();
+            RefreshLicensedAssetDescriptors();
+            return _licensedAssetDescriptors.Select(descriptor => descriptor.destinationPath).ToList();
         }
 
-        internal static bool IsProtectedPayloadPath(string path)
+        internal static bool IsLicensedAssetPath(string path)
         {
             if (string.IsNullOrEmpty(path))
             {
@@ -2644,7 +2647,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             string normalized = NormalizeImportPath(path);
-            return s_protectedDerivedPaths.Contains(normalized);
+            return s_licensedAssetPaths.Contains(normalized);
         }
 
         private void BuildLicenseSection()
@@ -3547,9 +3550,9 @@ namespace YUCP.Importer.Editor.PackageManager
             if (indicator == null) return;
 
             int dependencyCount = _currentMetadata?.dependencies?.Count ?? 0;
-            int protectedCount = GetProtectedPayloadPaths(_allImportItems ?? _currentImportItems).Count;
+            int licensedCount = GetLicensedAssetPaths(_allImportItems ?? _currentImportItems).Count;
 
-            if (dependencyCount > 0 || protectedCount > 0)
+            if (dependencyCount > 0 || licensedCount > 0)
             {
                 var bits = new List<string>();
                 if (dependencyCount > 0)
@@ -3557,9 +3560,9 @@ namespace YUCP.Importer.Editor.PackageManager
                     bits.Add($"{dependencyCount} required package{(dependencyCount == 1 ? string.Empty : "s")}");
                 }
 
-                if (protectedCount > 0)
+                if (licensedCount > 0)
                 {
-                    bits.Add($"{protectedCount} licensed");
+                    bits.Add($"{licensedCount} licensed");
                 }
 
                 indicator.text = $"({string.Join(" • ", bits)})";
@@ -3725,7 +3728,7 @@ namespace YUCP.Importer.Editor.PackageManager
             _isProjectSettingsStep = isProjectSettingsStep;
             _detailsExpanded = false;
             _preferOverwriteExisting = true;
-            RefreshProtectedDerivedDescriptors();
+            RefreshLicensedAssetDescriptors();
 
             Debug.Log($"[YUCP PackageManager] InitializeForImport: packagePath='{packagePath}', stepItems={GetImportItemCount(importItems)}, allItems={GetImportItemCount(_allImportItems)}, packageIconPath='{packageIconPath}', isProjectSettingsStep={isProjectSettingsStep}");
 
@@ -3749,6 +3752,7 @@ namespace YUCP.Importer.Editor.PackageManager
             // Also pass packageIconPath to extract icon even if no YUCP metadata exists
             var metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(allImportItems ?? importItems, packagePath, packageIconPath);
             SetMetadata(metadata);
+            TryNormalizeAliasMetadataDisplay();
             s_lastImportMetadata = metadata;
             s_lastImportPackagePath = packagePath;
             LogTempInstallStatus();
@@ -3756,7 +3760,6 @@ namespace YUCP.Importer.Editor.PackageManager
             // For server-authorized alias packages the embedded metadata is intentionally minimal;
             // pull the real title/version/creator/media from the server so the installer shows what
             // is actually being imported. Best-effort and only when already signed in.
-            TryEnrichAliasMetadataDisplay();
 
             // Build tree from current step's import items
             SetImportItems(importItems);
@@ -4184,7 +4187,7 @@ namespace YUCP.Importer.Editor.PackageManager
         public void SetImportItems(System.Array importItems)
         {
             _currentImportItems = importItems;
-            RefreshProtectedDerivedDescriptors();
+            RefreshLicensedAssetDescriptors();
             if (_treeView != null)
             {
                 BuildTreeFromImportItems();
@@ -4241,9 +4244,9 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             // Refresh dependencies section in details view
-            RefreshProtectedDerivedDescriptors();
+            RefreshLicensedAssetDescriptors();
             RefreshDependenciesSection();
-            RefreshProtectedSummarySection();
+            RefreshLicensedAssetSummarySection();
             UpdateConflictModeSection();
 
             if (_bannerImageContainer != null)
@@ -4301,27 +4304,13 @@ namespace YUCP.Importer.Editor.PackageManager
         }
 
         /// <summary>
-        /// When the current package is a server-authorized alias, fetch the real package details
-        /// (title, version, creator, icon, banner) from the server and merge them into the display.
-        /// Runs only when the user is already signed in so opening the installer never forces a
-        /// browser sign-in just to preview, and never blocks the initial render.
+        /// Use public alias fields before the server issues an install session.
         /// </summary>
-        private void TryEnrichAliasMetadataDisplay()
+        private void TryNormalizeAliasMetadataDisplay()
         {
             PackageMetadata current = _currentMetadata ?? _cachedMetadata;
             AliasPackageContract alias = current?.aliasPackage;
-            if (alias == null || !AliasPackageAutoInstaller.IsServerAuthorizedAlias(alias))
-            {
-                return;
-            }
-
-            if (!CreatorIdentityOAuthService.IsSignedIn())
-            {
-                return;
-            }
-
-            string serverUrl = GetLicenseServerUrl();
-            if (string.IsNullOrWhiteSpace(serverUrl))
+            if (alias == null || !AliasPackageDiscovery.IsServerAuthorized(alias))
             {
                 return;
             }
@@ -4336,68 +4325,25 @@ namespace YUCP.Importer.Editor.PackageManager
                 try
                 {
                     EditorUtility.DisplayProgressBar("YUCP Importer", "Fetching package details…", 0.5f);
-                    if (AliasMetadataEnrichmentService.TryEnrich(serverUrl, alias, out PackageMetadata enriched, out string enrichError) &&
-                        enriched != null)
+                    if (!string.IsNullOrWhiteSpace(alias.packageDisplayName))
                     {
-                        MergeEnrichedMetadata(current, enriched);
-                        SetMetadata(current);
+                        current.packageName = alias.packageDisplayName;
                     }
-                    else if (!string.IsNullOrWhiteSpace(enrichError))
+                    if (!string.IsNullOrWhiteSpace(alias.packageVersion))
                     {
-                        Debug.LogWarning($"[YUCP PackageManager] Could not enrich alias metadata: {enrichError}");
+                        current.version = alias.packageVersion;
                     }
+                    SetMetadata(current);
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[YUCP PackageManager] Alias metadata enrichment failed: {ex.Message}");
+                    Debug.LogWarning($"[YUCP PackageManager] Alias metadata normalization failed: {ex.Message}");
                 }
                 finally
                 {
                     EditorUtility.ClearProgressBar();
                 }
             };
-        }
-
-        /// <summary>
-        /// Overlays server-sourced display fields onto the existing metadata, keeping embedded
-        /// fields (description, gallery, contents) the server plan does not carry.
-        /// </summary>
-        private static void MergeEnrichedMetadata(PackageMetadata target, PackageMetadata enriched)
-        {
-            if (target == null || enriched == null)
-            {
-                return;
-            }
-
-            if (!string.IsNullOrWhiteSpace(enriched.packageName))
-            {
-                target.packageName = enriched.packageName;
-            }
-
-            if (!string.IsNullOrWhiteSpace(enriched.version))
-            {
-                target.version = enriched.version;
-            }
-
-            if (!string.IsNullOrWhiteSpace(enriched.author))
-            {
-                target.author = enriched.author;
-            }
-
-            if (!string.IsNullOrWhiteSpace(enriched.tagline))
-            {
-                target.tagline = enriched.tagline;
-            }
-
-            if (enriched.icon != null)
-            {
-                target.icon = enriched.icon;
-            }
-
-            if (enriched.banner != null)
-            {
-                target.banner = enriched.banner;
-            }
         }
 
         private void OnImportPackageStarted(string packageName)
@@ -4466,7 +4412,7 @@ namespace YUCP.Importer.Editor.PackageManager
             };
         }
 
-        private void OnImportClicked()
+        private async void OnImportClicked()
         {
             try
             {
@@ -4562,37 +4508,20 @@ namespace YUCP.Importer.Editor.PackageManager
                     try
                     {
                         EditorUtility.DisplayProgressBar(
-                            "Resolving Alias Install",
-                            $"Fetching the authorized install plan for '{installMetadata.packageName}'...",
+                            "Installing Package",
+                            $"Verifying and staging '{installMetadata.packageName}'...",
                             0.35f);
-
-                        bool resolved = UpdateDeliveryService.TryResolveAuthorizedInstallPlan(
-                            serverUrl,
-                            installMetadata.aliasPackage,
-                            out UpdateDeliveryService.AliasInstallPlan installPlan,
-                            out string resolveError);
-                        if (!resolved)
+                        string installError =
+                            await PackageLifecycleCoordinator.TryInstallAsync(
+                                serverUrl,
+                                installMetadata.aliasPackage);
+                        if (!string.IsNullOrWhiteSpace(installError))
                         {
                             ShowFlowNotice(
                                 "Install Package",
-                                string.IsNullOrWhiteSpace(resolveError)
-                                    ? "Could not resolve the alias install plan."
-                                    : resolveError,
-                                FlowNoticeTone.Error);
-                            return;
-                        }
-
-                        EditorUtility.DisplayProgressBar(
-                            "Applying Alias Install",
-                            $"Installing '{installMetadata.packageName}' through the VPM resolver...",
-                            0.7f);
-                        if (!UpdateDeliveryService.TryApplyAuthorizedInstallPlan(installPlan, out string applyError))
-                        {
-                            ShowFlowNotice(
-                                "Install Package",
-                                string.IsNullOrWhiteSpace(applyError)
-                                    ? "Could not apply the alias install plan."
-                                    : applyError,
+                                string.IsNullOrWhiteSpace(installError)
+                                    ? "Could not install the verified package."
+                                    : installError,
                                 FlowNoticeTone.Error);
                             return;
                         }
@@ -5001,20 +4930,6 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (string.IsNullOrEmpty(installedInfo.packageId))
                 {
                     Debug.LogWarning($"[YUCP PackageManager] Imported assets but skipped registry registration because packageId is unavailable. packageName='{installedInfo.packageName}', signed={_isPackageSigned}, verificationValid={isVerified}, cachedExtractionError='{_cachedSigningExtractionError ?? ""}'");
-                    return false;
-                }
-
-                if (installedInfo.protectedPayload != null)
-                {
-                    if (!ImportedAssetRollbackService.TryRollbackImportedAssets(installedFiles, out string rollbackError))
-                    {
-                        Debug.LogError($"[YUCP PackageManager] Rejected legacy protected-shell import but rollback failed: {rollbackError}");
-                    }
-
-                    const string legacyProtectedShellError =
-                        "This package was published with the legacy protected-shell import flow, which the importer no longer supports. Re-export and republish it through the server-first delivery pipeline.";
-                    Debug.LogError($"[YUCP PackageManager] {legacyProtectedShellError}");
-                    ShowFlowNotice("Import failed", legacyProtectedShellError, FlowNoticeTone.Error);
                     return false;
                 }
 
