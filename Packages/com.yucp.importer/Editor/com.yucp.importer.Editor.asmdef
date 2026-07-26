@@ -10,6 +10,7 @@
     "overrideReferences": true,
     "precompiledReferences": [
         "Newtonsoft.Json.dll",
+        "vpm-core-lib.dll",
         "Chaos.NaCl.dll",
         "Microsoft.Bcl.HashCode.dll",
         "System.Runtime.CompilerServices.Unsafe.dll",

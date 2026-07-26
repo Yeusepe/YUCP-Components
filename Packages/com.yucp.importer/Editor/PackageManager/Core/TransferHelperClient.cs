@@ -157,9 +157,22 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     ? "HELPER_FAILED"
                     : result.errorCode;
                 throw new InvalidOperationException(
-                    $"Package delivery failed with stable error code {code}.");
+                    BuildFailureMessage(code));
             }
             return result;
+        }
+
+        internal static string BuildFailureMessage(string errorCode)
+        {
+            if (string.Equals(
+                    errorCode,
+                    "UNITY_WINDOWS_PATH_LIMIT",
+                    StringComparison.Ordinal))
+            {
+                return "The Unity project path is too long for this package on Windows. " +
+                    "Move the project to a shorter folder.";
+            }
+            return $"Package delivery failed with stable error code {errorCode}.";
         }
 
         internal static string ResolveStateRoot()

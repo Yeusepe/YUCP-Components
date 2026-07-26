@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -24,6 +25,61 @@ namespace YUCP.Importer.Editor.PackageManager
     /// </summary>
     public class PackageManagerWindow : EditorWindow
     {
+        internal bool HasPackageImportItems =>
+            _currentImportItems != null && _currentImportItems.Length > 0;
+
+        internal bool IsAliasBootstrapFlow => _isAliasBootstrapFlow;
+
+        internal string PrimaryActionLabel => GetPrimaryImportButtonText();
+
+        internal static bool HasPackageInstallationAuthorization(
+            bool isSignedIn,
+            string scopedAccessToken)
+        {
+            return isSignedIn &&
+                !string.IsNullOrWhiteSpace(scopedAccessToken);
+        }
+
+        internal static void ShowAliasBootstrap(PackageMetadata metadata)
+        {
+            if (metadata?.aliasPackage == null ||
+                !AliasPackageDiscovery.IsServerAuthorized(
+                    metadata.aliasPackage))
+            {
+                throw new ArgumentException(
+                    "A server-authorized alias is required.",
+                    nameof(metadata));
+            }
+
+            foreach (PackageManagerWindow existing in
+                Resources.FindObjectsOfTypeAll<PackageManagerWindow>())
+            {
+                existing?.Close();
+            }
+
+            var window = CreateInstance<PackageManagerWindow>();
+            window.InitializeForAlias(metadata, true);
+        }
+
+        internal static bool IsAliasBootstrapOpen(string aliasId)
+        {
+            if (string.IsNullOrWhiteSpace(aliasId))
+            {
+                return false;
+            }
+
+            return Resources.FindObjectsOfTypeAll<PackageManagerWindow>()
+                .Any(window =>
+                    window != null &&
+                    window._hasPendingImportContext &&
+                    window._isAliasBootstrapFlow &&
+                    string.Equals(
+                        (window._currentMetadata ?? window._cachedMetadata)
+                            ?.aliasPackage?.aliasId,
+                        aliasId,
+                        StringComparison.Ordinal));
+        }
+
         public static void ShowResumeProtectedPackage(InstalledPackageInfo packageInfo)
         {
             if (packageInfo == null)
@@ -70,6 +126,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private Button _keepExistingModeButton;
 
         // State
+        [SerializeField]
         private PackageMetadata _currentMetadata;
         private Texture2D _bannerGradientTexture;
         private bool _detailsExpanded = false;
@@ -96,6 +153,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private PackageManifest _cachedManifest;
         private SignatureData _cachedSignature;
         private string _cachedSigningExtractionError;
+        [SerializeField]
         private PackageMetadata _cachedMetadata;
         private static PackageMetadata s_lastImportMetadata;
         private static string s_lastImportPackagePath;
@@ -140,9 +198,12 @@ namespace YUCP.Importer.Editor.PackageManager
         
         // Domain reload prevention
         private bool _isImportMode = false; // Track if window is in import mode (prevents domain reload)
+        [SerializeField]
+        private bool _isAliasBootstrapFlow;
 
         // Set once the window has been handed an import/alias-install context, so a stray
         // domain-reload restore (which resets _isImportMode) is not mistaken for an empty window.
+        [SerializeField]
         private bool _hasPendingImportContext = false;
         
         // Fixed modal implementation state
@@ -176,10 +237,6 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
-            // Initialize update checker
-            
-            CreateGUI();
-            LoadResources();
             AssetDatabase.importPackageStarted += OnImportPackageStarted;
             AssetDatabase.importPackageCompleted += OnImportPackageCompleted;
             
@@ -273,12 +330,16 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
-        private void CreateGUI()
+        public void CreateGUI()
         {
             var root = rootVisualElement;
             
             // Clear existing content to prevent duplicates
             root.Clear();
+
+            // Unity can rebuild the visual tree after the installer receives its context.
+            // Keep the current package state instead of replacing it with empty metadata.
+            _currentMetadata = _cachedMetadata ?? _currentMetadata ?? new PackageMetadata();
             
             root.style.flexDirection = FlexDirection.Column;
             root.AddToClassList("yucp-root");
@@ -326,9 +387,6 @@ namespace YUCP.Importer.Editor.PackageManager
             _detailsToggleButton.style.marginBottom = 4;
             _installerRoot.Add(_detailsToggleButton);
 
-            // Initialize with empty metadata
-            _currentMetadata = new PackageMetadata();
-
             // Update banner height when window resizes
             root.RegisterCallback<GeometryChangedEvent>(OnWindowGeometryChanged);
 
@@ -339,6 +397,23 @@ namespace YUCP.Importer.Editor.PackageManager
                 ApplyGradientToOverlay();
                 UpdateBannerHeight();
             });
+
+            RestorePendingInstallerView();
+        }
+
+        private void RestorePendingInstallerView()
+        {
+            if (!_hasPendingImportContext ||
+                _currentViewContainer == null ||
+                _installerRoot == null)
+            {
+                return;
+            }
+
+            ShowInstallerView();
+            RefreshUI();
+            UpdateButtonStates();
+            LoadResources();
         }
 
         private void OnWindowGeometryChanged(GeometryChangedEvent evt)
@@ -937,6 +1012,11 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private string GetPrimaryImportButtonText()
         {
+            if (_isAliasBootstrapFlow)
+            {
+                return "Verify and Import";
+            }
+
             bool isMultiStep = _packageImportWizardInstance != null &&
                 PackageUtilityReflection.IsMultiStepWizard(_packageImportWizardInstance);
             bool isProjectStep = _packageImportWizardInstance != null &&
@@ -3706,11 +3786,53 @@ namespace YUCP.Importer.Editor.PackageManager
         }
 
         /// <summary>
+        /// Initialize the importer for a public VPM alias.
+        /// </summary>
+        internal void InitializeForAlias(
+            PackageMetadata metadata,
+            bool showWindow)
+        {
+            if (metadata?.aliasPackage == null ||
+                !AliasPackageDiscovery.IsServerAuthorized(
+                    metadata.aliasPackage))
+            {
+                throw new ArgumentException(
+                    "A server-authorized alias is required.",
+                    nameof(metadata));
+            }
+
+            _hasPendingImportContext = true;
+            _isAliasBootstrapFlow = true;
+            _currentImportItems = null;
+            _allImportItems = null;
+            _currentPackagePath = string.Empty;
+            _currentPackageIconPath = string.Empty;
+            _packageImportWizardInstance = null;
+            _isProjectSettingsStep = false;
+            _detailsExpanded = false;
+            _preferOverwriteExisting = true;
+
+            titleContent = new GUIContent("YUCP Importer");
+            minSize = new Vector2(500, 600);
+            SetMetadata(metadata);
+            UpdateButtonStates();
+            RefreshUI();
+            RestorePendingInstallerView();
+
+            if (showWindow)
+            {
+                ShowUtility();
+                Focus();
+            }
+        }
+
+        /// <summary>
         /// Initialize window for package import with metadata and import items.
         /// </summary>
         public void InitializeForImport(string packagePath, System.Array importItems, System.Array allImportItems, string packageIconPath, object wizardInstance, bool isProjectSettingsStep)
         {
             _hasPendingImportContext = true;
+            _isAliasBootstrapFlow = false;
 
             // Lock assembly reload to prevent domain reload during import (like Unity's original window)
             if (!_isImportMode)
@@ -3738,9 +3860,6 @@ namespace YUCP.Importer.Editor.PackageManager
             // Set minimum window size
             minSize = new Vector2(500, 600);
 
-            // Show installer view
-            ShowInstallerView();
-
             // Verify package signature FIRST (synchronously) before setting up UI
             // This ensures verification completes before UI elements are displayed
             VerifyPackage(packagePath);
@@ -3766,6 +3885,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
             // Refresh UI now that everything is set up (including verification result)
             RefreshUI();
+            RestorePendingInstallerView();
 
             // Make window modal using fixed implementation that preserves tooltip/cursor behavior
             ShowModalUtilityFixed();
@@ -4215,6 +4335,13 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void RefreshUI()
         {
+            // Initialization can provide metadata before Unity calls CreateGUI.
+            // Retain that state and render it when the visual tree is ready.
+            if (_currentViewContainer == null || _installerRoot == null)
+            {
+                return;
+            }
+
             // Rebuild banner hero with updated metadata
             if (_bannerSection != null)
             {
@@ -4418,8 +4545,28 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 ClearFlowNotice();
 
+                PackageMetadata installMetadata =
+                    _currentMetadata ?? _cachedMetadata;
+                if (installMetadata?.aliasPackage != null &&
+                    AliasPackageDiscovery.IsServerAuthorized(
+                        installMetadata.aliasPackage))
+                {
+                    await VerifyAndInstallAliasAsync(installMetadata);
+                    return;
+                }
+
                 if (_currentImportItems == null || _currentImportItems.Length == 0)
                 {
+                    PackageMetadata pendingMetadata =
+                        _currentMetadata ?? _cachedMetadata;
+                    if (_isAliasBootstrapFlow &&
+                        AliasPackageDiscovery.IsServerAuthorized(
+                            pendingMetadata?.aliasPackage))
+                    {
+                        AliasPackageActivation.DismissForSession(
+                            pendingMetadata.aliasPackage);
+                    }
+
                     Debug.LogWarning("[YUCP PackageManager] No import items, closing window");
                     try
                     {
@@ -4491,50 +4638,6 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 _pendingImportAfterVerification = false;
 
-                PackageMetadata installMetadata = _currentMetadata ?? _cachedMetadata;
-                if (installMetadata?.aliasPackage != null &&
-                    string.Equals(installMetadata.aliasPackage.kind, "alias-v1", StringComparison.OrdinalIgnoreCase))
-                {
-                    string serverUrl = GetLicenseServerUrl();
-                    if (string.IsNullOrWhiteSpace(serverUrl))
-                    {
-                        ShowFlowNotice(
-                            "Install Package",
-                            "The verification server URL is not configured. Please check the YUCP Package Manager settings.",
-                            FlowNoticeTone.Error);
-                        return;
-                    }
-
-                    try
-                    {
-                        EditorUtility.DisplayProgressBar(
-                            "Installing Package",
-                            $"Verifying and staging '{installMetadata.packageName}'...",
-                            0.35f);
-                        string installError =
-                            await PackageLifecycleCoordinator.TryInstallAsync(
-                                serverUrl,
-                                installMetadata.aliasPackage);
-                        if (!string.IsNullOrWhiteSpace(installError))
-                        {
-                            ShowFlowNotice(
-                                "Install Package",
-                                string.IsNullOrWhiteSpace(installError)
-                                    ? "Could not install the verified package."
-                                    : installError,
-                                FlowNoticeTone.Error);
-                            return;
-                        }
-
-                        CompleteAliasInstallFlow(installMetadata.packageName);
-                        return;
-                    }
-                    finally
-                    {
-                        EditorUtility.ClearProgressBar();
-                    }
-                }
-
                 if (isMultiStep && !isProjectStep)
                 {
                     // Not final step - call DoNextStep
@@ -4574,6 +4677,105 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 Debug.LogError($"[YUCP PackageManager] Failed to import package: {ex.Message}\n{ex.StackTrace}");
                 ShowFlowNotice("Import failed", $"Failed to import package: {ex.Message}", FlowNoticeTone.Error);
+            }
+        }
+
+        private async Task VerifyAndInstallAliasAsync(
+            PackageMetadata metadata)
+        {
+            string serverUrl = GetLicenseServerUrl();
+            if (string.IsNullOrWhiteSpace(serverUrl))
+            {
+                ShowFlowNotice(
+                    "Install Package",
+                    "The verification server URL is not configured. " +
+                    "Check the YUCP Package Manager settings.",
+                    FlowNoticeTone.Error);
+                return;
+            }
+
+            string packageAccessToken =
+                await CreatorIdentityOAuthService.GetValidAccessTokenAsync(
+                    serverUrl,
+                    CreatorIdentityOAuthService.PackageInstallationScopes);
+            bool hasPackageAuthorization =
+                HasPackageInstallationAuthorization(
+                    CreatorIdentityOAuthService.IsSignedIn(),
+                    packageAccessToken);
+            _pendingImportAfterVerification = true;
+            _isCreatorIdentitySigningIn = !hasPackageAuthorization;
+            UpdateImportButtonEnabled();
+
+            try
+            {
+                if (_isCreatorIdentitySigningIn)
+                {
+                    bool signedIn = false;
+                    string signInError = null;
+                    await CreatorIdentityOAuthService.SignInAsync(
+                        serverUrl,
+                        () => signedIn = true,
+                        error => signInError = error,
+                        false);
+                    _isCreatorIdentitySigningIn = false;
+                    if (!signedIn)
+                    {
+                        ShowFlowNotice(
+                            "Verification failed",
+                            string.IsNullOrWhiteSpace(signInError)
+                                ? "Could not sign in to verify package access."
+                                : signInError,
+                            FlowNoticeTone.Error);
+                        return;
+                    }
+
+                    packageAccessToken =
+                        await CreatorIdentityOAuthService
+                            .GetValidAccessTokenAsync(
+                                serverUrl,
+                                CreatorIdentityOAuthService
+                                    .PackageInstallationScopes);
+                    if (!HasPackageInstallationAuthorization(
+                            CreatorIdentityOAuthService.IsSignedIn(),
+                            packageAccessToken))
+                    {
+                        ShowFlowNotice(
+                            "Verification failed",
+                            "Sign-in did not grant the scopes required " +
+                            "for package installation.",
+                            FlowNoticeTone.Error);
+                        return;
+                    }
+                }
+
+                SetVerifyStatusLabel("Checking package access...");
+                EditorUtility.DisplayProgressBar(
+                    "Installing Package",
+                    $"Verifying and staging '{metadata.packageName}'...",
+                    0.35f);
+                string installError =
+                    await PackageLifecycleCoordinator.TryInstallAsync(
+                        serverUrl,
+                        metadata.aliasPackage);
+                if (!string.IsNullOrWhiteSpace(installError))
+                {
+                    ShowFlowNotice(
+                        "Install Package",
+                        installError,
+                        FlowNoticeTone.Error);
+                    return;
+                }
+
+                AliasPackageActivation.DismissForSession(
+                    metadata.aliasPackage);
+                CompleteAliasInstallFlow(metadata.packageName);
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+                _isCreatorIdentitySigningIn = false;
+                _pendingImportAfterVerification = false;
+                UpdateImportButtonEnabled();
             }
         }
 
@@ -4773,11 +4975,15 @@ namespace YUCP.Importer.Editor.PackageManager
                 Debug.Log("[YUCP PackageManager] Unlocked assembly reload (alias install complete)");
             }
 
-            Debug.Log($"[YUCP PackageManager] Installed alias package '{packageName}' through the VPM resolver.");
+            Debug.Log(
+                $"[YUCP PackageManager] Installed '{packageName}' and " +
+                "removed its VPM bootstrap.");
 
             try
             {
                 Close();
+                EditorApplication.delayCall += () =>
+                    UnityEditor.PackageManager.Client.Resolve();
                 GUIUtility.ExitGUI();
             }
             catch (ExitGUIException)

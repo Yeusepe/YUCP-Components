@@ -76,6 +76,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         public static string ClientId => Domain.ClientId;
 
+        internal static string[] PackageInstallationScopes => new[]
+        {
+            "verification:read",
+            "products:read",
+        };
+
         private static string KeyToken => Domain.GetEditorPrefKey("AccessToken");
         private static string KeyExpiry => Domain.GetEditorPrefKey("TokenExpiry");
         private static string KeyUserId => Domain.GetEditorPrefKey("UserId");
