@@ -179,8 +179,8 @@ namespace YUCP.Importer.Editor.Tests
                 Path.Combine(Application.dataPath, ".."));
             string normalizedPath =
                 ".yucp/package-import-verifier-tests/" +
-                new string('a', 90) + "/" +
-                new string('b', 90) + "/coupled-fixture.txt";
+                new string('a', 120) + "/" +
+                new string('b', 120) + "/coupled-fixture.txt";
             string diskPath = Path.Combine(
                 projectPath,
                 normalizedPath.Replace(
@@ -225,6 +225,53 @@ namespace YUCP.Importer.Editor.Tests
                     Directory.Delete(extendedFixtureRoot, true);
                 }
             }
+        }
+
+        [Test]
+        public void ValidateUnityPathCompatibilityRejectsTheWindowsLimit()
+        {
+            const string normalizedPath =
+                "Packages/com.example.product/Resources/long-file-name.png";
+            string projectPath = @"C:\" + new string(
+                'p',
+                260 - @"C:\".Length - 1 - normalizedPath.Length);
+            var files = new List<TransferHelperFile>
+            {
+                new TransferHelperFile
+                {
+                    bytes = 1,
+                    normalizedPath = normalizedPath,
+                    sha256 = new string('1', 64),
+                },
+            };
+
+            InvalidDataException exception = Assert.Throws<InvalidDataException>(
+                () => PackageImportVerifier.ValidateUnityPathCompatibility(
+                    projectPath,
+                    files,
+                    true));
+
+            StringAssert.Contains("Move the project to a shorter folder", exception.Message);
+            Assert.DoesNotThrow(
+                () => PackageImportVerifier.ValidateUnityPathCompatibility(
+                    projectPath.Substring(0, projectPath.Length - 1),
+                    files,
+                    true));
+            Assert.DoesNotThrow(
+                () => PackageImportVerifier.ValidateUnityPathCompatibility(
+                    projectPath,
+                    files,
+                    false));
+        }
+
+        [Test]
+        public void TransferHelperExplainsTheUnityWindowsPathLimit()
+        {
+            Assert.AreEqual(
+                "The Unity project path is too long for this package on Windows. " +
+                "Move the project to a shorter folder.",
+                TransferHelperClient.BuildFailureMessage(
+                    "UNITY_WINDOWS_PATH_LIMIT"));
         }
 
         [Test]

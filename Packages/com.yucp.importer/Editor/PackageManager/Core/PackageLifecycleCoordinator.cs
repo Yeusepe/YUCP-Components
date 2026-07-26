@@ -133,6 +133,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     expectedCurrentReleaseRoot);
             if (resumed != null)
             {
+                RequireSuccessfulAliasFinalized(
+                    projectPath,
+                    alias,
+                    operation);
                 return resumed;
             }
             string accessToken = null;
@@ -144,15 +148,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 accessToken = await CreatorIdentityOAuthService
                     .GetValidAccessTokenAsync(
                         server.ToString(),
-                        "verification:read",
-                        "products:read");
+                        CreatorIdentityOAuthService
+                            .PackageInstallationScopes);
                 if (string.IsNullOrWhiteSpace(accessToken))
                 {
                     throw new InvalidOperationException(
                         "Sign in through the importer before package installation.");
                 }
             }
-            return await ExecuteCoreAsync(
+            PackageLifecycleExecutionResult result = await ExecuteCoreAsync(
                 serverUrl,
                 alias,
                 operation,
@@ -164,6 +168,61 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 approvedPolicyVersion,
                 accessToken,
                 hasResolvedAccessToken);
+            RequireSuccessfulAliasFinalized(
+                projectPath,
+                alias,
+                operation);
+            return result;
+        }
+
+        internal static string FinalizeSuccessfulAliasOperation(
+            string projectPath,
+            AliasPackageContract alias,
+            string operation)
+        {
+            if (string.Equals(
+                    operation,
+                    "preflight",
+                    StringComparison.Ordinal))
+            {
+                return null;
+            }
+            if (alias == null ||
+                string.IsNullOrWhiteSpace(alias.packageName))
+            {
+                return "The VPM bootstrap identity is invalid.";
+            }
+
+            string packagePath = Path.Combine(
+                Path.GetFullPath(projectPath),
+                "Packages",
+                alias.packageName);
+            if (!Directory.Exists(packagePath))
+            {
+                return null;
+            }
+
+            return VpmBootstrapPackageCleanup.RemoveInstalledAlias(
+                projectPath,
+                alias.packageName);
+        }
+
+        private static void RequireSuccessfulAliasFinalized(
+            string projectPath,
+            AliasPackageContract alias,
+            string operation)
+        {
+            string cleanupError = FinalizeSuccessfulAliasOperation(
+                projectPath,
+                alias,
+                operation);
+            if (!string.IsNullOrWhiteSpace(cleanupError))
+            {
+                throw new InvalidOperationException(
+                    "The package operation succeeded, but its VPM bootstrap " +
+                    "could not be removed. " +
+                    cleanupError);
+            }
         }
 
         private static async Task<PackageLifecycleExecutionResult> ExecuteCoreAsync(
@@ -271,8 +330,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 accessToken = CreatorIdentityOAuthService
                     .GetValidAccessTokenAsync(
                         server.ToString(),
-                        "verification:read",
-                        "products:read")
+                        CreatorIdentityOAuthService
+                            .PackageInstallationScopes)
                     .GetAwaiter()
                     .GetResult();
             }
@@ -334,6 +393,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             List<VerifiedStagingFile> targetFiles = ToVerifiedFiles(helper.files);
+            PackageImportVerifier.ValidateUnityPathCompatibility(
+                projectPath,
+                helper.files,
+                Path.DirectorySeparatorChar == '\\');
             targetFiles.Add(WriteInstallState(
                 helper.stagingTree,
                 alias.aliasId,

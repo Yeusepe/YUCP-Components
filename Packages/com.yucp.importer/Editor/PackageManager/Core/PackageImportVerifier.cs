@@ -10,6 +10,34 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 {
     internal static class PackageImportVerifier
     {
+        private const int UnityWindowsMaximumPathCharacters = 260;
+
+        internal static void ValidateUnityPathCompatibility(
+            string projectPath,
+            IReadOnlyList<TransferHelperFile> files,
+            bool windowsPathLimitApplies)
+        {
+            if (!windowsPathLimitApplies)
+            {
+                return;
+            }
+            string projectRoot = RequireProjectRoot(projectPath);
+            foreach (TransferHelperFile file in
+                files ?? Array.Empty<TransferHelperFile>())
+            {
+                string diskPath = ResolveOwnedFilePath(
+                    projectRoot,
+                    file.normalizedPath);
+                if (diskPath.Length >= UnityWindowsMaximumPathCharacters)
+                {
+                    throw new InvalidDataException(
+                        "The Unity project path is too long for this package on Windows. " +
+                        "Move the project to a shorter folder. Unsupported package path: " +
+                        file.normalizedPath);
+                }
+            }
+        }
+
         internal static void ImportAndVerify(
             string projectPath,
             IReadOnlyList<TransferHelperFile> files)
@@ -126,6 +154,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string projectRoot,
             string normalizedPath)
         {
+            return ToExtendedWindowsPath(
+                ResolveOwnedFilePath(projectRoot, normalizedPath));
+        }
+
+        private static string ResolveOwnedFilePath(
+            string projectRoot,
+            string normalizedPath)
+        {
             if (string.IsNullOrWhiteSpace(normalizedPath) ||
                 normalizedPath.Contains("\\") ||
                 Path.IsPathRooted(normalizedPath) ||
@@ -154,7 +190,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidDataException(
                     "An owned package path escapes the Unity project.");
             }
-            return ToExtendedWindowsPath(resolved);
+            return resolved;
         }
 
         internal static string ToExtendedWindowsPath(string path)
