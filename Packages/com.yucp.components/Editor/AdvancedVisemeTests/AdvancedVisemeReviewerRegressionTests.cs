@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -31,9 +32,25 @@ namespace YUCP.Components.Editor.Tests
         public void MissingProfileKeepsSpeechLivelinessAtItsAuthoredDefault()
         {
             var method = typeof(AdvancedVisemeTuning).GetMethod(
-                             "ConfiguredValue") ??
+                             "ConfiguredValue",
+                             BindingFlags.Public | BindingFlags.Static,
+                             null,
+                             new[]
+                             {
+                                 typeof(VisemeReconstructionProfile),
+                                 typeof(AdvancedVisemeTuningControl)
+                             },
+                             null) ??
                          typeof(AdvancedVisemeTuning).GetMethod(
-                             "DefaultValue");
+                             "DefaultValue",
+                             BindingFlags.Public | BindingFlags.Static,
+                             null,
+                             new[]
+                             {
+                                 typeof(VisemeReconstructionProfile),
+                                 typeof(AdvancedVisemeTuningControl)
+                             },
+                             null);
             Assert.That(method, Is.Not.Null);
             var value = (float)method.Invoke(
                 null,

@@ -492,9 +492,10 @@ namespace YUCP.Components.Editor
                 ? graph.Param("ConditionalLearnedDetail/Compute", 1f)
                 : MathGraph.AlwaysOneParameter;
             var conditionalAuthority = conditionalLearnedDetailEnabled
-                ? UseImmediateConditionalLearnedDetailAuthorityForTests
-                    ? conditionalCompute
-                    : graph.Param("ConditionalLearnedDetail/Authority", 1f)
+                ? ShouldDelayConditionalLearnedDetailAuthority(
+                    betaFaceInferenceEnabled)
+                    ? graph.Param("ConditionalLearnedDetail/Authority", 1f)
+                    : conditionalCompute
                 : MathGraph.AlwaysOneParameter;
             var betaContextRoot = conditionalBetaContextSleepEnabled
                 ? graph.Direct("Conditional Beta context compute")
@@ -1572,7 +1573,7 @@ namespace YUCP.Components.Editor
                 {
                     var postFold = AdvancedVisemeAnimatorGraphOptimizer.Optimize(
                         controller, internalPrefix, result.globalParameters);
-                    result.optimizerReport = postFold;
+                    MergeOptimizerReport(result.optimizerReport, postFold);
                     graph.PruneUnreachableMotions();
                     if (postFold.removedAnimatorCurves == 0 &&
                         postFold.removedInternalParameters == 0)
@@ -1584,6 +1585,45 @@ namespace YUCP.Components.Editor
             AssetDatabase.SaveAssetIfDirty(expressionParameters);
             AssetDatabase.ImportAsset(request.controllerPath);
             return result;
+        }
+
+        private static void MergeOptimizerReport(
+            AdvancedVisemeAnimatorGraphOptimizer.Report cumulative,
+            AdvancedVisemeAnimatorGraphOptimizer.Report next)
+        {
+            cumulative.internalParametersAfter =
+                next.internalParametersAfter;
+            cumulative.animatorCurvesAfter = next.animatorCurvesAfter;
+            cumulative.removedInternalParameters +=
+                next.removedInternalParameters;
+            cumulative.removedAnimatorCurves +=
+                next.removedAnimatorCurves;
+            cumulative.removedNeutralZeroCurves +=
+                next.removedNeutralZeroCurves;
+            cumulative.removedDeadAnimatorCurves +=
+                next.removedDeadAnimatorCurves;
+            cumulative.internedCongruentParameters +=
+                next.internedCongruentParameters;
+            cumulative.removedCongruentCurves +=
+                next.removedCongruentCurves;
+            cumulative.liveInternalParameters =
+                next.liveInternalParameters;
+            cumulative.deadInternalParameters =
+                next.deadInternalParameters;
+            foreach (var mapping in next.internedParameterMappings)
+            {
+                cumulative.internedParameterMappings[mapping.Key] =
+                    mapping.Value;
+            }
+            foreach (var group in next.removedCurvesByGroup)
+            {
+                cumulative.removedCurvesByGroup[group.Key] =
+                    cumulative.removedCurvesByGroup.TryGetValue(
+                        group.Key,
+                        out int prior)
+                        ? prior + group.Value
+                        : group.Value;
+            }
         }
 
         private static Dictionary<AdvancedVisemeTuningControl, string> BuildTuningParameters(
@@ -7516,12 +7556,16 @@ namespace YUCP.Components.Editor
             if (UseModelMatchedConditionalLearnedDetailReadinessForTests)
             {
                 // Every intentionally slept temporal lane in the learned model
-                // is a two-pole observer using this generated 24 ms alpha. Mirror
-                // that exact error envelope instead of guessing an unrelated
-                // wall-time delay. Reusing the model alpha also avoids another
-                // exp(-dt/tau) approximation tree.
+                // is a two-pole observer using this generated 24 ms alpha.
+                // Generate it here so readiness does not depend on the
+                // separate face-conditioned inference alpha.
                 var modelAlpha = graph.Param(
-                    "TongueInference/Observer/Alpha", 0.5f);
+                    "ConditionalLearnedDetail/ReadinessAlpha", 0.5f);
+                graph.AddOperation(root, graph.AlphaFromDeltaTime(
+                    frameTime,
+                    modelAlpha,
+                    AdvancedVisemeHiddenPhonePosterior
+                        .ObserverResponseSeconds));
                 var readinessFast = graph.Param(
                     "ConditionalLearnedDetail/ReadinessFast", 1f);
                 var readiness = graph.Param(
@@ -7591,6 +7635,13 @@ namespace YUCP.Components.Editor
                 ConditionalLearnedDetailStartupHotSeconds +
                 ConditionalLearnedDetailStartupTransitionSeconds,
                 "Conditional learned-detail startup authority envelope"));
+        }
+
+        private static bool ShouldDelayConditionalLearnedDetailAuthority(
+            bool betaFaceInferenceEnabled)
+        {
+            return betaFaceInferenceEnabled &&
+                   !UseImmediateConditionalLearnedDetailAuthorityForTests;
         }
 
         internal static float ConditionalLearnedDetailComputeTarget(

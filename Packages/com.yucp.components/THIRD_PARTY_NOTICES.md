@@ -24,8 +24,9 @@ was combined with calibrated EMA face dynamics to derive aggregate `/m/` versus
 `/n,l/` compatibility coefficients;
 for the speech-only shape model, normalized continuous Oculus frames were
 aggregated by their dominant winner, reduced with an exact sparse-simplex
-projection into a five-support base, and fitted by elapsed-winner time to four
-simplex control points for a 128 ms causal cubic target trajectory;
+projection into a five-support base, and fitted by elapsed-winner time to five
+simplex control points. They form a 168 ms cubic and a 56 ms linear tail.
+The total target trajectory is 224 ms;
 values were aggregated across documented train/development subsets and evaluated
 on held-out speakers and sentences. No raw trajectories, audio, speaker geometry,
 absolute corpus coordinates, or Oculus binary are redistributed.

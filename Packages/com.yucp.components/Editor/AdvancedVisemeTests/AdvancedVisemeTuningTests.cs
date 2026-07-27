@@ -1146,11 +1146,26 @@ namespace YUCP.Components.Editor.Tests
                     .Select(parameter => parameter.Substring(
                         parameter.IndexOf(retentionMarker,
                             StringComparison.Ordinal) + retentionMarker.Length))
-                    .Select(suffix => suffix.Substring(0,
-                        suffix.IndexOf('/')))
+                    .Select(suffix =>
+                    {
+                        var separator = suffix.IndexOf('/');
+                        Assert.That(
+                            separator,
+                            Is.GreaterThan(0),
+                            "Unexpected retention-state parameter suffix: " +
+                            suffix);
+                        return suffix.Substring(0, separator);
+                    })
                     .Distinct(StringComparer.Ordinal)
-                    .Select(name => (AdvancedVisemeArticulatorGroup)Enum.Parse(
-                        typeof(AdvancedVisemeArticulatorGroup), name))
+                    .Select(name =>
+                    {
+                        Assert.That(
+                            Enum.TryParse(name, out
+                                AdvancedVisemeArticulatorGroup group),
+                            Is.True,
+                            "Unknown retention group: " + name);
+                        return group;
+                    })
                     .ToArray();
                 Assert.That(liveGroups, Is.Not.Empty,
                     "At least one corpus-retention family must survive liveness.");
@@ -1749,8 +1764,13 @@ namespace YUCP.Components.Editor.Tests
                         .SelectMany(layer => layer.stateMachine.states)
                         .SelectMany(child => child.state.behaviours)
                         .OfType<VRC_AvatarParameterDriver>()
-                        .Where(driver => driver.name.IndexOf(
-                            "Conditional", StringComparison.OrdinalIgnoreCase) >= 0)
+                        .Where(driver => driver.parameters.Any(parameter =>
+                            (parameter.name ?? string.Empty).IndexOf(
+                                "Conditional",
+                                StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            (parameter.source ?? string.Empty).IndexOf(
+                                "Conditional",
+                                StringComparison.OrdinalIgnoreCase) >= 0))
                         .ToArray();
                     Assert.That(conditionalDrivers, Is.Empty,
                         "The Math-root gate must not depend on state behaviours.");
@@ -1950,17 +1970,20 @@ namespace YUCP.Components.Editor.Tests
                     UsesParameter(tree, readinessFast)), Is.True);
                 var readinessObserver = trees.Single(tree =>
                     tree.name == "Vector blend by " + prefix +
-                    "TongueInference/Observer/Alpha" &&
+                    "ConditionalLearnedDetail/ReadinessAlpha" &&
                     WritesParameter(tree, readinessFast) &&
                     WritesParameter(tree, readiness));
                 Assert.That(readinessObserver.blendParameter,
-                    Is.EqualTo(prefix + "Alpha/Viseme/Configured"),
-                    "The optimizer must merge the identical generated 24 ms " +
-                    "alpha into AVR's existing configured viseme alpha.");
-                Assert.That(controller.parameters.Any(parameter =>
+                    Is.EqualTo(prefix +
+                        "ConditionalLearnedDetail/ReadinessAlpha"),
+                    "Readiness must use its fixed 24 ms model pole.");
+                Assert.That(controller.parameters.Count(parameter =>
                     parameter.name == prefix +
-                    "TongueInference/Observer/Alpha"), Is.False,
-                    "A redundant observer-alpha parameter must not survive lowering.");
+                    "ConditionalLearnedDetail/ReadinessAlpha"), Is.EqualTo(1));
+                Assert.That(trees.Any(tree => WritesParameter(
+                    tree,
+                    readinessObserver.blendParameter)), Is.True,
+                    "The readiness alpha must have a frame-time writer.");
                 var lowFpsAuthority = trees.Single(tree =>
                     tree.name ==
                     "Conditional learned-detail low-FPS readiness authority bypass");
@@ -1975,6 +1998,47 @@ namespace YUCP.Components.Editor.Tests
                 fixture?.Dispose();
                 AdvancedVisemeAnimatorBuilder
                     .EnableConditionalLearnedDetailSleepForTests = previousSleep;
+                AdvancedVisemeAnimatorBuilder
+                    .UseImmediateConditionalLearnedDetailAuthorityForTests =
+                    previousImmediate;
+                AdvancedVisemeAnimatorBuilder
+                    .UseModelMatchedConditionalLearnedDetailReadinessForTests =
+                    previousReadiness;
+            }
+        }
+
+        [Test]
+        public void ConditionalModelMatchedReadinessRequiresFaceInference()
+        {
+            var previousImmediate = AdvancedVisemeAnimatorBuilder
+                .UseImmediateConditionalLearnedDetailAuthorityForTests;
+            var previousReadiness = AdvancedVisemeAnimatorBuilder
+                .UseModelMatchedConditionalLearnedDetailReadinessForTests;
+            try
+            {
+                AdvancedVisemeAnimatorBuilder
+                    .UseImmediateConditionalLearnedDetailAuthorityForTests =
+                    false;
+                AdvancedVisemeAnimatorBuilder
+                    .UseModelMatchedConditionalLearnedDetailReadinessForTests =
+                    true;
+                MethodInfo method = typeof(AdvancedVisemeAnimatorBuilder)
+                    .GetMethod(
+                        "ShouldDelayConditionalLearnedDetailAuthority",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(method, Is.Not.Null);
+
+                Assert.That(
+                    method.Invoke(null, new object[] { false }),
+                    Is.False,
+                    "A Beta graph without face inference needs no readiness.");
+                Assert.That(
+                    method.Invoke(null, new object[] { true }),
+                    Is.True,
+                    "Face inference needs the model-matched readiness delay.");
+            }
+            finally
+            {
                 AdvancedVisemeAnimatorBuilder
                     .UseImmediateConditionalLearnedDetailAuthorityForTests =
                     previousImmediate;

@@ -773,7 +773,10 @@ namespace YUCP.Components.Editor.Tests
                     .ToArray();
                 var featureUnits = features.Select((feature, index) =>
                         0.5f + 0.5f * feature /
-                        AdvancedVisemeVisibleTongueResidual.FeatureSafeBound(kind, index))
+                        Mathf.Max(
+                            1e-6f,
+                            AdvancedVisemeVisibleTongueResidual
+                                .FeatureSafeBound(kind, index)))
                     .ToArray();
                 var expected = new float[AdvancedVisemeVisibleTongueResidual.OutputCount];
                 AdvancedVisemeVisibleTongueResidual.PredictUnclamped(

@@ -70,8 +70,8 @@ The neutral-zero pass now also recognizes an exact operation-local case outside 
 
 In the final VRCFury-merged Balanced8/Beta fixture, the pass reduced the controller from **5,047 to 4,453 Animator curves** and from **2,336 to 2,248 clips**, with the same 667 BlendTrees and 1,147 parameters. Paired manual evaluation at 90 FPS measured:
 
-- local active: `2.789522 ms` to `2.526170 ms`, a **0.311844 ms** median saving;
-- remote active: `2.856343 ms` to `2.530743 ms`, a **0.291570 ms** median saving;
+- local active: `2.789522 ms` to `2.526170 ms`, a **0.263352 ms** difference between medians;
+- remote active: `2.856343 ms` to `2.530743 ms`, a **0.325600 ms** difference between medians;
 - local idle: a **0.269136 ms** median saving;
 - remote idle: a **0.270559 ms** median saving.
 

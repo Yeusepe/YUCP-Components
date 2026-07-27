@@ -537,6 +537,43 @@ namespace YUCP.Components.Editor.Tests
                 AssetDatabase.AddObjectToAsset(item, controller);
             }
 
+            private void CollectStateMachine(
+                AnimatorStateMachine machine,
+                ISet<int> added)
+            {
+                if (machine == null ||
+                    !added.Add(machine.GetInstanceID())) return;
+                owned.Add(machine);
+                foreach (var child in machine.states)
+                {
+                    if (child.state != null &&
+                        added.Add(child.state.GetInstanceID()))
+                        owned.Add(child.state);
+                    foreach (var transition in child.state.transitions)
+                        if (transition != null &&
+                            added.Add(transition.GetInstanceID()))
+                            owned.Add(transition);
+                }
+                foreach (var transition in machine.anyStateTransitions)
+                    if (transition != null &&
+                        added.Add(transition.GetInstanceID()))
+                        owned.Add(transition);
+                foreach (var transition in machine.entryTransitions)
+                    if (transition != null &&
+                        added.Add(transition.GetInstanceID()))
+                        owned.Add(transition);
+                foreach (var child in machine.stateMachines)
+                {
+                    foreach (var transition in
+                             machine.GetStateMachineTransitions(
+                                 child.stateMachine))
+                        if (transition != null &&
+                            added.Add(transition.GetInstanceID()))
+                            owned.Add(transition);
+                    CollectStateMachine(child.stateMachine, added);
+                }
+            }
+
             public void Dispose()
             {
                 if (!string.IsNullOrEmpty(assetPath))
@@ -545,6 +582,12 @@ namespace YUCP.Components.Editor.Tests
                     assetPath = null;
                     return;
                 }
+                var added = new HashSet<int>(
+                    owned
+                        .Where(item => item != null)
+                        .Select(item => item.GetInstanceID()));
+                foreach (var layer in controller.layers)
+                    CollectStateMachine(layer.stateMachine, added);
                 for (var index = owned.Count - 1; index >= 0; index--)
                     if (owned[index] != null)
                         UnityEngine.Object.DestroyImmediate(owned[index]);

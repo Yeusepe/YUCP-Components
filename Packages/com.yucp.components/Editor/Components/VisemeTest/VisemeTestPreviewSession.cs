@@ -656,6 +656,9 @@ namespace YUCP.Components.Editor
 
             ApplyFrame(state, viseme, voice, weights);
             state.analysisSampleClock += state.analysisFrame.Length;
+            // Quiet preview frames remain silent while lossless capture keeps
+            // the native Oculus weights. Consumers must not derive their
+            // continuous teacher winner from the preview viseme.
             PublishAnalysisSample(
                 state.data,
                 viseme,

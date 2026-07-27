@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.Animations;
@@ -13,6 +14,55 @@ namespace YUCP.Components.Editor.Tests
     {
         private const string Prefix = "YUCP/Test/_Internal/";
         private const string AlwaysOne = "__YUCP_AVR_ONE";
+
+        [Test]
+        public void PostFoldReportsAccumulateEveryOptimizationPass()
+        {
+            var cumulative = new AdvancedVisemeAnimatorGraphOptimizer.Report
+            {
+                animatorCurvesBefore = 12,
+                animatorCurvesAfter = 10,
+                internalParametersBefore = 8,
+                internalParametersAfter = 7,
+                removedAnimatorCurves = 2,
+                removedInternalParameters = 1,
+            };
+            cumulative.internedParameterMappings["first"] = "middle";
+            cumulative.removedCurvesByGroup["A"] = 2;
+            var next = new AdvancedVisemeAnimatorGraphOptimizer.Report
+            {
+                animatorCurvesBefore = 10,
+                animatorCurvesAfter = 8,
+                internalParametersBefore = 7,
+                internalParametersAfter = 6,
+                removedAnimatorCurves = 2,
+                removedInternalParameters = 1,
+            };
+            next.internedParameterMappings["middle"] = "final";
+            next.removedCurvesByGroup["A"] = 1;
+            next.removedCurvesByGroup["B"] = 1;
+            MethodInfo merge = typeof(AdvancedVisemeAnimatorBuilder).GetMethod(
+                "MergeOptimizerReport",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(merge, Is.Not.Null);
+            merge.Invoke(null, new object[] { cumulative, next });
+
+            Assert.That(cumulative.animatorCurvesBefore, Is.EqualTo(12));
+            Assert.That(cumulative.animatorCurvesAfter, Is.EqualTo(8));
+            Assert.That(cumulative.internalParametersBefore, Is.EqualTo(8));
+            Assert.That(cumulative.internalParametersAfter, Is.EqualTo(6));
+            Assert.That(cumulative.removedAnimatorCurves, Is.EqualTo(4));
+            Assert.That(cumulative.removedInternalParameters, Is.EqualTo(2));
+            Assert.That(
+                cumulative.internedParameterMappings["first"],
+                Is.EqualTo("middle"));
+            Assert.That(
+                cumulative.internedParameterMappings["middle"],
+                Is.EqualTo("final"));
+            Assert.That(cumulative.removedCurvesByGroup["A"], Is.EqualTo(3));
+            Assert.That(cumulative.removedCurvesByGroup["B"], Is.EqualTo(1));
+        }
 
         [Test]
         public void RemovesOnlyPrivateWritesOutsideTheObservableCone()
