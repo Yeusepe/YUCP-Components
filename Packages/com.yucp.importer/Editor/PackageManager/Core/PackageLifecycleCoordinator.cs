@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -71,6 +72,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         internal const string EmptyReleaseRoot =
             "0000000000000000000000000000000000000000000000000000000000000000";
+
+        internal static void EnsureSupportedClientPlatform(bool isWindows)
+        {
+            if (!isWindows)
+            {
+                throw new PlatformNotSupportedException(
+                    "Package installation requires a Windows x64 Unity Editor.");
+            }
+        }
+
+        private static void EnsureSupportedClientPlatform()
+        {
+            EnsureSupportedClientPlatform(
+                RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+                RuntimeInformation.OSArchitecture == Architecture.X64);
+        }
+
         internal static async Task<PackageLifecycleInstallResult> TryInstallAsync(
             AliasPackageContract alias,
             Action<PackageLifecycleUserProgress> reportProgress)
@@ -81,6 +99,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             try
             {
                 ValidateAlias(alias);
+                EnsureSupportedClientPlatform();
                 PackageLifecycleInstallResult pending =
                     await TryResumePendingAsync(alias, reportProgress);
                 if (pending != null)
@@ -211,6 +230,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             try
             {
                 ValidateAlias(alias);
+                EnsureSupportedClientPlatform();
                 if (operation != "repair" &&
                     operation != "rollback" &&
                     operation != "uninstall")
@@ -390,6 +410,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 Action<PackageLifecycleUserProgress> reportProgress)
         {
             ValidateAlias(alias);
+            EnsureSupportedClientPlatform();
             string projectPath = CurrentProjectPath();
             if (!TryFindPendingAttempt(
                     projectPath,
@@ -518,6 +539,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             Action<PackageLifecycleUserProgress> reportProgress = null)
         {
             ValidateAlias(alias);
+            EnsureSupportedClientPlatform();
             string projectPath = CurrentProjectPath();
             PackageLifecycleExecutionResult resumed =
                 string.Equals(

@@ -14,6 +14,15 @@ namespace YUCP.Importer.Editor.Tests
     public sealed class PackageLifecycleCheckpointStoreTests
     {
         [Test]
+        public void LifecycleRejectsUnsupportedClientsBeforeCheckpointPublication()
+        {
+            Assert.DoesNotThrow(() =>
+                PackageLifecycleCoordinator.EnsureSupportedClientPlatform(true));
+            Assert.Throws<PlatformNotSupportedException>(() =>
+                PackageLifecycleCoordinator.EnsureSupportedClientPlatform(false));
+        }
+
+        [Test]
         public void CheckpointRoundTripPreservesCommittedVerificationContext()
         {
             string project = CreateProject();
