@@ -5,6 +5,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+using VRC.SDK3.Avatars.Components;
 
 namespace YUCP.Components.Editor.Tests
 {
@@ -434,6 +435,70 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(rewritten, Is.EqualTo(Prefix + "First"));
                 Assert.That(controller.parameters.Select(parameter => parameter.name),
                     Does.Not.Contain(Prefix + "Second"));
+            }
+            finally
+            {
+                AdvancedVisemeAnimatorGraphOptimizer
+                    .DisableOperationLocalNeutralZeroEliminationForTests =
+                    previousDisable;
+                Destroy(objects);
+            }
+        }
+
+        [Test]
+        public void UnknownBehaviourRetainsEveryPrivateParameter()
+        {
+            var objects = new List<UnityEngine.Object>();
+            var previousDisable = AdvancedVisemeAnimatorGraphOptimizer
+                .DisableOperationLocalNeutralZeroEliminationForTests;
+            try
+            {
+                AdvancedVisemeAnimatorGraphOptimizer
+                    .DisableOperationLocalNeutralZeroEliminationForTests = true;
+                var controller = NewController(objects);
+                AddFloat(controller, AlwaysOne, 1f);
+                AddFloat(controller, "Input", 0f);
+                AddFloat(controller, Prefix + "First", 0f);
+                AddFloat(controller, Prefix + "Second", 0f);
+                AddFloat(controller, Prefix + "Third", 0f);
+
+                var first = Setter(objects, Prefix + "First", 1f, "First");
+                var second = Setter(objects, Prefix + "Second", 1f, "Second");
+                var third = Setter(objects, Prefix + "Third", 1f, "Third");
+                var state = AddState(controller, Direct(
+                    objects,
+                    "Root",
+                    Child(first, "Input"),
+                    Child(second, "Input"),
+                    Child(third, "Input")));
+                var behaviour = state.state
+                    .AddStateMachineBehaviour<VRCAnimatorTrackingControl>();
+                Assert.That(behaviour, Is.Not.Null);
+                behaviour.debugString = Prefix + "First";
+                Assert.That(state.state.behaviours, Does.Contain(behaviour));
+
+                var report = AdvancedVisemeAnimatorGraphOptimizer.Optimize(
+                    controller,
+                    Prefix.TrimEnd('/'),
+                    Array.Empty<string>());
+
+                Assert.That(report.internedCongruentParameters, Is.Zero);
+                Assert.That(report.removedInternalParameters, Is.Zero);
+                Assert.That(
+                    controller.parameters.Select(parameter => parameter.name),
+                    Does.Contain(Prefix + "First"));
+                Assert.That(
+                    controller.parameters.Select(parameter => parameter.name),
+                    Does.Contain(Prefix + "Second"));
+                Assert.That(
+                    controller.parameters.Select(parameter => parameter.name),
+                    Does.Contain(Prefix + "Third"));
+                Assert.That(AnimationUtility.GetCurveBindings(first),
+                    Has.Length.EqualTo(1));
+                Assert.That(AnimationUtility.GetCurveBindings(second),
+                    Has.Length.EqualTo(1));
+                Assert.That(AnimationUtility.GetCurveBindings(third),
+                    Has.Length.EqualTo(1));
             }
             finally
             {

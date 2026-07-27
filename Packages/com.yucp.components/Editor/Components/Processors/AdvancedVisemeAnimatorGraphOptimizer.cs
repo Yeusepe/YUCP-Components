@@ -21,7 +21,7 @@ namespace YUCP.Components.Editor
     /// </summary>
     internal static class AdvancedVisemeAnimatorGraphOptimizer
     {
-        internal const int Version = 4;
+        internal const int Version = 5;
 
         // Test seam: structure-inspection tests assert properties of the
         // pre-interning lowering (duplicate-producing fixtures are sometimes
@@ -85,6 +85,21 @@ namespace YUCP.Components.Editor
             public bool eligible = true;
             public int useCount;
         }
+
+        private delegate void CollectBehaviourParameters(
+            StateMachineBehaviour behaviour,
+            ISet<string> parameters);
+
+        private static readonly IReadOnlyDictionary<
+                Type, CollectBehaviourParameters>
+            CompleteBehaviourParameterContracts =
+                new Dictionary<Type, CollectBehaviourParameters>
+                {
+                    {
+                        typeof(VRCAvatarParameterDriver),
+                        CollectAvatarParameterDriverParameters
+                    }
+                };
 
         internal static Report Optimize(
             AnimatorController controller,
@@ -237,8 +252,7 @@ namespace YUCP.Components.Editor
 
             // A parameter with a non-curve writer or an opaque reader is not a
             // pure dataflow value; keep it out of the congruence entirely.
-            if (!TryCollectBehaviourConstraints(
-                    controller, internalPrefix, out var ineligible))
+            if (!TryCollectBehaviourConstraints(controller, out var ineligible))
                 return;
 
             var sites = new Dictionary<string, List<CongruenceSite>>(
@@ -531,64 +545,47 @@ namespace YUCP.Components.Editor
         }
 
         /// <summary>
-        /// Collects private parameters that behaviours write or opaquely read.
-        /// Returns false when an unknown behaviour exposes no discoverable
-        /// parameter references, in which case interning is skipped entirely.
+        /// Collects parameters from behavior types with complete access
+        /// contracts. Returns false when any behavior type is opaque.
         /// </summary>
         private static bool TryCollectBehaviourConstraints(
             AnimatorController controller,
-            string internalPrefix,
             out HashSet<string> ineligible)
         {
             ineligible = new HashSet<string>(StringComparer.Ordinal);
-            var parameterNames = controller.parameters
-                .Select(parameter => parameter.name)
-                .ToHashSet(StringComparer.Ordinal);
             foreach (var behaviour in EnumerateBehaviours(controller))
             {
                 if (behaviour == null) continue;
-                if (behaviour is VRCAvatarParameterDriver driver)
-                {
-                    if (driver.parameters == null) continue;
-                    foreach (var parameter in driver.parameters)
-                    {
-                        // A driver write is a non-curve writer; a driver read
-                        // could also be rewritten, but keeping both endpoints
-                        // out of the congruence keeps the proof local to
-                        // curve-defined dataflow.
-                        if (!string.IsNullOrEmpty(parameter.name))
-                            ineligible.Add(parameter.name);
-                        if (!string.IsNullOrEmpty(parameter.source))
-                            ineligible.Add(parameter.source);
-                    }
-                    continue;
-                }
-
-                var found = false;
-                try
-                {
-                    var serialized = new SerializedObject(behaviour);
-                    var iterator = serialized.GetIterator();
-                    var enterChildren = true;
-                    while (iterator.NextVisible(enterChildren))
-                    {
-                        enterChildren = false;
-                        if (iterator.propertyType != SerializedPropertyType.String)
-                            continue;
-                        var value = iterator.stringValue;
-                        if (!parameterNames.Contains(value)) continue;
-                        ineligible.Add(value);
-                        found = true;
-                    }
-                }
-                catch (Exception)
-                {
-                    found = false;
-                }
-
-                if (!found) return false;
+                if (!TryCollectCompleteBehaviourParameters(
+                        behaviour, ineligible))
+                    return false;
             }
             return true;
+        }
+
+        private static bool TryCollectCompleteBehaviourParameters(
+            StateMachineBehaviour behaviour,
+            ISet<string> parameters)
+        {
+            if (!CompleteBehaviourParameterContracts.TryGetValue(
+                    behaviour.GetType(), out var collect))
+                return false;
+            collect(behaviour, parameters);
+            return true;
+        }
+
+        private static void CollectAvatarParameterDriverParameters(
+            StateMachineBehaviour behaviour,
+            ISet<string> parameters)
+        {
+            var driver = (VRCAvatarParameterDriver)behaviour;
+            if (driver.parameters == null) return;
+            foreach (var parameter in driver.parameters)
+            {
+                // Driver reads and writes stay outside curve congruence.
+                AddParameter(parameter.name, parameters);
+                AddParameter(parameter.source, parameters);
+            }
         }
 
         private static IEnumerable<StateMachineBehaviour> EnumerateBehaviours(
@@ -1135,49 +1132,15 @@ namespace YUCP.Components.Editor
             foreach (var behaviour in behaviours)
             {
                 if (behaviour == null) continue;
-                if (behaviour is VRCAvatarParameterDriver driver)
-                {
-                    if (driver.parameters == null) continue;
-                    foreach (var parameter in driver.parameters)
-                    {
-                        AddParameter(parameter.name, analysis.roots);
-                        AddParameter(parameter.source, analysis.roots);
-                    }
+                if (TryCollectCompleteBehaviourParameters(
+                        behaviour, analysis.roots))
                     continue;
-                }
 
-                // Unknown behaviours can read Animator parameters through native
-                // state APIs. Serialized exact-name references are retained, and
-                // if none are discoverable all private values remain live.
-                var found = false;
-                try
-                {
-                    var serialized = new SerializedObject(behaviour);
-                    var iterator = serialized.GetIterator();
-                    var enterChildren = true;
-                    while (iterator.NextVisible(enterChildren))
-                    {
-                        enterChildren = false;
-                        if (iterator.propertyType != SerializedPropertyType.String)
-                            continue;
-                        var value = iterator.stringValue;
-                        if (!parameterNames.Contains(value)) continue;
-                        analysis.roots.Add(value);
-                        found = true;
-                    }
-                }
-                catch (Exception)
-                {
-                    found = false;
-                }
-
-                if (!found)
-                {
-                    foreach (var parameter in parameterNames.Where(parameter =>
-                                 parameter.StartsWith(internalPrefix,
-                                     StringComparison.Ordinal)))
-                        analysis.roots.Add(parameter);
-                }
+                // Unknown behavior code can access any private parameter.
+                foreach (var parameter in parameterNames.Where(parameter =>
+                             parameter.StartsWith(internalPrefix,
+                                 StringComparison.Ordinal)))
+                    analysis.roots.Add(parameter);
             }
         }
 
