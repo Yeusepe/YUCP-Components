@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -265,6 +266,7 @@ namespace YUCP.Components.Editor
                     component, profile, sourceMesh, rendererPath,
                     catalog.DependencyFingerprint,
                     blendShapeLinkCatalog.DependencyFingerprint,
+                    trackingEnabled,
                     useSharedParameterCompressor);
                 // Keep primary calibration identities stable when a creator adds,
                 // removes, or retargets a BlendShape Link. Linked geometry still
@@ -274,6 +276,7 @@ namespace YUCP.Components.Editor
                     component, profile, sourceMesh, rendererPath,
                     catalog.DependencyFingerprint,
                     string.Empty,
+                    trackingEnabled,
                     useSharedParameterCompressor);
                 var finalFolder =
                     $"{GeneratedRoot}/{Sanitize(avatarRoot.name)}_{hash.Substring(0, 12)}";
@@ -2010,6 +2013,7 @@ namespace YUCP.Components.Editor
             string rendererPath,
             string trackingDependencies,
             string blendShapeLinkDependencies,
+            bool trackingEnabled,
             bool useSharedParameterCompressor)
         {
             var meshPath = mesh != null ? AssetDatabase.GetAssetPath(mesh) : string.Empty;
@@ -2022,7 +2026,8 @@ namespace YUCP.Components.Editor
             var coarticulationDependency = component.reconstructionMode ==
                                            AdvancedVisemeReconstructionMode.BetaCoarticulation
                 ? AdvancedVisemeCoarticulationModel.ModelVersion + ":" +
-                  AdvancedVisemeCoarticulationModel.ContentSha256 + ":tongue:" +
+                  AdvancedVisemeCoarticulationModel.ContentSha256 + ":reconstruction:" +
+                  AdvancedVisemeCoarticulationModel.ReconstructionVersion + ":tongue:" +
                   AdvancedVisemeVisibleTongueResidual.ModelVersion + ":" +
                   AdvancedVisemeVisibleTongueResidual.BalancedContentSha256 + ":" +
                   AdvancedVisemeVisibleTongueResidual.QualityContentSha256 + ":phone:" +
@@ -2038,7 +2043,24 @@ namespace YUCP.Components.Editor
                                    component.tuningSyncMode + ":" +
                                    component.tuningMenuSections + ":shared:" +
                                    useSharedParameterCompressor;
-            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|{component.existingTrackingPrefix}";
+            var haloDependency = AdvancedVisemeAnimatorBuilder
+                .ShouldUseOculusHalo(trackingEnabled)
+                ? "static-interruptible:" +
+                  AdvancedVisemeOculusHalo.ModelVersion + ":" +
+                  AdvancedVisemeOculusHalo.ContentSha256 + ":" +
+                  AdvancedVisemeOculusHalo.TableSha256 + ":topK:" +
+                  AdvancedVisemeOculusHalo.TopK + ":dynamics:" +
+                  AdvancedVisemeOculusDynamics.ModelVersion + ":" +
+                  AdvancedVisemeOculusDynamics.ContentSha256 + ":" +
+                  AdvancedVisemeOculusDynamics.ModelSha256 + ":" +
+                  AdvancedVisemeOculusDynamics.TrajectoryDurationSeconds.ToString(
+                      "R", CultureInfo.InvariantCulture) + ":" +
+                  AdvancedVisemeOculusDynamics.TrajectoryCoreDurationSeconds.ToString(
+                      "R", CultureInfo.InvariantCulture) + ":" +
+                  AdvancedVisemeOculusDynamics.TargetCrossfadeSeconds.ToString(
+                      "R", CultureInfo.InvariantCulture)
+                : "disabled";
+            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|trackingEnabled:{trackingEnabled}|halo:{haloDependency}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|optimizer:{AdvancedVisemeAnimatorGraphOptimizer.Version}|{component.existingTrackingPrefix}";
             return Hash128.Compute(settings).ToString();
         }
 

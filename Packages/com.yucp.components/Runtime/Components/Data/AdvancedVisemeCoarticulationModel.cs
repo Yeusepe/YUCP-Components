@@ -18,6 +18,10 @@ namespace YUCP.Components
     public static class AdvancedVisemeCoarticulationModel
     {
         public const int VisemeCount = 15;
+        // Increment when the generated observer contract changes even if the
+        // embedded transition corpus is unchanged. This participates in the
+        // generated-asset hash so existing avatars rebuild deterministically.
+        public const int ReconstructionVersion = 2;
 
         private sealed class EmbeddedCorpusSource : IAdvancedVisemeCoarticulationSource
         {
@@ -153,6 +157,9 @@ namespace YUCP.Components
             if (output.Length != VisemeCount)
                 throw new ArgumentException("Coarticulation weights require exactly 15 output channels.", nameof(output));
 
+            // Beta never leads the fast stage toward the raw one-hot winner.
+            // The primary fast observer is the continuous upper envelope; this
+            // method reconstructs only the slow head between slow and fast.
             var lead = TransitionLead(group, slow, currentViseme, strength);
             for (var i = 0; i < VisemeCount; i++) output[i] = Mathf.Lerp(slow[i], fast[i], lead);
         }

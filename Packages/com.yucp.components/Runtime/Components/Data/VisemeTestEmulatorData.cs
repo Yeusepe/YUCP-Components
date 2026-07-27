@@ -49,7 +49,7 @@ namespace YUCP.Components
         [Tooltip("Voice value used while Manual input is selected.")]
         public float manualVoice = 1f;
 
-        [Tooltip("Write Viseme and Voice into Gesture Manager when it is active.")]
+        [Tooltip("Write Viseme and Voice into every targeted Gesture Manager when it is active.")]
         public bool driveGestureManager = true;
 
         [Tooltip("Also write the built-in Viseme and Voice parameters on the avatar Animator.")]

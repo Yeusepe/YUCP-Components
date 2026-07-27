@@ -17,8 +17,6 @@ namespace YUCP.Importer.Editor.PackageManager
     {
         private const string MetadataFileName = "YUCP_PackageInfo.json";
         private const string MetadataAssetPath = "Assets/YUCP_PackageInfo.json";
-        private const string ProtectedPayloadFileName = "YUCP_ProtectedPayload.json";
-        private const string ProtectedImportIntentFileName = "YUCP_ProtectedImportIntent.json";
         private const string PackageJsonFileName = "package.json";
         private const string PackageJsonMetadataFileName = "package.json.yucp";
         private const string PackageJsonAssetPath = "Assets/package.json";
@@ -218,136 +216,6 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             return null;
-        }
-
-        internal static ProtectedPayloadDescriptor ExtractProtectedPayloadDescriptor(System.Array importItems)
-        {
-            if (importItems == null || importItems.Length == 0)
-                return null;
-
-            object descriptorItem = FindItemByDestinationPath(importItems, IsProtectedPayloadAssetPath);
-            if (descriptorItem == null)
-                return null;
-
-            string sourceFolder = GetFieldValue<string>(descriptorItem, _sourceFolderField);
-            string exportedPath = GetFieldValue<string>(descriptorItem, _exportedAssetPathField);
-            if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(exportedPath))
-                return null;
-
-            string json = ReadMetadataFile(sourceFolder, exportedPath);
-            if (string.IsNullOrEmpty(json))
-                return null;
-
-            try
-            {
-                var descriptor = JsonUtility.FromJson<ProtectedPayloadDescriptor>(json);
-                if (descriptor == null)
-                    return null;
-
-                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
-                descriptor.protectedAssetId ??= "";
-                descriptor.blobAssetPath ??= "";
-                descriptor.cipher ??= "";
-                descriptor.archiveFormat ??= "";
-                descriptor.ciphertextSha256 ??= "";
-                descriptor.plaintextSha256 ??= "";
-                descriptor.payloadAssetPaths =
-                    ProtectedPayloadIntegrityUtility.NormalizeUnityPaths(descriptor.payloadAssetPaths);
-                descriptor.manifestBindingSha256 = string.IsNullOrWhiteSpace(descriptor.manifestBindingSha256)
-                    ? ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)
-                    : descriptor.manifestBindingSha256;
-                return descriptor;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to parse protected payload descriptor: {ex.Message}");
-                return null;
-            }
-        }
-
-        internal static ProtectedPayloadDescriptor ExtractProtectedPayloadDescriptorFromAssetPath(
-            string protectedPayloadAssetPath)
-        {
-            string json = ReadProjectTextAsset(protectedPayloadAssetPath);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return null;
-            }
-
-            try
-            {
-                var descriptor = JsonUtility.FromJson<ProtectedPayloadDescriptor>(json);
-                if (descriptor == null)
-                {
-                    return null;
-                }
-
-                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
-                descriptor.protectedAssetId ??= string.Empty;
-                descriptor.blobAssetPath ??= string.Empty;
-                descriptor.cipher ??= string.Empty;
-                descriptor.archiveFormat ??= string.Empty;
-                descriptor.ciphertextSha256 ??= string.Empty;
-                descriptor.plaintextSha256 ??= string.Empty;
-                descriptor.payloadAssetPaths =
-                    ProtectedPayloadIntegrityUtility.NormalizeUnityPaths(descriptor.payloadAssetPaths);
-                descriptor.manifestBindingSha256 = string.IsNullOrWhiteSpace(descriptor.manifestBindingSha256)
-                    ? ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)
-                    : descriptor.manifestBindingSha256;
-                return descriptor;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to parse protected payload descriptor from asset path: {ex.Message}");
-                return null;
-            }
-        }
-
-        internal static ProtectedImportIntentDescriptor ExtractProtectedImportIntentDescriptor(
-            System.Array importItems,
-            IEnumerable<string> importedAssetPaths)
-        {
-            string intentAssetPath = importedAssetPaths?
-                .FirstOrDefault(path => IsProtectedImportIntentAssetPath(path));
-            string json = ReadProjectTextAsset(intentAssetPath);
-
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                object descriptorItem = FindItemByDestinationPath(importItems, IsProtectedImportIntentAssetPath);
-                if (descriptorItem != null)
-                {
-                    string sourceFolder = GetFieldValue<string>(descriptorItem, _sourceFolderField);
-                    string exportedPath = GetFieldValue<string>(descriptorItem, _exportedAssetPathField);
-                    json = ReadMetadataFile(sourceFolder, exportedPath);
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return null;
-            }
-
-            try
-            {
-                var descriptor = JsonUtility.FromJson<ProtectedImportIntentDescriptor>(json);
-                if (descriptor == null)
-                {
-                    return null;
-                }
-
-                descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
-                descriptor.packageId ??= string.Empty;
-                descriptor.protectedAssetId ??= string.Empty;
-                descriptor.protectedPayloadAssetPath ??= string.Empty;
-                descriptor.tempInstallAssetPath ??= string.Empty;
-                descriptor.manifestBindingSha256 ??= string.Empty;
-                return descriptor;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP PackageManager] Failed to parse protected import intent descriptor: {ex.Message}");
-                return null;
-            }
         }
 
         private static string ReadMetadataFile(string sourceFolder, string exportedPath)
@@ -754,7 +622,6 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                 }
 
-                metadata.protectedPayload = ExtractProtectedPayloadDescriptor(importItems);
                 return metadata;
             }
             catch (Exception ex)
@@ -803,31 +670,40 @@ namespace YUCP.Importer.Editor.PackageManager
 
             try
             {
-                JObject packageJson = JObject.Parse(json);
-                var result = new PackageJsonImportData
-                {
-                    packageName = GetString(packageJson, "name"),
-                    displayName = GetString(packageJson, "displayName"),
-                    version = GetString(packageJson, "version"),
-                    description = GetString(packageJson, "description"),
-                    author = ParseAuthor(packageJson["author"]),
-                    dependencies = ParseDependencyMap(packageJson["vpmDependencies"]),
-                };
-
-                JObject yucp = packageJson["yucp"] as JObject;
-                if (yucp != null)
-                {
-                    result.packageMetadataJson = (yucp["packageMetadata"] as JObject)?.ToString(Formatting.None);
-                    result.aliasPackage = ParseAliasPackageContract(packageJson, yucp);
-                }
-
-                return result;
+                return ParsePackageJsonImportDataStrict(json);
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[YUCP PackageManager] Failed to parse package.json metadata: {ex.Message}");
                 return null;
             }
+        }
+
+        internal static PackageJsonImportData ParsePackageJsonImportDataStrict(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                throw new FormatException("package.json is empty.");
+            }
+            JObject packageJson = JObject.Parse(json);
+            var result = new PackageJsonImportData
+            {
+                packageName = GetString(packageJson, "name"),
+                displayName = GetString(packageJson, "displayName"),
+                version = GetString(packageJson, "version"),
+                description = GetString(packageJson, "description"),
+                author = ParseAuthor(packageJson["author"]),
+                dependencies = ParseDependencyMap(packageJson["vpmDependencies"]),
+            };
+
+            JObject yucp = packageJson["yucp"] as JObject;
+            if (yucp != null)
+            {
+                result.packageMetadataJson =
+                    (yucp["packageMetadata"] as JObject)?.ToString(Formatting.None);
+                result.aliasPackage = ParseAliasPackageContract(packageJson, yucp);
+            }
+            return result;
         }
 
         private static PackageJsonImportData LoadPackageJsonImportData(System.Array importItems)
@@ -928,87 +804,6 @@ namespace YUCP.Importer.Editor.PackageManager
             return metadata;
         }
 
-        internal static PackageMetadata ExtractMetadataFromInstalledShell(
-            string metadataAssetPath,
-            string tempInstallAssetPath,
-            string protectedPayloadAssetPath,
-            string fallbackPackageName)
-        {
-            PackageJsonImportData packageJsonData = null;
-            string packageJson = ReadProjectTextAsset(tempInstallAssetPath);
-            if (!string.IsNullOrWhiteSpace(packageJson))
-            {
-                packageJsonData = ParsePackageJsonImportData(packageJson);
-            }
-
-            PackageMetadata metadata = null;
-            string metadataJson = ReadProjectTextAsset(metadataAssetPath);
-            if (!string.IsNullOrWhiteSpace(metadataJson))
-            {
-                metadata = ParseInstalledPackageMetadataJson(metadataJson);
-            }
-
-            metadata ??= CreateFallbackMetadata(fallbackPackageName, packageJsonData);
-            ApplyPackageJsonData(metadata, packageJsonData);
-
-            string protectedPayloadJson = ReadProjectTextAsset(protectedPayloadAssetPath);
-            if (!string.IsNullOrWhiteSpace(protectedPayloadJson))
-            {
-                try
-                {
-                    var descriptor = JsonUtility.FromJson<ProtectedPayloadDescriptor>(protectedPayloadJson);
-                    if (descriptor != null)
-                    {
-                        descriptor.formatVersion = string.IsNullOrEmpty(descriptor.formatVersion) ? "1" : descriptor.formatVersion;
-                        descriptor.protectedAssetId ??= string.Empty;
-                        descriptor.blobAssetPath ??= string.Empty;
-                        descriptor.cipher ??= string.Empty;
-                        descriptor.archiveFormat ??= string.Empty;
-                        descriptor.ciphertextSha256 ??= string.Empty;
-                        descriptor.plaintextSha256 ??= string.Empty;
-                        descriptor.payloadAssetPaths =
-                            ProtectedPayloadIntegrityUtility.NormalizeUnityPaths(descriptor.payloadAssetPaths);
-                        descriptor.manifestBindingSha256 = string.IsNullOrWhiteSpace(descriptor.manifestBindingSha256)
-                            ? ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)
-                            : descriptor.manifestBindingSha256;
-                        metadata.protectedPayload = descriptor;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[YUCP PackageManager] Failed to parse installed protected payload descriptor: {ex.Message}");
-                }
-            }
-
-            return metadata;
-        }
-
-        private static string ReadProjectTextAsset(string assetPath)
-        {
-            if (string.IsNullOrWhiteSpace(assetPath))
-            {
-                return null;
-            }
-
-            string normalizedAssetPath = assetPath.Replace('\\', '/').TrimStart('/');
-            string text = AssetDatabase.LoadAssetAtPath<TextAsset>(normalizedAssetPath)?.text;
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            string diskPath = Path.GetFullPath(Path.Combine(
-                projectRoot,
-                normalizedAssetPath.Replace('/', Path.DirectorySeparatorChar)));
-            if (!diskPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase) || !File.Exists(diskPath))
-            {
-                return null;
-            }
-
-            return File.ReadAllText(diskPath);
-        }
-
         private static string LoadPackageJsonMetadataJson(System.Array importItems)
         {
             if (importItems == null || importItems.Length == 0)
@@ -1086,6 +881,73 @@ namespace YUCP.Importer.Editor.PackageManager
 
             ApplyPackageJsonData(metadata, packageJsonData ?? LoadPackageJsonImportData(importItems));
             return metadata;
+        }
+
+        internal static PackageMetadata ParseEmbeddedAliasMetadataJson(
+            string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            PackageMetadataJson source =
+                JsonUtility.FromJson<PackageMetadataJson>(json);
+            if (source == null)
+            {
+                throw new FormatException(
+                    "Alias package metadata is invalid.");
+            }
+
+            return new PackageMetadata
+            {
+                packageName = NormalizeUserFacingText(
+                    source.packageName,
+                    160,
+                    "package name"),
+                version = string.Empty,
+                author = NormalizeUserFacingText(
+                    source.author,
+                    160,
+                    "package author"),
+                description = NormalizeUserFacingText(
+                    source.description,
+                    2000,
+                    "package description",
+                    true),
+                tagline = NormalizeUserFacingText(
+                    source.tagline,
+                    240,
+                    "package tagline"),
+                category = NormalizeUserFacingText(
+                    source.category,
+                    120,
+                    "package category"),
+                minimumUnityVersion = NormalizeUserFacingText(
+                    source.minimumUnityVersion,
+                    64,
+                    "minimum Unity version"),
+                creatorNote = NormalizeUserFacingText(
+                    source.creatorNote,
+                    2000,
+                    "creator note",
+                    true),
+                releaseNotes = NormalizeUserFacingText(
+                    source.releaseNotes,
+                    4000,
+                    "release notes",
+                    true),
+                supportedPlatforms = NormalizeUserFacingList(
+                    source.supportedPlatforms,
+                    16,
+                    80,
+                    "supported platform"),
+                tags = NormalizeUserFacingList(
+                    source.tags,
+                    32,
+                    80,
+                    "package tag"),
+            };
         }
 
         private static PackageMetadata ParseInstalledPackageMetadataJson(string json)
@@ -1502,31 +1364,6 @@ namespace YUCP.Importer.Editor.PackageManager
                  normalizedPath.EndsWith("/" + MetadataFileName, StringComparison.OrdinalIgnoreCase));
         }
 
-        internal static bool IsProtectedPayloadAssetPath(string destinationPath)
-        {
-            if (string.IsNullOrEmpty(destinationPath))
-            {
-                return false;
-            }
-
-            string normalizedPath = destinationPath.Replace('\\', '/');
-            return normalizedPath.Equals("Assets/" + ProtectedPayloadFileName, StringComparison.OrdinalIgnoreCase) ||
-                (normalizedPath.StartsWith(InstalledPackagesRootAssetPath, StringComparison.OrdinalIgnoreCase) &&
-                 normalizedPath.EndsWith("/" + ProtectedPayloadFileName, StringComparison.OrdinalIgnoreCase));
-        }
-
-        internal static bool IsProtectedImportIntentAssetPath(string destinationPath)
-        {
-            if (string.IsNullOrEmpty(destinationPath))
-            {
-                return false;
-            }
-
-            string normalizedPath = destinationPath.Replace('\\', '/');
-            return normalizedPath.Equals("Assets/" + ProtectedImportIntentFileName, StringComparison.OrdinalIgnoreCase) ||
-                normalizedPath.EndsWith("/" + ProtectedImportIntentFileName, StringComparison.OrdinalIgnoreCase);
-        }
-
         private static bool IsPackageJsonAssetPath(string destinationPath)
         {
             if (string.IsNullOrEmpty(destinationPath))
@@ -1638,6 +1475,17 @@ namespace YUCP.Importer.Editor.PackageManager
                 return null;
             }
 
+            if (yucp["installPlan"] != null ||
+                yucp["plan"] != null ||
+                yucp["resolvedRelease"] != null ||
+                yucp["resolvedArtifact"] != null ||
+                yucp["release"] != null ||
+                yucp["artifact"] != null)
+            {
+                throw new FormatException(
+                    "Alias package metadata contains a removed delivery field.");
+            }
+
             var contract = new AliasPackageContract
             {
                 kind = GetString(yucp, "kind") ?? string.Empty,
@@ -1649,58 +1497,87 @@ namespace YUCP.Importer.Editor.PackageManager
                 importerPackage = GetString(yucp, "importerPackage") ?? string.Empty,
                 minImporterVersion = GetString(yucp, "minImporterVersion") ?? string.Empty,
                 channel = GetString(yucp, "channel") ?? string.Empty,
-                catalogProductIds = ParseStringList(yucp["catalogProductIds"]),
+                media = ParseAliasPackageMedia(yucp["media"]),
                 rawContractJson = yucp.ToString(Formatting.None),
-                resolvedRelease = ParseReleaseIdentity(yucp),
-                resolvedArtifact = ParseArtifactIdentity(yucp),
-                installPlan = ParseInstallPlan(yucp),
             };
 
             return string.IsNullOrWhiteSpace(contract.aliasId) ? null : contract;
         }
 
-        private static AliasResolvedReleaseIdentity ParseReleaseIdentity(JObject yucp)
+        private static AliasPackageMediaSet ParseAliasPackageMedia(
+            JToken media)
         {
-            JObject releaseObject = yucp["resolvedRelease"] as JObject ?? yucp["release"] as JObject;
-            return new AliasResolvedReleaseIdentity
+            var result = new AliasPackageMediaSet();
+            if (media == null || media.Type == JTokenType.Null)
             {
-                releaseId = GetString(releaseObject, "id") ?? GetString(yucp, "releaseId") ?? string.Empty,
-                version = GetString(releaseObject, "version") ?? string.Empty,
-                channel = GetString(releaseObject, "channel") ?? GetString(yucp, "channel") ?? string.Empty,
-                artifactId = GetString(releaseObject, "artifactId") ?? GetString(yucp, "artifactId") ?? string.Empty,
-            };
-        }
-
-        private static AliasResolvedArtifactIdentity ParseArtifactIdentity(JObject yucp)
-        {
-            JObject artifactObject = yucp["resolvedArtifact"] as JObject ?? yucp["artifact"] as JObject;
-            return new AliasResolvedArtifactIdentity
+                return result;
+            }
+            if (!(media is JArray entries) || entries.Count > 2)
             {
-                artifactId = GetString(artifactObject, "id") ?? GetString(yucp, "artifactId") ?? string.Empty,
-                version = GetString(artifactObject, "version") ?? string.Empty,
-                sha256 = GetString(artifactObject, "sha256") ?? string.Empty,
-                downloadUrl = GetString(artifactObject, "downloadUrl") ?? string.Empty,
-            };
-        }
-
-        private static AliasInstallPlanMetadata ParseInstallPlan(JObject yucp)
-        {
-            JObject planObject = yucp["installPlan"] as JObject ?? yucp["plan"] as JObject;
-            if (planObject == null)
-            {
-                return new AliasInstallPlanMetadata();
+                throw new FormatException(
+                    "Alias package media must be an array with at most two entries.");
             }
 
-            return new AliasInstallPlanMetadata
+            foreach (JToken entry in entries)
             {
-                planId = GetString(planObject, "id") ?? string.Empty,
-                planVersion = GetString(planObject, "version") ?? string.Empty,
-                operation = GetString(planObject, "operation") ?? string.Empty,
-                status = GetString(planObject, "status") ?? string.Empty,
-                managedPaths = ParseStringList(planObject["managedPaths"]),
-                generatedPaths = ParseStringList(planObject["generatedPaths"]),
-                sharedPaths = ParseStringList(planObject["sharedPaths"]),
-                rawPlanJson = planObject.ToString(Formatting.None),
+                if (!(entry is JObject descriptor))
+                {
+                    throw new FormatException(
+                        "Alias package media entries must be objects.");
+                }
+                AliasPackageMediaDescriptor parsed =
+                    ParseAliasPackageMediaDescriptor(descriptor);
+                if (string.Equals(
+                        parsed.kind,
+                        "icon",
+                        StringComparison.Ordinal))
+                {
+                    if (!string.IsNullOrEmpty(result.icon.kind))
+                    {
+                        throw new FormatException(
+                            "Alias package media contains a duplicate icon.");
+                    }
+                    result.icon = parsed;
+                    continue;
+                }
+                if (string.Equals(
+                        parsed.kind,
+                        "banner",
+                        StringComparison.Ordinal))
+                {
+                    if (!string.IsNullOrEmpty(result.banner.kind))
+                    {
+                        throw new FormatException(
+                            "Alias package media contains a duplicate banner.");
+                    }
+                    result.banner = parsed;
+                    continue;
+                }
+                throw new FormatException(
+                    "Alias package media kind is not supported.");
+            }
+            return result;
+        }
+
+        private static AliasPackageMediaDescriptor
+            ParseAliasPackageMediaDescriptor(JObject descriptor)
+        {
+            if (descriptor == null)
+            {
+                return new AliasPackageMediaDescriptor();
+            }
+            return new AliasPackageMediaDescriptor
+            {
+                kind = GetString(descriptor, "kind") ?? string.Empty,
+                contentType =
+                    GetString(descriptor, "contentType") ?? string.Empty,
+                byteSize = descriptor["byteSize"]?.Type ==
+                    JTokenType.Integer
+                        ? descriptor["byteSize"].Value<long>()
+                        : 0,
+                sha256 = GetString(descriptor, "sha256") ?? string.Empty,
+                localPath =
+                    GetString(descriptor, "localPath") ?? string.Empty,
             };
         }
 
@@ -1727,6 +1604,65 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             return values;
+        }
+
+        private static List<string> NormalizeUserFacingList(
+            IEnumerable<string> values,
+            int maximumItems,
+            int maximumLength,
+            string fieldName)
+        {
+            var normalized = new List<string>();
+            foreach (string value in values ?? Enumerable.Empty<string>())
+            {
+                string item = NormalizeUserFacingText(
+                    value,
+                    maximumLength,
+                    fieldName);
+                if (string.IsNullOrEmpty(item) ||
+                    normalized.Contains(item, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                if (normalized.Count >= maximumItems)
+                {
+                    throw new FormatException(
+                        $"Alias {fieldName} metadata has too many values.");
+                }
+                normalized.Add(item);
+            }
+            return normalized;
+        }
+
+        private static string NormalizeUserFacingText(
+            string value,
+            int maximumLength,
+            string fieldName,
+            bool allowLineBreaks = false)
+        {
+            string normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length > maximumLength)
+            {
+                throw new FormatException(
+                    $"Alias {fieldName} metadata is too long.");
+            }
+            foreach (char character in normalized)
+            {
+                if (!char.IsControl(character))
+                {
+                    continue;
+                }
+                if (allowLineBreaks &&
+                    (character == '\r' ||
+                        character == '\n' ||
+                        character == '\t'))
+                {
+                    continue;
+                }
+                throw new FormatException(
+                    $"Alias {fieldName} metadata contains invalid text.");
+            }
+            return normalized;
         }
 
         private static string ParseAuthor(JToken authorToken)

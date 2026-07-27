@@ -5,8 +5,14 @@ using UnityEngine;
 namespace YUCP.Importer.Editor.PackageManager
 {
     [Serializable]
-    public class PackageMetadata
+    public class PackageMetadata : ISerializationCallbackReceiver
     {
+        [SerializeField]
+        private List<string> dependencyKeys = new List<string>();
+
+        [SerializeField]
+        private List<string> dependencyValues = new List<string>();
+
         public string packageName = "";
         public string version = "";
         public string author = "";
@@ -34,7 +40,6 @@ namespace YUCP.Importer.Editor.PackageManager
         public string exportDate = "";
         public List<PackageFileHashEntry> fileHashes = new List<PackageFileHashEntry>();
 
-        public ProtectedPayloadDescriptor protectedPayload;
         public AliasPackageContract aliasPackage;
 
         public PackageMetadata()
@@ -44,6 +49,48 @@ namespace YUCP.Importer.Editor.PackageManager
         public PackageMetadata(string packageName)
         {
             this.packageName = packageName ?? "";
+        }
+
+        public void OnBeforeSerialize()
+        {
+            dependencyKeys ??= new List<string>();
+            dependencyValues ??= new List<string>();
+            dependencyKeys.Clear();
+            dependencyValues.Clear();
+            if (dependencies == null)
+            {
+                return;
+            }
+
+            var keys = new List<string>(dependencies.Keys);
+            keys.Sort(StringComparer.Ordinal);
+            foreach (string key in keys)
+            {
+                dependencyKeys.Add(key);
+                dependencyValues.Add(dependencies[key]);
+            }
+        }
+
+        public void OnAfterDeserialize()
+        {
+            dependencies = new Dictionary<string, string>(
+                StringComparer.Ordinal);
+            if (dependencyKeys == null || dependencyValues == null)
+            {
+                return;
+            }
+
+            int count = Math.Min(
+                dependencyKeys.Count,
+                dependencyValues.Count);
+            for (int index = 0; index < count; index++)
+            {
+                string key = dependencyKeys[index];
+                if (key != null)
+                {
+                    dependencies[key] = dependencyValues[index];
+                }
+            }
         }
     }
 

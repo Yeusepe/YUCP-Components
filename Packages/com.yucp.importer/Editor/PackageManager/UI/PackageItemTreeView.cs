@@ -14,6 +14,7 @@ namespace YUCP.Importer.Editor.PackageManager
     internal class PackageItemTreeView
     {
         private readonly VisualElement _container;
+        private readonly Func<string, bool> _isLicensedAssetPath;
         private PackageItemNode _rootNode;
         private readonly Dictionary<string, bool> _expandedStates = new Dictionary<string, bool>();
         private readonly Dictionary<string, Toggle> _toggleMap = new Dictionary<string, Toggle>();
@@ -37,9 +38,14 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
-        public PackageItemTreeView(VisualElement container)
+        public PackageItemTreeView(
+            VisualElement container,
+            Func<string, bool> isLicensedAssetPath)
         {
-            _container = container;
+            _container = container ??
+                throw new ArgumentNullException(nameof(container));
+            _isLicensedAssetPath = isLicensedAssetPath ??
+                throw new ArgumentNullException(nameof(isLicensedAssetPath));
         }
 
         public void SetTree(PackageItemNode rootNode)
@@ -216,9 +222,9 @@ namespace YUCP.Importer.Editor.PackageManager
             nameLabel.tooltip = node.FullPath;
             content.Add(nameLabel);
 
-            if (HasProtectedDescendants(node))
+            if (HasLicensedDescendants(node))
             {
-                content.Add(CreateBadge("Licensed", "yucp-tree-badge-protected"));
+                content.Add(CreateBadge("Licensed", "yucp-tree-badge-licensed"));
             }
 
             row.Add(content);
@@ -301,9 +307,9 @@ namespace YUCP.Importer.Editor.PackageManager
             nameLabel.tooltip = node.FullPath;
             content.Add(nameLabel);
 
-            if (PackageManagerWindow.IsProtectedPayloadPath(node.FullPath))
+            if (_isLicensedAssetPath(node.FullPath))
             {
-                content.Add(CreateBadge("Licensed", "yucp-tree-badge-protected"));
+                content.Add(CreateBadge("Licensed", "yucp-tree-badge-licensed"));
             }
 
             if (hasConflict || exists || isChanged)
@@ -320,16 +326,16 @@ namespace YUCP.Importer.Editor.PackageManager
             return row;
         }
 
-        private bool HasProtectedDescendants(PackageItemNode node)
+        private bool HasLicensedDescendants(PackageItemNode node)
         {
             foreach (var child in node.Children)
             {
-                if (!child.IsFolder && PackageManagerWindow.IsProtectedPayloadPath(child.FullPath))
+                if (!child.IsFolder && _isLicensedAssetPath(child.FullPath))
                 {
                     return true;
                 }
 
-                if (child.IsFolder && HasProtectedDescendants(child))
+                if (child.IsFolder && HasLicensedDescendants(child))
                 {
                     return true;
                 }

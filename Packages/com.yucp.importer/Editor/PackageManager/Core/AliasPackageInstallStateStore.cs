@@ -99,15 +99,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             AliasPackageContract aliasPackage = packageInfo.aliasPackage.Clone();
-            AliasInstallPlanMetadata plan = aliasPackage.installPlan?.Clone() ?? new AliasInstallPlanMetadata();
-
-            List<string> managedPaths = NormalizeDistinctPaths(plan.managedPaths);
-            if (managedPaths.Count == 0)
-            {
-                managedPaths = NormalizeDistinctPaths(packageInfo.installedFiles);
-            }
-
-            List<string> generatedPaths = NormalizeDistinctPaths(plan.generatedPaths);
+            List<string> managedPaths = NormalizeDistinctPaths(packageInfo.installedFiles);
+            var generatedPaths = new List<string>();
             if (!string.IsNullOrWhiteSpace(manifestRelativePath))
             {
                 string normalizedManifestPath = NormalizeRelativePath(manifestRelativePath);
@@ -117,7 +110,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
             }
 
-            List<string> sharedPaths = NormalizeDistinctPaths(plan.sharedPaths);
+            var sharedPaths = new List<string>();
             var manifest = new AliasPackageInstallStateManifest
             {
                 aliasId = aliasPackage.aliasId ?? string.Empty,
@@ -131,9 +124,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     : packageInfo.packageName ?? string.Empty,
                 installedVersion = packageInfo.installedVersion ?? packageInfo.version ?? string.Empty,
                 installedAt = packageInfo.installedDate ?? string.Empty,
-                resolvedRelease = aliasPackage.resolvedRelease?.Clone() ?? new AliasResolvedReleaseIdentity(),
-                resolvedArtifact = aliasPackage.resolvedArtifact?.Clone() ?? new AliasResolvedArtifactIdentity(),
-                installPlan = plan,
                 managedPaths = managedPaths,
                 generatedPaths = generatedPaths,
                 sharedPaths = sharedPaths,
@@ -155,7 +145,51 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return null;
             }
 
-            return JsonConvert.DeserializeObject<AliasPackageInstallStateManifest>(json);
+            AliasPackageInstallStateManifest manifest =
+                JsonConvert.DeserializeObject<
+                    AliasPackageInstallStateManifest>(json);
+            return string.Equals(
+                    manifest?.formatVersion,
+                    "1",
+                    StringComparison.Ordinal)
+                ? MigrateLegacyManifest(manifest)
+                : manifest;
+        }
+
+        private static AliasPackageInstallStateManifest MigrateLegacyManifest(
+            AliasPackageInstallStateManifest legacy)
+        {
+            return new AliasPackageInstallStateManifest
+            {
+                formatVersion = "2",
+                aliasId = legacy.aliasId ?? string.Empty,
+                aliasVersion = legacy.aliasVersion ?? string.Empty,
+                packageId = legacy.packageId ?? string.Empty,
+                packageName = legacy.packageName ?? string.Empty,
+                packageDisplayName =
+                    legacy.packageDisplayName ?? string.Empty,
+                installedVersion =
+                    legacy.installedVersion ?? string.Empty,
+                installedAt = legacy.installedAt ?? string.Empty,
+                managedPaths = new List<string>(
+                    legacy.managedPaths ?? new List<string>()),
+                generatedPaths = new List<string>(
+                    legacy.generatedPaths ?? new List<string>()),
+                sharedPaths = new List<string>(
+                    legacy.sharedPaths ?? new List<string>()),
+                fileHashes = (legacy.fileHashes ??
+                        new List<InstallStateFileHashRecord>())
+                    .Where(record => record != null)
+                    .Select(record => new InstallStateFileHashRecord
+                    {
+                        path = record.path ?? string.Empty,
+                        expectedSha256 =
+                            record.expectedSha256 ?? string.Empty,
+                        observedSha256 =
+                            record.observedSha256 ?? string.Empty,
+                    })
+                    .ToList(),
+            };
         }
 
         internal static bool ShouldTrack(InstalledPackageInfo packageInfo)

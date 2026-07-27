@@ -264,7 +264,7 @@ namespace YUCP.Components
             if (profile == null)
             {
                 if (control == AdvancedVisemeTuningControl.QuietMotion) return 0.55f;
-                if (control == AdvancedVisemeTuningControl.SpeechLiveliness) return 0.5f;
+                if (control == AdvancedVisemeTuningControl.SpeechLiveliness) return 0f;
                 return IsCenteredControl(control) ? 0.5f : 1f;
             }
 

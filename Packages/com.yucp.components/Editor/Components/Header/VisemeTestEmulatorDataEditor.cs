@@ -221,9 +221,9 @@ namespace YUCP.Components.Editor
             manualContainer.style.display = microphoneMode ? DisplayStyle.None : DisplayStyle.Flex;
 
             validation.Clear();
-            if (!VisemeTestPreviewSession.TryResolveDescriptor(
+            if (!VisemeTestPreviewSession.TryResolveDescriptors(
                     data,
-                    out var descriptor,
+                    out var descriptors,
                     out var targetSource,
                     out var targetError))
             {
@@ -235,17 +235,23 @@ namespace YUCP.Components.Editor
             {
                 if (targetSource != VisemeTestPreviewSession.DescriptorTargetSource.Parent)
                 {
-                    var sourceLabel = targetSource == VisemeTestPreviewSession.DescriptorTargetSource.GestureManager
-                        ? "Gesture Manager"
+                    var targetNames = string.Join(", ", descriptors.Select(descriptor => $"'{descriptor.name}'"));
+                    var targetDescription = targetSource == VisemeTestPreviewSession.DescriptorTargetSource.GestureManager
+                        ? $"{descriptors.Length} Gesture Manager avatar target{(descriptors.Length == 1 ? string.Empty : "s")}"
                         : "the only active avatar in this scene";
                     validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                        $"Automatically targeting '{descriptor.name}' from {sourceLabel}.",
+                        $"Automatically targeting {targetNames} from {targetDescription}.",
                         YUCPUIToolkitHelper.MessageType.Info));
                 }
 
-                var message = ValidateDescriptor(descriptor);
-                if (!string.IsNullOrEmpty(message))
-                    validation.Add(YUCPUIToolkitHelper.CreateHelpBox(message, YUCPUIToolkitHelper.MessageType.Warning));
+                foreach (var descriptor in descriptors)
+                {
+                    var message = ValidateDescriptor(descriptor);
+                    if (!string.IsNullOrEmpty(message))
+                        validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                            descriptors.Length > 1 ? $"{descriptor.name}: {message}" : message,
+                            YUCPUIToolkitHelper.MessageType.Warning));
+                }
             }
 
             if (microphoneMode && backendProp.enumValueIndex != (int)VisemeTestAnalysisBackend.BuiltIn)

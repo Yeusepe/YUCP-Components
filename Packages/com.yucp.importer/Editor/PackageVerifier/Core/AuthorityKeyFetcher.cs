@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -96,33 +97,56 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
 
             using (UnityWebRequest request = UnityWebRequest.Get(fetchUrl))
             {
+                request.timeout = 15;
                 request.SetRequestHeader("Accept-Encoding", "identity");
                 yield return request.SendWebRequest();
-
-                if (request.result != UnityWebRequest.Result.Success)
-                {
-                    result.success = false;
-                    result.error = BuildRequestError(url, fetchUrl, request);
-                    callback(result);
-                    yield break;
-                }
-
-                try
-                {
-                    string jsonText = request.downloadHandler.text;
-                    result = ParseAuthorityResponse(jsonText, fetchUrl);
-                    result.fetchTime = DateTime.UtcNow;
-                }
-                catch (Exception ex)
-                {
-                    result.success = false;
-                    result.error = $"Parse error while reading '{fetchUrl}': {ex.Message}";
-                    callback(result);
-                    yield break;
-                }
+                result = BuildFetchResult(url, fetchUrl, request);
             }
 
             callback(result);
+        }
+
+        /// <summary>
+        /// Fetch authority keys without blocking the Unity editor thread.
+        /// </summary>
+        public static Task<FetchResult> FetchKeysFromUrlAsync(string url)
+        {
+            string fetchUrl = GetAuthorityDocumentUrl(url);
+            var completion = new TaskCompletionSource<FetchResult>();
+            var request = UnityWebRequest.Get(fetchUrl);
+            request.timeout = 15;
+            request.SetRequestHeader("Accept-Encoding", "identity");
+            UnityWebRequestAsyncOperation operation;
+            try
+            {
+                operation = request.SendWebRequest();
+            }
+            catch (Exception exception)
+            {
+                request.Dispose();
+                completion.TrySetResult(new FetchResult
+                {
+                    error =
+                        $"Error while fetching '{fetchUrl}': " +
+                        exception.Message,
+                    success = false,
+                });
+                return completion.Task;
+            }
+
+            operation.completed += _ =>
+            {
+                try
+                {
+                    completion.TrySetResult(
+                        BuildFetchResult(url, fetchUrl, request));
+                }
+                finally
+                {
+                    request.Dispose();
+                }
+            };
+            return completion.Task;
         }
 
         /// <summary>
@@ -312,46 +336,40 @@ namespace YUCP.Importer.Editor.PackageVerifier.Core
             return $"{prefix} while fetching '{fetchUrl}': {request.error}";
         }
 
-        /// <summary>
-        /// Synchronously fetch keys from URL (for use in non-coroutine contexts).
-        /// </summary>
-        public static FetchResult FetchKeysFromUrlSync(string url)
+        private static FetchResult BuildFetchResult(
+            string sourceUrl,
+            string fetchUrl,
+            UnityWebRequest request)
         {
-            var result = new FetchResult();
-            string fetchUrl = GetAuthorityDocumentUrl(url);
-
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                return new FetchResult
+                {
+                    error = BuildRequestError(
+                        sourceUrl,
+                        fetchUrl,
+                        request),
+                    success = false,
+                };
+            }
             try
             {
-                using (UnityWebRequest request = UnityWebRequest.Get(fetchUrl))
-                {
-                    request.timeout = 15;
-                    request.SetRequestHeader("Accept-Encoding", "identity");
-                    request.SendWebRequest();
-
-                    while (!request.isDone)
-                    {
-                        System.Threading.Thread.Sleep(10);
-                    }
-
-                    if (request.result != UnityWebRequest.Result.Success)
-                    {
-                        result.success = false;
-                        result.error = BuildRequestError(url, fetchUrl, request);
-                        return result;
-                    }
-
-                    string jsonText = request.downloadHandler.text;
-                    result = ParseAuthorityResponse(jsonText, fetchUrl);
-                    result.fetchTime = DateTime.UtcNow;
-                }
+                FetchResult result = ParseAuthorityResponse(
+                    request.downloadHandler.text,
+                    fetchUrl);
+                result.fetchTime = DateTime.UtcNow;
+                return result;
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                result.success = false;
-                result.error = $"Error while fetching '{fetchUrl}': {ex.Message}";
+                return new FetchResult
+                {
+                    error =
+                        $"Parse error while reading '{fetchUrl}': " +
+                        exception.Message,
+                    success = false,
+                };
             }
-
-            return result;
         }
     }
 }

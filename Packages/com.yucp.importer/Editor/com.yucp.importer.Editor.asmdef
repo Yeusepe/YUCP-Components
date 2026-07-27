@@ -10,8 +10,11 @@
     "overrideReferences": true,
     "precompiledReferences": [
         "Newtonsoft.Json.dll",
-        "ICSharpCode.SharpZipLib.dll",
-        "0Harmony.dll"
+        "vpm-core-lib.dll",
+        "Chaos.NaCl.dll",
+        "Microsoft.Bcl.HashCode.dll",
+        "System.Runtime.CompilerServices.Unsafe.dll",
+        "System.Formats.Cbor.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],

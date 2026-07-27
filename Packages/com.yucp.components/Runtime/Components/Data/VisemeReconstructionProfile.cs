@@ -212,14 +212,14 @@ namespace YUCP.Components
     public sealed class VisemeReconstructionProfile : ScriptableObject
     {
         public const int VisemeCount = 15;
-        private const int CurrentDefaultsVersion = 9;
+        private const int CurrentDefaultsVersion = 11;
         public static readonly string[] VisemeNames =
         {
             "sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"
         };
 
         [Header("Observer")]
-        [Range(0.006f, 0.12f)] public float visemeResponseSeconds = 0.024f;
+        [Range(0.006f, 0.12f)] public float visemeResponseSeconds = 0.017f;
         [Tooltip("Release time for accumulated speech history after VRChat reports sil. Sustained speech earns more protection from brief gaps; Voice alone cannot extend it, and active viseme timing is unchanged.")]
         [Range(0.04f, 0.4f)] public float speechHangoverSeconds = 0.16f;
         [Range(0.006f, 0.08f)] public float localTrackingResponseSeconds = 0.018f;
@@ -235,8 +235,8 @@ namespace YUCP.Components
 
         [Header("Style Strengths")]
         [Range(0f, 1f)] public float speechMotionStrength = 1f;
-        [Tooltip("How strongly speech-only rendering follows the fast observer. This fades out continuously as face tracking becomes active.")]
-        [Range(0f, 1f)] public float speechLiveliness = 0.5f;
+        [Tooltip("Optional extra snap for speech without face tracking. The learned trajectory and critically damped slow observer are the smooth default; this adds at most a small bounded fast-stage lead and fades out as face tracking becomes active.")]
+        [Range(0f, 1f)] public float speechLiveliness = 0f;
         [Range(0f, 1f)] public float authoredResidualDetail = 1f;
         [Range(0f, 1f)] public float remoteTrackingTrust = 1f;
         [Range(0f, 1f)] public float phoneticConstraintStrength = 1f;
@@ -345,6 +345,16 @@ namespace YUCP.Components
 
         public void EnsureDefaults()
         {
+            bool isFreshProfile =
+                defaultsVersion == 0 &&
+                visemePoses != null &&
+                visemePoses.Length == VisemeCount &&
+                visemePoses.All(pose => pose == null) &&
+                visemeAdjustments != null &&
+                visemeAdjustments.Length == VisemeCount &&
+                visemeAdjustments.All(adjustment => adjustment == null) &&
+                articulatorBindings != null &&
+                articulatorBindings.Length == 0;
             if (visemePoses == null || visemePoses.Length != VisemeCount)
             {
                 var previous = visemePoses;
@@ -397,6 +407,10 @@ namespace YUCP.Components
 
             }
 
+            if (isFreshProfile)
+            {
+                defaultsVersion = CurrentDefaultsVersion;
+            }
             if (defaultsVersion < 2)
             {
                 for (var i = 0; i < VisemeCount; i++)
@@ -483,6 +497,26 @@ namespace YUCP.Components
                     if (visemeAdjustments[i] == null)
                         visemeAdjustments[i] = new VisemeArticulationAdjustment();
             }
+            if (defaultsVersion < 10 &&
+                Mathf.Approximately(speechLiveliness, 0.5f))
+            {
+                // Version 10 retrains the sparse Oculus halo jointly with the
+                // interruptible fast-observer lead. Upgrade only the former
+                // recommended midpoint; any other authored preference remains
+                // untouched.
+                speechLiveliness = 1f;
+            }
+            if (defaultsVersion < 11 &&
+                Mathf.Approximately(visemeResponseSeconds, 0.024f) &&
+                Mathf.Approximately(speechLiveliness, 1f))
+            {
+                // Version 11 replaces the static hard-winner target with a
+                // learned duration trajectory. Upgrade only the exact former
+                // recommended pair so authored response/liveliness choices are
+                // never silently rewritten.
+                visemeResponseSeconds = 0.017f;
+                speechLiveliness = 0f;
+            }
             defaultsVersion = CurrentDefaultsVersion;
         }
 
@@ -495,7 +529,7 @@ namespace YUCP.Components
             for (var i = 0; i < VisemeCount; i++)
                 visemeAdjustments[i] = new VisemeArticulationAdjustment();
             articulatorBindings = CreateDefaultBindings();
-            visemeResponseSeconds = 0.024f;
+            visemeResponseSeconds = 0.017f;
             speechHangoverSeconds = 0.16f;
             localTrackingResponseSeconds = 0.018f;
             remoteTrackingResponseSeconds = 0.065f;
@@ -506,7 +540,7 @@ namespace YUCP.Components
             voiceFullScale = 0.25f;
             betaCoarticulationStrength = 1f;
             speechMotionStrength = 1f;
-            speechLiveliness = 0.5f;
+            speechLiveliness = 0f;
             authoredResidualDetail = 1f;
             remoteTrackingTrust = 1f;
             phoneticConstraintStrength = 1f;
