@@ -97,6 +97,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             catch (Exception exception)
             {
+                PackageMetadataMediaOwnership.Release(metadata);
                 metadata = null;
                 error = exception.Message;
                 return false;

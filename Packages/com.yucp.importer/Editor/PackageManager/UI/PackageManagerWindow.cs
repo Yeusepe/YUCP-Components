@@ -38,19 +38,33 @@ namespace YUCP.Importer.Editor.PackageManager
                 !AliasPackageDiscovery.IsServerAuthorized(
                     metadata.aliasPackage))
             {
+                PackageMetadataMediaOwnership.Release(metadata);
                 throw new ArgumentException(
                     "A server-authorized alias is required.",
                     nameof(metadata));
             }
 
-            foreach (PackageManagerWindow existing in
-                Resources.FindObjectsOfTypeAll<PackageManagerWindow>())
+            PackageManagerWindow window = null;
+            try
             {
-                existing?.Close();
-            }
+                foreach (PackageManagerWindow existing in
+                    Resources.FindObjectsOfTypeAll<PackageManagerWindow>())
+                {
+                    existing?.Close();
+                }
 
-            var window = CreateInstance<PackageManagerWindow>();
-            window.InitializeForAlias(metadata, true);
+                window = CreateInstance<PackageManagerWindow>();
+                window.InitializeForAlias(metadata, true);
+            }
+            catch
+            {
+                if (window != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(window);
+                }
+                PackageMetadataMediaOwnership.Release(metadata);
+                throw;
+            }
         }
 
         internal static bool IsAliasBootstrapOpen(string aliasId)
@@ -308,6 +322,13 @@ namespace YUCP.Importer.Editor.PackageManager
                 UnityEngine.Object.DestroyImmediate(_bannerGradientTexture);
                 _bannerGradientTexture = null;
             }
+            PackageMetadataMediaOwnership.Release(_currentMetadata);
+            if (!ReferenceEquals(_currentMetadata, _cachedMetadata))
+            {
+                PackageMetadataMediaOwnership.Release(_cachedMetadata);
+            }
+            _currentMetadata = null;
+            _cachedMetadata = null;
         }
 
         public void CreateGUI()
@@ -3813,7 +3834,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private void ShowSampleMetadata()
         {
             // For now, create sample metadata to demonstrate UI
-            _currentMetadata = new PackageMetadata
+            SetMetadata(new PackageMetadata
             {
                 packageName = "Very Long Package Name That Demonstrates How The UI Handles Extensive Package Titles With Multiple Words And Potentially Very Long Names That Might Wrap Or Truncate",
                 version = "1.0.0",
@@ -3824,9 +3845,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     new ProductLink("http://vpm.yucp.club/", "VPM Repository"),
                     new ProductLink("http://patreon.com/Yeusepe", "Patreon")
                 }
-            };
-
-            RefreshUI();
+            });
         }
 
         private void RefreshUI()
@@ -3915,7 +3934,18 @@ namespace YUCP.Importer.Editor.PackageManager
         /// </summary>
         public void SetMetadata(PackageMetadata metadata)
         {
-            _cachedMetadata = metadata ?? new PackageMetadata();
+            PackageMetadata replacement =
+                metadata ?? new PackageMetadata();
+            PackageMetadataMediaOwnership.Release(
+                _currentMetadata,
+                replacement);
+            if (!ReferenceEquals(_currentMetadata, _cachedMetadata))
+            {
+                PackageMetadataMediaOwnership.Release(
+                    _cachedMetadata,
+                    replacement);
+            }
+            _cachedMetadata = replacement;
             _currentMetadata = _cachedMetadata;
             if (!string.IsNullOrEmpty(_currentPackagePath))
             {
@@ -3977,8 +4007,7 @@ namespace YUCP.Importer.Editor.PackageManager
             
             // For now, create fallback metadata from package name
             // In the future, we'll extract from ImportPackageItem[] array using reflection
-            _currentMetadata = new PackageMetadata(packageName);
-            RefreshUI();
+            SetMetadata(new PackageMetadata(packageName));
             
             // Focus this window to show the import UI
             Focus();

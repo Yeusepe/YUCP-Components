@@ -25,14 +25,29 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return;
             }
 
-            metadata.icon = Load(
-                packageRoot,
-                alias.media.icon,
-                "icon");
-            metadata.banner = Load(
-                packageRoot,
-                alias.media.banner,
-                "banner");
+            Texture2D icon = null;
+            Texture2D banner = null;
+            try
+            {
+                icon = Load(
+                    packageRoot,
+                    alias.media.icon,
+                    "icon");
+                banner = Load(
+                    packageRoot,
+                    alias.media.banner,
+                    "banner");
+                PackageMetadataMediaOwnership.Replace(
+                    metadata,
+                    icon,
+                    banner);
+            }
+            catch
+            {
+                PackageMetadataMediaOwnership.Release(icon);
+                PackageMetadataMediaOwnership.Release(banner);
+                throw;
+            }
         }
 
         private static Texture2D Load(

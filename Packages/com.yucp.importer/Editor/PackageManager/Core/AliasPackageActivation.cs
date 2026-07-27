@@ -9,14 +9,21 @@ using PackageInfo = UnityEditor.PackageManager.PackageInfo;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
-    internal sealed class AliasPackageActivationRequest
+    internal sealed class AliasPackageActivationRequest : IDisposable
     {
+        private bool _ownsMetadataMedia = true;
+        private bool _mediaLoaded;
+        private string _mediaPackageRoot = string.Empty;
+
         internal AliasPackageActivationRequest(
             PackageMetadata metadata,
-            string key)
+            string key,
+            string mediaPackageRoot = null)
         {
             Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
             Key = key ?? throw new ArgumentNullException(nameof(key));
+            _mediaPackageRoot = mediaPackageRoot ?? string.Empty;
+            _mediaLoaded = !string.IsNullOrWhiteSpace(mediaPackageRoot);
         }
 
         internal string ActionLabel => "Verify and Import";
@@ -26,6 +33,41 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal string Key { get; }
 
         internal PackageMetadata Metadata { get; }
+
+        public void Dispose()
+        {
+            if (!_ownsMetadataMedia)
+            {
+                return;
+            }
+            PackageMetadataMediaOwnership.Release(Metadata);
+            _ownsMetadataMedia = false;
+        }
+
+        internal void SetMediaPackageRoot(string packageRoot)
+        {
+            _mediaPackageRoot = packageRoot ?? string.Empty;
+        }
+
+        internal void EnsureMediaLoaded()
+        {
+            if (_mediaLoaded ||
+                string.IsNullOrWhiteSpace(_mediaPackageRoot))
+            {
+                return;
+            }
+            AliasPackageMediaLoader.Apply(
+                Metadata,
+                Alias,
+                _mediaPackageRoot);
+            _mediaLoaded = true;
+        }
+
+        internal PackageMetadata TransferMetadataOwnership()
+        {
+            _ownsMetadataMedia = false;
+            return Metadata;
+        }
     }
 
     /// <summary>
@@ -80,7 +122,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
 
             AliasPackageActivationRequest[] activations =
-                GetRegisteredActivations()
+                GetRegisteredActivations(false)
                     .OrderBy(
                         activation => activation.Metadata.packageName,
                         StringComparer.OrdinalIgnoreCase)
@@ -157,13 +199,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (string.IsNullOrWhiteSpace(packageName) ||
                 string.IsNullOrWhiteSpace(packageVersion))
             {
+                PackageMetadataMediaOwnership.Release(metadata);
                 error = "Alias package identity is incomplete.";
                 return false;
             }
 
             activation = new AliasPackageActivationRequest(
                 metadata,
-                $"{packageName}@{packageVersion}:{aliasId}");
+                $"{packageName}@{packageVersion}:{aliasId}",
+                packageRoot);
             error = null;
             return true;
         }
@@ -252,19 +296,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             foreach (AliasPackageActivationRequest activation in
                 GetRegisteredActivations())
             {
-                string projectPath = Path.GetFullPath(
-                    Path.Combine(Application.dataPath, ".."));
-                if (ShouldScheduleForProject(
-                        projectPath,
-                        activation))
-                {
-                    Schedule(activation);
-                }
+                Schedule(activation);
             }
         }
 
         private static IEnumerable<AliasPackageActivationRequest>
-            GetRegisteredActivations()
+            GetRegisteredActivations(bool loadMedia = true)
         {
             PackageInfo[] packages = PackageInfo.GetAllRegisteredPackages();
             if (packages == null)
@@ -276,6 +313,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 if (TryReadActivation(
                         package,
+                        loadMedia,
                         out AliasPackageActivationRequest activation))
                 {
                     yield return activation;
@@ -294,7 +332,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             SessionState.EraseBool(
                 BuildDismissalSessionKey(activation.Key));
             Scheduled.Remove(activation.Key);
-            PackageManagerWindow.ShowAliasBootstrap(activation.Metadata);
+            try
+            {
+                activation.EnsureMediaLoaded();
+                PackageManagerWindow.ShowAliasBootstrap(
+                    activation.TransferMetadataOwnership());
+            }
+            catch
+            {
+                activation.Dispose();
+                throw;
+            }
         }
 
         private static void SchedulePackages(IEnumerable<PackageInfo> packages)
@@ -306,8 +354,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             foreach (PackageInfo package in packages)
             {
-                if (TryReadActivation(
+            if (TryReadActivation(
                         package,
+                        true,
                         out AliasPackageActivationRequest activation))
                 {
                     Schedule(activation);
@@ -317,6 +366,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static bool TryReadActivation(
             PackageInfo package,
+            bool loadMedia,
             out AliasPackageActivationRequest activation)
         {
             activation = null;
@@ -331,13 +381,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 "package.json");
             try
             {
-                return File.Exists(packageJsonPath) &&
+                bool built = File.Exists(packageJsonPath) &&
                     TryBuildActivation(
                         package.name,
                         File.ReadAllText(packageJsonPath),
-                        package.resolvedPath,
+                        loadMedia
+                            ? package.resolvedPath
+                            : null,
                         out activation,
                         out _);
+                if (built && !loadMedia)
+                {
+                    activation.SetMediaPackageRoot(
+                        package.resolvedPath);
+                }
+                return built;
             }
             catch (IOException)
             {
@@ -351,10 +409,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static void Schedule(AliasPackageActivationRequest activation)
         {
-            if (activation == null ||
-                PackageManagerWindow.IsAliasBootstrapOpen(
+            if (activation == null)
+            {
+                return;
+            }
+            if (PackageManagerWindow.IsAliasBootstrapOpen(
                     activation.Alias.aliasId))
             {
+                activation.Dispose();
                 return;
             }
 
@@ -362,9 +424,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 Path.Combine(Application.dataPath, ".."));
             if (!ShouldScheduleForProject(
                     projectPath,
-                    activation) ||
-                !Scheduled.Add(activation.Key))
+                    activation))
             {
+                activation.Dispose();
                 return;
             }
 
@@ -372,6 +434,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 BuildDismissalSessionKey(activation.Key);
             if (SessionState.GetBool(dismissalKey, false))
             {
+                activation.Dispose();
+                return;
+            }
+            if (!Scheduled.Add(activation.Key))
+            {
+                activation.Dispose();
                 return;
             }
 
@@ -383,7 +451,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 try
                 {
                     PackageManagerWindow.ShowAliasBootstrap(
-                        activation.Metadata);
+                        activation.TransferMetadataOwnership());
                 }
                 catch (Exception exception)
                 {

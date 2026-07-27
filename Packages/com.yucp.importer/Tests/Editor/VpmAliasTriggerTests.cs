@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
@@ -333,6 +334,122 @@ namespace YUCP.Importer.Editor.Tests
             finally
             {
                 UnityEngine.Object.DestroyImmediate(window);
+            }
+        }
+
+        [Test]
+        public void RepeatedAliasRefreshAndCloseReleasesOwnedMedia()
+        {
+            string texturePrefix =
+                "YUCP owned media " + Guid.NewGuid().ToString("N");
+            int baseline = CountTextures(texturePrefix);
+            Texture2D packageTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                "Packages/com.yucp.importer/Editor/PackageManager/" +
+                "Resources/Bag.png");
+            Assert.That(packageTexture, Is.Not.Null);
+            var window =
+                ScriptableObject.CreateInstance<PackageManagerWindow>();
+            try
+            {
+                for (int index = 0; index < 3; index++)
+                {
+                    PackageMetadata metadata = OwnedAliasMetadata(
+                        texturePrefix + " " + index);
+                    if (index == 2)
+                    {
+                        UnityEngine.Object.DestroyImmediate(metadata.icon);
+                        metadata.icon = packageTexture;
+                    }
+                    window.InitializeForAlias(metadata, false);
+                    window.CreateGUI();
+                    window.CreateGUI();
+
+                    Assert.That(
+                        CountTextures(texturePrefix),
+                        Is.LessThanOrEqualTo(baseline + 2));
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(window);
+            }
+
+            Assert.That(CountTextures(texturePrefix), Is.EqualTo(baseline));
+            Assert.That(packageTexture, Is.Not.Null);
+            Assert.That(AssetDatabase.Contains(packageTexture), Is.True);
+        }
+
+        [TestCase("already-open")]
+        [TestCase("dismissed")]
+        [TestCase("duplicate")]
+        public void DiscardedAliasActivationReleasesOwnedMedia(string branch)
+        {
+            string suffix = Guid.NewGuid().ToString("N");
+            string aliasId = "media-" + suffix;
+            PackageMetadata discarded = OwnedAliasMetadata(
+                "YUCP discarded media " + suffix);
+            discarded.aliasPackage.aliasId = aliasId;
+            discarded.aliasPackage.packageName =
+                "com.yucp.alias." + suffix;
+            var activation = new AliasPackageActivationRequest(
+                discarded,
+                discarded.aliasPackage.packageName +
+                "@1.0.0:" + aliasId);
+            PackageManagerWindow existing = null;
+            FieldInfo scheduledField = typeof(AliasPackageActivation).GetField(
+                "Scheduled",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            MethodInfo schedule = typeof(AliasPackageActivation).GetMethod(
+                "Schedule",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(scheduledField, Is.Not.Null);
+            Assert.That(schedule, Is.Not.Null);
+            var scheduled =
+                (HashSet<string>)scheduledField.GetValue(null);
+            string dismissalKey =
+                AliasPackageActivation.BuildDismissalSessionKey(
+                    activation.Key);
+            try
+            {
+                if (branch == "already-open")
+                {
+                    existing =
+                        ScriptableObject.CreateInstance<PackageManagerWindow>();
+                    PackageMetadata openMetadata = OwnedAliasMetadata(
+                        "YUCP open media " + suffix);
+                    openMetadata.aliasPackage.aliasId = aliasId;
+                    existing.InitializeForAlias(openMetadata, false);
+                }
+                else if (branch == "dismissed")
+                {
+                    SessionState.SetBool(dismissalKey, true);
+                }
+                else
+                {
+                    scheduled.Add(activation.Key);
+                }
+
+                schedule.Invoke(null, new object[] { activation });
+
+                Assert.That(discarded.icon, Is.Null);
+                Assert.That(discarded.banner, Is.Null);
+            }
+            finally
+            {
+                SessionState.EraseBool(dismissalKey);
+                scheduled.Remove(activation.Key);
+                if (existing != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(existing);
+                }
+                if (discarded.icon != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(discarded.icon);
+                }
+                if (discarded.banner != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(discarded.banner);
+                }
             }
         }
 
@@ -757,7 +874,16 @@ namespace YUCP.Importer.Editor.Tests
                         "receipts/receipt-2.cbor",
                         new string('a', 64),
                         "active-content-policy-v1",
-                        new List<NativePackageBrokerFile>(),
+                        new List<NativePackageBrokerFile>
+                        {
+                            new NativePackageBrokerFile
+                            {
+                                bytes = 1,
+                                normalizedPath =
+                                    "Assets/Product/file.txt",
+                                sha256 = new string('b', 64),
+                            },
+                        },
                         null,
                     });
                 string attemptId =
@@ -1764,6 +1890,47 @@ namespace YUCP.Importer.Editor.Tests
                     .Replace("-", string.Empty)
                     .ToLowerInvariant();
             }
+        }
+
+        private static PackageMetadata OwnedAliasMetadata(
+            string textureNamePrefix)
+        {
+            return new PackageMetadata("JAMMR")
+            {
+                aliasPackage = new AliasPackageContract
+                {
+                    aliasId = "jammr",
+                    installStrategy =
+                        AliasPackageDiscovery
+                            .ServerAuthorizedInstallStrategy,
+                    kind = "alias-v1",
+                    importerPackage = "com.yucp.importer",
+                    packageDisplayName = "JAMMR",
+                    packageName = "com.yucp.alias.jammr",
+                    packageVersion = "1.0.0",
+                },
+                banner = OwnedTexture(textureNamePrefix + " banner"),
+                icon = OwnedTexture(textureNamePrefix + " icon"),
+            };
+        }
+
+        private static Texture2D OwnedTexture(string textureName)
+        {
+            return new Texture2D(2, 2, TextureFormat.RGBA32, false)
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                name = textureName,
+            };
+        }
+
+        private static int CountTextures(string namePrefix)
+        {
+            return Resources.FindObjectsOfTypeAll<Texture2D>()
+                .Count(texture =>
+                    texture != null &&
+                    texture.name.StartsWith(
+                        namePrefix,
+                        StringComparison.Ordinal));
         }
     }
 }
