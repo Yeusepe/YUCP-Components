@@ -1295,6 +1295,366 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
+        [TestCase("corrupt-file")]
+        [TestCase("missing-tree")]
+        public void PreJournalFailureRetriesFreshStagingAfterRestart(
+            string failureMode)
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-pre-journal-retry-" + Guid.NewGuid().ToString("N"));
+            string project = Path.Combine(root, "project");
+            string staging = Path.Combine(root, "staging");
+            string relativePath = ".yucp/product/file.txt";
+            string stagedPath = Path.Combine(
+                staging,
+                relativePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar));
+            const string runId = "pre-journal-retry";
+            const string aliasId = "jammr";
+            try
+            {
+                Directory.CreateDirectory(project);
+                if (failureMode == "corrupt-file")
+                {
+                    Directory.CreateDirectory(
+                        Path.GetDirectoryName(stagedPath));
+                    File.WriteAllText(stagedPath, "corrupt");
+                }
+                var expected = new VerifiedStagingFile
+                {
+                    bytes = "verified".Length,
+                    normalizedPath = relativePath,
+                    sha256 = Sha256(
+                        System.Text.Encoding.UTF8.GetBytes("verified")),
+                };
+                var checkpoint = new PackageLifecycleCheckpoint
+                {
+                    aliasId = aliasId,
+                    expectedCurrentReleaseRoot =
+                        PackageLifecycleCoordinator.EmptyReleaseRoot,
+                    operation = "install",
+                    phase = "awaiting-transaction",
+                    runId = runId,
+                };
+                PackageLifecycleCheckpointStore.Write(project, checkpoint);
+
+                Exception failure = Assert.Catch<Exception>(() =>
+                    ProjectTransactionJournal.Apply(
+                        project,
+                        staging,
+                        runId,
+                        new[] { expected },
+                        Array.Empty<VerifiedStagingFile>()));
+                if (failureMode == "corrupt-file")
+                {
+                    Assert.That(
+                        failure,
+                        Is.TypeOf<CryptographicException>());
+                }
+                else
+                {
+                    Assert.That(
+                        failure,
+                        Is.TypeOf<DirectoryNotFoundException>());
+                }
+                Assert.That(
+                    ProjectTransactionJournal.TryInspect(
+                        project,
+                        runId,
+                        out _),
+                    Is.False);
+
+                MethodInfo resume = typeof(PackageLifecycleCoordinator)
+                    .GetMethod(
+                        "TryResumeAsync",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(resume, Is.Not.Null);
+                var resumed =
+                    (Task<PackageLifecycleExecutionResult>)resume.Invoke(
+                        null,
+                        new object[]
+                        {
+                            project,
+                            new AliasPackageContract
+                            {
+                                aliasId = aliasId,
+                                packageDisplayName = "JAMMR",
+                            },
+                            "install",
+                            runId,
+                            PackageLifecycleCoordinator.EmptyReleaseRoot,
+                            null,
+                        });
+
+                Assert.That(
+                    resumed.GetAwaiter().GetResult(),
+                    Is.Null);
+                Assert.That(
+                    PackageLifecycleCheckpointStore.TryRead(
+                        project,
+                        runId,
+                        out _),
+                    Is.False);
+
+                Directory.CreateDirectory(Path.GetDirectoryName(stagedPath));
+                File.WriteAllText(stagedPath, "verified");
+                ProjectTransactionResult retried =
+                    ProjectTransactionJournal.Apply(
+                        project,
+                        staging,
+                        runId,
+                        new[] { expected },
+                        Array.Empty<VerifiedStagingFile>());
+
+                Assert.That(retried.state, Is.EqualTo("committed"));
+                Assert.That(
+                    File.ReadAllText(
+                        Path.Combine(
+                            project,
+                            relativePath.Replace(
+                                '/',
+                                Path.DirectorySeparatorChar))),
+                    Is.EqualTo("verified"));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator AwaitingCheckpointRecoversAnExistingJournal()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-awaiting-journal-" + Guid.NewGuid().ToString("N"));
+            string project = Path.Combine(root, "project");
+            string staging = Path.Combine(root, "staging");
+            string relativePath = ".yucp/product/file.txt";
+            string stagedPath = Path.Combine(
+                staging,
+                relativePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar));
+            const string runId = "awaiting-existing-journal";
+            try
+            {
+                Directory.CreateDirectory(project);
+                Directory.CreateDirectory(Path.GetDirectoryName(stagedPath));
+                File.WriteAllText(stagedPath, "verified");
+                var target = new VerifiedStagingFile
+                {
+                    bytes = new FileInfo(stagedPath).Length,
+                    normalizedPath = relativePath,
+                    sha256 = Sha256(File.ReadAllBytes(stagedPath)),
+                };
+                ProjectTransactionJournal.Prepare(
+                    project,
+                    staging,
+                    runId,
+                    new[] { target },
+                    Array.Empty<VerifiedStagingFile>());
+                var checkpoint = new PackageLifecycleCheckpoint
+                {
+                    aliasId = "jammr",
+                    expectedCurrentReleaseRoot =
+                        PackageLifecycleCoordinator.EmptyReleaseRoot,
+                    operation = "install",
+                    phase = "awaiting-transaction",
+                    runId = runId,
+                    targetState = new PackageDeliveryInstallState
+                    {
+                        aliasId = "jammr",
+                        files = new List<NativePackageBrokerFile>
+                        {
+                            new NativePackageBrokerFile
+                            {
+                                bytes = target.bytes,
+                                normalizedPath = target.normalizedPath,
+                                sha256 = target.sha256,
+                            },
+                        },
+                        releaseRoot = new string('2', 64),
+                        versionId = "version-2",
+                    },
+                };
+                PackageLifecycleCheckpointStore.Write(project, checkpoint);
+                MethodInfo resume = typeof(PackageLifecycleCoordinator)
+                    .GetMethod(
+                        "TryResumeAsync",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(resume, Is.Not.Null);
+                var completion =
+                    (Task<PackageLifecycleExecutionResult>)resume.Invoke(
+                        null,
+                        new object[]
+                        {
+                            project,
+                            new AliasPackageContract
+                            {
+                                aliasId = "jammr",
+                                packageDisplayName = "JAMMR",
+                            },
+                            "install",
+                            runId,
+                            PackageLifecycleCoordinator.EmptyReleaseRoot,
+                            null,
+                        });
+
+                while (!completion.IsCompleted)
+                {
+                    yield return null;
+                }
+                if (completion.IsFaulted)
+                {
+                    throw completion.Exception.GetBaseException();
+                }
+
+                Assert.That(
+                    completion.Result.targetReleaseRoot,
+                    Is.EqualTo(new string('2', 64)));
+                Assert.That(
+                    PackageLifecycleCheckpointStore.Read(
+                        project,
+                        runId).phase,
+                    Is.EqualTo("verified"));
+                Assert.That(
+                    ProjectTransactionJournal.Inspect(project, runId).state,
+                    Is.EqualTo("committed"));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator RollbackRecoveryPreservesModifiedOwnedFiles()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-rollback-preserved-" + Guid.NewGuid().ToString("N"));
+            string project = Path.Combine(root, "project");
+            string modifiedRelativePath = ".yucp/product/modified.txt";
+            string restoredRelativePath = ".yucp/product/restored.txt";
+            string modifiedPath = Path.Combine(
+                project,
+                modifiedRelativePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar));
+            string restoredPath = Path.Combine(
+                project,
+                restoredRelativePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar));
+            const string runId = "rollback-preserved-modification";
+            try
+            {
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(modifiedPath));
+                File.WriteAllText(modifiedPath, "installed modified");
+                File.WriteAllText(restoredPath, "installed restored");
+                var modifiedOwned = new VerifiedStagingFile
+                {
+                    bytes = new FileInfo(modifiedPath).Length,
+                    normalizedPath = modifiedRelativePath,
+                    sha256 = Sha256(File.ReadAllBytes(modifiedPath)),
+                };
+                var restoredOwned = new VerifiedStagingFile
+                {
+                    bytes = new FileInfo(restoredPath).Length,
+                    normalizedPath = restoredRelativePath,
+                    sha256 = Sha256(File.ReadAllBytes(restoredPath)),
+                };
+                File.WriteAllText(modifiedPath, "user modification");
+                ProjectTransactionJournal.RemoveOwnedFiles(
+                    project,
+                    runId,
+                    new[] { modifiedOwned, restoredOwned });
+                var checkpoint = new PackageLifecycleCheckpoint
+                {
+                    aliasId = "jammr",
+                    errorMessage =
+                        "Unity rejected the uninstall. The prior project was restored.",
+                    expectedCurrentReleaseRoot = new string('1', 64),
+                    operation = "uninstall",
+                    phase = "rolling-back",
+                    priorState = new PackageDeliveryInstallState
+                    {
+                        aliasId = "jammr",
+                        files = new List<NativePackageBrokerFile>
+                        {
+                            new NativePackageBrokerFile
+                            {
+                                bytes = modifiedOwned.bytes,
+                                normalizedPath =
+                                    modifiedOwned.normalizedPath,
+                                sha256 = modifiedOwned.sha256,
+                            },
+                            new NativePackageBrokerFile
+                            {
+                                bytes = restoredOwned.bytes,
+                                normalizedPath =
+                                    restoredOwned.normalizedPath,
+                                sha256 = restoredOwned.sha256,
+                            },
+                        },
+                        releaseRoot = new string('1', 64),
+                    },
+                    runId = runId,
+                };
+                PackageLifecycleCheckpointStore.Write(project, checkpoint);
+                MethodInfo complete = typeof(PackageLifecycleCoordinator)
+                    .GetMethod(
+                        "CompleteCommittedCheckpointAsync",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(complete, Is.Not.Null);
+                var completion =
+                    (Task<PackageLifecycleExecutionResult>)complete.Invoke(
+                        null,
+                        new object[] { project, checkpoint });
+
+                while (!completion.IsCompleted)
+                {
+                    yield return null;
+                }
+
+                Assert.That(completion.IsFaulted, Is.True);
+                Assert.That(
+                    completion.Exception.GetBaseException(),
+                    Is.TypeOf<InvalidDataException>());
+                Assert.That(
+                    File.ReadAllText(modifiedPath),
+                    Is.EqualTo("user modification"));
+                Assert.That(
+                    File.ReadAllText(restoredPath),
+                    Is.EqualTo("installed restored"));
+                Assert.That(
+                    ProjectTransactionJournal.Inspect(project, runId).state,
+                    Is.EqualTo("rolled-back"));
+                Assert.That(
+                    PackageLifecycleCheckpointStore.Read(
+                        project,
+                        runId).phase,
+                    Is.EqualTo("rolled-back"));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
         [UnityTest]
         public IEnumerator PreparedUninstallResumePreservesAUserModifiedFile()
         {

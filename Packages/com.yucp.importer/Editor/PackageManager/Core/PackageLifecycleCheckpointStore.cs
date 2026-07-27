@@ -194,6 +194,22 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return true;
         }
 
+        internal static void Delete(
+            string projectPath,
+            string runId)
+        {
+            string path = ResolvePath(projectPath, runId);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+            string temporaryPath = path + ".partial";
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+
         internal static void ValidateBinding(
             PackageLifecycleCheckpoint checkpoint,
             string aliasId,
@@ -238,6 +254,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }.Contains(checkpoint.operation) ||
                 !new[]
                 {
+                    "awaiting-transaction",
                     "prepared",
                     "committed",
                     "rolling-back",

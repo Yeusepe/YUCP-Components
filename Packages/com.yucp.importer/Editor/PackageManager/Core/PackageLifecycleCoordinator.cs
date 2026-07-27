@@ -372,6 +372,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return null;
             }
+            if (DiscardPreJournalCheckpoint(
+                    projectPath,
+                    pending.checkpoint))
+            {
+                PackageLifecycleCheckpointStore.ClearAttemptId(
+                    projectPath,
+                    pending.attemptKey);
+                return null;
+            }
 
             try
             {
@@ -716,6 +725,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     expectedCurrentReleaseRoot =
                         expectedCurrentReleaseRoot,
                     operation = operation,
+                    phase = "awaiting-transaction",
                     priorState = current,
                     runId = runId,
                 };
@@ -784,6 +794,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 aliasId = alias.aliasId,
                 expectedCurrentReleaseRoot = expectedCurrentReleaseRoot,
                 operation = operation,
+                phase = "awaiting-transaction",
                 priorState = current,
                 runId = runId,
                 targetState = ReadInstallState(
@@ -798,12 +809,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 reportProgress,
                 "updating-project",
                 alias.packageDisplayName);
-            ProjectTransactionResult transaction = ProjectTransactionJournal.Apply(
+            ProjectTransactionResult transaction =
+                ProjectTransactionJournal.Prepare(
+                    projectPath,
+                    broker.stagingTree,
+                    runId,
+                    targetFiles,
+                    previousFiles);
+            lifecycleCheckpoint.phase = transaction.state;
+            PackageLifecycleCheckpointStore.Write(
                 projectPath,
-                broker.stagingTree,
-                runId,
-                targetFiles,
-                previousFiles);
+                lifecycleCheckpoint);
+            transaction = ProjectTransactionJournal.Recover(
+                projectPath,
+                runId);
             lifecycleCheckpoint.phase = transaction.state;
             PackageLifecycleCheckpointStore.Write(
                 projectPath,
@@ -837,6 +856,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 alias.aliasId,
                 operation,
                 expectedCurrentReleaseRoot);
+            if (DiscardPreJournalCheckpoint(projectPath, checkpoint))
+            {
+                return null;
+            }
             Report(
                 reportProgress,
                 "finishing",
@@ -844,6 +867,27 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return await CompleteCommittedCheckpointAsync(
                 projectPath,
                 checkpoint);
+        }
+
+        private static bool DiscardPreJournalCheckpoint(
+            string projectPath,
+            PackageLifecycleCheckpoint checkpoint)
+        {
+            if (!string.Equals(
+                    checkpoint.phase,
+                    "awaiting-transaction",
+                    StringComparison.Ordinal) ||
+                ProjectTransactionJournal.TryInspect(
+                    projectPath,
+                    checkpoint.runId,
+                    out _))
+            {
+                return false;
+            }
+            PackageLifecycleCheckpointStore.Delete(
+                projectPath,
+                checkpoint.runId);
+            return true;
         }
 
         private static async Task<PackageLifecycleExecutionResult>
@@ -879,6 +923,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string.Equals(
                     checkpoint.phase,
                     "rolled-back",
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    inspection.state,
+                    "rolling-back",
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    inspection.state,
+                    "rolled-back",
                     StringComparison.Ordinal))
             {
                 if (string.Equals(
@@ -903,7 +955,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     await EmbeddedPackageResolver.ResolveAsync();
                 }
-                await VerifyRestoredState(projectPath, checkpoint);
+                inspection = ProjectTransactionJournal.Inspect(
+                    projectPath,
+                    checkpoint.runId);
+                await VerifyRestoredState(
+                    projectPath,
+                    checkpoint,
+                    inspection);
                 checkpoint.phase = "rolled-back";
                 PackageLifecycleCheckpointStore.Write(
                     projectPath,
@@ -967,7 +1025,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     await EmbeddedPackageResolver.ResolveAsync();
                 }
-                await VerifyRestoredState(projectPath, checkpoint);
+                inspection = ProjectTransactionJournal.Inspect(
+                    projectPath,
+                    checkpoint.runId);
+                await VerifyRestoredState(
+                    projectPath,
+                    checkpoint,
+                    inspection);
                 checkpoint.phase = "rolled-back";
                 PackageLifecycleCheckpointStore.Write(
                     projectPath,
@@ -1340,18 +1404,58 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static async Task VerifyRestoredState(
             string projectPath,
-            PackageLifecycleCheckpoint checkpoint)
+            PackageLifecycleCheckpoint checkpoint,
+            ProjectTransactionInspection inspection)
         {
+            IReadOnlyList<VerifiedStagingFile> preservedFiles =
+                inspection?.preservedModifiedFiles != null
+                    ? inspection.preservedModifiedFiles
+                    : Array.Empty<VerifiedStagingFile>();
             if (checkpoint.priorState == null)
             {
+                if (preservedFiles.Count != 0)
+                {
+                    throw new InvalidDataException(
+                        "The rollback journal preserved an unexpected file.");
+                }
                 await PackageImportVerifier.ImportAndVerifyRemoval(
                     projectPath,
                     ToVerifiedFiles(checkpoint.targetState?.files));
                 return;
             }
+            var preservedByPath = preservedFiles.ToDictionary(
+                file => file.normalizedPath,
+                StringComparer.OrdinalIgnoreCase);
+            var priorPaths = new HashSet<string>(
+                checkpoint.priorState.files.Select(
+                    file => file.normalizedPath),
+                StringComparer.OrdinalIgnoreCase);
+            if (preservedByPath.Keys.Any(path => !priorPaths.Contains(path)))
+            {
+                throw new InvalidDataException(
+                    "The rollback journal preserved an unowned file.");
+            }
+            List<NativePackageBrokerFile> restoredFiles =
+                checkpoint.priorState.files
+                    .Select(file =>
+                    {
+                        if (!preservedByPath.TryGetValue(
+                                file.normalizedPath,
+                                out VerifiedStagingFile preserved))
+                        {
+                            return file;
+                        }
+                        return new NativePackageBrokerFile
+                        {
+                            bytes = preserved.bytes,
+                            normalizedPath = preserved.normalizedPath,
+                            sha256 = preserved.sha256,
+                        };
+                    })
+                    .ToList();
             await PackageImportVerifier.ImportAndVerify(
                 projectPath,
-                checkpoint.priorState.files);
+                restoredFiles);
         }
 
         private static PackageLifecycleExecutionResult BuildCheckpointResult(
