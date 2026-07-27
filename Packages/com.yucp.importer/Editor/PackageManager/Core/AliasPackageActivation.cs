@@ -23,13 +23,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         internal AliasPackageContract Alias => Metadata.aliasPackage;
 
-        internal IReadOnlyList<string> CatalogProductIds =>
-            Alias.catalogProductIds
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(value => value, StringComparer.Ordinal)
-                .ToArray();
-
         internal string Key { get; }
 
         internal PackageMetadata Metadata { get; }
@@ -65,7 +58,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             // Reconcile aliases that arrived in the same package graph as the
             // importer. The importer could not subscribe before it compiled.
-            EditorApplication.delayCall += ReconcileUninstalledAliases;
+            EditorApplication.delayCall += ReconcileRegisteredAliases;
         }
 
         [MenuItem(ManualInstallerMenuPath, false, 200)]
@@ -132,10 +125,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             out AliasPackageActivationRequest activation,
             out string error)
         {
+            return TryBuildActivation(
+                packageId,
+                packageJson,
+                null,
+                out activation,
+                out error);
+        }
+
+        internal static bool TryBuildActivation(
+            string packageId,
+            string packageJson,
+            string packageRoot,
+            out AliasPackageActivationRequest activation,
+            out string error)
+        {
             activation = null;
             if (!AliasPackageDiscovery.TryBuildMetadata(
                     packageId,
                     packageJson,
+                    packageRoot,
                     out PackageMetadata metadata,
                     out error))
             {
@@ -188,6 +197,38 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 true);
         }
 
+        internal static bool ShouldSchedule(
+            string currentReleaseRoot,
+            bool activationHandled)
+        {
+            return string.Equals(
+                    currentReleaseRoot,
+                    PackageLifecycleCoordinator.EmptyReleaseRoot,
+                    StringComparison.Ordinal) &&
+                !activationHandled;
+        }
+
+        internal static bool ShouldScheduleForProject(
+            string projectPath,
+            AliasPackageActivationRequest activation)
+        {
+            if (activation == null)
+            {
+                return false;
+            }
+            string currentReleaseRoot =
+                PackageLifecycleCoordinator.GetCurrentReleaseRoot(
+                    projectPath,
+                    activation.Alias.aliasId);
+            bool activationHandled =
+                AliasPackageActivationStateStore.IsHandled(
+                    projectPath,
+                    activation.Alias);
+            return ShouldSchedule(
+                currentReleaseRoot,
+                activationHandled);
+        }
+
         private static void OnRegisteredPackages(
             PackageRegistrationEventArgs args)
         {
@@ -200,39 +241,19 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             SchedulePackages(args.changedTo);
         }
 
-        private static void ReconcileUninstalledAliases()
+        private static void ReconcileRegisteredAliases()
         {
             foreach (AliasPackageActivationRequest activation in
                 GetRegisteredActivations())
             {
                 string projectPath = Path.GetFullPath(
                     Path.Combine(Application.dataPath, ".."));
-                string currentReleaseRoot =
-                    PackageLifecycleCoordinator.GetCurrentReleaseRoot(
+                if (ShouldScheduleForProject(
                         projectPath,
-                        activation.Alias.aliasId);
-                if (string.Equals(
-                        currentReleaseRoot,
-                        PackageLifecycleCoordinator.EmptyReleaseRoot,
-                        StringComparison.Ordinal))
+                        activation))
                 {
                     Schedule(activation);
-                    continue;
                 }
-
-                string cleanupError =
-                    VpmBootstrapPackageCleanup.RemoveInstalledAlias(
-                        projectPath,
-                        activation.Alias.packageName);
-                if (!string.IsNullOrWhiteSpace(cleanupError))
-                {
-                    Debug.LogError(
-                        $"{LogPrefix} Installed bootstrap cleanup failed.");
-                    continue;
-                }
-
-                EditorApplication.delayCall += () =>
-                    Client.Resolve();
             }
         }
 
@@ -308,6 +329,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     TryBuildActivation(
                         package.name,
                         File.ReadAllText(packageJsonPath),
+                        package.resolvedPath,
                         out activation,
                         out _);
             }
@@ -325,7 +347,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             if (activation == null ||
                 PackageManagerWindow.IsAliasBootstrapOpen(
-                    activation.Alias.aliasId) ||
+                    activation.Alias.aliasId))
+            {
+                return;
+            }
+
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            if (!ShouldScheduleForProject(
+                    projectPath,
+                    activation) ||
                 !Scheduled.Add(activation.Key))
             {
                 return;

@@ -14,7 +14,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         internal static void ValidateUnityPathCompatibility(
             string projectPath,
-            IReadOnlyList<TransferHelperFile> files,
+            IReadOnlyList<NativePackageBrokerFile> files,
             bool windowsPathLimitApplies)
         {
             if (!windowsPathLimitApplies)
@@ -22,8 +22,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return;
             }
             string projectRoot = RequireProjectRoot(projectPath);
-            foreach (TransferHelperFile file in
-                files ?? Array.Empty<TransferHelperFile>())
+            foreach (NativePackageBrokerFile file in
+                files ?? Array.Empty<NativePackageBrokerFile>())
             {
                 string diskPath = ResolveOwnedFilePath(
                     projectRoot,
@@ -40,12 +40,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         internal static void ImportAndVerify(
             string projectPath,
-            IReadOnlyList<TransferHelperFile> files)
+            IReadOnlyList<NativePackageBrokerFile> files)
         {
             string projectRoot = RequireProjectRoot(projectPath);
             RefreshAndRequireSuccessfulCompilation();
-            foreach (TransferHelperFile file in
-                files ?? Array.Empty<TransferHelperFile>())
+            foreach (NativePackageBrokerFile file in
+                files ?? Array.Empty<NativePackageBrokerFile>())
             {
                 string diskPath = ResolveOwnedFile(
                     projectRoot,

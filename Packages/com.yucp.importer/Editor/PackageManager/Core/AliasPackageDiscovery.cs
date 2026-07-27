@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor.PackageManager;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
@@ -12,6 +13,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal static bool TryBuildMetadata(
             string packageId,
             string packageJson,
+            out PackageMetadata metadata,
+            out string error)
+        {
+            return TryBuildMetadata(
+                packageId,
+                packageJson,
+                null,
+                out metadata,
+                out error);
+        }
+
+        internal static bool TryBuildMetadata(
+            string packageId,
+            string packageJson,
+            string packageRoot,
             out PackageMetadata metadata,
             out string error)
         {
@@ -34,44 +50,54 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     error = "package.json does not declare a server-authorized YUCP alias.";
                     return false;
                 }
-                if (alias.catalogProductIds == null || alias.catalogProductIds.Count == 0)
-                {
-                    error = "Alias package metadata has no catalog product identifiers.";
-                    return false;
-                }
-
                 string resolvedPackageId = !string.IsNullOrWhiteSpace(importData.packageName)
                     ? importData.packageName
                     : packageId;
-                string displayName = !string.IsNullOrWhiteSpace(alias.packageDisplayName)
-                    ? alias.packageDisplayName
-                    : importData.displayName;
-                metadata = new PackageMetadata(
-                    !string.IsNullOrWhiteSpace(displayName) ? displayName : resolvedPackageId)
-                {
-                    version = importData.version ?? string.Empty,
-                    author = importData.author ?? string.Empty,
-                    description = importData.description ?? string.Empty,
-                    dependencies = importData.dependencies ??
-                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                    aliasPackage = alias.Clone(),
-                };
+                PackageMetadata embedded =
+                    PackageMetadataExtractor.ParseEmbeddedAliasMetadataJson(
+                        importData.packageMetadataJson);
+                string displayName = FirstNonEmpty(
+                    embedded?.packageName,
+                    alias.packageDisplayName,
+                    importData.displayName,
+                    resolvedPackageId);
+                metadata = embedded ?? new PackageMetadata();
+                metadata.packageName = displayName;
+                metadata.version = FirstNonEmpty(metadata.version);
+                metadata.author = FirstNonEmpty(
+                    metadata.author,
+                    importData.author);
+                metadata.description = FirstNonEmpty(
+                    metadata.description,
+                    importData.description);
+                metadata.dependencies = importData.dependencies ??
+                    new Dictionary<string, string>(
+                        StringComparer.OrdinalIgnoreCase);
+                metadata.aliasPackage = alias.Clone();
                 metadata.aliasPackage.packageName =
-                    !string.IsNullOrWhiteSpace(metadata.aliasPackage.packageName)
-                        ? metadata.aliasPackage.packageName
-                        : resolvedPackageId;
+                    FirstNonEmpty(
+                        metadata.aliasPackage.packageName,
+                        resolvedPackageId);
                 metadata.aliasPackage.packageDisplayName =
-                    !string.IsNullOrWhiteSpace(metadata.aliasPackage.packageDisplayName)
-                        ? metadata.aliasPackage.packageDisplayName
-                        : metadata.packageName;
+                    FirstNonEmpty(
+                        metadata.aliasPackage.packageDisplayName,
+                        metadata.packageName);
                 metadata.aliasPackage.packageVersion =
-                    !string.IsNullOrWhiteSpace(metadata.aliasPackage.packageVersion)
-                        ? metadata.aliasPackage.packageVersion
-                        : metadata.version;
+                    FirstNonEmpty(
+                        metadata.aliasPackage.packageVersion,
+                        metadata.version);
+                if (!string.IsNullOrWhiteSpace(packageRoot))
+                {
+                    AliasPackageMediaLoader.Apply(
+                        metadata,
+                        metadata.aliasPackage,
+                        packageRoot);
+                }
                 return true;
             }
             catch (Exception exception)
             {
+                metadata = null;
                 error = exception.Message;
                 return false;
             }
@@ -90,6 +116,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "com.yucp.importer",
                     StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(alias.aliasId);
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            return values.FirstOrDefault(
+                    value => !string.IsNullOrWhiteSpace(value))
+                ?.Trim() ?? string.Empty;
         }
 
         internal static bool AnyRegistered()

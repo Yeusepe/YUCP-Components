@@ -2,7 +2,10 @@ using NUnit.Framework;
 using System;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Threading.Tasks;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.UIElements;
 using YUCP.Importer.Editor.PackageManager;
 using YUCP.Importer.Editor.PackageManager.Core;
@@ -12,6 +15,51 @@ namespace YUCP.Importer.Editor.Tests
     public sealed class VpmAliasTriggerTests
     {
         [Test]
+        public void PackageIdentityAloneEntersTheAuthorizedFlow()
+        {
+            const string packageId = "com.yucp.jammr";
+            const string packageJson = "{\"name\":\"com.yucp.jammr.alias\"," +
+                "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                "\"yucp\":{\"kind\":\"alias-v1\"," +
+                "\"aliasId\":\"com.yucp.jammr\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"}}";
+
+            bool built = AliasPackageDiscovery.TryBuildMetadata(
+                packageId,
+                packageJson,
+                out PackageMetadata metadata,
+                out string error);
+
+            Assert.That(built, Is.True, error);
+            Assert.That(metadata.aliasPackage.aliasId, Is.EqualTo(packageId));
+        }
+
+        [Test]
+        public void BootstrapVersionIsNotPresentedAsTheProductVersion()
+        {
+            const string packageJson =
+                "{\"name\":\"com.yucp.jammr.alias\"," +
+                "\"version\":\"1.700000.125\",\"displayName\":\"JAMMR\"," +
+                "\"yucp\":{\"kind\":\"alias-v1\"," +
+                "\"aliasId\":\"com.yucp.jammr\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"," +
+                "\"packageMetadata\":{\"packageName\":\"JAMMR\"," +
+                "\"author\":\"Mapache\"}}}";
+
+            bool built = AliasPackageDiscovery.TryBuildMetadata(
+                "com.yucp.jammr.alias",
+                packageJson,
+                out PackageMetadata metadata,
+                out string error);
+
+            Assert.That(built, Is.True, error);
+            Assert.That(metadata.version, Is.Empty);
+            Assert.That(metadata.aliasPackage.packageVersion, Is.EqualTo("1.700000.125"));
+        }
+
+        [Test]
         public void OfficialVpmAliasContractEntersTheAuthorizedFlow()
         {
             const string packageId = "com.yucp.jammr.alias";
@@ -20,8 +68,7 @@ namespace YUCP.Importer.Editor.Tests
                 "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
                 "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
                 "\"installStrategy\":\"server-authorized\"," +
-                "\"importerPackage\":\"com.yucp.importer\"," +
-                "\"catalogProductIds\":[\"jinxxy-jammr\",\"gumroad-jammr\"]}}";
+                "\"importerPackage\":\"com.yucp.importer\"}}";
 
             bool built = AliasPackageDiscovery.TryBuildMetadata(
                 packageId,
@@ -38,12 +85,178 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void LegacyInstallPlanMetadataIsRejected()
+        public void AliasUsesEmbeddedFriendlyProductMetadata()
+        {
+            const string packageJson =
+                "{\"name\":\"com.yucp.alias.c6396665\"," +
+                "\"version\":\"1.0.0\"," +
+                "\"displayName\":\"YUCP Product Bootstrap C6396665\"," +
+                "\"description\":\"Public bootstrap.\"," +
+                "\"author\":{\"name\":\"YUCP Club\"}," +
+                "\"yucp\":{\"kind\":\"alias-v1\"," +
+                "\"aliasId\":\"jammr\"," +
+                "\"packageDisplayName\":\"JAMMR\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"," +
+                "\"packageMetadata\":{\"packageName\":\"JAMMR\"," +
+                "\"author\":\"Druffle\"," +
+                "\"description\":\"Create and join music sessions.\"," +
+                "\"tagline\":\"Music together in VR.\"}}}";
+
+            bool built = AliasPackageDiscovery.TryBuildMetadata(
+                "com.yucp.alias.c6396665",
+                packageJson,
+                out PackageMetadata metadata,
+                out string error);
+
+            Assert.That(built, Is.True, error);
+            Assert.That(metadata.packageName, Is.EqualTo("JAMMR"));
+            Assert.That(metadata.version, Is.Empty);
+            Assert.That(metadata.author, Is.EqualTo("Druffle"));
+            Assert.That(
+                metadata.description,
+                Is.EqualTo("Create and join music sessions."));
+            Assert.That(metadata.tagline, Is.EqualTo("Music together in VR."));
+        }
+
+        [Test]
+        public void AliasLoadsOnlyDigestBoundLocalMedia()
+        {
+            string packageRoot = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-media-" + Guid.NewGuid().ToString("N"));
+            Texture2D source = null;
+            Texture2D loadedBanner = null;
+            Texture2D loadedIcon = null;
+            try
+            {
+                string mediaDirectory = Path.Combine(packageRoot, "media");
+                Directory.CreateDirectory(mediaDirectory);
+                source = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                source.SetPixels(new[]
+                {
+                    Color.red,
+                    Color.green,
+                    Color.blue,
+                    Color.white,
+                });
+                source.Apply();
+                byte[] bytes = source.EncodeToPNG();
+                string bannerPath = Path.Combine(mediaDirectory, "banner.png");
+                string iconPath = Path.Combine(mediaDirectory, "icon.png");
+                File.WriteAllBytes(bannerPath, bytes);
+                File.WriteAllBytes(iconPath, bytes);
+                string packageJson =
+                    "{\"name\":\"com.yucp.alias.jammr\"," +
+                    "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                    "\"yucp\":{\"kind\":\"alias-v1\"," +
+                    "\"aliasId\":\"jammr\"," +
+                    "\"installStrategy\":\"server-authorized\"," +
+                    "\"importerPackage\":\"com.yucp.importer\"," +
+                    "\"media\":[{\"kind\":\"banner\"," +
+                    "\"localPath\":\"media/banner.png\"," +
+                    "\"contentType\":\"image/png\"," +
+                    "\"byteSize\":" + bytes.Length + "," +
+                    "\"sha256\":\"" + Sha256(bytes) + "\"}," +
+                    "{\"kind\":\"icon\"," +
+                    "\"localPath\":\"media/icon.png\"," +
+                    "\"contentType\":\"image/png\"," +
+                    "\"byteSize\":" + bytes.Length + "," +
+                    "\"sha256\":\"" + Sha256(bytes) + "\"}]}}";
+
+                bool built = AliasPackageDiscovery.TryBuildMetadata(
+                    "com.yucp.alias.jammr",
+                    packageJson,
+                    packageRoot,
+                    out PackageMetadata metadata,
+                    out string error);
+
+                Assert.That(built, Is.True, error);
+                Assert.That(metadata.banner, Is.Not.Null);
+                Assert.That(metadata.banner.width, Is.EqualTo(2));
+                Assert.That(metadata.banner.height, Is.EqualTo(2));
+                Assert.That(metadata.icon, Is.Not.Null);
+                Assert.That(metadata.icon.width, Is.EqualTo(2));
+                Assert.That(metadata.icon.height, Is.EqualTo(2));
+                loadedBanner = metadata.banner;
+                loadedIcon = metadata.icon;
+            }
+            finally
+            {
+                if (source != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(source);
+                }
+                if (loadedBanner != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(loadedBanner);
+                }
+                if (loadedIcon != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(loadedIcon);
+                }
+                if (Directory.Exists(packageRoot))
+                {
+                    Directory.Delete(packageRoot, true);
+                }
+            }
+        }
+
+        [Test]
+        public void AliasRejectsMediaThatEscapesTheInstalledPackage()
+        {
+            string packageRoot = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-media-escape-" + Guid.NewGuid().ToString("N"));
+            string outsidePath = packageRoot + ".png";
+            try
+            {
+                Directory.CreateDirectory(packageRoot);
+                File.WriteAllBytes(outsidePath, new byte[] { 1, 2, 3 });
+                const string packageJson =
+                    "{\"name\":\"com.yucp.alias.jammr\"," +
+                    "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                    "\"yucp\":{\"kind\":\"alias-v1\"," +
+                    "\"aliasId\":\"jammr\"," +
+                    "\"installStrategy\":\"server-authorized\"," +
+                    "\"importerPackage\":\"com.yucp.importer\"," +
+                    "\"media\":[{\"kind\":\"icon\"," +
+                    "\"localPath\":\"../outside.png\"," +
+                    "\"contentType\":\"image/png\",\"byteSize\":3," +
+                    "\"sha256\":\"039058c6f2c0cb492c533b0a4d14ef77" +
+                    "cc0f78abccced5287d84a1a2011cfb81\"}]}}";
+
+                bool built = AliasPackageDiscovery.TryBuildMetadata(
+                    "com.yucp.alias.jammr",
+                    packageJson,
+                    packageRoot,
+                    out PackageMetadata metadata,
+                    out string error);
+
+                Assert.That(built, Is.False);
+                Assert.That(metadata, Is.Null);
+                Assert.That(error, Does.Contain("media"));
+            }
+            finally
+            {
+                if (File.Exists(outsidePath))
+                {
+                    File.Delete(outsidePath);
+                }
+                if (Directory.Exists(packageRoot))
+                {
+                    Directory.Delete(packageRoot, true);
+                }
+            }
+        }
+
+        [Test]
+        public void RemovedInstallPlanMetadataIsRejected()
         {
             const string packageJson = "{\"name\":\"com.example.alias\",\"version\":\"1.0.0\"," +
                 "\"displayName\":\"Alias\",\"yucp\":{\"kind\":\"alias-v1\"," +
                 "\"aliasId\":\"example\",\"installStrategy\":\"server-authorized\"," +
-                "\"importerPackage\":\"com.yucp.importer\",\"catalogProductIds\":[\"catalog-1\"]," +
+                "\"importerPackage\":\"com.yucp.importer\"," +
                 "\"installPlan\":{\"id\":\"unsigned\"}}}";
 
             bool built = AliasPackageDiscovery.TryBuildMetadata(
@@ -72,8 +285,7 @@ namespace YUCP.Importer.Editor.Tests
                 "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
                 "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
                 "\"installStrategy\":\"server-authorized\"," +
-                "\"importerPackage\":\"com.yucp.importer\"," +
-                "\"catalogProductIds\":[\"jinxxy-jammr\",\"gumroad-jammr\"]}}";
+                "\"importerPackage\":\"com.yucp.importer\"}}";
 
             bool built = AliasPackageActivation.TryBuildActivation(
                 "com.yucp.jammr.alias",
@@ -84,9 +296,6 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(built, Is.True, error);
             Assert.That(activation.Alias.aliasId, Is.EqualTo("jammr"));
             Assert.That(activation.ActionLabel, Is.EqualTo("Verify and Import"));
-            Assert.That(
-                activation.CatalogProductIds,
-                Is.EqualTo(new[] { "gumroad-jammr", "jinxxy-jammr" }));
             Assert.That(
                 activation.Key,
                 Is.EqualTo("com.yucp.jammr.alias@1.0.0:jammr"));
@@ -99,8 +308,7 @@ namespace YUCP.Importer.Editor.Tests
                 "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
                 "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
                 "\"installStrategy\":\"server-authorized\"," +
-                "\"importerPackage\":\"com.yucp.importer\"," +
-                "\"catalogProductIds\":[\"jinxxy-jammr\"]}}";
+                "\"importerPackage\":\"com.yucp.importer\"}}";
             Assert.That(
                 AliasPackageActivation.TryBuildActivation(
                     "com.yucp.jammr.alias",
@@ -132,8 +340,7 @@ namespace YUCP.Importer.Editor.Tests
                 "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
                 "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
                 "\"installStrategy\":\"server-authorized\"," +
-                "\"importerPackage\":\"com.yucp.importer\"," +
-                "\"catalogProductIds\":[\"jinxxy-jammr\"]}}";
+                "\"importerPackage\":\"com.yucp.importer\"}}";
             Assert.That(
                 AliasPackageActivation.TryBuildActivation(
                     "com.yucp.jammr.alias",
@@ -177,8 +384,7 @@ namespace YUCP.Importer.Editor.Tests
                 "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
                 "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
                 "\"installStrategy\":\"server-authorized\"," +
-                "\"importerPackage\":\"com.yucp.importer\"," +
-                "\"catalogProductIds\":[\"jinxxy-jammr\"]}}";
+                "\"importerPackage\":\"com.yucp.importer\"}}";
             Assert.That(
                 AliasPackageActivation.TryBuildActivation(
                     "com.yucp.jammr.alias",
@@ -235,8 +441,7 @@ namespace YUCP.Importer.Editor.Tests
                 "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
                 "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
                 "\"installStrategy\":\"server-authorized\"," +
-                "\"importerPackage\":\"com.yucp.importer\"," +
-                "\"catalogProductIds\":[\"jinxxy-jammr\"]}}";
+                "\"importerPackage\":\"com.yucp.importer\"}}";
             Assert.That(
                 AliasPackageActivation.TryBuildActivation(
                     "com.yucp.jammr.alias",
@@ -265,28 +470,6 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void PackageInstallationDoesNotTrustAnUnscopedSignInHint()
-        {
-            Assert.That(
-                CreatorIdentityOAuthService.PackageInstallationScopes,
-                Is.EqualTo(new[]
-                {
-                    "verification:read",
-                    "products:read",
-                }));
-            Assert.That(
-                PackageManagerWindow.HasPackageInstallationAuthorization(
-                    true,
-                    null),
-                Is.False);
-            Assert.That(
-                PackageManagerWindow.HasPackageInstallationAuthorization(
-                    true,
-                    "scoped-access-token"),
-                Is.True);
-        }
-
-        [Test]
         public void ManualPackageInstallerHasAUnityMenuEntry()
         {
             MethodInfo method = typeof(AliasPackageActivation).GetMethod(
@@ -305,7 +488,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void LifecycleCompletionRemovesOnlyTheVpmAliasBootstrap()
+        public void LifecycleCompletionKeepsTheVpmAliasBootstrapRegistered()
         {
             string projectPath = Path.Combine(
                 Path.GetTempPath(),
@@ -331,8 +514,7 @@ namespace YUCP.Importer.Editor.Tests
                     "\"yucp\":{\"kind\":\"alias-v1\"," +
                     "\"aliasId\":\"test\"," +
                     "\"installStrategy\":\"server-authorized\"," +
-                    "\"importerPackage\":\"com.yucp.importer\"," +
-                    "\"catalogProductIds\":[\"catalog-test\"]}}");
+                    "\"importerPackage\":\"com.yucp.importer\"}}");
                 File.WriteAllText(
                     Path.Combine(
                         projectPath,
@@ -364,11 +546,11 @@ namespace YUCP.Importer.Editor.Tests
                         "update");
 
                 Assert.That(error, Is.Null);
-                Assert.That(Directory.Exists(aliasPath), Is.False);
+                Assert.That(Directory.Exists(aliasPath), Is.True);
                 Assert.That(Directory.Exists(importerPath), Is.True);
                 string manifest = File.ReadAllText(
                     Path.Combine(packagesPath, "vpm-manifest.json"));
-                Assert.That(manifest, Does.Not.Contain(aliasName));
+                Assert.That(manifest, Does.Contain(aliasName));
                 Assert.That(manifest, Does.Contain("com.yucp.importer"));
             }
             finally
@@ -377,6 +559,430 @@ namespace YUCP.Importer.Editor.Tests
                 {
                     Directory.Delete(projectPath, true);
                 }
+            }
+        }
+
+        [Test]
+        public void ActivationStateSupportsLongValidProjectPaths()
+        {
+            string basePath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-long-" + Guid.NewGuid().ToString("N"));
+            int suffixLength = Math.Max(
+                8,
+                150 - basePath.Length - 1);
+            string projectPath = Path.Combine(
+                basePath,
+                new string('a', suffixLength));
+            var alias = new AliasPackageContract
+            {
+                aliasId = "jammr",
+                packageName = "com.yucp.alias.jammr",
+                packageVersion = "1.2.3",
+            };
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+
+                AliasPackageActivationStateStore.MarkHandled(
+                    projectPath,
+                    alias,
+                    "install");
+
+                Assert.That(
+                    AliasPackageActivationStateStore.IsHandled(
+                        projectPath,
+                        alias),
+                    Is.True);
+                string stateRoot = Path.Combine(
+                    projectPath,
+                    ".yucp",
+                    "alias-activation");
+                Assert.That(
+                    Directory.GetFiles(stateRoot, "*.json").Length,
+                    Is.EqualTo(1));
+                Assert.That(
+                    Directory.GetFiles(stateRoot, "*.partial").Length,
+                    Is.Zero);
+            }
+            finally
+            {
+                if (Directory.Exists(basePath))
+                {
+                    Directory.Delete(basePath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void ExplicitUninstallDoesNotReactivateTheBootstrapOnRestart()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-activation-" + Guid.NewGuid().ToString("N"));
+            var alias = new AliasPackageContract
+            {
+                aliasId = "jammr",
+                packageName = "com.yucp.alias.jammr",
+                packageVersion = "1.2.3",
+            };
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+                AliasPackageActivationStateStore.MarkHandled(
+                    projectPath,
+                    alias,
+                    "uninstall");
+
+                Assert.That(
+                    AliasPackageActivationStateStore.IsHandled(
+                        projectPath,
+                        alias),
+                    Is.True);
+                Assert.That(
+                    AliasPackageActivation.ShouldSchedule(
+                        PackageLifecycleCoordinator.EmptyReleaseRoot,
+                        true),
+                    Is.False);
+                Assert.That(
+                    AliasPackageActivation.ShouldSchedule(
+                        PackageLifecycleCoordinator.EmptyReleaseRoot,
+                        false),
+                    Is.True);
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void RegisteredPackageEventsRespectThePersistentActivationState()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-event-" + Guid.NewGuid().ToString("N"));
+            var alias = new AliasPackageContract
+            {
+                aliasId = "jammr",
+                packageName = "com.yucp.alias.jammr",
+                packageVersion = "1.2.3",
+            };
+            var activation = new AliasPackageActivationRequest(
+                new PackageMetadata("JAMMR")
+                {
+                    aliasPackage = alias,
+                },
+                "com.yucp.alias.jammr@1.2.3:jammr");
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+                AliasPackageActivationStateStore.MarkHandled(
+                    projectPath,
+                    alias,
+                    "install");
+                MethodInfo method = typeof(AliasPackageActivation).GetMethod(
+                    "ShouldScheduleForProject",
+                    BindingFlags.Static |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic);
+
+                Assert.That(
+                    method,
+                    Is.Not.Null,
+                    "Every package-registration path must use the persistent loop guard.");
+                Assert.That(
+                    method.Invoke(
+                        null,
+                        new object[] { projectPath, activation }),
+                    Is.False,
+                    "A completed bootstrap must not reopen after package registration.");
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void FreshAliasVersionSchedulesOnceAndStopsAfterCompletion()
+        {
+            string suffix = Guid.NewGuid().ToString("N");
+            string aliasId = "fresh-" + suffix;
+            string packageName = "com.yucp.alias." + suffix;
+            string packageJson =
+                "{\"name\":\"" + packageName + "\"," +
+                "\"version\":\"1.0.1\",\"displayName\":\"JAMMR\"," +
+                "\"yucp\":{\"kind\":\"alias-v1\"," +
+                "\"aliasId\":\"" + aliasId + "\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"}}";
+            Assert.That(
+                AliasPackageActivation.TryBuildActivation(
+                    packageName,
+                    packageJson,
+                    out AliasPackageActivationRequest activation,
+                    out string error),
+                Is.True,
+                error);
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-1-0-1-" + suffix);
+
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+                Assert.That(
+                    AliasPackageActivation.ShouldScheduleForProject(
+                        projectPath,
+                        activation),
+                    Is.True);
+                Assert.That(
+                    activation.Key,
+                    Is.EqualTo(packageName + "@1.0.1:" + aliasId));
+
+                AliasPackageActivationStateStore.MarkHandled(
+                    projectPath,
+                    activation.Alias,
+                    "install");
+
+                Assert.That(
+                    AliasPackageActivation.ShouldScheduleForProject(
+                        projectPath,
+                        activation),
+                    Is.False,
+                    "A completed 1.0.1 alias must not schedule again.");
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void LifecycleProgressUsesFriendlyRealPhases()
+        {
+            MethodInfo method = typeof(PackageLifecycleCoordinator).GetMethod(
+                "BuildProgress",
+                BindingFlags.Static |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+            string[] phases =
+            {
+                "checking-access",
+                "checking-package",
+                "downloading",
+                "verifying-files",
+                "updating-project",
+                "finishing",
+            };
+            float priorProgress = -1f;
+            foreach (string phase in phases)
+            {
+                object result = method.Invoke(
+                    null,
+                    new object[] { phase, "JAMMR" });
+                Assert.That(result, Is.Not.Null);
+                Type type = result.GetType();
+                string message = (string)type
+                    .GetField("message")
+                    .GetValue(result);
+                float progress = (float)type
+                    .GetField("progress")
+                    .GetValue(result);
+
+                Assert.That(message, Is.Not.Empty);
+                Assert.That(message, Does.Not.Contain("staging"));
+                Assert.That(message, Does.Not.Contain("digest"));
+                Assert.That(message, Does.Not.Contain("Desync"));
+                Assert.That(progress, Is.GreaterThan(priorProgress));
+                priorProgress = progress;
+            }
+        }
+
+        [Test]
+        public void DownloadProgressShowsTransferredAndTotalBytes()
+        {
+            PackageLifecycleUserProgress progress =
+                PackageLifecycleCoordinator.BuildBrokerProgress(
+                    new NativePackageBrokerProgress
+                    {
+                        completedBytes = 1024 * 1024,
+                        phase = "downloading",
+                        totalBytes = 8 * 1024 * 1024,
+                    },
+                    "JAMMR",
+                    false);
+
+            Assert.That(progress.message, Does.Contain("1 MB"));
+            Assert.That(progress.message, Does.Contain("8 MB"));
+            Assert.That(progress.message, Does.Contain("13%"));
+            Assert.That(progress.progress, Is.GreaterThan(0.42f));
+        }
+
+        [Test]
+        public void ActiveContentReviewUsesFriendlySafetyLanguage()
+        {
+            MethodInfo method = typeof(PackageLifecycleCoordinator).GetMethod(
+                "BuildActiveContentReview",
+                BindingFlags.Static |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+            object result = method.Invoke(
+                null,
+                new object[]
+                {
+                    "JAMMR",
+                    "active-content-policy-v1",
+                    new string('a', 64),
+                });
+            Type type = result.GetType();
+            string title = (string)type.GetField("title").GetValue(result);
+            string message = (string)type.GetField("message").GetValue(result);
+
+            Assert.That(title, Is.EqualTo("Review package safety"));
+            Assert.That(message, Does.Contain("JAMMR"));
+            Assert.That(message, Does.Contain("scripts"));
+            Assert.That(message, Does.Not.Contain("Digest"));
+            Assert.That(message, Does.Not.Contain("inventory"));
+            Assert.That(message, Does.Not.Contain("policy"));
+        }
+
+        [Test]
+        public void ActiveContentReviewIsRequiredOnlyForNewExecutableContent()
+        {
+            MethodInfo method = typeof(PackageLifecycleCoordinator).GetMethod(
+                "RequiresActiveContentApproval",
+                BindingFlags.Static |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+            const string emptyInventory =
+                "edd1cf6ff50c01be6abf064f586597fa770c00026deff3c68b9faeb5a8db9aef";
+            string changedInventory = new string('a', 64);
+
+            Assert.That(
+                method.Invoke(
+                    null,
+                    new object[]
+                    {
+                        emptyInventory,
+                        "active-content-policy-v1",
+                        null,
+                    }),
+                Is.False,
+                "An empty executable-content inventory must not interrupt installation.");
+            Assert.That(
+                method.Invoke(
+                    null,
+                    new object[]
+                    {
+                        changedInventory,
+                        "active-content-policy-v1",
+                        new PackageDeliveryInstallState
+                        {
+                            activeContentDigest = changedInventory,
+                            activePolicyVersion = "active-content-policy-v1",
+                        },
+                    }),
+                Is.False,
+                "An unchanged approved inventory must not interrupt an update.");
+            Assert.That(
+                method.Invoke(
+                    null,
+                    new object[]
+                    {
+                        changedInventory,
+                        "active-content-policy-v1",
+                        null,
+                    }),
+                Is.True,
+                "New executable content must require an exact safety approval.");
+            Assert.That(
+                method.Invoke(
+                    null,
+                    new object[]
+                    {
+                        new string('b', 64),
+                        "active-content-policy-v1",
+                        new PackageDeliveryInstallState
+                        {
+                            activeContentDigest = changedInventory,
+                            activePolicyVersion = "active-content-policy-v1",
+                        },
+                    }),
+                Is.True,
+                "Changed executable content must require a new safety approval.");
+        }
+
+        [Test]
+        public void InstalledAliasOffersOwnershipAwareLifecycleActions()
+        {
+            MethodInfo method = typeof(PackageManagerWindow).GetMethod(
+                "GetHostedLifecycleActionLabels",
+                BindingFlags.Static |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+
+            string[] withRollback = (string[])method.Invoke(
+                null,
+                new object[] { true, true });
+            string[] withoutRollback = (string[])method.Invoke(
+                null,
+                new object[] { true, false });
+            string[] notInstalled = (string[])method.Invoke(
+                null,
+                new object[] { false, false });
+
+            Assert.That(
+                withRollback,
+                Is.EqualTo(new[]
+                {
+                    "Update",
+                    "Repair",
+                    "Roll back",
+                    "Uninstall",
+                }));
+            Assert.That(
+                withoutRollback,
+                Is.EqualTo(new[]
+                {
+                    "Update",
+                    "Repair",
+                    "Uninstall",
+                }));
+            Assert.That(notInstalled, Is.Empty);
+            Assert.That(
+                typeof(PackageLifecycleCoordinator).GetMethod(
+                    "TryManageInstalledAsync",
+                    BindingFlags.Static |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic),
+                Is.Not.Null,
+                "Hosted controls must use the ownership-aware lifecycle coordinator.");
+        }
+
+        private static string Sha256(byte[] value)
+        {
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                return BitConverter.ToString(sha256.ComputeHash(value))
+                    .Replace("-", string.Empty)
+                    .ToLowerInvariant();
             }
         }
     }

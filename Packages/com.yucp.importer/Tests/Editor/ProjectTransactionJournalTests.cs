@@ -281,8 +281,10 @@ namespace YUCP.Importer.Editor.Tests
                 Directory.CreateDirectory(product);
                 string unchanged = Path.Combine(product, "unchanged.txt");
                 string modified = Path.Combine(product, "modified.txt");
+                string unrelated = Path.Combine(product, "user-note.txt");
                 File.WriteAllText(unchanged, "owned");
                 File.WriteAllText(modified, "user change");
+                File.WriteAllText(unrelated, "not owned");
 
                 ProjectTransactionResult result =
                     ProjectTransactionJournal.RemoveOwnedFiles(
@@ -307,6 +309,7 @@ namespace YUCP.Importer.Editor.Tests
                 Assert.That(result.state, Is.EqualTo("committed"));
                 Assert.That(File.Exists(unchanged), Is.False);
                 Assert.That(File.ReadAllText(modified), Is.EqualTo("user change"));
+                Assert.That(File.ReadAllText(unrelated), Is.EqualTo("not owned"));
             }
             finally
             {

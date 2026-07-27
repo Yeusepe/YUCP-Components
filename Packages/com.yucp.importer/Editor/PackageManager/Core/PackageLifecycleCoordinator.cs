@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -13,13 +12,27 @@ using UnityEngine;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
-    [Serializable]
-    internal sealed class PackageInstallSessionResponse
+    internal sealed class PackageLifecycleUserProgress
     {
-        public string deliveryGrant = string.Empty;
-        public string installSession = string.Empty;
-        public string releaseRoot = string.Empty;
-        public string versionId = string.Empty;
+        public string message = string.Empty;
+        public float progress;
+    }
+
+    internal sealed class PackageActiveContentReview
+    {
+        public string approveLabel = string.Empty;
+        public string cancelLabel = string.Empty;
+        public string message = string.Empty;
+        public string title = string.Empty;
+    }
+
+    internal sealed class PackageLifecycleInstallResult
+    {
+        internal bool cancelled;
+        internal string errorCode = string.Empty;
+        internal string errorMessage = string.Empty;
+        internal bool succeeded;
+        internal string traceId = string.Empty;
     }
 
     [Serializable]
@@ -33,7 +46,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         public string receiptPath = string.Empty;
         public string releaseRoot = string.Empty;
         public string versionId = string.Empty;
-        public List<TransferHelperFile> files = new List<TransferHelperFile>();
+        public string previousActiveContentDigest = string.Empty;
+        public string previousActivePolicyVersion = string.Empty;
+        public string previousReleaseRoot = string.Empty;
+        public string previousVersionId = string.Empty;
+        public List<NativePackageBrokerFile> files =
+            new List<NativePackageBrokerFile>();
     }
 
     internal sealed class PackageLifecycleExecutionResult
@@ -53,22 +71,30 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         internal const string EmptyReleaseRoot =
             "0000000000000000000000000000000000000000000000000000000000000000";
-        private const string TrustTarget = "package-install-trust.json";
-        private static readonly HttpClient HttpClient = new HttpClient();
-
-        internal static async Task<string> TryInstallAsync(
-            string serverUrl,
-            AliasPackageContract alias)
+        internal static async Task<PackageLifecycleInstallResult> TryInstallAsync(
+            AliasPackageContract alias,
+            Action<PackageLifecycleUserProgress> reportProgress)
         {
             try
             {
+                Report(
+                    reportProgress,
+                    "checking-access",
+                    alias?.packageDisplayName);
                 string projectPath = CurrentProjectPath();
                 string currentReleaseRoot = GetCurrentReleaseRoot(
                     projectPath,
                     alias.aliasId);
+                PackageDeliveryInstallState currentState = ReadInstallState(
+                    projectPath,
+                    alias.aliasId,
+                    false);
                 string lifecycleId = Guid.NewGuid().ToString("N");
+                Report(
+                    reportProgress,
+                    "checking-package",
+                    alias.packageDisplayName);
                 PackageLifecycleExecutionResult preflight = await ExecuteAsync(
-                    serverUrl,
                     alias,
                     "preflight",
                     lifecycleId + "-preflight",
@@ -76,24 +102,39 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     currentReleaseRoot,
                     string.Empty,
                     string.Empty,
-                    string.Empty);
-                bool approved = EditorUtility.DisplayDialog(
-                    "Approve Package Content",
-                    "The signed package contains executable or active content.\n\n" +
-                    $"Policy: {preflight.activePolicyVersion}\n" +
-                    $"Digest: {preflight.activeContentDigest}\n\n" +
-                    "Approve this exact signed inventory?",
-                    "Approve and Install",
-                    "Cancel");
-                if (!approved)
+                    string.Empty,
+                    reportProgress);
+                if (RequiresActiveContentApproval(
+                        preflight.activeContentDigest,
+                        preflight.activePolicyVersion,
+                        currentState))
                 {
-                    return "The active-content inventory was not approved.";
+                    PackageActiveContentReview review = BuildActiveContentReview(
+                        alias.packageDisplayName,
+                        preflight.activePolicyVersion,
+                        preflight.activeContentDigest);
+                    bool approved = EditorUtility.DisplayDialog(
+                        review.title,
+                        review.message,
+                        review.approveLabel,
+                        review.cancelLabel);
+                    if (!approved)
+                    {
+                        return new PackageLifecycleInstallResult
+                        {
+                            cancelled = true,
+                            errorMessage = "Installation was canceled.",
+                        };
+                    }
                 }
                 string operation = currentReleaseRoot == EmptyReleaseRoot
                     ? "install"
                     : "update";
+                Report(
+                    reportProgress,
+                    "downloading",
+                    alias.packageDisplayName);
                 await ExecuteAsync(
-                    serverUrl,
                     alias,
                     operation,
                     lifecycleId + "-execute",
@@ -101,18 +142,118 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     currentReleaseRoot,
                     preflight.targetReleaseRoot,
                     preflight.activeContentDigest,
-                    preflight.activePolicyVersion);
+                    preflight.activePolicyVersion,
+                    reportProgress);
+                Report(
+                    reportProgress,
+                    "finishing",
+                    alias.packageDisplayName);
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-                return null;
+                return new PackageLifecycleInstallResult
+                {
+                    succeeded = true,
+                };
             }
             catch (Exception exception)
             {
-                return exception.Message;
+                string errorCode = GetDiagnosticErrorCode(exception);
+                string traceId = GetDiagnosticTraceId(exception);
+                LogInstallDiagnostic(errorCode, traceId);
+                return new PackageLifecycleInstallResult
+                {
+                    errorCode = errorCode,
+                    errorMessage = BuildUserFacingFailureMessage(exception),
+                    traceId = traceId,
+                };
+            }
+        }
+
+        internal static async Task<PackageLifecycleInstallResult>
+            TryManageInstalledAsync(
+                AliasPackageContract alias,
+                string operation,
+                Action<PackageLifecycleUserProgress> reportProgress)
+        {
+            if (string.Equals(operation, "update", StringComparison.Ordinal))
+            {
+                return await TryInstallAsync(
+                    alias,
+                    reportProgress);
+            }
+            try
+            {
+                ValidateAlias(alias);
+                if (operation != "repair" &&
+                    operation != "rollback" &&
+                    operation != "uninstall")
+                {
+                    throw new InvalidOperationException(
+                        "The package management action is unsupported.");
+                }
+                string projectPath = CurrentProjectPath();
+                PackageDeliveryInstallState current = ReadInstallState(
+                    projectPath,
+                    alias.aliasId,
+                    true);
+                if (operation == "rollback" &&
+                    string.IsNullOrWhiteSpace(current.previousReleaseRoot))
+                {
+                    throw new InvalidOperationException(
+                        "There is no earlier package version to restore.");
+                }
+                string runId = Guid.NewGuid().ToString("N");
+                string targetReleaseRoot = operation == "repair"
+                    ? current.releaseRoot
+                    : operation == "rollback"
+                        ? current.previousReleaseRoot
+                        : string.Empty;
+                string approvedDigest = operation == "rollback"
+                    ? current.previousActiveContentDigest
+                    : current.activeContentDigest;
+                string approvedPolicy = operation == "rollback"
+                    ? current.previousActivePolicyVersion
+                    : current.activePolicyVersion;
+                Report(
+                    reportProgress,
+                    operation == "uninstall"
+                        ? "updating-project"
+                        : "checking-package",
+                    alias.packageDisplayName);
+                await ExecuteAsync(
+                    alias,
+                    operation,
+                    runId,
+                    runId,
+                    current.releaseRoot,
+                    targetReleaseRoot,
+                    approvedDigest,
+                    approvedPolicy,
+                    reportProgress);
+                Report(
+                    reportProgress,
+                    "finishing",
+                    alias.packageDisplayName);
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                return new PackageLifecycleInstallResult
+                {
+                    succeeded = true,
+                };
+            }
+            catch (Exception exception)
+            {
+                string errorCode = GetDiagnosticErrorCode(exception);
+                string traceId = GetDiagnosticTraceId(exception);
+                LogInstallDiagnostic(errorCode, traceId);
+                return new PackageLifecycleInstallResult
+                {
+                    errorCode = errorCode,
+                    errorMessage = BuildUserFacingFailureMessage(exception),
+                    traceId = traceId,
+                };
             }
         }
 
         internal static async Task<PackageLifecycleExecutionResult> ExecuteAsync(
-            string serverUrl,
             AliasPackageContract alias,
             string operation,
             string runId,
@@ -120,17 +261,24 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string expectedCurrentReleaseRoot,
             string targetReleaseRoot,
             string approvedActiveContentDigest,
-            string approvedPolicyVersion)
+            string approvedPolicyVersion,
+            Action<PackageLifecycleUserProgress> reportProgress = null)
         {
             ValidateAlias(alias);
             string projectPath = CurrentProjectPath();
             PackageLifecycleExecutionResult resumed =
-                await TryResumeAsync(
-                    projectPath,
-                    alias,
+                string.Equals(
                     operation,
-                    runId,
-                    expectedCurrentReleaseRoot);
+                    "recover",
+                    StringComparison.Ordinal)
+                    ? null
+                    : await TryResumeAsync(
+                        projectPath,
+                        alias,
+                        operation,
+                        runId,
+                        expectedCurrentReleaseRoot,
+                        reportProgress);
             if (resumed != null)
             {
                 RequireSuccessfulAliasFinalized(
@@ -139,25 +287,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     operation);
                 return resumed;
             }
-            string accessToken = null;
-            bool hasResolvedAccessToken =
-                operation != "recover" && operation != "uninstall";
-            if (hasResolvedAccessToken)
-            {
-                Uri server = RequireServerOrigin(serverUrl);
-                accessToken = await CreatorIdentityOAuthService
-                    .GetValidAccessTokenAsync(
-                        server.ToString(),
-                        CreatorIdentityOAuthService
-                            .PackageInstallationScopes);
-                if (string.IsNullOrWhiteSpace(accessToken))
-                {
-                    throw new InvalidOperationException(
-                        "Sign in through the importer before package installation.");
-                }
-            }
             PackageLifecycleExecutionResult result = await ExecuteCoreAsync(
-                serverUrl,
                 alias,
                 operation,
                 runId,
@@ -166,8 +296,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 targetReleaseRoot,
                 approvedActiveContentDigest,
                 approvedPolicyVersion,
-                accessToken,
-                hasResolvedAccessToken);
+                reportProgress);
             RequireSuccessfulAliasFinalized(
                 projectPath,
                 alias,
@@ -199,12 +328,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 alias.packageName);
             if (!Directory.Exists(packagePath))
             {
-                return null;
+                return "The VPM bootstrap is no longer registered.";
             }
 
-            return VpmBootstrapPackageCleanup.RemoveInstalledAlias(
+            AliasPackageActivationStateStore.MarkHandled(
                 projectPath,
-                alias.packageName);
+                alias,
+                operation);
+            return null;
         }
 
         private static void RequireSuccessfulAliasFinalized(
@@ -220,13 +351,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 throw new InvalidOperationException(
                     "The package operation succeeded, but its VPM bootstrap " +
-                    "could not be removed. " +
+                    "is not registered. " +
                     cleanupError);
             }
         }
 
         private static async Task<PackageLifecycleExecutionResult> ExecuteCoreAsync(
-            string serverUrl,
             AliasPackageContract alias,
             string operation,
             string runId,
@@ -235,40 +365,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string targetReleaseRoot,
             string approvedActiveContentDigest,
             string approvedPolicyVersion,
-            string resolvedAccessToken,
-            bool hasResolvedAccessToken)
+            Action<PackageLifecycleUserProgress> reportProgress)
         {
             ValidateAlias(alias);
             string projectPath = CurrentProjectPath();
-            if (operation == "recover")
-            {
-                ProjectTransactionResult recovered =
-                    ProjectTransactionJournal.Recover(projectPath, runId);
-                ProjectTransactionInspection recoveryInspection =
-                    ProjectTransactionJournal.Inspect(projectPath, runId);
-                if (recoveryInspection.requiresPackageResolution)
-                {
-                    await EmbeddedPackageResolver.ResolveAsync();
-                }
-                PackageDeliveryInstallState recoveredState = ReadInstallState(
-                    projectPath,
-                    alias.aliasId,
-                    false);
-                PackageImportVerifier.ImportAndVerify(
-                    projectPath,
-                    recoveredState?.files);
-                return new PackageLifecycleExecutionResult
-                {
-                    currentReleaseRoot =
-                        recoveredState?.releaseRoot ?? EmptyReleaseRoot,
-                    journalId = runId,
-                    journalState = recovered.state,
-                    targetReleaseRoot =
-                        recoveredState?.releaseRoot ?? EmptyReleaseRoot,
-                    traceId = runId,
-                    versionId = recoveredState?.versionId ?? string.Empty,
-                };
-            }
             PackageDeliveryInstallState current = ReadInstallState(
                 projectPath,
                 alias.aliasId,
@@ -290,6 +390,96 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 approvedActiveContentDigest,
                 approvedPolicyVersion);
 
+            string exactTargetReleaseRoot = ResolveExactTargetReleaseRoot(
+                operation,
+                currentReleaseRoot,
+                targetReleaseRoot);
+            NativePackageBrokerRequest brokerRequest = BuildBrokerRequest(
+                alias.aliasId,
+                currentReleaseRoot,
+                runId,
+                idempotencyKey,
+                operation,
+                projectPath,
+                exactTargetReleaseRoot,
+                approvedActiveContentDigest,
+                approvedPolicyVersion);
+            NativePackageBrokerResult broker =
+                await NativePackageBrokerClient.ExecuteAsync(
+                    brokerRequest,
+                progress => Report(
+                    reportProgress,
+                    BuildBrokerProgress(
+                        progress,
+                        alias.packageDisplayName,
+                        operation == "preflight")));
+            NativePackageBrokerClient.ValidateResult(
+                brokerRequest,
+                broker);
+            if (!string.Equals(
+                    broker.status,
+                    "succeeded",
+                    StringComparison.Ordinal))
+            {
+                throw new NativePackageBrokerException(
+                    broker.errorCode,
+                    broker.traceId,
+                    string.IsNullOrWhiteSpace(broker.errorMessage)
+                        ? "The package action could not finish."
+                        : broker.errorMessage);
+            }
+            Report(
+                reportProgress,
+                operation == "preflight"
+                    ? "checking-package"
+                    : "verifying-files",
+                alias.packageDisplayName);
+            PackageLifecycleExecutionResult result = BuildExecutionResult(
+                broker,
+                currentReleaseRoot,
+                broker.targetReleaseRoot);
+            if (operation == "preflight")
+            {
+                return result;
+            }
+
+            if (operation == "recover")
+            {
+                ProjectTransactionResult recovered =
+                    ProjectTransactionJournal.Recover(projectPath, runId);
+                ProjectTransactionInspection recoveryInspection =
+                    ProjectTransactionJournal.Inspect(projectPath, runId);
+                if (recoveryInspection.requiresPackageResolution)
+                {
+                    await EmbeddedPackageResolver.ResolveAsync();
+                }
+                PackageDeliveryInstallState recoveredState = ReadInstallState(
+                    projectPath,
+                    alias.aliasId,
+                    false);
+                string recoveredReleaseRoot =
+                    recoveredState?.releaseRoot ?? EmptyReleaseRoot;
+                if (!string.Equals(
+                        recoveredReleaseRoot,
+                        broker.targetReleaseRoot,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        "The recovered package version does not match " +
+                        "the authorized version.");
+                }
+                PackageImportVerifier.ImportAndVerify(
+                    projectPath,
+                    recoveredState?.files);
+                result.currentReleaseRoot = recoveredReleaseRoot;
+                result.journalId = runId;
+                result.journalState = recovered.state;
+                result.targetReleaseRoot = recoveredReleaseRoot;
+                result.versionId =
+                    recoveredState?.versionId ?? broker.versionId;
+                return result;
+            }
+
             if (operation == "uninstall")
             {
                 if (current == null)
@@ -297,116 +487,69 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     throw new InvalidOperationException(
                         "The package is not installed in this project.");
                 }
-                List<VerifiedStagingFile> owned = ToVerifiedFiles(current.files);
-                owned.Add(ReadInstallStateRecord(projectPath, alias.aliasId));
-                var checkpoint = new PackageLifecycleCheckpoint
+                List<VerifiedStagingFile> owned = ToVerifiedFiles(
+                    current.files);
+                owned.Add(ReadInstallStateRecord(
+                    projectPath,
+                    alias.aliasId));
+                var uninstallCheckpoint = new PackageLifecycleCheckpoint
                 {
                     aliasId = alias.aliasId,
-                    expectedCurrentReleaseRoot = expectedCurrentReleaseRoot,
+                    expectedCurrentReleaseRoot =
+                        expectedCurrentReleaseRoot,
                     operation = operation,
                     priorState = current,
                     runId = runId,
                 };
-                PackageLifecycleCheckpointStore.Write(projectPath, checkpoint);
+                PackageLifecycleCheckpointStore.Write(
+                    projectPath,
+                    uninstallCheckpoint);
+                Report(
+                    reportProgress,
+                    "updating-project",
+                    alias.packageDisplayName);
                 ProjectTransactionResult removed =
                     ProjectTransactionJournal.RemoveOwnedFiles(
                         projectPath,
                         runId,
                         owned);
-                checkpoint.phase = removed.state;
-                PackageLifecycleCheckpointStore.Write(projectPath, checkpoint);
+                uninstallCheckpoint.phase = removed.state;
+                PackageLifecycleCheckpointStore.Write(
+                    projectPath,
+                    uninstallCheckpoint);
+                Report(
+                    reportProgress,
+                    "finishing",
+                    alias.packageDisplayName);
                 return await CompleteCommittedCheckpointAsync(
                     projectPath,
-                    checkpoint);
+                    uninstallCheckpoint);
             }
 
-            Uri server = RequireServerOrigin(serverUrl);
-            string stateRoot = TransferHelperClient.ResolveStateRoot();
-            TransferHelperDeviceInfo device =
-                TransferHelperClient.ReadDeviceInfo(stateRoot, server);
-            string accessToken = resolvedAccessToken;
-            if (!hasResolvedAccessToken)
-            {
-                accessToken = CreatorIdentityOAuthService
-                    .GetValidAccessTokenAsync(
-                        server.ToString(),
-                        CreatorIdentityOAuthService
-                            .PackageInstallationScopes)
-                    .GetAwaiter()
-                    .GetResult();
-            }
-            if (string.IsNullOrWhiteSpace(accessToken))
-            {
-                throw new InvalidOperationException(
-                    "Sign in through the importer before package installation.");
-            }
-            string exactTargetReleaseRoot = ResolveExactTargetReleaseRoot(
-                operation,
-                currentReleaseRoot,
-                targetReleaseRoot);
-            PackageInstallSessionResponse session = IssueSession(
-                server,
-                alias,
-                device.deviceKeyThumbprint,
-                accessToken,
-                idempotencyKey,
-                operation,
-                exactTargetReleaseRoot);
-            if (!string.IsNullOrEmpty(exactTargetReleaseRoot) &&
-                !string.Equals(
-                    session.releaseRoot,
-                    exactTargetReleaseRoot,
-                    StringComparison.Ordinal))
-            {
-                throw new InvalidDataException(
-                    "The package server resolved a different release root.");
-            }
-            TransferHelperResult helper = TransferHelperClient.Execute(
-                BuildRequest(
-                    server,
-                    alias.aliasId,
-                    currentReleaseRoot,
-                    runId,
-                    operation == "preflight" ? "preflight" : operation,
-                    projectPath,
-                    session,
-                    stateRoot,
-                    approvedActiveContentDigest,
-                    approvedPolicyVersion));
-            PackageLifecycleExecutionResult result = BuildExecutionResult(
-                helper,
-                currentReleaseRoot,
-                session.releaseRoot);
-            if (operation == "preflight")
-            {
-                return result;
-            }
-            if (!IsSha256(helper.targetReleaseRoot) ||
-                !string.Equals(
-                    helper.targetReleaseRoot,
-                    session.releaseRoot,
-                    StringComparison.Ordinal) ||
-                string.IsNullOrWhiteSpace(helper.stagingTree))
+            if (!IsSha256(broker.targetReleaseRoot) ||
+                string.IsNullOrWhiteSpace(broker.stagingTree))
             {
                 throw new InvalidDataException(
                     "The verified package delivery result is incomplete.");
             }
 
-            List<VerifiedStagingFile> targetFiles = ToVerifiedFiles(helper.files);
+            List<VerifiedStagingFile> targetFiles = ToVerifiedFiles(
+                broker.files);
             PackageImportVerifier.ValidateUnityPathCompatibility(
                 projectPath,
-                helper.files,
+                broker.files,
                 Path.DirectorySeparatorChar == '\\');
             targetFiles.Add(WriteInstallState(
-                helper.stagingTree,
+                broker.stagingTree,
                 alias.aliasId,
-                session.releaseRoot,
-                session.versionId,
-                helper.receiptId,
-                helper.receiptPath,
-                helper.activeContentDigest,
-                helper.activePolicyVersion,
-                helper.files));
+                broker.targetReleaseRoot,
+                broker.versionId,
+                broker.receiptId,
+                broker.receiptPath,
+                broker.activeContentDigest,
+                broker.activePolicyVersion,
+                broker.files,
+                current));
             List<VerifiedStagingFile> previousFiles = current == null
                 ? new List<VerifiedStagingFile>()
                 : ToVerifiedFiles(current.files);
@@ -418,24 +561,28 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             var lifecycleCheckpoint = new PackageLifecycleCheckpoint
             {
-                activeContentDigest = helper.activeContentDigest,
-                activePolicyVersion = helper.activePolicyVersion,
+                activeContentDigest = broker.activeContentDigest,
+                activePolicyVersion = broker.activePolicyVersion,
                 aliasId = alias.aliasId,
                 expectedCurrentReleaseRoot = expectedCurrentReleaseRoot,
                 operation = operation,
                 priorState = current,
                 runId = runId,
                 targetState = ReadInstallState(
-                    helper.stagingTree,
+                    broker.stagingTree,
                     alias.aliasId,
                     true),
             };
             PackageLifecycleCheckpointStore.Write(
                 projectPath,
                 lifecycleCheckpoint);
+            Report(
+                reportProgress,
+                "updating-project",
+                alias.packageDisplayName);
             ProjectTransactionResult transaction = ProjectTransactionJournal.Apply(
                 projectPath,
-                helper.stagingTree,
+                broker.stagingTree,
                 runId,
                 targetFiles,
                 previousFiles);
@@ -443,6 +590,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             PackageLifecycleCheckpointStore.Write(
                 projectPath,
                 lifecycleCheckpoint);
+            Report(
+                reportProgress,
+                "finishing",
+                alias.packageDisplayName);
             return await CompleteCommittedCheckpointAsync(
                 projectPath,
                 lifecycleCheckpoint);
@@ -453,7 +604,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             AliasPackageContract alias,
             string operation,
             string runId,
-            string expectedCurrentReleaseRoot)
+            string expectedCurrentReleaseRoot,
+            Action<PackageLifecycleUserProgress> reportProgress)
         {
             if (!PackageLifecycleCheckpointStore.TryRead(
                     projectPath,
@@ -467,6 +619,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 alias.aliasId,
                 operation,
                 expectedCurrentReleaseRoot);
+            Report(
+                reportProgress,
+                "finishing",
+                alias.packageDisplayName);
             return await CompleteCommittedCheckpointAsync(
                 projectPath,
                 checkpoint);
@@ -592,6 +748,323 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 : summary + " Reason: " + cause.Message.Trim();
         }
 
+        internal static PackageLifecycleUserProgress BuildProgress(
+            string phase,
+            string productName)
+        {
+            string name = string.IsNullOrWhiteSpace(productName)
+                ? "your package"
+                : "'" + productName.Trim() + "'";
+            switch (phase)
+            {
+                case "checking-access":
+                    return Progress(
+                        $"Checking access to {name}...",
+                        0.08f);
+                case "checking-package":
+                    return Progress(
+                        $"Checking {name} before download...",
+                        0.20f);
+                case "downloading":
+                    return Progress(
+                        $"Downloading {name}...",
+                        0.40f);
+                case "verifying-files":
+                    return Progress(
+                        $"Checking the downloaded files for {name}...",
+                        0.62f);
+                case "updating-project":
+                    return Progress(
+                        $"Updating your Unity project with {name}...",
+                        0.78f);
+                case "finishing":
+                    return Progress(
+                        $"Finishing the installation of {name}...",
+                        0.95f);
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(phase),
+                        "The package progress phase is invalid.");
+            }
+        }
+
+        internal static PackageLifecycleUserProgress BuildBrokerProgress(
+            NativePackageBrokerProgress brokerProgress,
+            string productName,
+            bool preflight)
+        {
+            if (brokerProgress == null)
+            {
+                throw new ArgumentNullException(nameof(brokerProgress));
+            }
+            string name = string.IsNullOrWhiteSpace(productName)
+                ? "your package"
+                : "'" + productName.Trim() + "'";
+            if (preflight)
+            {
+                switch (brokerProgress.phase)
+                {
+                    case "preparing":
+                        return Progress($"Preparing to check {name}...", 0.22f);
+                    case "signing-in":
+                        return Progress("Opening secure sign-in...", 0.24f);
+                    case "verifying-access":
+                        return Progress(
+                            "Waiting for purchase confirmation...",
+                            0.26f);
+                    case "downloading":
+                        return Progress($"Checking {name}...", 0.28f);
+                    case "verifying":
+                        return Progress($"Checking {name}...", 0.30f);
+                    case "assembling":
+                        return Progress($"Preparing {name}...", 0.32f);
+                    case "finalizing":
+                        return Progress(
+                            "Finishing the package check...",
+                            0.34f);
+                    default:
+                        throw new ArgumentOutOfRangeException(
+                            nameof(brokerProgress),
+                            "The package progress phase is invalid.");
+                }
+            }
+            switch (brokerProgress.phase)
+            {
+                case "preparing":
+                    return Progress($"Preparing {name}...", 0.36f);
+                case "signing-in":
+                    return Progress("Opening secure sign-in...", 0.38f);
+                case "verifying-access":
+                    return Progress(
+                        "Waiting for purchase confirmation...",
+                        0.40f);
+                case "downloading":
+                    float ratio = brokerProgress.totalBytes > 0
+                        ? Mathf.Clamp01(
+                            (float)brokerProgress.completedBytes /
+                            brokerProgress.totalBytes)
+                        : 0f;
+                    string amount = BuildByteProgress(
+                        brokerProgress.completedBytes,
+                        brokerProgress.totalBytes,
+                        ratio);
+                    return Progress(
+                        $"Downloading {name}...{amount}",
+                        0.42f + ratio * 0.18f);
+                case "verifying":
+                    return Progress(
+                        $"Checking the downloaded files for {name}...",
+                        0.64f);
+                case "assembling":
+                    return Progress(
+                        $"Preparing {name} for your project...",
+                        0.70f);
+                case "finalizing":
+                    return Progress(
+                        $"Finishing the download of {name}...",
+                        0.74f);
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(brokerProgress),
+                        "The package progress phase is invalid.");
+            }
+        }
+
+        internal static string BuildByteProgress(
+            long completedBytes,
+            long totalBytes,
+            float ratio)
+        {
+            if (completedBytes < 0 || totalBytes < 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(completedBytes),
+                    "Package byte progress cannot be negative.");
+            }
+            if (totalBytes == 0)
+            {
+                return completedBytes == 0
+                    ? string.Empty
+                    : $" {FormatByteCount(completedBytes)} downloaded";
+            }
+            int percent = (int)Math.Round(
+                Mathf.Clamp01(ratio) * 100d,
+                MidpointRounding.AwayFromZero);
+            return
+                $" {FormatByteCount(completedBytes)} of " +
+                $"{FormatByteCount(totalBytes)} ({percent}%)";
+        }
+
+        internal static string FormatByteCount(long bytes)
+        {
+            string[] units = { "B", "KB", "MB", "GB", "TB" };
+            double amount = bytes;
+            int unit = 0;
+            while (amount >= 1024d && unit < units.Length - 1)
+            {
+                amount /= 1024d;
+                unit++;
+            }
+            string format = amount >= 10d || amount % 1d == 0d
+                ? "0"
+                : "0.0";
+            return amount.ToString(
+                    format,
+                    CultureInfo.InvariantCulture) +
+                " " +
+                units[unit];
+        }
+
+        internal static bool RequiresActiveContentApproval(
+            string contentDigest,
+            string policyVersion,
+            PackageDeliveryInstallState currentState)
+        {
+            const string emptyInventoryDigest =
+                "edd1cf6ff50c01be6abf064f586597fa770c00026deff3c68b9faeb5a8db9aef";
+            if (!IsSha256(contentDigest) ||
+                string.IsNullOrWhiteSpace(policyVersion))
+            {
+                throw new InvalidDataException(
+                    "The package safety inventory is invalid.");
+            }
+            if (string.Equals(
+                    contentDigest,
+                    emptyInventoryDigest,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    policyVersion,
+                    "active-content-policy-v1",
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+            return currentState == null ||
+                !string.Equals(
+                    currentState.activeContentDigest,
+                    contentDigest,
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    currentState.activePolicyVersion,
+                    policyVersion,
+                    StringComparison.Ordinal);
+        }
+
+        internal static string BuildUserFacingFailureMessage(Exception exception)
+        {
+            if (exception is NativePackageBrokerException delivery &&
+                string.Equals(
+                    delivery.ErrorCode,
+                    "UNITY_WINDOWS_PATH_LIMIT",
+                    StringComparison.Ordinal))
+            {
+                return "The Unity project path is too long for this package. " +
+                    "Move the project to a shorter folder, then try again.";
+            }
+            if (exception is NativePackageBrokerException unavailable &&
+                string.Equals(
+                    unavailable.ErrorCode,
+                    "BROKER_UNAVAILABLE",
+                    StringComparison.Ordinal))
+            {
+                return "YUCP could not reach the package delivery service. " +
+                    "Start YUCP, then try again.";
+            }
+            if (exception?.Message?.IndexOf(
+                    "no earlier package version",
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "There is no earlier package version to restore.";
+            }
+            if (exception is InvalidDataException ||
+                exception is CryptographicException)
+            {
+                return "YUCP could not verify this package. " +
+                    "Try again. If the problem continues, contact the creator.";
+            }
+            return "YUCP could not complete the package installation. " +
+                "Try again. If the problem continues, contact YUCP support.";
+        }
+
+        private static string GetDiagnosticErrorCode(Exception exception)
+        {
+            return exception is NativePackageBrokerException delivery
+                ? delivery.ErrorCode
+                : "PACKAGE_INSTALL_FAILED";
+        }
+
+        private static string GetDiagnosticTraceId(Exception exception)
+        {
+            return exception is NativePackageBrokerException delivery
+                ? delivery.TraceId
+                : string.Empty;
+        }
+
+        private static void LogInstallDiagnostic(
+            string errorCode,
+            string traceId)
+        {
+            Debug.LogError(JsonConvert.SerializeObject(new
+            {
+                eventName = "package_install_failed",
+                errorCode,
+                traceId,
+            }));
+        }
+
+        internal static PackageActiveContentReview BuildActiveContentReview(
+            string productName,
+            string policyVersion,
+            string contentDigest)
+        {
+            if (string.IsNullOrWhiteSpace(policyVersion) ||
+                !IsSha256(contentDigest))
+            {
+                throw new InvalidOperationException(
+                    "The package safety review binding is invalid.");
+            }
+            string name = string.IsNullOrWhiteSpace(productName)
+                ? "This package"
+                : productName.Trim();
+            return new PackageActiveContentReview
+            {
+                approveLabel = "Continue with install",
+                cancelLabel = "Cancel",
+                message =
+                    $"{name} includes scripts or other content that can " +
+                    "change how your Unity project works.\n\n" +
+                    "YUCP checked the package source. Continue only if " +
+                    "you trust this creator.",
+                title = "Review package safety",
+            };
+        }
+
+        private static PackageLifecycleUserProgress Progress(
+            string message,
+            float progress)
+        {
+            return new PackageLifecycleUserProgress
+            {
+                message = message,
+                progress = progress,
+            };
+        }
+
+        private static void Report(
+            Action<PackageLifecycleUserProgress> reportProgress,
+            string phase,
+            string productName)
+        {
+            reportProgress?.Invoke(BuildProgress(phase, productName));
+        }
+
+        private static void Report(
+            Action<PackageLifecycleUserProgress> reportProgress,
+            PackageLifecycleUserProgress progress)
+        {
+            reportProgress?.Invoke(progress);
+        }
+
         private static void VerifyCommittedState(
             string projectPath,
             PackageLifecycleCheckpoint checkpoint)
@@ -672,157 +1145,79 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 EmptyReleaseRoot;
         }
 
-        private static PackageInstallSessionResponse IssueSession(
-            Uri server,
-            AliasPackageContract alias,
-            string deviceKeyThumbprint,
-            string accessToken,
-            string idempotencyKey,
-            string operation,
-            string targetReleaseRoot)
+        internal static bool HasPriorRelease(
+            string projectPath,
+            string aliasId)
         {
-            Uri endpoint = new Uri(server, "/api/v2/package-installs/sessions");
-            string body = BuildSessionRequestBody(
-                alias,
-                deviceKeyThumbprint,
-                idempotencyKey,
-                operation,
-                targetReleaseRoot);
-            using (var request = new HttpRequestMessage(HttpMethod.Post, endpoint))
-            {
-                request.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
-                request.Content = new StringContent(
-                    body,
-                    Encoding.UTF8,
-                    "application/json");
-                using (HttpResponseMessage response =
-                    HttpClient.SendAsync(request).GetAwaiter().GetResult())
-                {
-                    string responseBody =
-                        response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        throw new InvalidOperationException(
-                            $"The package install session request failed with HTTP {(int)response.StatusCode}.");
-                    }
-                    PackageInstallSessionResponse session =
-                        JsonConvert.DeserializeObject<PackageInstallSessionResponse>(
-                            responseBody);
-                    if (session == null ||
-                        !IsSha256(session.releaseRoot) ||
-                        string.IsNullOrWhiteSpace(session.versionId) ||
-                        string.IsNullOrWhiteSpace(session.installSession) ||
-                        string.IsNullOrWhiteSpace(session.deliveryGrant))
-                    {
-                        throw new InvalidDataException(
-                            "The package install session response is invalid.");
-                    }
-                    return session;
-                }
-            }
+            PackageDeliveryInstallState state = ReadInstallState(
+                projectPath,
+                aliasId,
+                false);
+            return state != null &&
+                IsSha256(state.previousReleaseRoot);
         }
 
-        internal static string BuildSessionRequestBody(
-            AliasPackageContract alias,
-            string deviceKeyThumbprint,
-            string idempotencyKey,
-            string operation,
-            string targetReleaseRoot)
-        {
-            return JsonConvert.SerializeObject(
-                new
-                {
-                    aliasId = alias.aliasId,
-                    catalogProductIds = alias.catalogProductIds
-                        .Where(value => !string.IsNullOrWhiteSpace(value))
-                        .Distinct(StringComparer.Ordinal)
-                        .OrderBy(value => value, StringComparer.Ordinal)
-                        .ToArray(),
-                    deviceKeyThumbprint,
-                    idempotencyKey,
-                    operation,
-                    targetReleaseRoot = string.IsNullOrEmpty(targetReleaseRoot)
-                        ? null
-                        : targetReleaseRoot,
-                },
-                new JsonSerializerSettings
-                {
-                    NullValueHandling = NullValueHandling.Ignore,
-                });
-        }
-
-        private static TransferHelperRequest BuildRequest(
-            Uri server,
+        internal static NativePackageBrokerRequest BuildBrokerRequest(
             string aliasId,
             string currentReleaseRoot,
             string runId,
+            string idempotencyKey,
             string operation,
             string projectPath,
-            PackageInstallSessionResponse session,
-            string stateRoot,
+            string targetReleaseRoot,
             string approvedDigest,
             string approvedPolicy)
         {
-            string resultDirectory = Path.Combine(stateRoot, "results");
-            Directory.CreateDirectory(resultDirectory);
-            return new TransferHelperRequest
+            return new NativePackageBrokerRequest
             {
                 aliasId = aliasId,
                 approvedActiveContentDigest = approvedDigest,
                 approvedPolicyVersion = approvedPolicy,
-                deliveryGrant = session.deliveryGrant,
                 expectedCurrentReleaseRoot = currentReleaseRoot,
-                idempotencyKey = runId,
-                installSession = session.installSession,
+                idempotencyKey = idempotencyKey,
                 operation = operation,
+                projectIdentity =
+                    ProjectIdentityService.GetOrCreateProjectIdentity(
+                        projectPath),
                 projectPath = projectPath,
-                resultPath = Path.Combine(resultDirectory, runId + ".json"),
                 runId = runId,
-                stateRoot = stateRoot,
-                targetReleaseRoot = session.releaseRoot,
-                tufMetadataUrl = new Uri(
-                    server,
-                    "/api/v2/package-installer/tuf/metadata/").ToString(),
-                tufRootPath = TransferHelperClient.ResolveTrustRootPath(),
-                tufTargetsUrl = new Uri(
-                    server,
-                    "/api/v2/package-installer/tuf/targets/").ToString(),
-                tufTrustTarget = TrustTarget,
+                targetReleaseRoot = targetReleaseRoot ?? string.Empty,
+                traceparent =
+                    NativePackageBrokerClient.CreateTraceparent(),
             };
         }
 
         private static PackageLifecycleExecutionResult BuildExecutionResult(
-            TransferHelperResult helper,
+            NativePackageBrokerResult broker,
             string currentReleaseRoot,
             string targetReleaseRoot)
         {
             var receipts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(helper.receiptId))
+            if (!string.IsNullOrWhiteSpace(broker.receiptId))
             {
-                receipts.Add(helper.receiptId);
+                receipts.Add(broker.receiptId);
             }
-            if (!string.IsNullOrWhiteSpace(helper.receiptPath))
+            if (!string.IsNullOrWhiteSpace(broker.receiptPath))
             {
-                receipts.Add(helper.receiptPath);
+                receipts.Add(broker.receiptPath);
             }
             return new PackageLifecycleExecutionResult
             {
-                activeContentDigest = helper.activeContentDigest,
-                activePolicyVersion = helper.activePolicyVersion,
+                activeContentDigest = broker.activeContentDigest,
+                activePolicyVersion = broker.activePolicyVersion,
                 currentReleaseRoot = currentReleaseRoot,
                 receiptReferences = receipts,
-                journalState = helper.journalState,
+                journalState = broker.journalState,
                 targetReleaseRoot = targetReleaseRoot,
-                traceId = helper.traceId,
-                versionId = helper.versionId,
+                traceId = broker.traceId,
+                versionId = broker.versionId,
             };
         }
 
         private static List<VerifiedStagingFile> ToVerifiedFiles(
-            IEnumerable<TransferHelperFile> files)
+            IEnumerable<NativePackageBrokerFile> files)
         {
-            return (files ?? Enumerable.Empty<TransferHelperFile>())
+            return (files ?? Enumerable.Empty<NativePackageBrokerFile>())
                 .Select(file => new VerifiedStagingFile
                 {
                     bytes = file.bytes,
@@ -841,7 +1236,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string receiptPath,
             string activeContentDigest,
             string activePolicyVersion,
-            List<TransferHelperFile> files)
+            List<NativePackageBrokerFile> files,
+            PackageDeliveryInstallState priorState)
         {
             string relativePath = InstallStatePath(aliasId);
             string destination = Path.Combine(
@@ -853,7 +1249,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 activeContentDigest = activeContentDigest,
                 activePolicyVersion = activePolicyVersion,
                 aliasId = aliasId,
-                files = files.Select(file => new TransferHelperFile
+                files = files.Select(file => new NativePackageBrokerFile
                 {
                     bytes = file.bytes,
                     normalizedPath = file.normalizedPath,
@@ -863,6 +1259,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 receiptPath = receiptPath ?? string.Empty,
                 releaseRoot = releaseRoot,
                 versionId = versionId,
+                previousActiveContentDigest =
+                    priorState?.activeContentDigest ?? string.Empty,
+                previousActivePolicyVersion =
+                    priorState?.activePolicyVersion ?? string.Empty,
+                previousReleaseRoot =
+                    priorState?.releaseRoot ?? string.Empty,
+                previousVersionId =
+                    priorState?.versionId ?? string.Empty,
             };
             File.WriteAllText(
                 destination,
@@ -901,6 +1305,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string.IsNullOrWhiteSpace(state.versionId) ||
                 state.files == null ||
                 state.files.Count == 0 ||
+                !IsValidPriorReleaseState(state) ||
                 state.files.Any(file =>
                     file == null ||
                     file.bytes < 0 ||
@@ -911,6 +1316,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "The package delivery install state is invalid.");
             }
             return state;
+        }
+
+        private static bool IsValidPriorReleaseState(
+            PackageDeliveryInstallState state)
+        {
+            bool hasPrior = !string.IsNullOrWhiteSpace(
+                state.previousReleaseRoot);
+            if (!hasPrior)
+            {
+                return string.IsNullOrEmpty(state.previousVersionId) &&
+                    string.IsNullOrEmpty(
+                        state.previousActiveContentDigest) &&
+                    string.IsNullOrEmpty(
+                        state.previousActivePolicyVersion);
+            }
+            return IsSha256(state.previousReleaseRoot) &&
+                !string.IsNullOrWhiteSpace(state.previousVersionId) &&
+                IsSha256(state.previousActiveContentDigest) &&
+                !string.IsNullOrWhiteSpace(
+                    state.previousActivePolicyVersion);
         }
 
         private static VerifiedStagingFile ReadInstallStateRecord(
@@ -1030,8 +1455,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "Rollback requires an exact retained release root.");
             }
             if (operation != "preflight" &&
-                operation != "uninstall" &&
-                operation != "recover" &&
                 (!IsSha256(approvedDigest) ||
                     string.IsNullOrWhiteSpace(approvedPolicy)))
             {
@@ -1042,9 +1465,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static void ValidateAlias(AliasPackageContract alias)
         {
-            if (!AliasPackageDiscovery.IsServerAuthorized(alias) ||
-                alias.catalogProductIds == null ||
-                alias.catalogProductIds.Count == 0)
+            if (!AliasPackageDiscovery.IsServerAuthorized(alias))
             {
                 throw new InvalidOperationException(
                     "The package is not a complete server-authorized alias.");
@@ -1054,19 +1475,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         private static string CurrentProjectPath()
         {
             return Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-        }
-
-        private static Uri RequireServerOrigin(string value)
-        {
-            if (!Uri.TryCreate(value, UriKind.Absolute, out Uri uri) ||
-                (uri.Scheme != Uri.UriSchemeHttps &&
-                    !(uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)) ||
-                !string.IsNullOrEmpty(uri.UserInfo))
-            {
-                throw new InvalidOperationException(
-                    "The package server URL must use HTTPS or loopback HTTP.");
-            }
-            return new Uri(uri.GetLeftPart(UriPartial.Authority) + "/");
         }
 
         private static bool IsSha256(string value)

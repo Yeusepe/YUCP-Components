@@ -35,9 +35,9 @@ namespace YUCP.Importer.Editor.Tests
                     diskPath,
                     "verified coupled content",
                     new UTF8Encoding(false));
-                var files = new List<TransferHelperFile>
+                var files = new List<NativePackageBrokerFile>
                 {
-                    new TransferHelperFile
+                    new NativePackageBrokerFile
                     {
                         bytes = new FileInfo(diskPath).Length,
                         normalizedPath = FixturePath,
@@ -81,9 +81,9 @@ namespace YUCP.Importer.Editor.Tests
                     diskPath,
                     "changed coupled content",
                     new UTF8Encoding(false));
-                var files = new List<TransferHelperFile>
+                var files = new List<NativePackageBrokerFile>
                 {
-                    new TransferHelperFile
+                    new NativePackageBrokerFile
                     {
                         bytes = new FileInfo(diskPath).Length,
                         normalizedPath = FixturePath,
@@ -149,9 +149,9 @@ namespace YUCP.Importer.Editor.Tests
                     AssetDatabase.LoadMainAssetAtPath(
                         MissingTypeFixturePath),
                     Is.Null);
-                var files = new List<TransferHelperFile>
+                var files = new List<NativePackageBrokerFile>
                 {
-                    new TransferHelperFile
+                    new NativePackageBrokerFile
                     {
                         bytes = new FileInfo(diskPath).Length,
                         normalizedPath = MissingTypeFixturePath,
@@ -201,9 +201,9 @@ namespace YUCP.Importer.Editor.Tests
                     extendedDiskPath,
                     "verified long-path content",
                     new UTF8Encoding(false));
-                var files = new List<TransferHelperFile>
+                var files = new List<NativePackageBrokerFile>
                 {
-                    new TransferHelperFile
+                    new NativePackageBrokerFile
                     {
                         bytes = new FileInfo(extendedDiskPath).Length,
                         normalizedPath = normalizedPath,
@@ -235,9 +235,9 @@ namespace YUCP.Importer.Editor.Tests
             string projectPath = @"C:\" + new string(
                 'p',
                 260 - @"C:\".Length - 1 - normalizedPath.Length);
-            var files = new List<TransferHelperFile>
+            var files = new List<NativePackageBrokerFile>
             {
-                new TransferHelperFile
+                new NativePackageBrokerFile
                 {
                     bytes = 1,
                     normalizedPath = normalizedPath,
@@ -262,16 +262,6 @@ namespace YUCP.Importer.Editor.Tests
                     projectPath,
                     files,
                     false));
-        }
-
-        [Test]
-        public void TransferHelperExplainsTheUnityWindowsPathLimit()
-        {
-            Assert.AreEqual(
-                "The Unity project path is too long for this package on Windows. " +
-                "Move the project to a shorter folder.",
-                TransferHelperClient.BuildFailureMessage(
-                    "UNITY_WINDOWS_PATH_LIMIT"));
         }
 
         [Test]

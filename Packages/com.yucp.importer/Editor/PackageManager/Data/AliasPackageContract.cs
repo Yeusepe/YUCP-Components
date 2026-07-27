@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace YUCP.Importer.Editor.PackageManager
 {
@@ -16,7 +14,7 @@ namespace YUCP.Importer.Editor.PackageManager
         public string importerPackage = "";
         public string minImporterVersion = "";
         public string channel = "";
-        public List<string> catalogProductIds = new List<string>();
+        public AliasPackageMediaSet media = new AliasPackageMediaSet();
         public string rawContractJson = "";
 
         public AliasPackageContract Clone()
@@ -32,9 +30,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 importerPackage = importerPackage ?? string.Empty,
                 minImporterVersion = minImporterVersion ?? string.Empty,
                 channel = channel ?? string.Empty,
-                catalogProductIds = catalogProductIds != null
-                    ? new List<string>(catalogProductIds.Where(value => !string.IsNullOrWhiteSpace(value)))
-                    : new List<string>(),
+                media = media?.Clone() ?? new AliasPackageMediaSet(),
                 rawContractJson = rawContractJson ?? string.Empty,
             };
         }
@@ -60,11 +56,9 @@ namespace YUCP.Importer.Editor.PackageManager
     public class AliasPackageMediaDescriptor
     {
         public string kind = "";
-        public string downloadUrl = "";
         public string contentType = "";
         public long byteSize;
         public string sha256 = "";
-        public string sourcePath = "";
         public string localPath = "";
 
         public AliasPackageMediaDescriptor Clone()
@@ -72,11 +66,9 @@ namespace YUCP.Importer.Editor.PackageManager
             return new AliasPackageMediaDescriptor
             {
                 kind = kind ?? string.Empty,
-                downloadUrl = downloadUrl ?? string.Empty,
                 contentType = contentType ?? string.Empty,
                 byteSize = byteSize,
                 sha256 = sha256 ?? string.Empty,
-                sourcePath = sourcePath ?? string.Empty,
                 localPath = localPath ?? string.Empty,
             };
         }

@@ -33,7 +33,7 @@ namespace YUCP.Importer.Editor.Tests
                         versionId = "version-1",
                         files =
                         {
-                            new TransferHelperFile
+                            new NativePackageBrokerFile
                             {
                                 bytes = 1,
                                 normalizedPath = "Assets/Product/file.txt",

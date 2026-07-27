@@ -883,6 +883,73 @@ namespace YUCP.Importer.Editor.PackageManager
             return metadata;
         }
 
+        internal static PackageMetadata ParseEmbeddedAliasMetadataJson(
+            string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            PackageMetadataJson source =
+                JsonUtility.FromJson<PackageMetadataJson>(json);
+            if (source == null)
+            {
+                throw new FormatException(
+                    "Alias package metadata is invalid.");
+            }
+
+            return new PackageMetadata
+            {
+                packageName = NormalizeUserFacingText(
+                    source.packageName,
+                    160,
+                    "package name"),
+                version = string.Empty,
+                author = NormalizeUserFacingText(
+                    source.author,
+                    160,
+                    "package author"),
+                description = NormalizeUserFacingText(
+                    source.description,
+                    2000,
+                    "package description",
+                    true),
+                tagline = NormalizeUserFacingText(
+                    source.tagline,
+                    240,
+                    "package tagline"),
+                category = NormalizeUserFacingText(
+                    source.category,
+                    120,
+                    "package category"),
+                minimumUnityVersion = NormalizeUserFacingText(
+                    source.minimumUnityVersion,
+                    64,
+                    "minimum Unity version"),
+                creatorNote = NormalizeUserFacingText(
+                    source.creatorNote,
+                    2000,
+                    "creator note",
+                    true),
+                releaseNotes = NormalizeUserFacingText(
+                    source.releaseNotes,
+                    4000,
+                    "release notes",
+                    true),
+                supportedPlatforms = NormalizeUserFacingList(
+                    source.supportedPlatforms,
+                    16,
+                    80,
+                    "supported platform"),
+                tags = NormalizeUserFacingList(
+                    source.tags,
+                    32,
+                    80,
+                    "package tag"),
+            };
+        }
+
         private static PackageMetadata ParseInstalledPackageMetadataJson(string json)
         {
             try
@@ -1430,11 +1497,88 @@ namespace YUCP.Importer.Editor.PackageManager
                 importerPackage = GetString(yucp, "importerPackage") ?? string.Empty,
                 minImporterVersion = GetString(yucp, "minImporterVersion") ?? string.Empty,
                 channel = GetString(yucp, "channel") ?? string.Empty,
-                catalogProductIds = ParseStringList(yucp["catalogProductIds"]),
+                media = ParseAliasPackageMedia(yucp["media"]),
                 rawContractJson = yucp.ToString(Formatting.None),
             };
 
             return string.IsNullOrWhiteSpace(contract.aliasId) ? null : contract;
+        }
+
+        private static AliasPackageMediaSet ParseAliasPackageMedia(
+            JToken media)
+        {
+            var result = new AliasPackageMediaSet();
+            if (media == null)
+            {
+                return result;
+            }
+            if (!(media is JArray entries) || entries.Count > 2)
+            {
+                throw new FormatException(
+                    "Alias package media must be an array with at most two entries.");
+            }
+
+            foreach (JToken entry in entries)
+            {
+                if (!(entry is JObject descriptor))
+                {
+                    throw new FormatException(
+                        "Alias package media entries must be objects.");
+                }
+                AliasPackageMediaDescriptor parsed =
+                    ParseAliasPackageMediaDescriptor(descriptor);
+                if (string.Equals(
+                        parsed.kind,
+                        "icon",
+                        StringComparison.Ordinal))
+                {
+                    if (!string.IsNullOrEmpty(result.icon.kind))
+                    {
+                        throw new FormatException(
+                            "Alias package media contains a duplicate icon.");
+                    }
+                    result.icon = parsed;
+                    continue;
+                }
+                if (string.Equals(
+                        parsed.kind,
+                        "banner",
+                        StringComparison.Ordinal))
+                {
+                    if (!string.IsNullOrEmpty(result.banner.kind))
+                    {
+                        throw new FormatException(
+                            "Alias package media contains a duplicate banner.");
+                    }
+                    result.banner = parsed;
+                    continue;
+                }
+                throw new FormatException(
+                    "Alias package media kind is not supported.");
+            }
+            return result;
+        }
+
+        private static AliasPackageMediaDescriptor
+            ParseAliasPackageMediaDescriptor(JObject descriptor)
+        {
+            if (descriptor == null)
+            {
+                return new AliasPackageMediaDescriptor();
+            }
+            return new AliasPackageMediaDescriptor
+            {
+                kind = GetString(descriptor, "kind") ?? string.Empty,
+                contentType =
+                    GetString(descriptor, "contentType") ?? string.Empty,
+                byteSize = descriptor["byteSize"]?.Type ==
+                    JTokenType.Integer
+                        ? descriptor["byteSize"].Value<long>()
+                        : 0,
+                sha256 = GetString(descriptor, "sha256") ?? string.Empty,
+                localPath =
+                    GetString(descriptor, "localPath") ?? string.Empty,
+            };
         }
 
         private static List<string> ParseStringList(JToken token)
@@ -1460,6 +1604,65 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             return values;
+        }
+
+        private static List<string> NormalizeUserFacingList(
+            IEnumerable<string> values,
+            int maximumItems,
+            int maximumLength,
+            string fieldName)
+        {
+            var normalized = new List<string>();
+            foreach (string value in values ?? Enumerable.Empty<string>())
+            {
+                string item = NormalizeUserFacingText(
+                    value,
+                    maximumLength,
+                    fieldName);
+                if (string.IsNullOrEmpty(item) ||
+                    normalized.Contains(item, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                if (normalized.Count >= maximumItems)
+                {
+                    throw new FormatException(
+                        $"Alias {fieldName} metadata has too many values.");
+                }
+                normalized.Add(item);
+            }
+            return normalized;
+        }
+
+        private static string NormalizeUserFacingText(
+            string value,
+            int maximumLength,
+            string fieldName,
+            bool allowLineBreaks = false)
+        {
+            string normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length > maximumLength)
+            {
+                throw new FormatException(
+                    $"Alias {fieldName} metadata is too long.");
+            }
+            foreach (char character in normalized)
+            {
+                if (!char.IsControl(character))
+                {
+                    continue;
+                }
+                if (allowLineBreaks &&
+                    (character == '\r' ||
+                        character == '\n' ||
+                        character == '\t'))
+                {
+                    continue;
+                }
+                throw new FormatException(
+                    $"Alias {fieldName} metadata contains invalid text.");
+            }
+            return normalized;
         }
 
         private static string ParseAuthor(JToken authorToken)

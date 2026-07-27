@@ -32,14 +32,6 @@ namespace YUCP.Importer.Editor.PackageManager
 
         internal string PrimaryActionLabel => GetPrimaryImportButtonText();
 
-        internal static bool HasPackageInstallationAuthorization(
-            bool isSignedIn,
-            string scopedAccessToken)
-        {
-            return isSignedIn &&
-                !string.IsNullOrWhiteSpace(scopedAccessToken);
-        }
-
         internal static void ShowAliasBootstrap(PackageMetadata metadata)
         {
             if (metadata?.aliasPackage == null ||
@@ -118,6 +110,9 @@ namespace YUCP.Importer.Editor.PackageManager
         private Button _cancelButton;
         private Button _backButton;
         private Label _verifyStatusLabel;
+        private readonly List<Button> _hostedLifecycleButtons =
+            new List<Button>();
+        private VisualElement _hostedLifecycleControls;
         private VisualElement _flowNoticeElement;
         private Label _flowNoticeTitleLabel;
         private Label _flowNoticeBodyLabel;
@@ -131,9 +126,9 @@ namespace YUCP.Importer.Editor.PackageManager
         private Texture2D _bannerGradientTexture;
         private bool _detailsExpanded = false;
         private bool _preferOverwriteExisting = true;
+        private bool _isHostedLifecycleRunning;
         private int _cachedGradientHeight = 0;
         private const string DefaultPlaceholderTexturePath = "Packages/com.yucp.importer/Editor/PackageManager/Resources/MainLogo.png";
-        private const string CreatorIdentityBagIconPath = "Packages/com.yucp.devtools/Editor/PackageSigning/Resources/Bag.png";
         private const string ImporterBagIconPath = "Packages/com.yucp.importer/Editor/PackageManager/Resources/Bag.png";
         private const string VerifiedBadgePath = "Packages/com.yucp.importer/Editor/PackageManager/Resources/VerifiedBadge.png";
         private PackageItemTreeView _treeView;
@@ -158,13 +153,8 @@ namespace YUCP.Importer.Editor.PackageManager
         private static PackageMetadata s_lastImportMetadata;
         private static string s_lastImportPackagePath;
 
-        // License gate state
+        // Direct licensed packages require the product bootstrap.
         private VisualElement _licenseSection;
-        private readonly Dictionary<string, LicenseVerificationState> _licenseStates = new Dictionary<string, LicenseVerificationState>();
-        private readonly HashSet<string> _verifiedLicensePackageIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private bool _isCreatorIdentitySigningIn;
-        private bool _creatorIdentityNeedsReauthentication;
-        private bool _creatorIdentityNeedsSignInRetry;
         private readonly List<LicensedAssetDescriptor> _licensedAssetDescriptors =
             new List<LicensedAssetDescriptor>();
         private static readonly HashSet<string> s_licensedAssetPaths =
@@ -176,17 +166,6 @@ namespace YUCP.Importer.Editor.PackageManager
             public string displayName;
             public string licensePackageId;
             public string sourceFolder;
-        }
-
-        private class LicenseVerificationState
-        {
-            public bool isVerified;
-            public string selectedProvider = "gumroad"; // "gumroad", "jinxxy", or "discord"
-            public string licenseKey = "";
-            public VisualElement statusBadge;
-            public Button verifyButton;
-            public VisualElement keyInputRow;  // shown for gumroad/jinxxy
-            public VisualElement discordRow;   // shown for discord
         }
 
         private enum FlowNoticeTone
@@ -217,7 +196,6 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool _waitingForImportCompletion = false;
         private string _pendingPackageName;
         private bool _pendingImportAfterVerification = false;
-        private string _lastHostedVerifiedPackageId;
         // Gallery carousel state
         private int _selectedGalleryIndex = -1;
         private Texture2D _originalBannerTexture;
@@ -626,6 +604,8 @@ namespace YUCP.Importer.Editor.PackageManager
 
             ctaColumn.Add(ctaRow);
 
+            AddHostedLifecycleControls(ctaColumn);
+
             _verifyStatusLabel = new Label();
             _verifyStatusLabel.AddToClassList("yucp-verify-status");
             _verifyStatusLabel.style.display = DisplayStyle.None;
@@ -901,120 +881,24 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private LicensePackageRequirement GetNextUnverifiedLicenseRequirement()
         {
-            var reqs = _currentMetadata?.licensePackages;
-            if (reqs == null)
-            {
-                return null;
-            }
-
-            foreach (var req in reqs)
-            {
-                if (req == null || string.IsNullOrEmpty(req.packageId))
-                {
-                    continue;
-                }
-
-                bool isVerified = LicenseVerificationService.GetCachedToken(req.packageId) != null ||
-                    _verifiedLicensePackageIds.Contains(req.packageId);
-                if (!isVerified &&
-                    _licenseStates.TryGetValue(req.packageId, out var state) &&
-                    state != null &&
-                    state.isVerified)
-                {
-                    isVerified = true;
-                }
-
-                if (!isVerified)
-                {
-                    return req;
-                }
-            }
-
-            return null;
+            return _currentMetadata?.licensePackages?
+                .FirstOrDefault(requirement =>
+                    requirement != null &&
+                    !string.IsNullOrWhiteSpace(
+                        requirement.packageId));
         }
 
         private bool RequiresVerificationBeforeImport()
         {
             return GetNextUnverifiedLicenseRequirement() != null;
         }
-
-        private bool HasHostedVerificationForPackage(string packageId)
-        {
-            if (string.IsNullOrEmpty(packageId))
-            {
-                return false;
-            }
-
-            if (_verifiedLicensePackageIds.Contains(packageId))
-            {
-                return true;
-            }
-
-            if (_licenseStates.TryGetValue(packageId, out var state) &&
-                state != null &&
-                state.isVerified)
-            {
-                return true;
-            }
-
-            return LicenseVerificationService.GetCachedToken(packageId) != null;
-        }
-
-        private string ResolveHostedVerifiedPackageId(PackageMetadata metadata)
-        {
-            if (!string.IsNullOrEmpty(_lastHostedVerifiedPackageId) &&
-                HasHostedVerificationForPackage(_lastHostedVerifiedPackageId))
-            {
-                if (metadata?.licensePackages == null || metadata.licensePackages.Count == 0)
-                {
-                    return _lastHostedVerifiedPackageId;
-                }
-
-                bool matchesMetadata = metadata.licensePackages.Any(req =>
-                    req != null &&
-                    string.Equals(req.packageId, _lastHostedVerifiedPackageId, StringComparison.OrdinalIgnoreCase));
-                if (matchesMetadata)
-                {
-                    return _lastHostedVerifiedPackageId;
-                }
-            }
-
-            if (metadata?.licensePackages == null)
-            {
-                return null;
-            }
-
-            foreach (var req in metadata.licensePackages)
-            {
-                if (req == null || string.IsNullOrEmpty(req.packageId))
-                {
-                    continue;
-                }
-
-                if (HasHostedVerificationForPackage(req.packageId))
-                {
-                    return req.packageId;
-                }
-            }
-
-            return null;
-        }
-
-        private bool IsHostedImportVerified(string packageId, PackageMetadata metadata)
-        {
-            string resolvedPackageId = string.IsNullOrEmpty(packageId)
-                ? ResolveHostedVerifiedPackageId(metadata)
-                : packageId;
-
-            return !string.IsNullOrEmpty(resolvedPackageId) &&
-                   HasHostedVerificationForPackage(resolvedPackageId);
-        }
-
         private string GetPrimaryImportButtonText()
         {
             if (_isAliasBootstrapFlow)
             {
-                return "Verify and Import";
+                return IsCurrentAliasInstalled()
+                    ? "Update"
+                    : "Verify and Import";
             }
 
             bool isMultiStep = _packageImportWizardInstance != null &&
@@ -1052,8 +936,9 @@ namespace YUCP.Importer.Editor.PackageManager
                 content.style.alignItems = Align.Center;
                 content.style.justifyContent = Justify.Center;
 
-                Texture2D bag = AssetDatabase.LoadAssetAtPath<Texture2D>(ImporterBagIconPath)
-                    ?? AssetDatabase.LoadAssetAtPath<Texture2D>(CreatorIdentityBagIconPath);
+                Texture2D bag =
+                    AssetDatabase.LoadAssetAtPath<Texture2D>(
+                        ImporterBagIconPath);
                 if (bag != null)
                 {
                     var iconImg = new Image { image = bag };
@@ -1822,8 +1707,6 @@ namespace YUCP.Importer.Editor.PackageManager
         private void VerifyPackage(string packagePath)
         {
             ResetCachedSigningData();
-            _lastHostedVerifiedPackageId = null;
-
             if (string.IsNullOrEmpty(packagePath) || !File.Exists(packagePath))
             {
                 _verificationResult = null;
@@ -1962,7 +1845,8 @@ namespace YUCP.Importer.Editor.PackageManager
                 sb.AppendLine("✦ Signed Package");
                 sb.AppendLine();
                 sb.AppendLine("This package has been digitally signed by its publisher.");
-                sb.AppendLine("That means YUCP has confirmed who made it — and that nothing");
+                sb.AppendLine(
+                    "YUCP has confirmed who made it. Nothing");
                 sb.AppendLine("has been changed since it was published.");
                 sb.AppendLine();
 
@@ -2593,84 +2477,8 @@ namespace YUCP.Importer.Editor.PackageManager
 
             return null;
         }
-
-        private void PopulateCreatorIdentityButton(Button button, string labelText)
-        {
-            if (button == null)
-            {
-                return;
-            }
-
-            button.text = string.Empty;
-            button.Clear();
-            button.style.backgroundColor = Color.white;
-            button.style.borderTopLeftRadius = 14;
-            button.style.borderTopRightRadius = 14;
-            button.style.borderBottomLeftRadius = 14;
-            button.style.borderBottomRightRadius = 14;
-            button.style.flexDirection = FlexDirection.Row;
-            button.style.alignItems = Align.Center;
-            button.style.justifyContent = Justify.Center;
-            button.style.paddingLeft = 20;
-            button.style.paddingRight = 20;
-            button.style.paddingTop = 10;
-            button.style.paddingBottom = 10;
-            button.style.alignSelf = Align.Center;
-            button.style.minHeight = 36;
-            button.style.width = 220;
-            button.style.maxWidth = 320;
-            button.style.flexGrow = 0;
-            button.style.flexShrink = 0;
-            button.style.unityTextAlign = TextAnchor.MiddleCenter;
-            button.style.borderTopWidth = 0;
-            button.style.borderRightWidth = 0;
-            button.style.borderBottomWidth = 0;
-            button.style.borderLeftWidth = 0;
-            button.style.opacity = 1f;
-
-            var content = new VisualElement();
-            content.style.flexDirection = FlexDirection.Row;
-            content.style.alignItems = Align.Center;
-            content.style.justifyContent = Justify.Center;
-
-            Texture2D bag = AssetDatabase.LoadAssetAtPath<Texture2D>(CreatorIdentityBagIconPath);
-            if (bag != null)
-            {
-                var iconWrap = new VisualElement();
-                iconWrap.style.width = 20;
-                iconWrap.style.height = 20;
-                iconWrap.style.flexShrink = 0;
-                iconWrap.style.overflow = Overflow.Hidden;
-                iconWrap.style.alignItems = Align.Center;
-                iconWrap.style.justifyContent = Justify.Center;
-
-                var image = new Image();
-                image.image = bag;
-                image.scaleMode = ScaleMode.ScaleToFit;
-                image.style.width = Length.Percent(100);
-                image.style.height = Length.Percent(100);
-                iconWrap.Add(image);
-                content.Add(iconWrap);
-            }
-
-            var label = new Label(labelText);
-            label.AddToClassList("yucp-license-primary-button-label");
-            label.style.marginLeft = 6;
-            label.style.alignSelf = Align.Center;
-            label.style.color = new Color(0.08f, 0.08f, 0.08f);
-            label.style.fontSize = 12;
-            label.style.unityFontStyleAndWeight = FontStyle.Bold;
-            content.Add(label);
-
-            button.Add(content);
-            button.RegisterCallback<MouseEnterEvent>(_ => button.style.opacity = 0.92f);
-            button.RegisterCallback<MouseLeaveEvent>(_ => button.style.opacity = 1f);
-        }
-
         /// <summary>
-        /// Updates the visible label on a button built by <see cref="PopulateCreatorIdentityButton"/>.
-        /// Setting <c>button.text</c> directly would overlap with the child Label element, so we
-        /// clear the outer text and update the first child Label instead.
+        /// Updates a button label without overlapping custom child content.
         /// </summary>
         private static void UpdateButtonLabel(Button button, string text)
         {
@@ -2732,29 +2540,17 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void BuildLicenseSection()
         {
-            if (_licenseSection == null) return;
+            if (_licenseSection == null)
+            {
+                return;
+            }
             _licenseSection.Clear();
-            _licenseStates.Clear();
 
-            var reqs = _currentMetadata?.licensePackages;
-            if (reqs == null || reqs.Count == 0)
+            if (!RequiresVerificationBeforeImport())
             {
                 _licenseSection.style.display = DisplayStyle.None;
                 UpdateImportButtonEnabled();
                 return;
-            }
-
-            bool creatorSignedIn = CreatorIdentityOAuthService.IsSignedIn();
-            string creatorName = CreatorIdentityOAuthService.GetDisplayName() ?? "Creator";
-            string serverUrl = GetLicenseServerUrl();
-
-            if (creatorSignedIn)
-            {
-                CreatorIdentityOAuthService.TryBeginBackgroundRefresh(serverUrl, () =>
-                {
-                    BuildLicenseSection();
-                    UpdateImportButtonEnabled();
-                });
             }
 
             _licenseSection.style.display = DisplayStyle.Flex;
@@ -2762,232 +2558,14 @@ namespace YUCP.Importer.Editor.PackageManager
             _licenseSection.AddToClassList("lgate-root");
             _licenseSection.Add(BuildVerificationServerNotice());
 
-            // Pre-compute verification states
-            foreach (var req in reqs)
+            VisualElement storefrontActions =
+                BuildStorefrontActionsRow();
+            if (storefrontActions != null)
             {
-                if (req == null || string.IsNullOrEmpty(req.packageId)) continue;
-                var cachedToken = LicenseVerificationService.GetCachedToken(req.packageId);
-                if (cachedToken != null)
-                {
-                    _verifiedLicensePackageIds.Add(req.packageId);
-                }
-                _licenseStates[req.packageId] = new LicenseVerificationState { isVerified = cachedToken != null };
+                _licenseSection.Add(storefrontActions);
             }
-
-            if (!creatorSignedIn)
-            {
-                // ── NOT SIGNED IN: one unified block — packages + sign-in action ──
-                var unifiedBlock = new VisualElement();
-                unifiedBlock.AddToClassList("lgate-req-block");
-                unifiedBlock.style.borderBottomWidth = 0;
-
-                foreach (var req in reqs)
-                {
-                    if (req == null || string.IsNullOrEmpty(req.packageId)) continue;
-                    var state = _licenseStates[req.packageId];
-                    string displayName = string.IsNullOrEmpty(req.packageName) ? req.packageId : req.packageName;
-
-                    var nameRow = new VisualElement();
-                    nameRow.AddToClassList("lgate-req-name-row");
-
-                    var pkgName = new Label(displayName);
-                    pkgName.AddToClassList("lgate-req-name");
-                    nameRow.Add(pkgName);
-
-                    var badge = BuildLicenseBadge(state.isVerified);
-                    state.statusBadge = badge;
-                    nameRow.Add(badge);
-                    unifiedBlock.Add(nameRow);
-                }
-
-                var buyerNote = BuildBuyerFlowNote(
-                    GetCreatorIdentitySignedOutPrimaryText(),
-                    GetCreatorIdentitySignedOutSecondaryText());
-                unifiedBlock.Add(buyerNote);
-
-                var storefrontActions = BuildStorefrontActionsRow();
-                if (storefrontActions != null)
-                {
-                    unifiedBlock.Add(storefrontActions);
-                }
-
-                var signInBtn = new Button(OnCreatorIdentitySignInClicked)
-                {
-                    text = GetCreatorIdentitySignInButtonLabel()
-                };
-                signInBtn.SetEnabled(!_isCreatorIdentitySigningIn);
-                signInBtn.AddToClassList("lgate-solid-btn");
-                signInBtn.style.marginTop = 10;
-                PopulateCreatorIdentityButton(signInBtn, GetCreatorIdentitySignInButtonLabel());
-                unifiedBlock.Add(signInBtn);
-
-                _licenseSection.Add(unifiedBlock);
-            }
-            else
-            {
-                // ── SIGNED IN: "Connected as X | Sign out" → per-package rows ─────
-                var idRow = new VisualElement();
-                idRow.AddToClassList("lgate-id-row");
-
-                var connectedLabel = new Label($"Signed in as {creatorName}");
-                connectedLabel.AddToClassList("lgate-id-title");
-                connectedLabel.style.flexGrow = 1;
-                idRow.Add(connectedLabel);
-
-                var signOutBtn = new Button(() =>
-                {
-                    CreatorIdentityOAuthService.SignOut();
-                    BuildLicenseSection();
-                }) { text = "Sign out" };
-                signOutBtn.AddToClassList("lgate-link-btn");
-                idRow.Add(signOutBtn);
-                _licenseSection.Add(idRow);
-
-                foreach (var req in reqs)
-                {
-                    if (req == null || string.IsNullOrEmpty(req.packageId)) continue;
-                    var state = _licenseStates[req.packageId];
-                    string displayName = string.IsNullOrEmpty(req.packageName) ? req.packageId : req.packageName;
-                    var verificationRequirements = BuildVerificationRequirements(req);
-
-                    var block = new VisualElement();
-                    block.AddToClassList("lgate-req-block");
-
-                    var nameRow = new VisualElement();
-                    nameRow.AddToClassList("lgate-req-name-row");
-
-                    var pkgName = new Label(displayName);
-                    pkgName.AddToClassList("lgate-req-name");
-                    nameRow.Add(pkgName);
-
-                    var badge = BuildLicenseBadge(state.isVerified);
-                    state.statusBadge = badge;
-                    nameRow.Add(badge);
-                    block.Add(nameRow);
-
-                    if (state.isVerified)
-                    {
-                        var note = new Label("Licensed content is unlocked on this machine.");
-                        note.AddToClassList("lgate-req-note");
-                        block.Add(note);
-                    }
-                    else
-                    {
-                        block.Add(BuildBuyerFlowNote(
-                            GetCreatorIdentityVerifyPrimaryText(),
-                            "If you bought on a different store than the one currently linked, the hosted verification page will show the next action there."));
-
-                        var storefrontActions = BuildStorefrontActionsRow();
-                        if (storefrontActions != null)
-                        {
-                            block.Add(storefrontActions);
-                        }
-
-                        var actionRow = new VisualElement();
-                        actionRow.AddToClassList("lgate-discord-row");
-
-                        string buttonLabel = GetDiscordVerificationButtonLabel(true);
-                        var verifyBtn = new Button { text = buttonLabel };
-                        verifyBtn.AddToClassList("lgate-discord-btn");
-                        PopulateCreatorIdentityButton(verifyBtn, buttonLabel);
-                        verifyBtn.SetEnabled(!_isCreatorIdentitySigningIn && verificationRequirements.Length > 0);
-                        state.verifyButton = verifyBtn;
-                        verifyBtn.clicked += () => OnVerifyInBrowserClicked(req, state, verifyBtn, verificationRequirements);
-                        actionRow.Add(verifyBtn);
-                        block.Add(actionRow);
-
-                        if (verificationRequirements.Length == 0)
-                        {
-                            block.Add(BuildBuyerFlowNote(
-                                "This package is missing verification metadata.",
-                                "Ask the package creator to republish it with hosted verification requirements."));
-                        }
-                    }
-
-                    _licenseSection.Add(block);
-                }
-            }
-
             UpdateImportButtonEnabled();
         }
-
-        private static bool HasDiscordProvider(LicensePackageRequirement req)
-        {
-            return req != null &&
-                ((!string.IsNullOrEmpty(req.productId) && !string.IsNullOrEmpty(req.creatorAuthUserId)) ||
-                 !string.IsNullOrEmpty(req.discordGuildId) ||
-                 !string.IsNullOrEmpty(req.discordRoleId));
-        }
-
-        private static bool IsDiscordOnlyRequirement(LicensePackageRequirement req)
-        {
-            return HasDiscordProvider(req) &&
-                string.IsNullOrEmpty(req.gumroadPermalink) &&
-                string.IsNullOrEmpty(req.jinxxyProductId);
-        }
-
-        private static VerificationIntentService.VerificationRequirement[] BuildVerificationRequirements(LicensePackageRequirement req)
-        {
-            if (req == null)
-            {
-                return Array.Empty<VerificationIntentService.VerificationRequirement>();
-            }
-
-            var requirements = new List<VerificationIntentService.VerificationRequirement>();
-            if (!string.IsNullOrEmpty(req.creatorAuthUserId) && !string.IsNullOrEmpty(req.productId))
-            {
-                requirements.Add(new VerificationIntentService.VerificationRequirement
-                {
-                    methodKey = "existing-entitlement",
-                    providerKey = "yucp",
-                    kind = "existing_entitlement",
-                    title = "Check your connected YUCP access",
-                    description = "Use the signed-in YUCP buyer account to check whether this package is already linked to your purchases.",
-                    creatorAuthUserId = req.creatorAuthUserId,
-                    productId = req.productId,
-                });
-            }
-
-            if (!string.IsNullOrEmpty(req.gumroadPermalink))
-            {
-                requirements.Add(new VerificationIntentService.VerificationRequirement
-                {
-                    methodKey = "gumroad-oauth",
-                    providerKey = "gumroad",
-                    kind = "buyer_provider_link",
-                    title = "Gumroad account",
-                    description = "Sign in with your Gumroad account to verify your purchase.",
-                    creatorAuthUserId = req.creatorAuthUserId,
-                    productId = req.productId,
-                    providerProductRef = req.gumroadPermalink,
-                });
-                requirements.Add(new VerificationIntentService.VerificationRequirement
-                {
-                    methodKey = "gumroad-license",
-                    providerKey = "gumroad",
-                    kind = "manual_license",
-                    title = "Verify a Gumroad license",
-                    description = "Open the hosted verification page to enter your Gumroad purchase proof securely.",
-                    providerProductRef = req.gumroadPermalink,
-                });
-            }
-
-            if (!string.IsNullOrEmpty(req.jinxxyProductId))
-            {
-                requirements.Add(new VerificationIntentService.VerificationRequirement
-                {
-                    methodKey = "jinxxy-license",
-                    providerKey = "jinxxy",
-                    kind = "manual_license",
-                    title = "Verify a Jinxxy license",
-                    description = "Open the hosted verification page to enter your Jinxxy purchase proof securely.",
-                    providerProductRef = req.jinxxyProductId,
-                });
-            }
-
-            return requirements.ToArray();
-        }
-
         private static VisualElement BuildHeroPill(string text)
         {
             var pill = new VisualElement();
@@ -3001,250 +2579,6 @@ namespace YUCP.Importer.Editor.PackageManager
             return pill;
         }
 
-        private void BuildSimplifiedDiscordLicenseSection(LicensePackageRequirement req, bool creatorSignedIn, string creatorName)
-        {
-            if (req == null || string.IsNullOrEmpty(req.packageId))
-            {
-                return;
-            }
-
-            var cachedToken = LicenseVerificationService.GetCachedToken(req.packageId);
-            var state = new LicenseVerificationState
-            {
-                isVerified = cachedToken != null,
-                selectedProvider = "discord"
-            };
-            _licenseStates[req.packageId] = state;
-
-            var block = new VisualElement();
-            block.AddToClassList("lgate-simple");
-
-            var eyebrow = new Label("PURCHASE VERIFICATION");
-            eyebrow.AddToClassList("lgate-eyebrow");
-            block.Add(eyebrow);
-
-            var title = new Label("Unlock licensed content");
-            title.AddToClassList("lgate-title");
-            block.Add(title);
-
-            var body = new Label("Import installs the package now. Verify your purchase to unlock licensed derived assets on this machine.");
-            body.AddToClassList("lgate-body");
-            block.Add(body);
-
-            if (!state.isVerified)
-            {
-                string noteText = creatorSignedIn
-                    ? GetCreatorIdentityVerifyPrimaryText()
-                    : GetCreatorIdentitySignedOutPrimaryText();
-                block.Add(BuildBuyerFlowNote(noteText, "If you do not own this package yet, open the storefront below."));
-
-                var storefrontActions = BuildStorefrontActionsRow();
-                if (storefrontActions != null)
-                {
-                    block.Add(storefrontActions);
-                }
-            }
-
-            var div = new VisualElement();
-            div.AddToClassList("lgate-divider");
-            block.Add(div);
-
-            if (state.isVerified)
-            {
-                var verifiedRow = new VisualElement();
-                verifiedRow.AddToClassList("lgate-simple-verified");
-
-                var checkLabel = new Label("✓");
-                checkLabel.AddToClassList("lgate-check");
-                verifiedRow.Add(checkLabel);
-
-                var verifiedText = new Label(creatorSignedIn
-                    ? $"Verified for {creatorName} on this machine."
-                    : "Verified on this machine.");
-                verifiedText.AddToClassList("lgate-req-note");
-                verifiedRow.Add(verifiedText);
-                block.Add(verifiedRow);
-            }
-            else
-            {
-                var btnRow = new VisualElement();
-                btnRow.AddToClassList("lgate-simple-btn-row");
-                var verificationRequirements = BuildVerificationRequirements(req);
-
-                var verifyBtn = new Button();
-                verifyBtn.AddToClassList("lgate-discord-btn");
-                PopulateCreatorIdentityButton(verifyBtn, GetDiscordVerificationButtonLabel(creatorSignedIn));
-                verifyBtn.SetEnabled(!_isCreatorIdentitySigningIn && verificationRequirements.Length > 0);
-                verifyBtn.clicked += () => OnVerifyInBrowserClicked(req, state, verifyBtn, verificationRequirements);
-                btnRow.Add(verifyBtn);
-                block.Add(btnRow);
-            }
-
-            _licenseSection.Add(block);
-        }
-
-        private VisualElement BuildLicenseBadge(bool verified)
-        {
-            var status = new VisualElement();
-            status.AddToClassList("lgate-status");
-
-            var dot = new VisualElement();
-            dot.AddToClassList("lgate-status-dot");
-            dot.EnableInClassList("lgate-status-dot-verified", verified);
-            dot.EnableInClassList("lgate-status-dot-unverified", !verified);
-            status.Add(dot);
-
-            var text = new Label(verified ? "Verified" : "Not verified");
-            text.AddToClassList("lgate-status-text");
-            text.EnableInClassList("lgate-status-text-verified", verified);
-            text.EnableInClassList("lgate-status-text-unverified", !verified);
-            status.Add(text);
-
-            return status;
-        }
-
-        private void OnVerifyInBrowserClicked(
-            LicensePackageRequirement req,
-            LicenseVerificationState state,
-            Button verifyBtn,
-            VerificationIntentService.VerificationRequirement[] verificationRequirements)
-        {
-            bool isSignedIn = CreatorIdentityOAuthService.IsSignedIn();
-            Debug.Log($"[YUCP PackageManager] OnVerifyInBrowserClicked: isSignedIn={isSignedIn}, signingIn={_isCreatorIdentitySigningIn}, packageId='{req?.packageId}', serverUrl='{GetLicenseServerUrl()}'");
-
-            if (!isSignedIn)
-            {
-                Debug.Log("[YUCP PackageManager] Not signed in — starting creator identity sign-in flow");
-                ShowFlowNotice(
-                    "Finish verification in your browser",
-                    "Sign in with YUCP. The installer will continue automatically after verification finishes.",
-                    FlowNoticeTone.Info);
-                // Capture everything needed for intent creation now, before BuildLicenseSection
-                // destroys the current button references.
-                string serverUrlForVerify = GetLicenseServerUrl();
-                string packageIdForVerify = req.packageId;
-                string packageNameForVerify = req.packageName;
-                var requirementsForVerify = verificationRequirements;
-                Action<string> jwtCallback = jwt =>
-                {
-                    Debug.Log($"[YUCP PackageManager] Browser verification succeeded for packageId='{packageIdForVerify}'");
-                    state.isVerified = true;
-                    _verifiedLicensePackageIds.Add(packageIdForVerify);
-                    _lastHostedVerifiedPackageId = packageIdForVerify;
-                    EditorApplication.delayCall += () =>
-                    {
-                        BuildLicenseSection();
-                        UpdateImportButtonEnabled();
-                        if (_pendingImportAfterVerification)
-                            OnImportClicked();
-                    };
-                };
-                Action<string> errCallback = err =>
-                {
-                    Debug.LogWarning($"[YUCP PackageManager] Browser verification failed for packageId='{packageIdForVerify}': {err}");
-                    PendingVerifyRelay.Cancel();
-                    EditorApplication.delayCall += () =>
-                    {
-                        _pendingImportAfterVerification = false;
-                        if (LicenseVerificationService.IsCreatorIdentityReauthenticationError(err))
-                        {
-                            _creatorIdentityNeedsReauthentication = true;
-                        }
-                        BuildLicenseSection();
-                        UpdateImportButtonEnabled();
-                        if (!LicenseVerificationService.IsCreatorIdentityReauthenticationError(err))
-                        {
-                            ShowFlowNotice(
-                                "Verification failed",
-                                string.IsNullOrWhiteSpace(err) ? "Could not verify access for this package." : err,
-                                FlowNoticeTone.Error);
-                        }
-                    };
-                };
-                // Start verification immediately after sign-in succeeds so the relay can receive
-                // the verification URL before the delayed UI refresh runs.
-                BeginCreatorIdentitySignIn(backgroundOnSuccess: () =>
-                {
-                    VerificationIntentService.VerifyInBrowserAsync(
-                        serverUrlForVerify, packageIdForVerify, packageNameForVerify,
-                        requirementsForVerify, jwtCallback, errCallback, PendingVerifyRelay.SetVerifyUrl);
-                });
-                return;
-            }
-
-            if (verificationRequirements == null || verificationRequirements.Length == 0)
-            {
-                ShowFlowNotice(
-                    "Verification Unavailable",
-                    "This package does not currently expose any hosted verification methods.",
-                    FlowNoticeTone.Error);
-                return;
-            }
-
-            Debug.Log($"[YUCP PackageManager] Starting browser verification for packageId='{req.packageId}', serverUrl='{GetLicenseServerUrl()}'");
-            verifyBtn.SetEnabled(false);
-            UpdateButtonLabel(verifyBtn, ReferenceEquals(verifyBtn, _importButton) ? "Verifying..." : "Opening browser...");
-            ShowFlowNotice(
-                "Finish verification in your browser",
-                "Complete the browser step. The installer will continue automatically.",
-                FlowNoticeTone.Info);
-
-            string serverUrl = GetLicenseServerUrl();
-
-            VerificationIntentService.VerifyInBrowserAsync(
-                serverUrl,
-                req.packageId,
-                req.packageName,
-                verificationRequirements,
-                jwt =>
-                {
-                    Debug.Log($"[YUCP PackageManager] Browser verification succeeded for packageId='{req.packageId}'");
-                    state.isVerified = true;
-                    _verifiedLicensePackageIds.Add(req.packageId);
-                    _lastHostedVerifiedPackageId = req.packageId;
-                    EditorApplication.delayCall += () =>
-                    {
-                        BuildLicenseSection();
-                        UpdateImportButtonEnabled();
-
-                        if (_pendingImportAfterVerification)
-                        {
-                            OnImportClicked();
-                        }
-                    };
-                },
-                err =>
-                {
-                    Debug.LogWarning($"[YUCP PackageManager] Browser verification failed for packageId='{req.packageId}': {err}");
-                    EditorApplication.delayCall += () =>
-                    {
-                        _pendingImportAfterVerification = false;
-
-                        if (LicenseVerificationService.IsCreatorIdentityReauthenticationError(err))
-                        {
-                            _creatorIdentityNeedsReauthentication = true;
-                            BuildLicenseSection();
-                            UpdateImportButtonEnabled();
-                            return;
-                        }
-
-                        verifyBtn.SetEnabled(true);
-                        if (ReferenceEquals(verifyBtn, _importButton))
-                        {
-                            UpdateImportButtonEnabled();
-                        }
-                        else
-                        {
-                            PopulateCreatorIdentityButton(verifyBtn, GetDiscordVerificationButtonLabel(CreatorIdentityOAuthService.IsSignedIn()));
-                        }
-                        ShowFlowNotice(
-                            "Verification failed",
-                            string.IsNullOrWhiteSpace(err) ? "Could not verify access for this package." : err,
-                            FlowNoticeTone.Error);
-                    };
-                });
-        }
-
         private void UpdateImportButtonEnabled()
         {
             if (_importButton == null) return;
@@ -3253,21 +2587,21 @@ namespace YUCP.Importer.Editor.PackageManager
             if (_pendingImportAfterVerification)
             {
                 _importButton.SetEnabled(false);
-                _importButton.tooltip = "Complete purchase verification in your browser to continue importing.";
-                string statusText = _isCreatorIdentitySigningIn
-                    ? "Signing in..."
-                    : "Waiting for browser verification...";
+                _importButton.tooltip =
+                    "YUCP is preparing and checking this package.";
+                const string statusText =
+                    "YUCP is preparing your package...";
                 // Clear any icon content then update via helper to avoid text overlap
                 _importButton.Clear();
-                UpdateButtonLabel(_importButton, _isCreatorIdentitySigningIn ? "Signing in..." : "Verifying...");
+                UpdateButtonLabel(_importButton, "Preparing...");
                 SetVerifyStatusLabel(statusText);
                 return;
             }
 
             SetVerifyStatusLabel(null);
-            _importButton.SetEnabled(true);
+            _importButton.SetEnabled(!hasUnverifiedLicense);
             _importButton.tooltip = hasUnverifiedLicense
-                ? "Verify your purchase and then import the package in one step."
+                ? "Install this product through its Creator Companion bootstrap."
                 : string.Empty;
             RefreshPrimaryImportButton();
         }
@@ -3347,105 +2681,6 @@ namespace YUCP.Importer.Editor.PackageManager
                 _flowNoticeBodyLabel.text = string.Empty;
             }
         }
-
-        private void OnCreatorIdentitySignInClicked()
-        {
-            BeginCreatorIdentitySignIn();
-        }
-
-        private void BeginCreatorIdentitySignIn(Action onSuccess = null, Action backgroundOnSuccess = null)
-        {
-            if (_isCreatorIdentitySigningIn)
-            {
-                Debug.Log("[YUCP PackageManager] BeginCreatorIdentitySignIn: already signing in, ignoring duplicate call");
-                return;
-            }
-
-            string serverUrl = GetLicenseServerUrl();
-            Debug.Log($"[YUCP PackageManager] BeginCreatorIdentitySignIn: serverUrl='{serverUrl}'");
-
-            if (string.IsNullOrEmpty(serverUrl))
-            {
-                Debug.LogError("[YUCP PackageManager] BeginCreatorIdentitySignIn: server URL is empty — cannot sign in. Check Package Manager settings.");
-                ShowFlowNotice(
-                    "Sign-in unavailable",
-                    "The verification server URL is not configured. Open Project Settings > YUCP Package Manager and choose a trusted server.",
-                    FlowNoticeTone.Error);
-                return;
-            }
-
-            _isCreatorIdentitySigningIn = true;
-            _creatorIdentityNeedsSignInRetry = false;
-            BuildLicenseSection();
-            UpdateImportButtonEnabled();
-
-            // If a chained action follows sign-in (e.g. verification), set up a relay so the
-            // OAuth success page in the browser auto-redirects to the verification URL rather
-            // than requiring the user to manually return to Unity.
-            if (backgroundOnSuccess != null || onSuccess != null)
-            {
-                string relayUrl = PendingVerifyRelay.Start();
-                CreatorIdentityOAuthService.s_pendingVerifyRelayUrl = relayUrl;
-            }
-
-            Debug.Log("[YUCP PackageManager] Opening browser for Creator Identity sign-in...");
-            _ = CreatorIdentityOAuthService.SignInAsync(
-                serverUrl,
-                onSuccess: () =>
-                {
-                    Debug.Log("[YUCP PackageManager] Creator Identity sign-in succeeded");
-
-                    // Fire the chained verification handoff before the delayed UI refresh so the
-                    // relay can receive the verification URL immediately.
-                    backgroundOnSuccess?.Invoke();
-
-                    EditorApplication.delayCall += () =>
-                    {
-                        _isCreatorIdentitySigningIn = false;
-                        _creatorIdentityNeedsReauthentication = false;
-                        _creatorIdentityNeedsSignInRetry = false;
-                        if (backgroundOnSuccess != null)
-                        {
-                            // Verification has already been kicked off; just refresh the UI.
-                            UpdateImportButtonEnabled();
-                        }
-                        else if (onSuccess != null)
-                        {
-                            // Proceed directly into the chained action (e.g. verification) while
-                            // the original verifyBtn/state refs are still valid. The chained
-                            // callback's own success/failure paths call BuildLicenseSection().
-                            UpdateImportButtonEnabled();
-                            onSuccess.Invoke();
-                        }
-                        else
-                        {
-                            BuildLicenseSection();
-                            UpdateImportButtonEnabled();
-                        }
-                    };
-                },
-                focusUnityOnSuccess: backgroundOnSuccess == null && onSuccess == null,
-                onError: err =>
-                {
-                    Debug.LogWarning($"[YUCP PackageManager] Creator Identity sign-in failed: {err}");
-                    PendingVerifyRelay.Cancel();
-                    EditorApplication.delayCall += () =>
-                    {
-                        _isCreatorIdentitySigningIn = false;
-                        if (!CreatorIdentityOAuthService.IsUnityOAuthScopeRejectionError(err))
-                        {
-                            _creatorIdentityNeedsSignInRetry = true;
-                        }
-                        BuildLicenseSection();
-                        UpdateImportButtonEnabled();
-                        ShowFlowNotice(
-                            "Sign-in failed",
-                            string.IsNullOrWhiteSpace(err) ? "Could not complete sign-in." : err,
-                            FlowNoticeTone.Error);
-                    };
-                });
-        }
-
         private VisualElement BuildBuyerFlowNote(string primaryText, string secondaryText = null)
         {
             var container = new VisualElement();
@@ -3471,67 +2706,6 @@ namespace YUCP.Importer.Editor.PackageManager
 
             return container;
         }
-
-        private string GetCreatorIdentitySignInButtonLabel()
-        {
-            if (_isCreatorIdentitySigningIn)
-            {
-                return "Connecting…";
-            }
-
-            return (_creatorIdentityNeedsReauthentication || _creatorIdentityNeedsSignInRetry)
-                ? "Sign in again"
-                : "Sign in with YUCP";
-        }
-
-        private string GetDiscordVerificationButtonLabel(bool creatorSignedIn)
-        {
-            if (_isCreatorIdentitySigningIn)
-            {
-                return "Connecting...";
-            }
-
-            if (!creatorSignedIn)
-            {
-                return (_creatorIdentityNeedsReauthentication || _creatorIdentityNeedsSignInRetry)
-                    ? "Sign in again"
-                    : "Sign in with YUCP";
-            }
-
-            return _creatorIdentityNeedsReauthentication ? "Sign in again" : "Verify in browser";
-        }
-
-        private string GetCreatorIdentitySignedOutPrimaryText()
-        {
-            if (_creatorIdentityNeedsSignInRetry)
-            {
-                return "This YUCP server was not ready to finish Unity purchase sign-in. Sign in again after the server has been updated.";
-            }
-
-            return _creatorIdentityNeedsReauthentication
-                ? "Your previous YUCP buyer session no longer has permission to verify this package. Sign in again to continue."
-                : "Sign in opens your browser and prepares a hosted verification flow for this package.";
-        }
-
-        private string GetCreatorIdentitySignedOutSecondaryText()
-        {
-            if (_creatorIdentityNeedsSignInRetry)
-            {
-                return "Use the same buyer account you used for this purchase. If this keeps happening, try again later or switch to a server that already supports Unity purchase verification.";
-            }
-
-            return _creatorIdentityNeedsReauthentication
-                ? "Use the same buyer account you used for this purchase so Unity can request a fresh verification session."
-                : "Use the same buyer account you used when you purchased access. The browser flow can then help you connect the right store account or enter purchase proof.";
-        }
-
-        private string GetCreatorIdentityVerifyPrimaryText()
-        {
-            return _creatorIdentityNeedsReauthentication
-                ? "Your current YUCP buyer session must be refreshed before verification can continue."
-                : "Verify in browser opens a hosted YUCP page where you can confirm ownership, connect the right account, or enter supported purchase proof.";
-        }
-
         private VisualElement BuildStorefrontActionsRow()
         {
             if (_currentMetadata?.productLinks == null || _currentMetadata.productLinks.Count == 0)
@@ -3575,35 +2749,16 @@ namespace YUCP.Importer.Editor.PackageManager
             block.style.borderBottomWidth = 0;
             block.style.paddingBottom = 10;
 
-            var title = new Label("Verification server");
+            var title = new Label("Product bootstrap required");
             title.AddToClassList("lgate-req-name");
             block.Add(title);
 
-            string resolvedUrl = GetLicenseServerUrl();
             block.Add(BuildBuyerFlowNote(
-                $"Current server: {resolvedUrl}",
-                "Change this in Unity Project Settings under YUCP Package Manager when you need sign-in and purchase verification to use dev instead of production."));
+                "Install this product through Creator Companion.",
+                "YUCP will handle sign-in and purchase verification " +
+                "outside Unity."));
 
-            var buttonRow = new VisualElement();
-            buttonRow.style.flexDirection = FlexDirection.Row;
-            buttonRow.style.flexWrap = Wrap.Wrap;
-            buttonRow.style.marginTop = 4;
-
-            var openSettingsButton = new Button(() => SettingsService.OpenProjectSettings("Project/YUCP Package Manager"))
-            {
-                text = "Open Unity Settings"
-            };
-            openSettingsButton.AddToClassList("lgate-link-btn");
-            openSettingsButton.style.marginTop = 4;
-            buttonRow.Add(openSettingsButton);
-
-            block.Add(buttonRow);
             return block;
-        }
-
-        private static string GetLicenseServerUrl()
-        {
-            return LicenseServerResolver.GetLicenseServerUrl();
         }
 
         private void RefreshDependenciesSection()
@@ -3824,6 +2979,230 @@ namespace YUCP.Importer.Editor.PackageManager
                 ShowUtility();
                 Focus();
             }
+        }
+
+        internal static string[] GetHostedLifecycleActionLabels(
+            bool installed,
+            bool hasRollback)
+        {
+            if (!installed)
+            {
+                return Array.Empty<string>();
+            }
+            var actions = new List<string>
+            {
+                "Update",
+                "Repair",
+            };
+            if (hasRollback)
+            {
+                actions.Add("Roll back");
+            }
+            actions.Add("Uninstall");
+            return actions.ToArray();
+        }
+
+        private void AddHostedLifecycleControls(VisualElement parent)
+        {
+            _hostedLifecycleButtons.Clear();
+            if (!_isAliasBootstrapFlow || !IsCurrentAliasInstalled())
+            {
+                return;
+            }
+            bool hasRollback = HasCurrentAliasRollback();
+            string[] actions = GetHostedLifecycleActionLabels(
+                true,
+                hasRollback);
+            var row = new VisualElement();
+            _hostedLifecycleControls = row;
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.flexWrap = Wrap.Wrap;
+            row.style.justifyContent = Justify.FlexEnd;
+            row.style.marginTop = 8;
+            foreach (string action in actions)
+            {
+                if (action == "Update")
+                {
+                    continue;
+                }
+                string operation = action == "Roll back"
+                    ? "rollback"
+                    : action.ToLowerInvariant();
+                var button = new Button(
+                    () => RunHostedLifecycleAction(operation))
+                {
+                    text = action,
+                };
+                button.AddToClassList("yucp-cta-cancel");
+                button.style.marginLeft = 6;
+                button.style.marginBottom = 4;
+                row.Add(button);
+                _hostedLifecycleButtons.Add(button);
+            }
+            parent.Add(row);
+        }
+
+        private bool IsCurrentAliasInstalled()
+        {
+            AliasPackageContract alias =
+                (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
+            if (alias == null)
+            {
+                return false;
+            }
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            return PackageLifecycleCoordinator.GetCurrentReleaseRoot(
+                    projectPath,
+                    alias.aliasId) !=
+                PackageLifecycleCoordinator.EmptyReleaseRoot;
+        }
+
+        private bool HasCurrentAliasRollback()
+        {
+            AliasPackageContract alias =
+                (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
+            if (alias == null)
+            {
+                return false;
+            }
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            return PackageLifecycleCoordinator.HasPriorRelease(
+                projectPath,
+                alias.aliasId);
+        }
+
+        private async void RunHostedLifecycleAction(string operation)
+        {
+            if (_isHostedLifecycleRunning)
+            {
+                return;
+            }
+            PackageMetadata metadata = _currentMetadata ?? _cachedMetadata;
+            if (metadata?.aliasPackage == null)
+            {
+                return;
+            }
+            if (operation == "uninstall" &&
+                !EditorUtility.DisplayDialog(
+                    "Uninstall package",
+                    "YUCP will remove unchanged files installed by this " +
+                    "package. Files you changed will stay in the project.",
+                    "Uninstall",
+                    "Cancel"))
+            {
+                return;
+            }
+            if (operation == "rollback" &&
+                !EditorUtility.DisplayDialog(
+                    "Restore earlier version",
+                    "Restore the previous installed version of this package?",
+                    "Restore",
+                    "Cancel"))
+            {
+                return;
+            }
+            _isHostedLifecycleRunning = true;
+            SetHostedLifecycleControlsEnabled(false);
+            SetVerifyStatusLabel(ActionPendingMessage(operation));
+            try
+            {
+                PackageLifecycleInstallResult result =
+                    await PackageLifecycleCoordinator
+                        .TryManageInstalledAsync(
+                            metadata.aliasPackage,
+                            operation,
+                            progress =>
+                            {
+                                SetVerifyStatusLabel(
+                                    progress.message);
+                                EditorUtility.DisplayProgressBar(
+                                    "Managing Package",
+                                    progress.message,
+                                    progress.progress);
+                                Repaint();
+                            });
+                if (!result.succeeded)
+                {
+                    ShowFlowNotice(
+                        "Package action could not finish",
+                        result.errorMessage,
+                        FlowNoticeTone.Error);
+                    return;
+                }
+                ShowFlowNotice(
+                    ActionSuccessTitle(operation),
+                    ActionSuccessMessage(operation),
+                    FlowNoticeTone.Success);
+                SetVerifyStatusLabel(ActionSuccessMessage(operation));
+                RefreshPrimaryImportButton();
+                if (operation == "uninstall" &&
+                    _hostedLifecycleControls != null)
+                {
+                    _hostedLifecycleControls.style.display =
+                        DisplayStyle.None;
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+                _isHostedLifecycleRunning = false;
+                SetHostedLifecycleControlsEnabled(true);
+            }
+        }
+
+        private void SetHostedLifecycleControlsEnabled(bool enabled)
+        {
+            foreach (Button button in _hostedLifecycleButtons)
+            {
+                button.SetEnabled(enabled);
+            }
+            _importButton?.SetEnabled(enabled);
+        }
+
+        private static string ActionPendingMessage(string operation)
+        {
+            switch (operation)
+            {
+                case "repair":
+                    return "Checking and repairing the package...";
+                case "rollback":
+                    return "Restoring the earlier package version...";
+                case "uninstall":
+                    return "Removing the package files...";
+                default:
+                    return "Updating the package...";
+            }
+        }
+
+        private static string ActionSuccessTitle(string operation)
+        {
+            switch (operation)
+            {
+                case "repair":
+                    return "Package repaired";
+                case "rollback":
+                    return "Earlier version restored";
+                case "uninstall":
+                    return "Package uninstalled";
+                default:
+                    return "Package updated";
+            }
+        }
+
+        private static string ActionSuccessMessage(string operation)
+        {
+            if (operation == "uninstall")
+            {
+                return "YUCP removed unchanged package files. " +
+                    "Files you changed were kept.";
+            }
+            return operation == "repair"
+                ? "YUCP checked the installed files and repaired the package."
+                : operation == "rollback"
+                    ? "YUCP restored the previous installed version."
+                    : "The package is up to date.";
         }
 
         /// <summary>
@@ -4598,42 +3977,21 @@ namespace YUCP.Importer.Editor.PackageManager
                 Debug.Log($"[YUCP PackageManager] Is project settings step: {isProjectStep}");
 
                 bool requiresVerification = (!isMultiStep || isProjectStep) && RequiresVerificationBeforeImport();
-                Debug.Log($"[YUCP PackageManager] RequiresVerification={requiresVerification}, isSignedIn={CreatorIdentityOAuthService.IsSignedIn()}, serverUrl='{GetLicenseServerUrl()}', pendingAfterVerification={_pendingImportAfterVerification}, signingIn={_isCreatorIdentitySigningIn}");
+                Debug.Log(
+                    "[YUCP PackageManager] Direct package verification " +
+                    $"required={requiresVerification}.");
 
                 if (requiresVerification)
                 {
-                    var req = GetNextUnverifiedLicenseRequirement();
-                    Debug.Log($"[YUCP PackageManager] NextUnverifiedReq: packageId='{req?.packageId}', productId='{req?.productId}', creatorAuthUserId='{req?.creatorAuthUserId}'");
-                    if (req != null)
-                    {
-                        var verificationRequirements = BuildVerificationRequirements(req);
-                        Debug.Log($"[YUCP PackageManager] VerificationRequirements count={verificationRequirements.Length}");
-                        if (verificationRequirements.Length == 0)
-                        {
-                            ShowFlowNotice(
-                                "Verification Unavailable",
-                                "This package requires verification before import, but it does not currently expose any hosted verification methods.",
-                                FlowNoticeTone.Error);
-                            return;
-                        }
-
-                        // Reset stale sign-in state so re-clicking always works
-                        if (_isCreatorIdentitySigningIn)
-                        {
-                            Debug.Log("[YUCP PackageManager] Resetting stale _isCreatorIdentitySigningIn flag before retry");
-                            _isCreatorIdentitySigningIn = false;
-                        }
-
-                        _pendingImportAfterVerification = true;
-                        if (!_licenseStates.TryGetValue(req.packageId, out var state) || state == null)
-                        {
-                            state = new LicenseVerificationState();
-                            _licenseStates[req.packageId] = state;
-                        }
-
-                        OnVerifyInBrowserClicked(req, state, _importButton, verificationRequirements);
-                        return;
-                    }
+                    _pendingImportAfterVerification = false;
+                    ShowFlowNotice(
+                        "Use the product bootstrap",
+                        "This direct package uses an older verification " +
+                        "format. Install its product bootstrap through " +
+                        "Creator Companion.",
+                        FlowNoticeTone.Error);
+                    UpdateImportButtonEnabled();
+                    return;
                 }
 
                 _pendingImportAfterVerification = false;
@@ -4661,8 +4019,11 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                 }
 
-                bool hostedImportVerified = IsHostedImportVerified(null, _currentMetadata ?? _cachedMetadata);
-                Debug.Log($"[YUCP PackageManager] Import initiated, waiting for completion. packagePath='{_currentPackagePath}', packageSigned={_isPackageSigned}, verificationValid={(_verificationResult != null && _verificationResult.valid) || hostedImportVerified}, hostedVerificationValid={hostedImportVerified}");
+                Debug.Log(
+                    "[YUCP PackageManager] Import initiated. " +
+                    $"packageSigned={_isPackageSigned}, " +
+                    "signatureValid=" +
+                    $"{_verificationResult != null && _verificationResult.valid}.");
 
                 // Remember which package we're expecting completion for
                 _waitingForImportCompletion = true;
@@ -4683,85 +4044,36 @@ namespace YUCP.Importer.Editor.PackageManager
         private async Task VerifyAndInstallAliasAsync(
             PackageMetadata metadata)
         {
-            string serverUrl = GetLicenseServerUrl();
-            if (string.IsNullOrWhiteSpace(serverUrl))
-            {
-                ShowFlowNotice(
-                    "Install Package",
-                    "The verification server URL is not configured. " +
-                    "Check the YUCP Package Manager settings.",
-                    FlowNoticeTone.Error);
-                return;
-            }
-
-            string packageAccessToken =
-                await CreatorIdentityOAuthService.GetValidAccessTokenAsync(
-                    serverUrl,
-                    CreatorIdentityOAuthService.PackageInstallationScopes);
-            bool hasPackageAuthorization =
-                HasPackageInstallationAuthorization(
-                    CreatorIdentityOAuthService.IsSignedIn(),
-                    packageAccessToken);
             _pendingImportAfterVerification = true;
-            _isCreatorIdentitySigningIn = !hasPackageAuthorization;
             UpdateImportButtonEnabled();
 
             try
             {
-                if (_isCreatorIdentitySigningIn)
-                {
-                    bool signedIn = false;
-                    string signInError = null;
-                    await CreatorIdentityOAuthService.SignInAsync(
-                        serverUrl,
-                        () => signedIn = true,
-                        error => signInError = error,
-                        false);
-                    _isCreatorIdentitySigningIn = false;
-                    if (!signedIn)
-                    {
-                        ShowFlowNotice(
-                            "Verification failed",
-                            string.IsNullOrWhiteSpace(signInError)
-                                ? "Could not sign in to verify package access."
-                                : signInError,
-                            FlowNoticeTone.Error);
-                        return;
-                    }
-
-                    packageAccessToken =
-                        await CreatorIdentityOAuthService
-                            .GetValidAccessTokenAsync(
-                                serverUrl,
-                                CreatorIdentityOAuthService
-                                    .PackageInstallationScopes);
-                    if (!HasPackageInstallationAuthorization(
-                            CreatorIdentityOAuthService.IsSignedIn(),
-                            packageAccessToken))
-                    {
-                        ShowFlowNotice(
-                            "Verification failed",
-                            "Sign-in did not grant the scopes required " +
-                            "for package installation.",
-                            FlowNoticeTone.Error);
-                        return;
-                    }
-                }
-
-                SetVerifyStatusLabel("Checking package access...");
-                EditorUtility.DisplayProgressBar(
-                    "Installing Package",
-                    $"Verifying and staging '{metadata.packageName}'...",
-                    0.35f);
-                string installError =
+                PackageLifecycleInstallResult installResult =
                     await PackageLifecycleCoordinator.TryInstallAsync(
-                        serverUrl,
-                        metadata.aliasPackage);
-                if (!string.IsNullOrWhiteSpace(installError))
+                        metadata.aliasPackage,
+                        progress =>
+                        {
+                            SetVerifyStatusLabel(progress.message);
+                            EditorUtility.DisplayProgressBar(
+                                "Installing Package",
+                                progress.message,
+                                progress.progress);
+                            Repaint();
+                        });
+                if (installResult.cancelled)
+                {
+                    ShowFlowNotice(
+                        "Installation canceled",
+                        installResult.errorMessage,
+                        FlowNoticeTone.Info);
+                    return;
+                }
+                if (!installResult.succeeded)
                 {
                     ShowFlowNotice(
                         "Install Package",
-                        installError,
+                        installResult.errorMessage,
                         FlowNoticeTone.Error);
                     return;
                 }
@@ -4773,7 +4085,6 @@ namespace YUCP.Importer.Editor.PackageManager
             finally
             {
                 EditorUtility.ClearProgressBar();
-                _isCreatorIdentitySigningIn = false;
                 _pendingImportAfterVerification = false;
                 UpdateImportButtonEnabled();
             }
@@ -4976,14 +4287,12 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             Debug.Log(
-                $"[YUCP PackageManager] Installed '{packageName}' and " +
-                "removed its VPM bootstrap.");
+                $"[YUCP PackageManager] Installed '{packageName}'. " +
+                "Its VPM package remains registered for updates.");
 
             try
             {
                 Close();
-                EditorApplication.delayCall += () =>
-                    UnityEditor.PackageManager.Client.Resolve();
                 GUIUtility.ExitGUI();
             }
             catch (ExitGUIException)
@@ -5047,13 +4356,6 @@ namespace YUCP.Importer.Editor.PackageManager
                         }
                     }
 
-                    string hostedVerifiedPackageId = ResolveHostedVerifiedPackageId(metadata);
-                    if (string.IsNullOrEmpty(packageId) && !string.IsNullOrEmpty(hostedVerifiedPackageId))
-                    {
-                        packageId = hostedVerifiedPackageId;
-                        Debug.Log($"[YUCP PackageManager] Falling back to hosted verified packageId during registration. packageId='{packageId}'");
-                    }
-
                     if (string.IsNullOrEmpty(packageId) && !string.IsNullOrWhiteSpace(metadata?.aliasPackage?.aliasId))
                     {
                         packageId = metadata.aliasPackage.aliasId.Trim();
@@ -5064,10 +4366,6 @@ namespace YUCP.Importer.Editor.PackageManager
                     if (_verificationResult != null)
                     {
                         isVerified = _verificationResult.valid;
-                    }
-                    if (!isVerified && IsHostedImportVerified(packageId, metadata))
-                    {
-                        isVerified = true;
                     }
                 }
                 catch (Exception ex)

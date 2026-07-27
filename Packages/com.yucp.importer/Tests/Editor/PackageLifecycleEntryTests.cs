@@ -54,10 +54,11 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void StartupResumesAfterDomainReloadForTheExactBatchCommand()
+        public void StartupResumesAfterDomainReloadForAnActiveBatchCommand()
         {
             bool shouldResume =
                 PackageLifecycleEntry.ShouldResumeAfterDomainReload(
+                    true,
                     true,
                     @"C:\temp\request.json",
                     @"C:\temp\result.json",
@@ -73,10 +74,11 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void StartupDoesNotConsumeLifecycleEnvironmentInAnotherCommand()
+        public void StartupWaitsForExecuteMethodBeforeTheFirstBatchUpdate()
         {
             bool shouldResume =
                 PackageLifecycleEntry.ShouldResumeAfterDomainReload(
+                    false,
                     true,
                     @"C:\temp\request.json",
                     @"C:\temp\result.json",
@@ -85,7 +87,27 @@ namespace YUCP.Importer.Editor.Tests
                         "Unity.exe",
                         "-batchmode",
                         "-executeMethod",
-                        "YUCP.Importer.Editor.Batch.IdentityBootstrapEntry.Run",
+                        "YUCP.Importer.Editor.Batch.PackageLifecycleEntry.Run",
+                    });
+
+            Assert.IsFalse(shouldResume);
+        }
+
+        [Test]
+        public void StartupDoesNotConsumeLifecycleEnvironmentInAnotherCommand()
+        {
+            bool shouldResume =
+                PackageLifecycleEntry.ShouldResumeAfterDomainReload(
+                    true,
+                    true,
+                    @"C:\temp\request.json",
+                    @"C:\temp\result.json",
+                    new[]
+                    {
+                        "Unity.exe",
+                        "-batchmode",
+                        "-executeMethod",
+                        "Some.Other.Entry.Run",
                     });
 
             Assert.IsFalse(shouldResume);
@@ -102,6 +124,37 @@ namespace YUCP.Importer.Editor.Tests
             Assert.AreEqual(
                 typeof(Task<PackageLifecycleExecutionResult>),
                 method.ReturnType);
+        }
+
+        [TestCase(
+            "The package delivery broker returned an invalid terminal result.")]
+        [TestCase(
+            "Package delivery failed with stable error code PACKAGE_LIFECYCLE_FAILED.")]
+        [TestCase(
+            "The package server resolved a different release root.")]
+        public void UserVisibleInstallFailuresHideDeliveryInternals(
+            string internalMessage)
+        {
+            MethodInfo method = typeof(PackageLifecycleCoordinator).GetMethod(
+                "BuildUserFacingFailureMessage",
+                BindingFlags.Static |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+            string message = (string)method.Invoke(
+                null,
+                new object[]
+                {
+                    new InvalidOperationException(internalMessage),
+                });
+
+            Assert.That(message, Is.Not.Empty);
+            Assert.That(message, Does.Not.Contain("broker").IgnoreCase);
+            Assert.That(message, Does.Not.Contain("release root").IgnoreCase);
+            Assert.That(message, Does.Not.Contain("terminal result").IgnoreCase);
+            Assert.That(message, Does.Not.Contain("stable error").IgnoreCase);
+            Assert.That(message, Does.Not.Contain("PACKAGE_"));
         }
 
         [Test]
@@ -122,25 +175,27 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void SessionRequestBindsTheLifecycleOperation()
+        public void BrokerRequestBindsTheLifecycleOperation()
         {
-            var alias = new AliasPackageContract
-            {
-                aliasId = "jammr",
-                catalogProductIds = new System.Collections.Generic.List<string>
-                {
-                    "catalog-jammr-jinxxy",
-                },
-            };
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            NativePackageBrokerRequest request =
+                PackageLifecycleCoordinator.BuildBrokerRequest(
+                    "jammr",
+                    new string('0', 64),
+                    "run-preflight",
+                    "preflight-1",
+                    "preflight",
+                    projectPath,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty);
 
-            string body = PackageLifecycleCoordinator.BuildSessionRequestBody(
-                alias,
-                new string('4', 64),
-                "preflight-1",
-                "preflight",
-                string.Empty);
-
-            StringAssert.Contains("\"operation\":\"preflight\"", body);
+            Assert.That(request.operation, Is.EqualTo("preflight"));
+            Assert.That(request.aliasId, Is.EqualTo("jammr"));
+            Assert.That(
+                NativePackageBrokerClient.SerializeRequest(request),
+                Does.Not.Contain("approvedActiveContentDigest"));
         }
 
         [Test]
@@ -172,55 +227,41 @@ namespace YUCP.Importer.Editor.Tests
         [Test]
         public void IdempotencyPathUsesBoundedOpaqueSegments()
         {
-            const string stateEnvironment =
-                "YUCP_PACKAGE_DELIVERY_STATE_ROOT";
-            string priorStateRoot =
-                Environment.GetEnvironmentVariable(stateEnvironment);
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            string alias = "alias-" + new string('a', 100);
+            string key = "request-" + new string('b', 100);
+            var request = new PackageLifecycleRequest
+            {
+                productAlias = alias,
+                idempotencyKey = key,
+                projectPath = projectPath,
+            };
+            MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
+                "IdempotencyPath",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            string path = (string)method.Invoke(
+                null,
+                new object[] { request });
             string stateRoot = Path.Combine(
-                Path.GetTempPath(),
-                new string('r', 96));
-            try
-            {
-                Environment.SetEnvironmentVariable(
-                    stateEnvironment,
-                    stateRoot);
-                string alias = "alias-" + new string('a', 100);
-                string key = "request-" + new string('b', 100);
-                var request = new PackageLifecycleRequest
-                {
-                    productAlias = alias,
-                    idempotencyKey = key,
-                };
-                MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
-                    "IdempotencyPath",
-                    BindingFlags.NonPublic | BindingFlags.Static);
+                projectPath,
+                "Library",
+                "YUCP",
+                "PackageLifecycle");
+            string relative = path.Substring(
+                stateRoot.TrimEnd(
+                    Path.DirectorySeparatorChar,
+                    Path.AltDirectorySeparatorChar).Length + 1);
+            string[] segments = relative.Split(
+                Path.DirectorySeparatorChar);
 
-                string path = (string)method.Invoke(
-                    null,
-                    new object[] { request });
-                string relative = path.Substring(
-                    stateRoot.TrimEnd(
-                        Path.DirectorySeparatorChar,
-                        Path.AltDirectorySeparatorChar).Length + 1);
-                string[] segments = relative.Split(
-                    Path.DirectorySeparatorChar);
-
-                Assert.AreEqual(2, segments.Length);
-                Assert.AreEqual("idempotency", segments[0]);
-                Assert.AreEqual(69, segments[1].Length);
-                StringAssert.EndsWith(".json", segments[1]);
-                Assert.LessOrEqual(
-                    path.Length,
-                    stateRoot.Length + 83);
-                StringAssert.DoesNotContain(alias, path);
-                StringAssert.DoesNotContain(key, path);
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable(
-                    stateEnvironment,
-                    priorStateRoot);
-            }
+            Assert.AreEqual(2, segments.Length);
+            Assert.AreEqual("idempotency", segments[0]);
+            Assert.AreEqual(69, segments[1].Length);
+            StringAssert.EndsWith(".json", segments[1]);
+            StringAssert.DoesNotContain(alias, path);
+            StringAssert.DoesNotContain(key, path);
         }
     }
 }

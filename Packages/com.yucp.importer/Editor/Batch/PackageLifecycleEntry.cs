@@ -66,8 +66,8 @@ namespace YUCP.Importer.Editor.Batch
             "YUCP_PACKAGE_LIFECYCLE_REQUEST_PATH";
         internal const string ResultPathEnvironmentVariable =
             "YUCP_PACKAGE_LIFECYCLE_RESULT_PATH";
-        internal const string ServerUrlEnvironmentVariable =
-            "YUCP_PACKAGE_SERVER_URL";
+        private const string ActiveSessionStateKey =
+            "YUCP.PackageLifecycle.Batch.Active";
         private const int SuccessExitCode = 0;
         private const int ValidationExitCode = 10;
         private const int TransferExitCode = 20;
@@ -83,6 +83,7 @@ namespace YUCP.Importer.Editor.Batch
         static PackageLifecycleEntry()
         {
             if (ShouldResumeAfterDomainReload(
+                SessionState.GetBool(ActiveSessionStateKey, false),
                 Application.isBatchMode,
                 Environment.GetEnvironmentVariable(
                     RequestPathEnvironmentVariable),
@@ -96,16 +97,19 @@ namespace YUCP.Importer.Editor.Batch
 
         public static void Run()
         {
+            SessionState.SetBool(ActiveSessionStateKey, true);
             Schedule();
         }
 
         internal static bool ShouldResumeAfterDomainReload(
+            bool lifecycleStarted,
             bool isBatchMode,
             string requestPath,
             string resultPath,
             string[] commandLineArguments)
         {
-            return BatchCommandLine.ShouldResumeAfterDomainReload(
+            return lifecycleStarted &&
+                BatchCommandLine.ShouldResumeAfterDomainReload(
                 isBatchMode,
                 requestPath,
                 resultPath,
@@ -174,13 +178,8 @@ namespace YUCP.Importer.Editor.Batch
 
                 AliasPackageContract alias =
                     AliasPackageDiscovery.FindByAliasId(request.productAlias);
-                string serverUrl = RequiresServer(request.operation)
-                    ? Environment.GetEnvironmentVariable(
-                        ServerUrlEnvironmentVariable)
-                    : string.Empty;
                 PackageLifecycleExecutionResult execution =
                     await PackageLifecycleCoordinator.ExecuteAsync(
-                        serverUrl,
                         alias,
                         request.operation,
                         request.runId,
@@ -385,6 +384,7 @@ namespace YUCP.Importer.Editor.Batch
             _finished = true;
             EditorApplication.update -= ExecuteOnUpdate;
             EditorApplication.update -= PollOnUpdate;
+            SessionState.EraseBool(ActiveSessionStateKey);
             int exitCode = result?.exitCode ?? InternalExitCode;
             try
             {
@@ -405,7 +405,11 @@ namespace YUCP.Importer.Editor.Batch
 
         private static string IdempotencyPath(PackageLifecycleRequest request)
         {
-            string stateRoot = TransferHelperClient.ResolveStateRoot();
+            string stateRoot = Path.Combine(
+                Path.GetFullPath(request.projectPath),
+                "Library",
+                "YUCP",
+                "PackageLifecycle");
             return Path.Combine(
                 stateRoot,
                 "idempotency",
@@ -492,17 +496,9 @@ namespace YUCP.Importer.Editor.Batch
             }
         }
 
-        private static bool RequiresServer(string operation)
-        {
-            return operation != "uninstall" && operation != "recover";
-        }
-
         private static bool RequiresApproval(string operation)
         {
-            return operation == "install" ||
-                operation == "update" ||
-                operation == "repair" ||
-                operation == "rollback";
+            return operation != "preflight";
         }
 
         private static bool IsSupportedOperation(string operation)

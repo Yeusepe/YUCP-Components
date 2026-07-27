@@ -67,73 +67,16 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void InstallSessionGoldenVectorMatchesRequestedInstall()
+        public void SignedContractsRejectPurposeSubstitutionAndNoncanonicalPayloads()
         {
             GoldenVectorDocument document = LoadVectors();
-            GoldenVector vector = document.vectors.Single(
-                item => item.purpose == PackageContractV2.InstallSessionPurpose);
-
-            InstallSessionV2 session = InstallSessionV2Verifier.VerifyAndValidate(
-                ParseHex(vector.coseSign1Hex),
-                ParseHex(document.keyIdHex),
-                ParseHex(document.publicKeyHex),
-                ValidInstallContext());
-
-            Assert.That(session.CreatorId, Is.EqualTo("creator-1"));
-            Assert.That(session.BuyerId, Is.EqualTo("buyer-1"));
-            Assert.That(session.ProductId, Is.EqualTo("product-1"));
-            Assert.That(session.Version, Is.EqualTo("1.2.3"));
-            Assert.That(session.Bootstrap.Select(item => item.Kind), Is.EquivalentTo(
-                new[] { "release-descriptor", "delivery-binding" }));
-        }
-
-        [Test]
-        public void InstallSessionRejectsPurposeAndBindingSubstitution()
-        {
-            GoldenVectorDocument document = LoadVectors();
-            GoldenVector vector = document.vectors.Single(
-                item => item.purpose == PackageContractV2.InstallSessionPurpose);
-            byte[] coseSign1 = ParseHex(vector.coseSign1Hex);
-            byte[] keyId = ParseHex(document.keyIdHex);
-            byte[] publicKey = ParseHex(document.publicKeyHex);
+            GoldenVector vector = document.vectors.First();
 
             Assert.Throws<FormatException>(() => PackageContractV2.VerifySignedPayload(
-                coseSign1,
-                "delivery-grant-v2",
-                keyId,
-                publicKey));
-
-            InstallSessionValidationContext wrongAlias = ValidInstallContext();
-            wrongAlias.AliasId = "creator.other-product";
-            Assert.Throws<FormatException>(() => InstallSessionV2Verifier.VerifyAndValidate(
-                coseSign1,
-                keyId,
-                publicKey,
-                wrongAlias));
-
-            InstallSessionValidationContext wrongOrigin = ValidInstallContext();
-            wrongOrigin.AllowedArtifactOrigins = new[] { "https://other.example.test" };
-            Assert.Throws<FormatException>(() => InstallSessionV2Verifier.VerifyAndValidate(
-                coseSign1,
-                keyId,
-                publicKey,
-                wrongOrigin));
-        }
-
-        [Test]
-        public void InstallSessionRejectsExpiryAndNoncanonicalCbor()
-        {
-            GoldenVectorDocument document = LoadVectors();
-            GoldenVector vector = document.vectors.Single(
-                item => item.purpose == PackageContractV2.InstallSessionPurpose);
-            InstallSessionValidationContext expired = ValidInstallContext();
-            expired.Now = 1800;
-
-            Assert.Throws<FormatException>(() => InstallSessionV2Verifier.VerifyAndValidate(
                 ParseHex(vector.coseSign1Hex),
+                "delivery-grant-v2",
                 ParseHex(document.keyIdHex),
-                ParseHex(document.publicKeyHex),
-                expired));
+                ParseHex(document.publicKeyHex)));
             Assert.Throws<FormatException>(() =>
                 PackageContractV2.AssertCanonicalPayload(new byte[] { 0x18, 0x01 }));
         }
@@ -177,51 +120,6 @@ namespace YUCP.Importer.Editor.Tests
                 ParseHex(document.keyIdHex),
                 ParseHex(document.publicKeyHex),
                 substitutedRendition));
-        }
-
-        [Test]
-        public void ResolvedInstallSessionIsReverifiedBeforeProjectMutation()
-        {
-            GoldenVectorDocument document = LoadVectors();
-            GoldenVector vector = document.vectors.Single(
-                item => item.purpose == PackageContractV2.InstallSessionPurpose);
-            VerifiedInstallSessionV2 resolved = InstallSessionV2Verifier.Resolve(
-                ParseHex(vector.coseSign1Hex),
-                ParseHex(document.keyIdHex),
-                ParseHex(document.publicKeyHex),
-                ValidInstallContext());
-
-            InstallSessionValidationContext currentContext = ValidInstallContext();
-            currentContext.Now = 1250;
-            InstallSessionV2 currentSession =
-                resolved.ValidateBeforeProjectMutation(currentContext);
-            Assert.That(currentSession.SessionId, Is.EqualTo(
-                "018f8c03-3880-7d40-a8d5-b190a64141cc"));
-
-            currentContext.AliasId = "creator.substituted-product";
-            Assert.Throws<FormatException>(() =>
-                resolved.ValidateBeforeProjectMutation(currentContext));
-
-            InstallSessionValidationContext expiredContext = ValidInstallContext();
-            expiredContext.Now = 1800;
-            Assert.Throws<FormatException>(() =>
-                resolved.ValidateBeforeProjectMutation(expiredContext));
-        }
-
-        private static InstallSessionValidationContext ValidInstallContext()
-        {
-            return new InstallSessionValidationContext
-            {
-                AliasId = "creator.avatar-tools",
-                AllowedApiOrigins = new[] { "https://api.example.test" },
-                AllowedArtifactOrigins = new[] { "https://delivery.example.test" },
-                Audience = "yucp-unity-importer",
-                BindingRoot = RepeatByte(0x22),
-                DeviceKeyThumbprint = RepeatByte(0x33),
-                Issuer = "https://api.example.test",
-                Now = 1200,
-                ReleaseRoot = RepeatByte(0x11),
-            };
         }
 
         private static GoldenVectorDocument LoadVectors()
