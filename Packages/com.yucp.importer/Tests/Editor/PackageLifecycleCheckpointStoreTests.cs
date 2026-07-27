@@ -119,6 +119,51 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
+        [TestCase(0)]
+        [TestCase(129)]
+        public void InstallAttemptIdentifierRegeneratesAfterCorruption(
+            int corruptLength)
+        {
+            string project = CreateProject();
+            try
+            {
+                MethodInfo getOrCreate =
+                    typeof(PackageLifecycleCheckpointStore).GetMethod(
+                        "GetOrCreateAttemptId",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(getOrCreate, Is.Not.Null);
+                string first = (string)getOrCreate.Invoke(
+                    null,
+                    new object[] { project, "jammr" });
+                string attemptsDirectory = Path.Combine(
+                    project,
+                    ".yucp",
+                    "package-lifecycle",
+                    "attempts");
+                string[] attemptPaths = Directory.GetFiles(
+                    attemptsDirectory,
+                    "*.txt");
+                Assert.That(attemptPaths, Has.Length.EqualTo(1));
+                File.WriteAllText(
+                    attemptPaths[0],
+                    new string('x', corruptLength));
+
+                string regenerated = (string)getOrCreate.Invoke(
+                    null,
+                    new object[] { project, "jammr" });
+
+                Assert.That(regenerated, Has.Length.EqualTo(32));
+                Assert.That(regenerated, Is.Not.EqualTo(first));
+                Assert.That(
+                    File.ReadAllText(attemptPaths[0]).Trim(),
+                    Is.EqualTo(regenerated));
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
+        }
+
         [Test]
         public void CorruptProjectIdentityRegeneratesAtomically()
         {

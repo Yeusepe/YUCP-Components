@@ -53,6 +53,117 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
+        [Test]
+        public void ExtractUsesTheLocalPaxUtf8Path()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-tar-pax-local-" + Guid.NewGuid().ToString("N"));
+            const string paxPath =
+                "package/Assets/Accented-\u00E9/ProductPayload.txt";
+            try
+            {
+                Directory.CreateDirectory(root);
+                using (var archive = BuildArchive(
+                    ("pax-local", 'x', BuildPaxPathRecord(paxPath)),
+                    ("ignored.txt", '0', "payload")))
+                {
+                    TarGZipArchiveExtractor.Extract(
+                        archive,
+                        name => Path.Combine(
+                            root,
+                            name.Replace('/', Path.DirectorySeparatorChar)));
+                }
+
+                Assert.That(
+                    File.ReadAllText(
+                        Path.Combine(
+                            root,
+                            paxPath.Replace(
+                                '/',
+                                Path.DirectorySeparatorChar))),
+                    Is.EqualTo("payload"));
+                Assert.That(
+                    File.Exists(Path.Combine(root, "ignored.txt")),
+                    Is.False);
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [Test]
+        public void ExtractPrefersTheLocalPaxPathOverTheGlobalPath()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-tar-pax-precedence-" +
+                Guid.NewGuid().ToString("N"));
+            const string globalPath =
+                "package/Assets/Global/ProductPayload.txt";
+            const string localPath =
+                "package/Assets/Local/ProductPayload.txt";
+            try
+            {
+                Directory.CreateDirectory(root);
+                using (var archive = BuildArchive(
+                    ("pax-global", 'g', BuildPaxPathRecord(globalPath)),
+                    ("pax-local", 'x', BuildPaxPathRecord(localPath)),
+                    ("ignored.txt", '0', "payload")))
+                {
+                    TarGZipArchiveExtractor.Extract(
+                        archive,
+                        name => Path.Combine(
+                            root,
+                            name.Replace('/', Path.DirectorySeparatorChar)));
+                }
+
+                Assert.That(
+                    File.ReadAllText(
+                        Path.Combine(
+                            root,
+                            localPath.Replace(
+                                '/',
+                                Path.DirectorySeparatorChar))),
+                    Is.EqualTo("payload"));
+                Assert.That(
+                    File.Exists(
+                        Path.Combine(
+                            root,
+                            globalPath.Replace(
+                                '/',
+                                Path.DirectorySeparatorChar))),
+                    Is.False);
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        private static string BuildPaxPathRecord(string path)
+        {
+            string payload = " path=" + path + "\n";
+            int recordLength = Encoding.UTF8.GetByteCount(payload) + 1;
+            while (true)
+            {
+                string record = recordLength + payload;
+                int encodedLength = Encoding.UTF8.GetByteCount(record);
+                if (encodedLength == recordLength)
+                {
+                    return record;
+                }
+                recordLength = encodedLength;
+            }
+        }
+
         private static MemoryStream BuildArchive(
             params (string name, char type, string body)[] entries)
         {

@@ -32,7 +32,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string aliasId)
         {
             string path = ResolveAttemptPath(projectPath, aliasId);
-            string existing = ReadAttemptId(path);
+            string existing = ReadAttemptId(path, false);
             if (existing != null)
             {
                 return existing;
@@ -64,6 +64,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
                 catch (IOException) when (File.Exists(path))
                 {
+                    existing = ReadAttemptId(path, false);
+                    if (existing != null)
+                    {
+                        return existing;
+                    }
+                    File.Replace(temporaryPath, path, null);
                 }
                 return ReadAttemptId(path) ??
                     throw new InvalidDataException(
@@ -290,7 +296,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 digest + ".txt");
         }
 
-        private static string ReadAttemptId(string path)
+        private static string ReadAttemptId(
+            string path,
+            bool strict = true)
         {
             if (!File.Exists(path))
             {
@@ -299,14 +307,24 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             var info = new FileInfo(path);
             if (info.Length <= 0 || info.Length > 128)
             {
+                if (!strict)
+                {
+                    return null;
+                }
                 throw new InvalidDataException(
                     "The package lifecycle attempt identifier is invalid.");
             }
             string attemptId = File.ReadAllText(path, Encoding.UTF8).Trim();
-            return IsSafeIdentifier(attemptId)
-                ? attemptId
-                : throw new InvalidDataException(
-                    "The package lifecycle attempt identifier is invalid.");
+            if (IsSafeIdentifier(attemptId))
+            {
+                return attemptId;
+            }
+            if (!strict)
+            {
+                return null;
+            }
+            throw new InvalidDataException(
+                "The package lifecycle attempt identifier is invalid.");
         }
 
         private static bool IsSafeIdentifier(string value)
