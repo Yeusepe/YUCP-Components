@@ -317,7 +317,8 @@ namespace YUCP.Importer.Editor.Batch
                 return string.Equals(
                     Path.GetFullPath(request.projectPath),
                     openedProject,
-                    StringComparison.OrdinalIgnoreCase);
+                    ProjectPathComparison(
+                        Path.DirectorySeparatorChar));
             }
             catch (
                 Exception exception) when (
@@ -327,6 +328,14 @@ namespace YUCP.Importer.Editor.Batch
             {
                 return false;
             }
+        }
+
+        private static StringComparison ProjectPathComparison(
+            char directorySeparator)
+        {
+            return directorySeparator == '\\'
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
         }
 
         private static PackageLifecycleResult BuildFailure(

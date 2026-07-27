@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.Compilation;
@@ -178,6 +179,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             CompilationPipeline.assemblyCompilationFinished +=
                 OnAssemblyCompilationFinished;
             CompilationPipeline.compilationFinished += OnCompilationFinished;
+            EditorApplication.LockReloadAssemblies();
             try
             {
                 AssetDatabase.Refresh(
@@ -185,33 +187,48 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 await NextEditorUpdate();
                 if (compilationStarted || EditorApplication.isCompiling)
                 {
-                    Task completed = await Task.WhenAny(
-                        compilationCompleted.Task,
-                        Task.Delay(compilationTimeoutMilliseconds));
-                    if (completed != compilationCompleted.Task)
+                    using (var timeoutCancellation =
+                        new CancellationTokenSource())
                     {
-                        throw new TimeoutException(
-                            "Unity script compilation did not finish in time.");
+                        Task timeout = Task.Delay(
+                            compilationTimeoutMilliseconds,
+                            timeoutCancellation.Token);
+                        Task completed = await Task.WhenAny(
+                            compilationCompleted.Task,
+                            timeout);
+                        if (completed != compilationCompleted.Task)
+                        {
+                            throw new TimeoutException(
+                                "Unity script compilation did not finish in time.");
+                        }
+                        timeoutCancellation.Cancel();
+                        await compilationCompleted.Task;
                     }
-                    await compilationCompleted.Task;
+                }
+                if (EditorUtility.scriptCompilationFailed ||
+                    compilationErrors.Count > 0)
+                {
+                    string detail = compilationErrors.Count == 0
+                        ? "Unity reported a script compilation failure."
+                        : string.Join("\n", compilationErrors);
+                    throw new InvalidDataException(detail);
                 }
             }
             finally
             {
-                CompilationPipeline.compilationStarted -=
-                    OnCompilationStarted;
-                CompilationPipeline.assemblyCompilationFinished -=
-                    OnAssemblyCompilationFinished;
-                CompilationPipeline.compilationFinished -=
-                    OnCompilationFinished;
-            }
-            if (EditorUtility.scriptCompilationFailed ||
-                compilationErrors.Count > 0)
-            {
-                string detail = compilationErrors.Count == 0
-                    ? "Unity reported a script compilation failure."
-                    : string.Join("\n", compilationErrors);
-                throw new InvalidDataException(detail);
+                try
+                {
+                    CompilationPipeline.compilationStarted -=
+                        OnCompilationStarted;
+                    CompilationPipeline.assemblyCompilationFinished -=
+                        OnAssemblyCompilationFinished;
+                    CompilationPipeline.compilationFinished -=
+                        OnCompilationFinished;
+                }
+                finally
+                {
+                    EditorApplication.UnlockReloadAssemblies();
+                }
             }
         }
 

@@ -13,20 +13,78 @@ namespace YUCP.Importer.Editor.Batch
             long maximumBytes)
         {
             string resolvedPath = RequireAbsoluteFile(path, label);
-            var info = new FileInfo(resolvedPath);
-            if (info.Length < 2 || info.Length > maximumBytes)
+            string json;
+            using (var stream = new FileStream(
+                resolvedPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read))
             {
-                throw new InvalidDataException(
-                    $"The {label} file size is invalid.");
+                json = ReadBoundedUtf8(stream, maximumBytes, label);
             }
-            T value = JsonConvert.DeserializeObject<T>(
-                File.ReadAllText(resolvedPath));
+            T value = JsonConvert.DeserializeObject<T>(json);
             if (value == null)
             {
                 throw new InvalidDataException(
                     $"The {label} file is invalid.");
             }
             return value;
+        }
+
+        internal static string ReadBoundedUtf8(
+            Stream stream,
+            long maximumBytes,
+            string label)
+        {
+            if (stream == null ||
+                maximumBytes < 2 ||
+                maximumBytes > int.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"The {label} file size is invalid.");
+            }
+            var buffer = new byte[8192];
+            using (var content = new MemoryStream())
+            {
+                long totalBytes = 0;
+                while (true)
+                {
+                    int remainingWithOverflowByte = checked(
+                        (int)Math.Min(
+                            buffer.Length,
+                            maximumBytes - totalBytes + 1));
+                    int read = stream.Read(
+                        buffer,
+                        0,
+                        remainingWithOverflowByte);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+                    totalBytes += read;
+                    if (totalBytes > maximumBytes)
+                    {
+                        throw new InvalidDataException(
+                            $"The {label} file size is invalid.");
+                    }
+                    content.Write(buffer, 0, read);
+                }
+                if (totalBytes < 2)
+                {
+                    throw new InvalidDataException(
+                        $"The {label} file size is invalid.");
+                }
+                content.Position = 0;
+                using (var reader = new StreamReader(
+                    content,
+                    new UTF8Encoding(false),
+                    true,
+                    1024,
+                    true))
+                {
+                    return reader.ReadToEnd();
+                }
+            }
         }
 
         internal static void WriteJsonAtomically(string path, object value)

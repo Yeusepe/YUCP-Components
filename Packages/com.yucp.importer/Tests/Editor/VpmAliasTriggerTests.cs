@@ -306,6 +306,26 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void RegisteredAliasRejectsABlankAliasIdentifier()
+        {
+            const string packageJson = "{\"name\":\"com.yucp.blank.alias\"," +
+                "\"version\":\"1.0.0\",\"displayName\":\"Blank Alias\"," +
+                "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\" \"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"}}";
+
+            bool built = AliasPackageActivation.TryBuildActivation(
+                "com.yucp.blank.alias",
+                packageJson,
+                out AliasPackageActivationRequest activation,
+                out string error);
+
+            Assert.That(built, Is.False);
+            Assert.That(activation, Is.Null);
+            Assert.That(error, Does.Contain("server-authorized"));
+        }
+
+        [Test]
         public void BootstrapWindowAcceptsAliasWithoutUnityPackageItems()
         {
             const string packageJson = "{\"name\":\"com.yucp.jammr.alias\"," +
@@ -730,6 +750,51 @@ namespace YUCP.Importer.Editor.Tests
                 if (Directory.Exists(basePath))
                 {
                     Directory.Delete(basePath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void LockedAliasActivationStateIsTreatedAsNotHandled()
+        {
+            string project = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-state-lock-" + Guid.NewGuid().ToString("N"));
+            var alias = new AliasPackageContract
+            {
+                aliasId = "locked-alias",
+                packageName = "com.yucp.locked.alias",
+                packageVersion = "1.0.0",
+            };
+            try
+            {
+                Directory.CreateDirectory(project);
+                AliasPackageActivationStateStore.MarkHandled(
+                    project,
+                    alias,
+                    "install");
+                string statePath = Directory.GetFiles(
+                    Path.Combine(project, ".yucp", "alias-activation"),
+                    "*.json",
+                    SearchOption.TopDirectoryOnly).Single();
+                using (new FileStream(
+                    statePath,
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.None))
+                {
+                    Assert.That(
+                        AliasPackageActivationStateStore.IsHandled(
+                            project,
+                            alias),
+                        Is.False);
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(project))
+                {
+                    Directory.Delete(project, true);
                 }
             }
         }
@@ -1292,6 +1357,67 @@ namespace YUCP.Importer.Editor.Tests
                     BindingFlags.NonPublic),
                 Is.Not.Null,
                 "Hosted controls must use the ownership-aware lifecycle coordinator.");
+        }
+
+        [Test]
+        public void PendingLifecycleResumeRequiresTheRequestedOperation()
+        {
+            MethodInfo method = typeof(PackageLifecycleCoordinator).GetMethod(
+                "PendingOperationMatches",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(method, Is.Not.Null);
+            Assert.That(
+                method.Invoke(null, new object[] { "repair", "repair" }),
+                Is.True);
+            Assert.That(
+                method.Invoke(null, new object[] { "install", "uninstall" }),
+                Is.False);
+        }
+
+        [Test]
+        public void CommittedCheckpointResultPreservesTheBrokerTrace()
+        {
+            var checkpoint = new PackageLifecycleCheckpoint
+            {
+                activeContentDigest = new string('1', 64),
+                activePolicyVersion = "active-content-policy-v1",
+                aliasId = "jammr",
+                expectedCurrentReleaseRoot =
+                    PackageLifecycleCoordinator.EmptyReleaseRoot,
+                operation = "install",
+                phase = "verified",
+                runId = "trace-checkpoint",
+                targetState = new PackageDeliveryInstallState
+                {
+                    aliasId = "jammr",
+                    files = new List<NativePackageBrokerFile>(),
+                    releaseRoot = new string('2', 64),
+                    versionId = "version-2",
+                },
+            };
+            FieldInfo traceField = typeof(PackageLifecycleCheckpoint).GetField(
+                "brokerTraceId",
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+            MethodInfo buildResult = typeof(PackageLifecycleCoordinator)
+                .GetMethod(
+                    "BuildCheckpointResult",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(traceField, Is.Not.Null);
+            Assert.That(buildResult, Is.Not.Null);
+            traceField.SetValue(
+                checkpoint,
+                "0123456789abcdef0123456789abcdef");
+            var result = (PackageLifecycleExecutionResult)buildResult.Invoke(
+                null,
+                new object[] { checkpoint });
+
+            Assert.That(
+                result.traceId,
+                Is.EqualTo("0123456789abcdef0123456789abcdef"));
         }
 
         [Test]

@@ -153,6 +153,36 @@ namespace YUCP.Importer.Tests.Editor
         }
 
         [Test]
+        public void ImportVerificationDefersAssemblyReloadUntilCompilationEnds()
+        {
+            string packageRoot = PackageInfo.FindForAssembly(
+                typeof(PackageContractV2).Assembly).resolvedPath;
+            string source = File.ReadAllText(
+                Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Core",
+                    "PackageImportVerifier.cs"));
+
+            Assert.That(
+                source,
+                Does.Contain("EditorApplication.LockReloadAssemblies()"));
+            Assert.That(
+                source,
+                Does.Contain("EditorApplication.UnlockReloadAssemblies()"));
+            Assert.That(
+                source,
+                Does.Contain("new CancellationTokenSource()"));
+            Assert.That(
+                source,
+                Does.Match(
+                    @"Task\.Delay\(\s*" +
+                    @"compilationTimeoutMilliseconds,\s*" +
+                    @"timeoutCancellation\.Token\)"));
+        }
+
+        [Test]
         public void PackageManifestUsesFriendlyProductLanguage()
         {
             string packageRoot = PackageInfo.FindForAssembly(

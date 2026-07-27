@@ -38,7 +38,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         AliasPackageActivationState>(
                         File.ReadAllText(path));
             }
-            catch (JsonException)
+            catch (Exception exception) when (
+                exception is JsonException ||
+                exception is IOException ||
+                exception is UnauthorizedAccessException)
             {
                 return false;
             }

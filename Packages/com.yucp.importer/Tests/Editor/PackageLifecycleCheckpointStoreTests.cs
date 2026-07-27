@@ -23,6 +23,8 @@ namespace YUCP.Importer.Editor.Tests
                     activeContentDigest = new string('1', 64),
                     activePolicyVersion = "active-content-policy-v1",
                     aliasId = "jammr",
+                    brokerTraceId =
+                        "0123456789abcdef0123456789abcdef",
                     expectedCurrentReleaseRoot = new string('0', 64),
                     operation = "install",
                     phase = "committed",
@@ -61,6 +63,10 @@ namespace YUCP.Importer.Editor.Tests
                 Assert.That(
                     restored.targetState.schemaVersion,
                     Is.EqualTo(5));
+                Assert.That(
+                    restored.brokerTraceId,
+                    Is.EqualTo(
+                        "0123456789abcdef0123456789abcdef"));
             }
             finally
             {
@@ -340,6 +346,46 @@ namespace YUCP.Importer.Editor.Tests
                 StringAssert.Contains(
                     identity,
                     File.ReadAllText(identityPath));
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
+        }
+
+        [Test]
+        public void ConcurrentProjectIdentityCreationConverges()
+        {
+            string project = CreateProject();
+            try
+            {
+                const int callerCount = 32;
+                using (var start = new ManualResetEventSlim(false))
+                {
+                    Task<string>[] calls = Enumerable.Range(0, callerCount)
+                        .Select(_ => Task.Run(() =>
+                        {
+                            start.Wait();
+                            return ProjectIdentityService
+                                .GetOrCreateProjectIdentity(project);
+                        }))
+                        .ToArray();
+                    start.Set();
+                    Task.WaitAll(calls);
+
+                    string[] identities = calls
+                        .Select(call => call.Result)
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray();
+                    Assert.That(identities, Has.Length.EqualTo(1));
+                    Assert.That(
+                        File.ReadAllText(
+                            Path.Combine(
+                                project,
+                                "ProjectSettings",
+                                "YUCPProjectIdentity.json")),
+                        Does.Contain(identities[0]));
+                }
             }
             finally
             {

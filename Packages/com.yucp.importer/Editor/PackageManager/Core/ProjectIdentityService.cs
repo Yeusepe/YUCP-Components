@@ -1,14 +1,17 @@
 using System;
-using System.Linq;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using Newtonsoft.Json;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
     internal static class ProjectIdentityService
     {
+        private const int LockRetryMilliseconds = 25;
+        private const int LockTimeoutMilliseconds = 5000;
         private const int SchemaVersion = 2;
 
         private static string IdentityFilePath(string projectPath) =>
@@ -24,36 +27,33 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string identityPath = IdentityFilePath(canonicalProjectPath);
             try
             {
-                if (File.Exists(identityPath))
+                using (AcquireIdentityLock(canonicalProjectPath))
                 {
-                    ProjectIdentityFile existing = null;
-                    try
-                    {
-                        existing =
-                            JsonConvert.DeserializeObject<ProjectIdentityFile>(
-                                File.ReadAllText(identityPath));
-                    }
-                    catch (JsonException)
-                    {
-                    }
-                    if (existing != null &&
-                        existing.schemaVersion == SchemaVersion &&
-                        IsSha256(existing.projectIdentity))
+                    ProjectIdentityFile existing =
+                        ReadIdentityFile(identityPath);
+                    if (IsValid(existing))
                     {
                         return existing.projectIdentity;
                     }
-                }
 
-                string projectIdentity = CreateProjectIdentity();
-                WriteAtomically(
-                    identityPath,
-                    JsonConvert.SerializeObject(
-                        new ProjectIdentityFile
-                        {
-                            projectIdentity = projectIdentity,
-                        },
-                        Formatting.Indented));
-                return projectIdentity;
+                    string projectIdentity = CreateProjectIdentity();
+                    WriteAtomically(
+                        identityPath,
+                        JsonConvert.SerializeObject(
+                            new ProjectIdentityFile
+                            {
+                                projectIdentity = projectIdentity,
+                            },
+                            Formatting.Indented));
+                    ProjectIdentityFile persisted =
+                        ReadIdentityFile(identityPath);
+                    if (!IsValid(persisted))
+                    {
+                        throw new InvalidDataException(
+                            "The persisted project identity is invalid.");
+                    }
+                    return persisted.projectIdentity;
+                }
             }
             catch (Exception exception)
             {
@@ -61,6 +61,58 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "Unity could not initialize this project's package identity.",
                     exception);
             }
+        }
+
+        private static FileStream AcquireIdentityLock(string projectPath)
+        {
+            string lockPath = Path.Combine(
+                projectPath,
+                "Library",
+                "YUCP",
+                "PackageLifecycle",
+                "project-identity.lock");
+            Directory.CreateDirectory(Path.GetDirectoryName(lockPath));
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(
+                LockTimeoutMilliseconds);
+            while (true)
+            {
+                try
+                {
+                    return new FileStream(
+                        lockPath,
+                        FileMode.OpenOrCreate,
+                        FileAccess.ReadWrite,
+                        FileShare.None);
+                }
+                catch (IOException) when (DateTime.UtcNow < deadline)
+                {
+                    Thread.Sleep(LockRetryMilliseconds);
+                }
+            }
+        }
+
+        private static ProjectIdentityFile ReadIdentityFile(string path)
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+            try
+            {
+                return JsonConvert.DeserializeObject<ProjectIdentityFile>(
+                    File.ReadAllText(path));
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        private static bool IsValid(ProjectIdentityFile identity)
+        {
+            return identity != null &&
+                identity.schemaVersion == SchemaVersion &&
+                IsSha256(identity.projectIdentity);
         }
 
         internal static string CreateProjectIdentity()

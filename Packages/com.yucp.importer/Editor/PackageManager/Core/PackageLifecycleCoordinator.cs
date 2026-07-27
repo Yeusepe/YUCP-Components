@@ -218,13 +218,29 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     throw new InvalidOperationException(
                         "The package management action is unsupported.");
                 }
-                PackageLifecycleInstallResult pending =
-                    await TryResumePendingAsync(alias, reportProgress);
-                if (pending != null)
-                {
-                    return pending;
-                }
                 projectPath = CurrentProjectPath();
+                string pendingOperation = GetPendingOperation(
+                    projectPath,
+                    alias.aliasId);
+                if (pendingOperation != null &&
+                    !PendingOperationMatches(
+                        pendingOperation,
+                        operation))
+                {
+                    throw new InvalidOperationException(
+                        "Another package action must finish before this action can start.");
+                }
+                if (pendingOperation != null)
+                {
+                    PackageLifecycleInstallResult pending =
+                        await TryResumePendingAsync(
+                            alias,
+                            reportProgress);
+                    if (pending != null)
+                    {
+                        return pending;
+                    }
+                }
                 attemptKey = alias.aliasId + "." + operation;
                 PackageDeliveryInstallState current = ReadInstallState(
                     projectPath,
@@ -297,6 +313,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     traceId = traceId,
                 };
             }
+        }
+
+        private static bool PendingOperationMatches(
+            string pendingOperation,
+            string requestedOperation)
+        {
+            return string.Equals(
+                pendingOperation,
+                requestedOperation,
+                StringComparison.Ordinal);
         }
 
         internal static void ClearAttemptIdWhenTerminal(
@@ -722,6 +748,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 var uninstallCheckpoint = new PackageLifecycleCheckpoint
                 {
                     aliasId = alias.aliasId,
+                    brokerTraceId = broker.traceId,
                     expectedCurrentReleaseRoot =
                         expectedCurrentReleaseRoot,
                     operation = operation,
@@ -792,6 +819,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 activeContentDigest = broker.activeContentDigest,
                 activePolicyVersion = broker.activePolicyVersion,
                 aliasId = alias.aliasId,
+                brokerTraceId = broker.traceId,
                 expectedCurrentReleaseRoot = expectedCurrentReleaseRoot,
                 operation = operation,
                 phase = "awaiting-transaction",
@@ -1485,7 +1513,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 receiptReferences = receipts,
                 targetReleaseRoot =
                     state?.releaseRoot ?? EmptyReleaseRoot,
-                traceId = checkpoint.runId,
+                traceId = checkpoint.brokerTraceId,
                 versionId =
                     state?.versionId ??
                     checkpoint.priorState?.versionId ??

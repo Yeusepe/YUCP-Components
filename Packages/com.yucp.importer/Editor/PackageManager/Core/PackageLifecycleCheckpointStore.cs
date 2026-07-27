@@ -14,6 +14,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         public string activeContentDigest = string.Empty;
         public string activePolicyVersion = string.Empty;
         public string aliasId = string.Empty;
+        public string brokerTraceId = string.Empty;
         public string errorMessage = string.Empty;
         public string expectedCurrentReleaseRoot = string.Empty;
         public string operation = string.Empty;

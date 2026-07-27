@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using UnityEngine;
@@ -12,6 +13,49 @@ namespace YUCP.Importer.Editor.Tests
 {
     public sealed class PackageLifecycleEntryTests
     {
+        [Test]
+        public void BoundedBatchReadRejectsBytesBeyondTheLimit()
+        {
+            MethodInfo method = typeof(BatchFileProtocol).GetMethod(
+                "ReadBoundedUtf8",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(method, Is.Not.Null);
+            using (var stream = new MemoryStream(
+                Encoding.UTF8.GetBytes("{\"value\":1}")))
+            {
+                var failure = Assert.Throws<TargetInvocationException>(() =>
+                    method.Invoke(
+                        null,
+                        new object[]
+                        {
+                            stream,
+                            4L,
+                            "request",
+                        }));
+
+                Assert.That(
+                    failure.InnerException,
+                    Is.TypeOf<InvalidDataException>());
+            }
+        }
+
+        [Test]
+        public void ProjectPathComparisonMatchesFilesystemCaseRules()
+        {
+            MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
+                "ProjectPathComparison",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(method, Is.Not.Null);
+            Assert.That(
+                method.Invoke(null, new object[] { '\\' }),
+                Is.EqualTo(StringComparison.OrdinalIgnoreCase));
+            Assert.That(
+                method.Invoke(null, new object[] { '/' }),
+                Is.EqualTo(StringComparison.Ordinal));
+        }
+
         [Test]
         public void ValidateRequestAcceptsTheOpenedProjectAndExactApproval()
         {
