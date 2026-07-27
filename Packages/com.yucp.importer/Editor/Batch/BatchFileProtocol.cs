@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using Newtonsoft.Json;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.Batch
 {
@@ -151,21 +152,7 @@ namespace YUCP.Importer.Editor.Batch
 
         internal static bool IsSafeIdentifier(string value)
         {
-            if (string.IsNullOrWhiteSpace(value) || value.Length > 128)
-            {
-                return false;
-            }
-            foreach (char character in value)
-            {
-                if (!char.IsLetterOrDigit(character) &&
-                    character != '.' &&
-                    character != '_' &&
-                    character != '-')
-                {
-                    return false;
-                }
-            }
-            return true;
+            return PackageProtocolIdentifier.IsSafe(value);
         }
     }
 

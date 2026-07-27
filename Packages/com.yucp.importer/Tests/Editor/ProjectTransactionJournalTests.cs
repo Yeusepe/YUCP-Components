@@ -11,6 +11,84 @@ namespace YUCP.Importer.Editor.Tests
     public sealed class ProjectTransactionJournalTests
     {
         [Test]
+        public void SafeStagingValidationRejectsTheLiveProjectRoot()
+        {
+            string root = CreateScratch();
+            try
+            {
+                string project = Path.Combine(root, "project");
+                Directory.CreateDirectory(project);
+                MethodInfo method = typeof(ProjectTransactionJournal)
+                    .GetMethod(
+                        "RequireSafeStagingRoot",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+
+                Assert.That(method, Is.Not.Null);
+                var failure = Assert.Throws<TargetInvocationException>(() =>
+                    method.Invoke(
+                        null,
+                        new object[] { project, project }));
+                Assert.That(
+                    failure.InnerException,
+                    Is.TypeOf<InvalidOperationException>());
+                Assert.That(
+                    Directory.Exists(
+                        Path.Combine(
+                            project,
+                            ".yucp",
+                            "package-installs")),
+                    Is.False);
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void FailedLockOwnerWriteDisposesTheAcquiredHandle()
+        {
+            string root = CreateScratch();
+            string path = Path.Combine(root, "lock");
+            File.WriteAllText(path, "prior");
+            FileStream stream = null;
+            try
+            {
+                MethodInfo method = typeof(ProjectTransactionJournal)
+                    .GetMethod(
+                        "WriteLockOwner",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(method, Is.Not.Null);
+                stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.None);
+
+                Assert.Throws<TargetInvocationException>(() =>
+                    method.Invoke(
+                        null,
+                        new object[] { stream, "run-lock-failure" }));
+                Assert.That(stream.SafeFileHandle.IsClosed, Is.True);
+                Assert.DoesNotThrow(() =>
+                {
+                    using (new FileStream(
+                        path,
+                        FileMode.Open,
+                        FileAccess.ReadWrite,
+                        FileShare.None))
+                    {
+                    }
+                });
+            }
+            finally
+            {
+                stream?.Dispose();
+                Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
         public void ApplyCommitsOnlyPreverifiedStagingFiles()
         {
             string root = CreateScratch();

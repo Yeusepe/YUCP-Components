@@ -1,6 +1,8 @@
 using System;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
@@ -22,6 +24,171 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         public PackageDeliveryInstallState priorState;
         public string runId = string.Empty;
         public PackageDeliveryInstallState targetState;
+    }
+
+    internal static class AtomicFilePublisher
+    {
+        private const uint MoveFileReplaceExisting = 0x00000001;
+        private const uint MoveFileWriteThrough = 0x00000008;
+        private static readonly object PublicationLock = new object();
+
+        internal static void Publish(
+            string temporaryPath,
+            string destinationPath)
+        {
+            string temporary = Path.GetFullPath(temporaryPath);
+            string destination = Path.GetFullPath(destinationPath);
+            string temporaryDirectory = Path.GetDirectoryName(temporary);
+            string destinationDirectory = Path.GetDirectoryName(destination);
+            StringComparison comparison =
+                RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal;
+            if (!string.Equals(
+                    temporaryDirectory,
+                    destinationDirectory,
+                    comparison))
+            {
+                throw new InvalidDataException(
+                    "Atomic file publication requires one directory.");
+            }
+
+            lock (PublicationLock)
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    PublishWindows(temporary, destination);
+                    return;
+                }
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    PublishLinux(
+                        temporary,
+                        destination,
+                        destinationDirectory);
+                    return;
+                }
+                throw new PlatformNotSupportedException(
+                    "Atomic file publication is not supported on this platform.");
+            }
+        }
+
+        private static void PublishWindows(
+            string temporaryPath,
+            string destinationPath)
+        {
+            // https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-movefileexw
+            bool moved = MoveFileExWindows(
+                ToExtendedWindowsPath(temporaryPath),
+                ToExtendedWindowsPath(destinationPath),
+                MoveFileReplaceExisting | MoveFileWriteThrough);
+            if (!moved)
+            {
+                ThrowNativePublicationError(
+                    Marshal.GetLastWin32Error());
+            }
+        }
+
+        private static void PublishLinux(
+            string temporaryPath,
+            string destinationPath,
+            string destinationDirectory)
+        {
+            // https://pubs.opengroup.org/onlinepubs/9799919799/functions/rename.html
+            if (RenameLinux(temporaryPath, destinationPath) != 0)
+            {
+                ThrowNativePublicationError(
+                    Marshal.GetLastWin32Error());
+            }
+
+            int directoryDescriptor = OpenLinux(
+                destinationDirectory,
+                0);
+            if (directoryDescriptor < 0)
+            {
+                ThrowNativePublicationError(
+                    Marshal.GetLastWin32Error());
+            }
+            int syncResult = FsyncLinux(directoryDescriptor);
+            int syncError = syncResult == 0
+                ? 0
+                : Marshal.GetLastWin32Error();
+            int closeResult = CloseLinux(directoryDescriptor);
+            int closeError = closeResult == 0
+                ? 0
+                : Marshal.GetLastWin32Error();
+            if (syncResult != 0)
+            {
+                ThrowNativePublicationError(syncError);
+            }
+            if (closeResult != 0)
+            {
+                ThrowNativePublicationError(closeError);
+            }
+        }
+
+        private static string ToExtendedWindowsPath(string path)
+        {
+            if (path.StartsWith(
+                    @"\\?\",
+                    StringComparison.Ordinal))
+            {
+                return path;
+            }
+            if (path.StartsWith(
+                    @"\\",
+                    StringComparison.Ordinal))
+            {
+                return @"\\?\UNC\" + path.Substring(2);
+            }
+            return @"\\?\" + path;
+        }
+
+        private static void ThrowNativePublicationError(int error)
+        {
+            throw new IOException(
+                "The durable atomic file publication failed.",
+                new Win32Exception(error));
+        }
+
+        [DllImport(
+            "kernel32.dll",
+            CharSet = CharSet.Unicode,
+            EntryPoint = "MoveFileExW",
+            SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool MoveFileExWindows(
+            string existingFileName,
+            string newFileName,
+            uint flags);
+
+        [DllImport(
+            "libc",
+            CharSet = CharSet.Ansi,
+            EntryPoint = "rename",
+            SetLastError = true)]
+        private static extern int RenameLinux(
+            string oldPath,
+            string newPath);
+
+        [DllImport(
+            "libc",
+            CharSet = CharSet.Ansi,
+            EntryPoint = "open",
+            SetLastError = true)]
+        private static extern int OpenLinux(string path, int flags);
+
+        [DllImport(
+            "libc",
+            EntryPoint = "fsync",
+            SetLastError = true)]
+        private static extern int FsyncLinux(int descriptor);
+
+        [DllImport(
+            "libc",
+            EntryPoint = "close",
+            SetLastError = true)]
+        private static extern int CloseLinux(int descriptor);
     }
 
     internal static class PackageLifecycleCheckpointStore
@@ -62,14 +229,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         writer.Flush();
                         stream.Flush(true);
                     }
-                    if (File.Exists(path))
-                    {
-                        File.Replace(temporaryPath, path, null);
-                    }
-                    else
-                    {
-                        File.Move(temporaryPath, path);
-                    }
+                    AtomicFilePublisher.Publish(
+                        temporaryPath,
+                        path);
                     return ReadAttemptId(path) ??
                         throw new InvalidDataException(
                             "The package lifecycle attempt identifier is invalid.");
@@ -119,7 +281,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string path = ResolvePath(
                 projectPath,
                 checkpoint.runId);
-            string temporaryPath = path + ".partial";
+            string temporaryPath = path + "." +
+                Guid.NewGuid().ToString("N") + ".partial";
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             byte[] encoded = new UTF8Encoding(false).GetBytes(
                 JsonConvert.SerializeObject(checkpoint, Formatting.Indented));
@@ -128,22 +291,27 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidDataException(
                     "The package lifecycle checkpoint is too large.");
             }
-            using (var stream = new FileStream(
-                temporaryPath,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.None))
+            try
             {
-                stream.Write(encoded, 0, encoded.Length);
-                stream.Flush(true);
+                using (var stream = new FileStream(
+                    temporaryPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None))
+                {
+                    stream.Write(encoded, 0, encoded.Length);
+                    stream.Flush(true);
+                }
+                AtomicFilePublisher.Publish(
+                    temporaryPath,
+                    path);
             }
-            if (File.Exists(path))
+            finally
             {
-                File.Replace(temporaryPath, path, null);
-            }
-            else
-            {
-                File.Move(temporaryPath, path);
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
             }
         }
 
@@ -152,24 +320,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string runId)
         {
             string path = ResolvePath(projectPath, runId);
-            var info = new FileInfo(path);
-            if (!info.Exists)
-            {
-                throw new FileNotFoundException(
-                    "The package lifecycle checkpoint does not exist.",
-                    path);
-            }
-            if (info.Length <= 0 || info.Length > MaximumCheckpointBytes)
-            {
-                throw new InvalidDataException(
-                    "The package lifecycle checkpoint size is invalid.");
-            }
             PackageLifecycleCheckpoint checkpoint;
             try
             {
                 checkpoint =
                     JsonConvert.DeserializeObject<PackageLifecycleCheckpoint>(
-                        File.ReadAllText(path, Encoding.UTF8));
+                        ReadTextSnapshot(
+                            path,
+                            MaximumCheckpointBytes,
+                            "The package lifecycle checkpoint size is invalid."));
             }
             catch (JsonException exception)
             {
@@ -204,11 +363,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 File.Delete(path);
             }
-            string temporaryPath = path + ".partial";
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
         }
 
         internal static void ValidateBinding(
@@ -240,8 +394,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             if (checkpoint == null ||
                 checkpoint.schemaVersion != 1 ||
-                !IsSafeIdentifier(checkpoint.runId) ||
-                !IsSafeIdentifier(checkpoint.aliasId) ||
+                !PackageProtocolIdentifier.IsSafe(checkpoint.runId) ||
+                !PackageProtocolIdentifier.IsSafe(checkpoint.aliasId) ||
                 !IsSha256(checkpoint.expectedCurrentReleaseRoot) ||
                 !new[]
                 {
@@ -272,7 +426,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             if (string.IsNullOrWhiteSpace(projectPath) ||
                 !Path.IsPathRooted(projectPath) ||
-                !IsSafeIdentifier(runId))
+                !PackageProtocolIdentifier.IsSafe(runId))
             {
                 throw new InvalidDataException(
                     "The package lifecycle checkpoint path is invalid.");
@@ -305,7 +459,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             if (string.IsNullOrWhiteSpace(projectPath) ||
                 !Path.IsPathRooted(projectPath) ||
-                !IsSafeIdentifier(aliasId))
+                !PackageProtocolIdentifier.IsSafe(aliasId))
             {
                 throw new InvalidDataException(
                     "The package lifecycle attempt path is invalid.");
@@ -337,17 +491,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return null;
             }
-            var info = new FileInfo(path);
-            if (info.Length <= 0 || info.Length > 128)
+            string attemptId;
+            try
+            {
+                attemptId = ReadTextSnapshot(
+                    path,
+                    128,
+                    "The package lifecycle attempt identifier is invalid.")
+                    .Trim();
+            }
+            catch (InvalidDataException)
             {
                 if (!strict)
                 {
                     return null;
                 }
-                throw new InvalidDataException(
-                    "The package lifecycle attempt identifier is invalid.");
+                throw;
             }
-            string attemptId = File.ReadAllText(path, Encoding.UTF8).Trim();
             if (IsAttemptId(attemptId))
             {
                 return attemptId;
@@ -360,6 +520,41 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 "The package lifecycle attempt identifier is invalid.");
         }
 
+        private static string ReadTextSnapshot(
+            string path,
+            int maximumBytes,
+            string invalidSizeMessage)
+        {
+            using (var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete))
+            {
+                if (stream.Length <= 0 || stream.Length > maximumBytes)
+                {
+                    throw new InvalidDataException(invalidSizeMessage);
+                }
+                int length = checked((int)stream.Length);
+                var encoded = new byte[length];
+                int offset = 0;
+                while (offset < encoded.Length)
+                {
+                    int read = stream.Read(
+                        encoded,
+                        offset,
+                        encoded.Length - offset);
+                    if (read == 0)
+                    {
+                        throw new EndOfStreamException(
+                            "The atomic file snapshot ended early.");
+                    }
+                    offset += read;
+                }
+                return new UTF8Encoding(false, true).GetString(encoded);
+            }
+        }
+
         private static bool IsAttemptId(string value)
         {
             return value != null &&
@@ -367,17 +562,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 value.All(character =>
                     character >= '0' && character <= '9' ||
                     character >= 'a' && character <= 'f');
-        }
-
-        private static bool IsSafeIdentifier(string value)
-        {
-            return !string.IsNullOrWhiteSpace(value) &&
-                value.Length <= 128 &&
-                value.All(character =>
-                    char.IsLetterOrDigit(character) ||
-                    character == '.' ||
-                    character == '_' ||
-                    character == '-');
         }
 
         private static bool IsSha256(string value)

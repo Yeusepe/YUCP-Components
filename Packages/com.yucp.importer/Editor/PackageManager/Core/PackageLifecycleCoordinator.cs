@@ -787,6 +787,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidDataException(
                     "The verified package delivery result is incomplete.");
             }
+            string stagingRoot =
+                ProjectTransactionJournal.RequireSafeStagingRoot(
+                    projectPath,
+                    broker.stagingTree);
 
             List<VerifiedStagingFile> targetFiles = ToVerifiedFiles(
                 broker.files);
@@ -795,7 +799,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 broker.files,
                 Path.DirectorySeparatorChar == '\\');
             targetFiles.Add(WriteInstallState(
-                broker.stagingTree,
+                stagingRoot,
                 alias.aliasId,
                 broker.targetReleaseRoot,
                 broker.versionId,
@@ -826,7 +830,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 priorState = current,
                 runId = runId,
                 targetState = ReadInstallState(
-                    broker.stagingTree,
+                    stagingRoot,
                     alias.aliasId,
                     true),
             };
@@ -840,7 +844,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             ProjectTransactionResult transaction =
                 ProjectTransactionJournal.Prepare(
                     projectPath,
-                    broker.stagingTree,
+                    stagingRoot,
                     runId,
                     targetFiles,
                     previousFiles);

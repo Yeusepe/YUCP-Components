@@ -78,6 +78,16 @@ namespace YUCP.Importer.Tests.Editor
             Assert.That(fields, Is.EqualTo(ExpectedRequestFields));
         }
 
+        [Test]
+        public void BrokerIdentifiersRejectNonAsciiCharacters()
+        {
+            NativePackageBrokerRequest request = ValidRequest("preflight");
+            request.runId = "r\u00FAn";
+
+            Assert.Throws<InvalidDataException>(() =>
+                NativePackageBrokerClient.ValidateRequest(request));
+        }
+
         [UnityTest]
         public IEnumerator NamedPipeTransportRejectsAnUnboundedFrameBeforeNewline()
         {
@@ -180,6 +190,29 @@ namespace YUCP.Importer.Tests.Editor
                     @"Task\.Delay\(\s*" +
                     @"compilationTimeoutMilliseconds,\s*" +
                     @"timeoutCancellation\.Token\)"));
+        }
+
+        [Test]
+        public void LifecycleValidatesStagingBeforeWritingInstallState()
+        {
+            string packageRoot = PackageInfo.FindForAssembly(
+                typeof(PackageContractV2).Assembly).resolvedPath;
+            string source = File.ReadAllText(
+                Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Core",
+                    "PackageLifecycleCoordinator.cs"));
+            int validation = source.IndexOf(
+                "ProjectTransactionJournal.RequireSafeStagingRoot(",
+                StringComparison.Ordinal);
+            int stateWrite = source.IndexOf(
+                "WriteInstallState(",
+                StringComparison.Ordinal);
+
+            Assert.That(validation, Is.GreaterThanOrEqualTo(0));
+            Assert.That(stateWrite, Is.GreaterThan(validation));
         }
 
         [Test]
@@ -505,6 +538,31 @@ namespace YUCP.Importer.Tests.Editor
             Assert.That(
                 parameters[2].ParameterType,
                 Is.EqualTo(typeof(CancellationToken)));
+        }
+
+        [Test]
+        public void BrokerPipeTransportUsesTheCrossPlatformConstructor()
+        {
+            string packageRoot = PackageInfo.FindForAssembly(
+                typeof(PackageContractV2).Assembly).resolvedPath;
+            string source = File.ReadAllText(
+                Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Core",
+                    "NativePackageBrokerClient.cs"));
+
+            Assert.That(
+                source,
+                Does.Not.Contain("TokenImpersonationLevel"));
+            Assert.That(
+                source,
+                Does.Match(
+                    @"new NamedPipeClientStream\(\s*" +
+                    @"""\."",\s*_pipeName,\s*" +
+                    @"PipeDirection\.InOut,\s*" +
+                    @"PipeOptions\.Asynchronous\)"));
         }
 
         [UnityTest]

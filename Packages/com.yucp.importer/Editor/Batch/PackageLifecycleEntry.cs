@@ -110,8 +110,18 @@ namespace YUCP.Importer.Editor.Batch
 
         public static void Run()
         {
+            RequireBatchMode(Application.isBatchMode);
             SessionState.SetBool(ActiveSessionStateKey, true);
             Schedule();
+        }
+
+        internal static void RequireBatchMode(bool isBatchMode)
+        {
+            if (!isBatchMode)
+            {
+                throw new InvalidOperationException(
+                    "The package lifecycle entry point requires Unity batch mode.");
+            }
         }
 
         internal static bool ShouldResumeAfterDomainReload(

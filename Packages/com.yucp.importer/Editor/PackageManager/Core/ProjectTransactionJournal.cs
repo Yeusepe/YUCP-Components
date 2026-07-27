@@ -113,8 +113,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             IEnumerable<VerifiedStagingFile> files,
             IEnumerable<VerifiedStagingFile> previousFiles)
         {
-            string stagingRoot = RequireAbsoluteDirectory(stagingPath, "staging");
-            ValidateSeparateRoots(projectRoot, stagingRoot);
+            string stagingRoot = RequireSafeStagingRoot(
+                projectRoot,
+                stagingPath);
 
             List<VerifiedStagingFile> verifiedFiles = NormalizeFileRecords(files, false);
             var targetPaths = new HashSet<string>(
@@ -907,10 +908,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (document.entries.Any(entry =>
                     string.Equals(entry.operation, "write", StringComparison.Ordinal)))
             {
-                string stagingRoot = RequireAbsoluteDirectory(
-                    document.stagingPath,
-                    "staging");
-                ValidateSeparateRoots(projectRoot, stagingRoot);
+                string stagingRoot = RequireSafeStagingRoot(
+                    projectRoot,
+                    document.stagingPath);
                 document.stagingPath = stagingRoot;
             }
             var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1055,11 +1055,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "Another package lifecycle operation holds the project lock.",
                     exception);
             }
-            byte[] owner = Encoding.UTF8.GetBytes(runId + "\n");
-            stream.SetLength(0);
-            stream.Write(owner, 0, owner.Length);
-            stream.Flush(true);
+            WriteLockOwner(stream, runId);
             return stream;
+        }
+
+        private static void WriteLockOwner(
+            FileStream stream,
+            string runId)
+        {
+            try
+            {
+                byte[] owner = Encoding.UTF8.GetBytes(runId + "\n");
+                stream.SetLength(0);
+                stream.Write(owner, 0, owner.Length);
+                stream.Flush(true);
+            }
+            catch
+            {
+                stream.Dispose();
+                throw;
+            }
         }
 
         private static void RejectReparsePoint(string root, string candidate)
@@ -1110,6 +1125,50 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return resolved;
         }
 
+        internal static string RequireSafeStagingRoot(
+            string projectPath,
+            string stagingPath)
+        {
+            string projectRoot = RequireAbsoluteDirectory(
+                projectPath,
+                "project");
+            string stagingRoot = RequireAbsoluteDirectory(
+                stagingPath,
+                "staging");
+            ValidateSeparateRoots(projectRoot, stagingRoot);
+            RejectAbsolutePathReparsePoints(stagingRoot);
+            return stagingRoot;
+        }
+
+        private static void RejectAbsolutePathReparsePoints(string path)
+        {
+            string resolved = Path.GetFullPath(path);
+            string pathRoot = Path.GetPathRoot(resolved);
+            if (string.IsNullOrWhiteSpace(pathRoot))
+            {
+                throw new InvalidOperationException(
+                    "The verified staging tree root is invalid.");
+            }
+            string relative = resolved.Substring(pathRoot.Length);
+            string current = pathRoot;
+            foreach (string segment in relative.Split(
+                new[]
+                {
+                    Path.DirectorySeparatorChar,
+                    Path.AltDirectorySeparatorChar,
+                },
+                StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, segment);
+                if ((File.GetAttributes(IoPath(current)) &
+                    FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidOperationException(
+                        "The verified staging tree contains a reparse point.");
+                }
+            }
+        }
+
         private static void ValidateRunId(string runId)
         {
             if (string.IsNullOrWhiteSpace(runId) ||
@@ -1131,7 +1190,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string.Equals(
                     projectRoot,
                     stagingRoot,
-                    StringComparison.OrdinalIgnoreCase))
+                    FileSystemPathComparison()))
             {
                 throw new InvalidOperationException(
                     "The verified staging tree must be outside the Unity project.");
@@ -1144,7 +1203,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 Path.DirectorySeparatorChar,
                 Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             string resolved = Path.GetFullPath(candidate);
-            return resolved.StartsWith(boundary, StringComparison.OrdinalIgnoreCase);
+            return resolved.StartsWith(
+                boundary,
+                FileSystemPathComparison());
+        }
+
+        private static StringComparison FileSystemPathComparison()
+        {
+            return Path.DirectorySeparatorChar == '\\'
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
         }
 
         private static void CopyDurably(string source, string destination)

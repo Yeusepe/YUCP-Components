@@ -40,6 +40,53 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
+        [TestCase(".")]
+        [TestCase("..")]
+        [TestCase(".run")]
+        [TestCase("r\u00FAn")]
+        public void BatchIdentifiersRejectUnsafeSegments(string value)
+        {
+            Assert.That(
+                BatchFileProtocol.IsSafeIdentifier(value),
+                Is.False);
+            Assert.That(
+                BatchFileProtocol.IsSafeIdentifier("run.v1"),
+                Is.True);
+        }
+
+        [Test]
+        public void InteractiveEntryFailsBeforeScheduling()
+        {
+            MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
+                "RequireBatchMode",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(method, Is.Not.Null);
+            var failure = Assert.Throws<TargetInvocationException>(() =>
+                method.Invoke(null, new object[] { false }));
+            Assert.That(
+                failure.InnerException,
+                Is.TypeOf<InvalidOperationException>());
+
+            string source = File.ReadAllText(
+                Path.Combine(
+                    Path.GetFullPath(
+                        Path.Combine(Application.dataPath, "..")),
+                    "Packages",
+                    "com.yucp.importer",
+                    "Editor",
+                    "Batch",
+                    "PackageLifecycleEntry.cs"));
+            int guard = source.IndexOf(
+                "RequireBatchMode(Application.isBatchMode);",
+                StringComparison.Ordinal);
+            int activation = source.IndexOf(
+                "SessionState.SetBool(ActiveSessionStateKey, true);",
+                StringComparison.Ordinal);
+            Assert.That(guard, Is.GreaterThanOrEqualTo(0));
+            Assert.That(activation, Is.GreaterThan(guard));
+        }
+
         [Test]
         public void ProjectPathComparisonMatchesFilesystemCaseRules()
         {

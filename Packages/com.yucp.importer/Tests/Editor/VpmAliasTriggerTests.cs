@@ -274,6 +274,63 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void AliasTreatsNullMediaAsAbsent()
+        {
+            const string packageJson =
+                "{\"name\":\"com.example.alias\",\"version\":\"1.0.0\"," +
+                "\"displayName\":\"Alias\",\"yucp\":{\"kind\":\"alias-v1\"," +
+                "\"aliasId\":\"example\",\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\",\"media\":null}}";
+
+            bool built = AliasPackageDiscovery.TryBuildMetadata(
+                "com.example.alias",
+                packageJson,
+                out PackageMetadata metadata,
+                out string error);
+
+            Assert.That(built, Is.True, error);
+            Assert.That(metadata.aliasPackage.media.icon.kind, Is.Empty);
+            Assert.That(metadata.aliasPackage.media.banner.kind, Is.Empty);
+        }
+
+        [Test]
+        public void LegacyInstallStateMigratesOwnedPathsAndHashes()
+        {
+            const string legacyJson =
+                "{\"formatVersion\":\"1\",\"aliasId\":\"jammr\"," +
+                "\"aliasVersion\":\"1.2.3\",\"packageId\":\"com.example.jammr\"," +
+                "\"managedPaths\":[\"Assets/JAMMR/owned.asset\"]," +
+                "\"generatedPaths\":[\"Assets/JAMMR/generated.asset\"]," +
+                "\"sharedPaths\":[\"Assets/JAMMR/shared.asset\"]," +
+                "\"fileHashes\":[{\"path\":\"Assets/JAMMR/owned.asset\"," +
+                "\"expectedSha256\":\"" +
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"," +
+                "\"observedSha256\":\"\"}]}";
+
+            AliasPackageInstallStateManifest migrated =
+                AliasPackageInstallStateStore.Deserialize(legacyJson);
+
+            Assert.That(migrated, Is.Not.Null);
+            Assert.That(migrated.formatVersion, Is.EqualTo("2"));
+            Assert.That(
+                migrated.managedPaths,
+                Is.EqualTo(new[] { "Assets/JAMMR/owned.asset" }));
+            Assert.That(
+                migrated.generatedPaths,
+                Is.EqualTo(new[] { "Assets/JAMMR/generated.asset" }));
+            Assert.That(
+                migrated.sharedPaths,
+                Is.EqualTo(new[] { "Assets/JAMMR/shared.asset" }));
+            Assert.That(migrated.fileHashes, Has.Count.EqualTo(1));
+            Assert.That(
+                migrated.fileHashes[0].path,
+                Is.EqualTo("Assets/JAMMR/owned.asset"));
+            Assert.That(
+                migrated.fileHashes[0].expectedSha256,
+                Has.Length.EqualTo(64));
+        }
+
+        [Test]
         public void AliasActivationUsesUnityPackageRegistrationBoundary()
         {
             object[] attributes = typeof(AliasPackageActivation)

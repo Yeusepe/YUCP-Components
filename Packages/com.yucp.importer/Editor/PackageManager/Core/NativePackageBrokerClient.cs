@@ -4,7 +4,6 @@ using System.IO;
 using System.IO.Pipes;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -200,12 +199,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 operationCancellation.CancelAfter(
                     _operationTimeoutMilliseconds);
+                // https://learn.microsoft.com/dotnet/api/system.io.pipes.namedpipeclientstream.-ctor
                 using (var pipe = new NamedPipeClientStream(
                     ".",
                     _pipeName,
                     PipeDirection.InOut,
-                    PipeOptions.Asynchronous,
-                    TokenImpersonationLevel.Impersonation))
+                    PipeOptions.Asynchronous))
                 {
                     await AwaitWithTimeout(
                         pipe.ConnectAsync(ConnectTimeoutMilliseconds),
@@ -590,9 +589,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         internal const int SchemaVersion = 3;
         internal const int ProgressSchemaVersion = 1;
-        private static readonly Regex SafeIdentifier = new Regex(
-            "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-            RegexOptions.CultureInvariant);
         private static readonly Regex Traceparent = new Regex(
             "^00-[0-9a-f]{32}-[0-9a-f]{16}-(00|01)$",
             RegexOptions.CultureInvariant);
@@ -708,10 +704,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             if (request == null ||
                 request.schemaVersion != SchemaVersion ||
-                !SafeIdentifier.IsMatch(request.aliasId ?? string.Empty) ||
-                !SafeIdentifier.IsMatch(
-                    request.idempotencyKey ?? string.Empty) ||
-                !SafeIdentifier.IsMatch(request.runId ?? string.Empty) ||
+                !PackageProtocolIdentifier.IsSafe(request.aliasId) ||
+                !PackageProtocolIdentifier.IsSafe(
+                    request.idempotencyKey) ||
+                !PackageProtocolIdentifier.IsSafe(request.runId) ||
                 !SupportedOperations.Contains(request.operation ?? string.Empty) ||
                 !Path.IsPathRooted(request.projectPath ?? string.Empty) ||
                 !IsSha256(request.projectIdentity) ||

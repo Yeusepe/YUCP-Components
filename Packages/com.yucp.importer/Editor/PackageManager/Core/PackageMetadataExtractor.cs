@@ -1508,7 +1508,7 @@ namespace YUCP.Importer.Editor.PackageManager
             JToken media)
         {
             var result = new AliasPackageMediaSet();
-            if (media == null)
+            if (media == null || media.Type == JTokenType.Null)
             {
                 return result;
             }

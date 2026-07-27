@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using UnityEditor.PackageManager;
 using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.Tests
@@ -75,6 +76,120 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void CheckpointReadersAllowAtomicReplacement()
+        {
+            string project = CreateProject();
+            try
+            {
+                var checkpoint = CreateCheckpoint(
+                    "run-concurrent-snapshot",
+                    "prepared");
+                PackageLifecycleCheckpointStore.Write(project, checkpoint);
+                string path = Path.Combine(
+                    project,
+                    ".yucp",
+                    "transactions",
+                    checkpoint.runId,
+                    "lifecycle.json");
+                string packageRoot = PackageInfo.FindForAssembly(
+                    typeof(PackageLifecycleCheckpointStore).Assembly)
+                    .resolvedPath;
+                string source = File.ReadAllText(
+                    Path.Combine(
+                        packageRoot,
+                        "Editor",
+                        "PackageManager",
+                        "Core",
+                        "PackageLifecycleCheckpointStore.cs"));
+
+                Assert.That(
+                    source,
+                    Does.Contain(
+                        "FileShare.ReadWrite | FileShare.Delete"));
+                checkpoint.phase = "committed";
+                PackageLifecycleCheckpointStore.Read(
+                    project,
+                    checkpoint.runId);
+                PackageLifecycleCheckpointStore.Write(
+                    project,
+                    checkpoint);
+
+                Assert.That(
+                    PackageLifecycleCheckpointStore.Read(
+                        project,
+                        checkpoint.runId).phase,
+                    Is.EqualTo("committed"));
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
+        }
+
+        [Test]
+        public void CheckpointPublicationDoesNotUseMetadataReplacement()
+        {
+            string packageRoot = PackageInfo.FindForAssembly(
+                typeof(PackageLifecycleCheckpointStore).Assembly).resolvedPath;
+            string source = File.ReadAllText(
+                Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Core",
+                    "PackageLifecycleCheckpointStore.cs"));
+
+            Assert.That(source, Does.Not.Contain("File.Replace("));
+            Assert.That(
+                source,
+                Does.Contain("AtomicFilePublisher.Publish("));
+        }
+
+        [Test]
+        public void ConcurrentCheckpointWritersPublishCompleteSnapshots()
+        {
+            string project = CreateProject();
+            try
+            {
+                const string runId = "run-concurrent-writers";
+                string[] markers = Enumerable.Range(0, 32)
+                    .Select(index =>
+                        index.ToString("D2") + "-" + new string(
+                            (char)('a' + index % 26),
+                            16 * 1024))
+                    .ToArray();
+                using (var gate = new ManualResetEventSlim(false))
+                {
+                    Task[] writers = markers
+                        .Select(marker => Task.Run(() =>
+                        {
+                            var checkpoint = CreateCheckpoint(
+                                runId,
+                                "committed");
+                            checkpoint.errorMessage = marker;
+                            gate.Wait();
+                            PackageLifecycleCheckpointStore.Write(
+                                project,
+                                checkpoint);
+                        }))
+                        .ToArray();
+
+                    gate.Set();
+                    Assert.DoesNotThrow(() => Task.WaitAll(writers));
+                }
+
+                PackageLifecycleCheckpoint restored =
+                    PackageLifecycleCheckpointStore.Read(project, runId);
+                Assert.That(markers, Does.Contain(restored.errorMessage));
+                Assert.That(restored.phase, Is.EqualTo("committed"));
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
+        }
+
+        [Test]
         public void CheckpointRejectsARequestBindingMismatch()
         {
             var checkpoint = new PackageLifecycleCheckpoint
@@ -91,6 +206,31 @@ namespace YUCP.Importer.Editor.Tests
                     "another-product",
                     "install",
                     new string('0', 64)));
+        }
+
+        [Test]
+        public void CheckpointRejectsDotPrefixedRunIdentifiers()
+        {
+            string project = CreateProject();
+            try
+            {
+                Assert.Throws<InvalidDataException>(() =>
+                    PackageLifecycleCheckpointStore.Write(
+                        project,
+                        CreateCheckpoint("..", "prepared")));
+                Assert.That(
+                    File.Exists(
+                        Path.Combine(
+                            project,
+                            ".yucp",
+                            "transactions",
+                            "lifecycle.json")),
+                    Is.False);
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
         }
 
         [Test]
@@ -401,6 +541,20 @@ namespace YUCP.Importer.Editor.Tests
                 Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(path);
             return path;
+        }
+
+        private static PackageLifecycleCheckpoint CreateCheckpoint(
+            string runId,
+            string phase)
+        {
+            return new PackageLifecycleCheckpoint
+            {
+                aliasId = "jammr",
+                expectedCurrentReleaseRoot = new string('0', 64),
+                operation = "install",
+                phase = phase,
+                runId = runId,
+            };
         }
     }
 }
