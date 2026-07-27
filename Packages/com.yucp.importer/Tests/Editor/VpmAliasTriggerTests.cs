@@ -40,6 +40,87 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void AliasMediaUsesTheSameBytesForDigestAndDecode()
+        {
+            string source = File.ReadAllText(
+                Path.Combine(
+                    Path.GetFullPath(
+                        Path.Combine(Application.dataPath, "..")),
+                    "Packages",
+                    "com.yucp.importer",
+                    "Editor",
+                    "PackageManager",
+                    "Core",
+                    "AliasPackageMediaLoader.cs"));
+
+            Assert.That(
+                source.Split(new[] { "File.ReadAllBytes(path)" },
+                    StringSplitOptions.None).Length - 1,
+                Is.EqualTo(1));
+            Assert.That(
+                source,
+                Does.Not.Contain("File.OpenRead(path)"));
+        }
+
+        [Test]
+        public void PackageMetadataDependenciesSurviveUnitySerialization()
+        {
+            var metadata = new PackageMetadata("JAMMR");
+            metadata.dependencies["com.vrchat.avatars"] = ">=3.7.0";
+            metadata.dependencies["com.yucp.importer"] = ">=0.1.54";
+
+            string json = JsonUtility.ToJson(metadata);
+            PackageMetadata restored =
+                JsonUtility.FromJson<PackageMetadata>(json);
+
+            Assert.That(
+                restored.dependencies,
+                Is.EqualTo(metadata.dependencies));
+        }
+
+        [Test]
+        public void InstallEntryPointFiltersPendingLifecycleOperations()
+        {
+            string source = File.ReadAllText(
+                Path.Combine(
+                    Path.GetFullPath(
+                        Path.Combine(Application.dataPath, "..")),
+                    "Packages",
+                    "com.yucp.importer",
+                    "Editor",
+                    "PackageManager",
+                    "Core",
+                    "PackageLifecycleCoordinator.cs"));
+            int start = source.IndexOf(
+                "TryInstallAsync(",
+                StringComparison.Ordinal);
+            int end = source.IndexOf(
+                "TryManageInstalledAsync(",
+                start,
+                StringComparison.Ordinal);
+            string installEntryPoint = source.Substring(
+                start,
+                end - start);
+
+            Assert.That(
+                installEntryPoint,
+                Does.Contain("GetPendingOperation("));
+            Assert.That(
+                installEntryPoint,
+                Does.Contain("PendingOperationMatches("));
+        }
+
+        [Test]
+        public void LifecycleProgressUsesOneWindowLifetimeGuard()
+        {
+            MethodInfo method = typeof(PackageManagerWindow).GetMethod(
+                "CreateLifecycleProgressReporter",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+        }
+
+        [Test]
         public void BootstrapVersionIsNotPresentedAsTheProductVersion()
         {
             const string packageJson =
@@ -1100,8 +1181,8 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
-        [Test]
-        public void VerifiedCheckpointResumeDoesNotReplayTheTransaction()
+        [UnityTest]
+        public IEnumerator VerifiedCheckpointResumeDoesNotReplayTheTransaction()
         {
             string projectPath = Path.Combine(
                 Path.GetTempPath(),
@@ -1135,8 +1216,14 @@ namespace YUCP.Importer.Editor.Tests
                         null,
                         new object[] { projectPath, checkpoint });
 
-                Assert.DoesNotThrow(
-                    () => completion.GetAwaiter().GetResult());
+                while (!completion.IsCompleted)
+                {
+                    yield return null;
+                }
+                if (completion.IsFaulted)
+                {
+                    throw completion.Exception.GetBaseException();
+                }
                 Assert.That(
                     completion.Result.targetReleaseRoot,
                     Is.EqualTo(new string('2', 64)));
@@ -1604,9 +1691,9 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
-        [TestCase("corrupt-file")]
-        [TestCase("missing-tree")]
-        public void PreJournalFailureRetriesFreshStagingAfterRestart(
+        [UnityTest]
+        public IEnumerator PreJournalFailureRetriesFreshStagingAfterRestart(
+            [Values("corrupt-file", "missing-tree")]
             string failureMode)
         {
             string root = Path.Combine(
@@ -1697,9 +1784,15 @@ namespace YUCP.Importer.Editor.Tests
                             null,
                         });
 
-                Assert.That(
-                    resumed.GetAwaiter().GetResult(),
-                    Is.Null);
+                while (!resumed.IsCompleted)
+                {
+                    yield return null;
+                }
+                if (resumed.IsFaulted)
+                {
+                    throw resumed.Exception.GetBaseException();
+                }
+                Assert.That(resumed.Result, Is.Null);
                 Assert.That(
                     PackageLifecycleCheckpointStore.TryRead(
                         project,

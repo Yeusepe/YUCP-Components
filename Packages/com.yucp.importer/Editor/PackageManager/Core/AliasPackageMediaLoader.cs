@@ -108,12 +108,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidDataException(
                     $"Alias package {expectedKind} media has an invalid size.");
             }
+            byte[] bytes = File.ReadAllBytes(path);
+            if (bytes.LongLength != descriptor.byteSize)
+            {
+                throw new InvalidDataException(
+                    $"Alias package {expectedKind} media has an invalid size.");
+            }
             string observedDigest;
-            using (FileStream stream = File.OpenRead(path))
             using (SHA256 sha256 = SHA256.Create())
             {
                 observedDigest = string.Concat(
-                    sha256.ComputeHash(stream)
+                    sha256.ComputeHash(bytes)
                         .Select(value => value.ToString("x2")));
             }
             if (!string.Equals(
@@ -124,8 +129,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidDataException(
                     $"Alias package {expectedKind} media failed verification.");
             }
-
-            byte[] bytes = File.ReadAllBytes(path);
             var texture = new Texture2D(
                 2,
                 2,

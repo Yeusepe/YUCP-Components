@@ -46,6 +46,22 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void MaterializedPathsRejectWindowsDriveQualification()
+        {
+            MethodInfo method = typeof(MaterializationReceiptV2Verifier)
+                .GetMethod(
+                    "RequireMaterializedPath",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(method, Is.Not.Null);
+            var failure = Assert.Throws<TargetInvocationException>(() =>
+                method.Invoke(null, new object[] { "C:/outside.asset" }));
+            Assert.That(
+                failure.InnerException,
+                Is.TypeOf<FormatException>());
+        }
+
+        [Test]
         public void EveryTypeScriptGoldenVectorVerifiesInUnity()
         {
             GoldenVectorDocument document = LoadVectors();

@@ -3140,16 +3140,12 @@ namespace YUCP.Importer.Editor.PackageManager
                         .TryManageInstalledAsync(
                             metadata.aliasPackage,
                             operation,
-                            progress =>
-                            {
-                                SetVerifyStatusLabel(
-                                    progress.message);
-                                EditorUtility.DisplayProgressBar(
-                                    "Managing Package",
-                                    progress.message,
-                                    progress.progress);
-                                Repaint();
-                            });
+                            CreateLifecycleProgressReporter(
+                                "Managing Package"));
+                if (this == null)
+                {
+                    return;
+                }
                 if (!result.succeeded)
                 {
                     ShowFlowNotice(
@@ -3176,19 +3172,25 @@ namespace YUCP.Importer.Editor.PackageManager
                 Debug.LogError(
                     "YUCP package management failed: " +
                     exception.GetType().Name);
-                ShowFlowNotice(
-                    "Package action could not finish",
-                    "Try the action again. Contact support if the problem continues.",
-                    FlowNoticeTone.Error);
-                SetVerifyStatusLabel(
-                    "The package action could not finish.");
+                if (this != null)
+                {
+                    ShowFlowNotice(
+                        "Package action could not finish",
+                        "Try the action again. Contact support if the problem continues.",
+                        FlowNoticeTone.Error);
+                    SetVerifyStatusLabel(
+                        "The package action could not finish.");
+                }
             }
             finally
             {
                 EditorUtility.ClearProgressBar();
-                _isHostedLifecycleRunning = false;
-                SetHostedLifecycleControlsEnabled(true);
-                UpdateImportButtonEnabled();
+                if (this != null)
+                {
+                    _isHostedLifecycleRunning = false;
+                    SetHostedLifecycleControlsEnabled(true);
+                    UpdateImportButtonEnabled();
+                }
             }
         }
 
@@ -3245,15 +3247,12 @@ namespace YUCP.Importer.Editor.PackageManager
                 PackageLifecycleInstallResult result =
                     await PackageLifecycleCoordinator.TryResumePendingAsync(
                         metadata.aliasPackage,
-                        progress =>
-                        {
-                            SetVerifyStatusLabel(progress.message);
-                            EditorUtility.DisplayProgressBar(
-                                "Finishing Package Installation",
-                                progress.message,
-                                progress.progress);
-                            Repaint();
-                        });
+                        CreateLifecycleProgressReporter(
+                            "Finishing Package Installation"));
+                if (this == null)
+                {
+                    return;
+                }
                 if (result == null)
                 {
                     return;
@@ -3276,19 +3275,44 @@ namespace YUCP.Importer.Editor.PackageManager
                 Debug.LogError(
                     "YUCP package recovery failed: " +
                     exception.GetType().Name);
-                ShowFlowNotice(
-                    "Package recovery could not finish",
-                    "Try again. Contact support if the problem continues.",
-                    FlowNoticeTone.Error);
+                if (this != null)
+                {
+                    ShowFlowNotice(
+                        "Package recovery could not finish",
+                        "Try again. Contact support if the problem continues.",
+                        FlowNoticeTone.Error);
+                }
             }
             finally
             {
                 EditorUtility.ClearProgressBar();
-                _isHostedLifecycleRunning = false;
-                _pendingImportAfterVerification = false;
-                SetHostedLifecycleControlsEnabled(true);
-                UpdateImportButtonEnabled();
+                if (this != null)
+                {
+                    _isHostedLifecycleRunning = false;
+                    _pendingImportAfterVerification = false;
+                    SetHostedLifecycleControlsEnabled(true);
+                    UpdateImportButtonEnabled();
+                }
             }
+        }
+
+        private Action<PackageLifecycleUserProgress>
+            CreateLifecycleProgressReporter(string title)
+        {
+            PackageManagerWindow window = this;
+            return progress =>
+            {
+                if (window == null)
+                {
+                    return;
+                }
+                window.SetVerifyStatusLabel(progress.message);
+                EditorUtility.DisplayProgressBar(
+                    title,
+                    progress.message,
+                    progress.progress);
+                window.Repaint();
+            };
         }
 
         private void SetHostedLifecycleControlsEnabled(bool enabled)
@@ -4198,15 +4222,12 @@ namespace YUCP.Importer.Editor.PackageManager
                 PackageLifecycleInstallResult installResult =
                     await PackageLifecycleCoordinator.TryInstallAsync(
                         metadata.aliasPackage,
-                        progress =>
-                        {
-                            SetVerifyStatusLabel(progress.message);
-                            EditorUtility.DisplayProgressBar(
-                                "Installing Package",
-                                progress.message,
-                                progress.progress);
-                            Repaint();
-                        });
+                        CreateLifecycleProgressReporter(
+                            "Installing Package"));
+                if (this == null)
+                {
+                    return;
+                }
                 if (installResult.cancelled)
                 {
                     ShowFlowNotice(
@@ -4231,8 +4252,11 @@ namespace YUCP.Importer.Editor.PackageManager
             finally
             {
                 EditorUtility.ClearProgressBar();
-                _pendingImportAfterVerification = false;
-                UpdateImportButtonEnabled();
+                if (this != null)
+                {
+                    _pendingImportAfterVerification = false;
+                    UpdateImportButtonEnabled();
+                }
             }
         }
 

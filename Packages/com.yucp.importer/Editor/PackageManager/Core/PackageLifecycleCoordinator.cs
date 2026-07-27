@@ -106,17 +106,30 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 ValidateAlias(alias);
                 EnsureSupportedClientPlatform();
-                PackageLifecycleInstallResult pending =
-                    await TryResumePendingAsync(alias, reportProgress);
-                if (pending != null)
+                projectPath = CurrentProjectPath();
+                string pendingOperation = GetPendingOperation(
+                    projectPath,
+                    alias.aliasId);
+                if (pendingOperation != null &&
+                    !PendingOperationMatches(pendingOperation, "install") &&
+                    !PendingOperationMatches(pendingOperation, "update"))
                 {
-                    return pending;
+                    throw new InvalidOperationException(
+                        "Another package action must finish before installation can start.");
+                }
+                if (pendingOperation != null)
+                {
+                    PackageLifecycleInstallResult pending =
+                        await TryResumePendingAsync(alias, reportProgress);
+                    if (pending != null)
+                    {
+                        return pending;
+                    }
                 }
                 Report(
                     reportProgress,
                     "checking-access",
                     alias?.packageDisplayName);
-                projectPath = CurrentProjectPath();
                 attemptKey = alias.aliasId;
                 string currentReleaseRoot = GetCurrentReleaseRoot(
                     projectPath,

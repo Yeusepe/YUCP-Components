@@ -600,6 +600,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (value.Length > 1024 ||
                 value.StartsWith("/", StringComparison.Ordinal) ||
                 value.Contains("\\") ||
+                value.Contains(":") ||
                 value.Split('/').Any(segment =>
                     segment.Length == 0 ||
                     string.Equals(segment, ".", StringComparison.Ordinal) ||
