@@ -21,7 +21,7 @@ namespace YUCP.Components.Editor
     /// </summary>
     internal static class AdvancedVisemeAnimatorGraphOptimizer
     {
-        internal const int Version = 5;
+        internal const int Version = 6;
 
         // Test seam: structure-inspection tests assert properties of the
         // pre-interning lowering (duplicate-producing fixtures are sometimes
@@ -1062,12 +1062,25 @@ namespace YUCP.Components.Editor
             if (UsesSecondBlendParameter(tree.blendType) &&
                 !string.IsNullOrWhiteSpace(tree.blendParameterY))
                 treeDependencies.Add(tree.blendParameterY);
+            var normalizedDirect = tree.blendType == BlendTreeType.Direct &&
+                                   UsesNormalizedBlendValues(tree);
+            if (normalizedDirect)
+            {
+                foreach (var sibling in tree.children)
+                {
+                    if (!string.IsNullOrWhiteSpace(
+                            sibling.directBlendParameter))
+                        treeDependencies.Add(
+                            sibling.directBlendParameter);
+                }
+            }
 
             foreach (var child in tree.children)
             {
                 var childDependencies = new HashSet<string>(treeDependencies,
                     StringComparer.Ordinal);
                 if (tree.blendType == BlendTreeType.Direct &&
+                    !normalizedDirect &&
                     !string.IsNullOrWhiteSpace(child.directBlendParameter))
                     childDependencies.Add(child.directBlendParameter);
                 AnalyzeMotion(child.motion, childDependencies, analysis);

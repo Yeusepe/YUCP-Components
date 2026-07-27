@@ -108,6 +108,57 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void NormalizedDirectPhysicalOutputRetainsEverySiblingWeight()
+        {
+            var objects = new List<UnityEngine.Object>();
+            try
+            {
+                var controller = NewController(objects);
+                var physicalWeight = Prefix + "PhysicalWeight";
+                var siblingWeight = Prefix + "SiblingWeight";
+                var deadOutput = Prefix + "DeadOutput";
+                AddFloat(controller, physicalWeight, 1f);
+                AddFloat(controller, siblingWeight, 1f);
+                AddFloat(controller, deadOutput, 0f);
+
+                var physical = new AnimationClip { name = "Physical output" };
+                objects.Add(physical);
+                AnimationUtility.SetEditorCurve(
+                    physical,
+                    EditorCurveBinding.FloatCurve(
+                        "Body",
+                        typeof(SkinnedMeshRenderer),
+                        "blendShape.Test"),
+                    AnimationCurve.Constant(0f, 0f, 100f));
+                var normalized = Direct(
+                    objects,
+                    "Normalized root",
+                    Child(physical, physicalWeight),
+                    Child(
+                        Setter(objects, deadOutput, 1f, "Dead sibling"),
+                        siblingWeight));
+                var serialized = new SerializedObject(normalized);
+                serialized.FindProperty("m_NormalizedBlendValues").boolValue = true;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                AddState(controller, normalized);
+
+                AdvancedVisemeAnimatorGraphOptimizer.Optimize(
+                    controller,
+                    Prefix.TrimEnd('/'),
+                    Array.Empty<string>());
+
+                Assert.That(
+                    controller.parameters.Select(parameter => parameter.name),
+                    Does.Contain(siblingWeight),
+                    "Every normalized sibling weight changes the physical output.");
+            }
+            finally
+            {
+                Destroy(objects);
+            }
+        }
+
+        [Test]
         public void RemovesNeutralZeroOnlyInsideProvenBlendCones()
         {
             var objects = new List<UnityEngine.Object>();
