@@ -1297,14 +1297,33 @@ namespace YUCP.Components.Editor
                 var root = descriptor.transform;
                 var managers = FindLoadedManagers();
                 var matches = managers.Where(manager => ManagerTargets(manager, descriptor)).ToArray();
+                bool inferred = false;
                 if (matches.Length == 0)
+                {
                     matches = managers.Where(manager =>
                         manager.transform == root ||
                         manager.transform.IsChildOf(root) ||
                         root.IsChildOf(manager.transform)).ToArray();
-                if (matches.Length == 0 && managers.Length == 1) matches = managers;
+                    inferred = matches.Length > 0;
+                }
+                if (matches.Length == 0 && managers.Length == 1)
+                {
+                    matches = managers;
+                    inferred = true;
+                }
 
-                if (matches.Length > 0) CachedManagersByDescriptor[descriptorId] = matches;
+                if (matches.Length > 0)
+                {
+                    if (inferred)
+                    {
+                        foreach (var manager in matches)
+                        {
+                            InferredDescriptorByManager[
+                                manager.GetInstanceID()] = descriptorId;
+                        }
+                    }
+                    CachedManagersByDescriptor[descriptorId] = matches;
+                }
                 else CachedManagersByDescriptor.Remove(descriptorId);
                 return matches;
             }

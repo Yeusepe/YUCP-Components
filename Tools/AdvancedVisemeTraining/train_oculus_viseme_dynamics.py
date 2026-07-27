@@ -21,9 +21,10 @@ import copy
 import math
 import os
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Iterator, Sequence
 
 import numpy as np
 
@@ -74,17 +75,34 @@ FALSE_PLATEAU_PREDICTED_L1 = 0.004
 FALSE_PLATEAU_TEACHER_L1 = 0.012
 
 
-def configure_shared_model() -> None:
+@contextmanager
+def shared_model_configuration() -> Iterator[None]:
     """Pin the reusable fitter to the exact deployed transfer function."""
 
-    halo.OBSERVER_RESPONSE_SECONDS = OBSERVER_RESPONSE_SECONDS
-    halo.DEFAULT_SPEECH_LIVELINESS = DEFAULT_SPEECH_LIVELINESS
-    halo.MAXIMUM_SPEECH_LIVELINESS_LEAD = MAXIMUM_SPEECH_LIVELINESS_LEAD
-    halo.EVALUATION_LIVELINESS = EVALUATION_LIVELINESS
-    # The older reusable fitter remains pinned to its four-control observer
-    # contract.  The direct five-control model below owns its exact basis and
-    # Unity transition simulation instead of mutating that shared contract.
-    halo.RENDER_RATE_FPS = RENDER_RATE_FPS
+    original = (
+        halo.OBSERVER_RESPONSE_SECONDS,
+        halo.DEFAULT_SPEECH_LIVELINESS,
+        halo.MAXIMUM_SPEECH_LIVELINESS_LEAD,
+        halo.EVALUATION_LIVELINESS,
+        halo.RENDER_RATE_FPS,
+    )
+    try:
+        halo.OBSERVER_RESPONSE_SECONDS = OBSERVER_RESPONSE_SECONDS
+        halo.DEFAULT_SPEECH_LIVELINESS = DEFAULT_SPEECH_LIVELINESS
+        halo.MAXIMUM_SPEECH_LIVELINESS_LEAD = MAXIMUM_SPEECH_LIVELINESS_LEAD
+        halo.EVALUATION_LIVELINESS = EVALUATION_LIVELINESS
+        # The older reusable fitter remains pinned to its four-control observer
+        # contract. The direct model owns its basis and transition simulation.
+        halo.RENDER_RATE_FPS = RENDER_RATE_FPS
+        yield
+    finally:
+        (
+            halo.OBSERVER_RESPONSE_SECONDS,
+            halo.DEFAULT_SPEECH_LIVELINESS,
+            halo.MAXIMUM_SPEECH_LIVELINESS_LEAD,
+            halo.EVALUATION_LIVELINESS,
+            halo.RENDER_RATE_FPS,
+        ) = original
 
 
 def load_records(cache_path: Path) -> list[halo.OculusUtterance]:
@@ -1066,7 +1084,6 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    configure_shared_model()
     args = parser().parse_args(argv)
     if args.command == "generate":
         document = corpus.load_json(args.audit_json)
@@ -1076,7 +1093,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     halo_document = corpus.load_json(args.halo_json)
     records = load_records(args.cache)
-    document = build_document(halo_document, records)
+    with shared_model_configuration():
+        document = build_document(halo_document, records)
     corpus.write_json_atomic(args.audit_json, document)
     generate_csharp(document, args.model_cs)
     print(f"Audit JSON: {args.audit_json}", flush=True)

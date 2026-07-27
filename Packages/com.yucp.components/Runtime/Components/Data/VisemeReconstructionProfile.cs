@@ -345,6 +345,16 @@ namespace YUCP.Components
 
         public void EnsureDefaults()
         {
+            bool isFreshProfile =
+                defaultsVersion == 0 &&
+                visemePoses != null &&
+                visemePoses.Length == VisemeCount &&
+                visemePoses.All(pose => pose == null) &&
+                visemeAdjustments != null &&
+                visemeAdjustments.Length == VisemeCount &&
+                visemeAdjustments.All(adjustment => adjustment == null) &&
+                articulatorBindings != null &&
+                articulatorBindings.Length == 0;
             if (visemePoses == null || visemePoses.Length != VisemeCount)
             {
                 var previous = visemePoses;
@@ -397,6 +407,10 @@ namespace YUCP.Components
 
             }
 
+            if (isFreshProfile)
+            {
+                defaultsVersion = CurrentDefaultsVersion;
+            }
             if (defaultsVersion < 2)
             {
                 for (var i = 0; i < VisemeCount; i++)
