@@ -581,6 +581,48 @@ namespace YUCP.Importer.Tests.Editor
                 Is.True);
         }
 
+        [UnityTest]
+        public IEnumerator CleanMachineImporterBootstrapsSignedProductionBroker()
+        {
+            if (!string.Equals(
+                Environment.GetEnvironmentVariable(
+                    "YUCP_TEST_CLEAN_PACKAGE_BOOTSTRAP"),
+                "1",
+                StringComparison.Ordinal))
+            {
+                Assert.Ignore(
+                    "Set YUCP_TEST_CLEAN_PACKAGE_BOOTSTRAP=1 in an isolated " +
+                    "clean-state project.");
+            }
+
+            NativePackageBrokerRequest request =
+                ValidRequest("preflight");
+            var transport = new NamedPipePackageBrokerTransport();
+            Task<NativePackageBrokerResult> execution =
+                transport.ExecuteAsync(
+                    request,
+                    null,
+                    CancellationToken.None);
+            while (!execution.IsCompleted)
+            {
+                yield return null;
+            }
+
+            if (execution.IsFaulted)
+            {
+                var failure = execution.Exception.GetBaseException()
+                    as NativePackageBrokerException;
+                Assert.Fail(
+                    failure == null
+                        ? execution.Exception.GetBaseException().Message
+                        : failure.ErrorCode + ": " + failure.Message);
+            }
+
+            NativePackageBrokerResult result = execution.Result;
+            NativePackageBrokerClient.ValidateResult(request, result);
+            Assert.That(result.status, Is.EqualTo("succeeded"));
+        }
+
         private static async Task RunBrokerServerAsync(
             NamedPipeServerStream server)
         {
