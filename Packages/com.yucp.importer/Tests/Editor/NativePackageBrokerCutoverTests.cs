@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -565,6 +566,453 @@ namespace YUCP.Importer.Tests.Editor
                     @"PipeOptions\.Asynchronous\)"));
         }
 
+        [Test]
+        public void BrokerUnavailableBootstrapsOnceAndRetriesTheSameRequest()
+        {
+            var transport = new UnavailableThenSuccessfulTransport();
+            var bootstrap = new RecordingRuntimeBootstrap();
+            NativePackageBrokerRequest request = ValidRequest("preflight");
+            var userProgress =
+                new System.Collections.Generic.List<
+                    PackageLifecycleUserProgress>();
+            try
+            {
+                NativePackageBrokerClient.SetTransportForTests(transport);
+                Task<NativePackageBrokerResult> task =
+                    PackageLifecycleCoordinator
+                        .ExecuteBrokerWithBootstrapAsync(
+                            request,
+                            bootstrap,
+                            _ => { },
+                            userProgress.Add,
+                            CancellationToken.None);
+
+                NativePackageBrokerResult result =
+                    task.GetAwaiter().GetResult();
+
+                Assert.That(result.status, Is.EqualTo("succeeded"));
+                Assert.That(transport.CallCount, Is.EqualTo(2));
+                Assert.That(bootstrap.CallCount, Is.EqualTo(1));
+                Assert.That(
+                    bootstrap.TraceId,
+                    Is.EqualTo(new string('a', 32)));
+                Assert.That(bootstrap.TokenWasCancelable, Is.True);
+                Assert.That(
+                    transport.Requests,
+                    Has.All.SameAs(request),
+                    "Retry must preserve the authenticated request binding.");
+                Assert.That(userProgress, Has.Count.EqualTo(1));
+                Assert.That(
+                    userProgress[0].message,
+                    Does.Contain("package delivery"));
+                Assert.That(
+                    userProgress[0].message,
+                    Does.Not.Contain("TUF"));
+            }
+            finally
+            {
+                NativePackageBrokerClient.SetTransportForTests(null);
+            }
+        }
+
+        [Test]
+        public void PackagedRuntimeUsesOnlyImmutableProductionInputs()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-runtime-bootstrap-" + Guid.NewGuid().ToString("N"));
+            string packageRoot = Path.Combine(root, "package");
+            string localRoot = Path.Combine(root, "local");
+            try
+            {
+                string executable = Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Runtime",
+                    "Windows",
+                    "x64",
+                    "yucp-transfer-helper.exe");
+                string trustedRoot = Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Trust",
+                    "1.root.json");
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(executable));
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(trustedRoot));
+                Directory.CreateDirectory(localRoot);
+                File.WriteAllBytes(
+                    executable,
+                    new byte[] { (byte)'M', (byte)'Z' });
+                File.WriteAllText(
+                    trustedRoot,
+                    "{\"signed\":{\"_type\":\"root\",\"version\":1}," +
+                    "\"signatures\":[{}]}",
+                    new UTF8Encoding(false));
+                var publisher = new RecordingPublisherVerifier();
+                const string metadataUrl =
+                    "http://127.0.0.1:3001/api/v2/package-installer/" +
+                    "tuf/metadata";
+                const string targetsUrl =
+                    "http://127.0.0.1:3001/api/v2/package-installer/" +
+                    "tuf/targets";
+                var trust = new NativePackageRuntimeTrust(
+                    Sha256File(executable),
+                    Sha256File(trustedRoot),
+                    metadataUrl,
+                    targetsUrl,
+                    "CN=YUCP Test Publisher",
+                    new string('c', 64),
+                    "system",
+                    publisher);
+
+                NativePackageRuntimeInvocation invocation =
+                    PackagedNativePackageRuntimeBootstrap
+                        .BuildInvocationForTests(
+                            packageRoot,
+                            localRoot,
+                            true,
+                            new string('a', 32),
+                            trust);
+
+                Assert.That(
+                    invocation.executablePath,
+                    Is.EqualTo(executable));
+                Assert.That(
+                    invocation.arguments,
+                    Does.Contain(metadataUrl));
+                Assert.That(
+                    invocation.arguments,
+                    Does.Contain(targetsUrl));
+                Assert.That(
+                    invocation.arguments,
+                    Does.Contain("\"--http-timeout\" \"30s\""));
+                Assert.That(
+                    invocation.arguments,
+                    Does.Contain("\"--startup-timeout\" \"20s\""));
+                Assert.That(
+                    invocation.arguments,
+                    Does.Not.Contain("runtime-target"));
+                Assert.That(
+                    invocation.arguments,
+                    Does.Not.Contain("jammr"));
+                Assert.That(
+                    invocation.installRoot,
+                    Is.Not.EqualTo(invocation.stateRoot));
+                Assert.That(publisher.CallCount, Is.EqualTo(1));
+                Assert.That(
+                    publisher.ExpectedSubject,
+                    Is.EqualTo("CN=YUCP Test Publisher"));
+                Assert.That(
+                    publisher.ExpectedTrustMode,
+                    Is.EqualTo("system"));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [Test]
+        public void PackagedRuntimeFailsClosedBeforeProcessStart()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-runtime-invalid-" + Guid.NewGuid().ToString("N"));
+            string packageRoot = Path.Combine(root, "package");
+            string localRoot = Path.Combine(root, "local");
+            try
+            {
+                Directory.CreateDirectory(packageRoot);
+                Directory.CreateDirectory(localRoot);
+                Assert.Throws<PlatformNotSupportedException>(() =>
+                    PackagedNativePackageRuntimeBootstrap
+                        .BuildInvocationForTests(
+                            packageRoot,
+                            localRoot,
+                            false,
+                            string.Empty));
+                Assert.Throws<InvalidDataException>(() =>
+                    PackagedNativePackageRuntimeBootstrap
+                        .BuildInvocationForTests(
+                            packageRoot,
+                            localRoot,
+                            true,
+                            string.Empty));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [Test]
+        public void PackagedRuntimeRejectsUnpinnedOrUnpublishedBytes()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-runtime-tamper-" + Guid.NewGuid().ToString("N"));
+            string packageRoot = Path.Combine(root, "package");
+            string localRoot = Path.Combine(root, "local");
+            try
+            {
+                string executable = Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Runtime",
+                    "Windows",
+                    "x64",
+                    "yucp-transfer-helper.exe");
+                string trustedRoot = Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Trust",
+                    "1.root.json");
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(executable));
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(trustedRoot));
+                Directory.CreateDirectory(localRoot);
+                File.WriteAllBytes(
+                    executable,
+                    new byte[] { (byte)'M', (byte)'Z' });
+                File.WriteAllText(
+                    trustedRoot,
+                    "{\"signed\":{\"_type\":\"root\",\"version\":1}," +
+                    "\"signatures\":[{}]}",
+                    new UTF8Encoding(false));
+                var publisher = new RecordingPublisherVerifier();
+                var trust = new NativePackageRuntimeTrust(
+                    Sha256File(executable),
+                    Sha256File(trustedRoot),
+                    "http://127.0.0.1:3001/api/v2/package-installer/" +
+                        "tuf/metadata",
+                    "http://127.0.0.1:3001/api/v2/package-installer/" +
+                        "tuf/targets",
+                    "CN=YUCP Test Publisher",
+                    new string('c', 64),
+                    "system",
+                    publisher);
+                File.WriteAllBytes(
+                    executable,
+                    new byte[] { (byte)'M', (byte)'Z', 1 });
+
+                Assert.Throws<InvalidDataException>(() =>
+                    PackagedNativePackageRuntimeBootstrap
+                        .BuildInvocationForTests(
+                            packageRoot,
+                            localRoot,
+                            true,
+                            new string('a', 32),
+                            trust));
+
+                File.WriteAllBytes(
+                    executable,
+                    new byte[] { (byte)'M', (byte)'Z' });
+                File.AppendAllText(trustedRoot, " ");
+                Assert.Throws<InvalidDataException>(() =>
+                    PackagedNativePackageRuntimeBootstrap
+                        .BuildInvocationForTests(
+                            packageRoot,
+                            localRoot,
+                            true,
+                            new string('a', 32),
+                            trust));
+                Assert.That(publisher.CallCount, Is.EqualTo(0));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [Test]
+        public void PublisherTrustAcceptsOnlyExplicitLocalUntrustedRoots()
+        {
+            const int untrustedRoot = unchecked((int)0x800B0109);
+            const int badDigest = unchecked((int)0x80096010);
+
+            Assert.That(
+                WindowsAuthenticodePublisherVerifier
+                    .IsAuthenticodeResultAcceptedForTests(
+                        0,
+                        "system"),
+                Is.True);
+            Assert.That(
+                WindowsAuthenticodePublisherVerifier
+                    .IsAuthenticodeResultAcceptedForTests(
+                        untrustedRoot,
+                        "system"),
+                Is.False);
+            Assert.That(
+                WindowsAuthenticodePublisherVerifier
+                    .IsAuthenticodeResultAcceptedForTests(
+                        untrustedRoot,
+                        "pinned-development"),
+                Is.True);
+            Assert.That(
+                WindowsAuthenticodePublisherVerifier
+                    .IsAuthenticodeResultAcceptedForTests(
+                        badDigest,
+                        "pinned-development"),
+                Is.False);
+        }
+
+        [Test]
+        public void ProductionPublisherTrustPermitsOnlineRevocationChecks()
+        {
+            const uint cacheOnlyUrlRetrieval = 0x1000;
+            const uint revocationCheckChain = 0x40;
+            uint flags = WindowsAuthenticodePublisherVerifier
+                .ProviderFlagsForTests("system");
+
+            Assert.That(
+                flags & cacheOnlyUrlRetrieval,
+                Is.EqualTo(0));
+            Assert.That(
+                flags & revocationCheckChain,
+                Is.EqualTo(revocationCheckChain));
+        }
+
+        [Test]
+        public void PackageRuntimePathRejectsAReparseDirectoryComponent()
+        {
+            string packageRoot = Path.GetFullPath(
+                Path.Combine(Path.GetTempPath(), "yucp-package"));
+            string runtimePath = Path.Combine(
+                packageRoot,
+                "Runtime",
+                "Windows",
+                "helper.exe");
+
+            Assert.Throws<InvalidDataException>(() =>
+                PackagedNativePackageRuntimeBootstrap
+                    .ValidatePathComponentsForTests(
+                        packageRoot,
+                        runtimePath,
+                        path => path.EndsWith(
+                                Path.Combine("Runtime", "Windows"),
+                                StringComparison.Ordinal)
+                            ? FileAttributes.Directory |
+                                FileAttributes.ReparsePoint
+                            : FileAttributes.Normal));
+        }
+
+        [Test]
+        public void BootstrapFailureDoesNotRetryTheBroker()
+        {
+            var transport = new UnavailableThenSuccessfulTransport();
+            var bootstrap = new RecordingRuntimeBootstrap
+            {
+                Failure = new InvalidDataException(
+                    "The reviewed root is missing."),
+            };
+            try
+            {
+                NativePackageBrokerClient.SetTransportForTests(transport);
+                NativePackageBrokerException failure =
+                    Assert.Throws<NativePackageBrokerException>(() =>
+                        PackageLifecycleCoordinator
+                            .ExecuteBrokerWithBootstrapAsync(
+                                ValidRequest("preflight"),
+                                bootstrap,
+                                _ => { },
+                                _ => { },
+                                CancellationToken.None)
+                            .GetAwaiter()
+                            .GetResult());
+
+                Assert.That(
+                    failure.ErrorCode,
+                    Is.EqualTo("BROKER_BOOTSTRAP_FAILED"));
+                Assert.That(transport.CallCount, Is.EqualTo(1));
+                Assert.That(bootstrap.CallCount, Is.EqualTo(1));
+            }
+            finally
+            {
+                NativePackageBrokerClient.SetTransportForTests(null);
+            }
+        }
+
+        [Test]
+        public void NonUnavailableBrokerFailureNeverBootstraps()
+        {
+            var transport = new AlwaysFailingTransport("BROKER_TIMEOUT");
+            var bootstrap = new RecordingRuntimeBootstrap();
+            try
+            {
+                NativePackageBrokerClient.SetTransportForTests(transport);
+                NativePackageBrokerException failure =
+                    Assert.Throws<NativePackageBrokerException>(() =>
+                        PackageLifecycleCoordinator
+                            .ExecuteBrokerWithBootstrapAsync(
+                                ValidRequest("preflight"),
+                                bootstrap,
+                                _ => { },
+                                _ => { },
+                                CancellationToken.None)
+                            .GetAwaiter()
+                            .GetResult());
+
+                Assert.That(
+                    failure.ErrorCode,
+                    Is.EqualTo("BROKER_TIMEOUT"));
+                Assert.That(transport.CallCount, Is.EqualTo(1));
+                Assert.That(bootstrap.CallCount, Is.EqualTo(0));
+            }
+            finally
+            {
+                NativePackageBrokerClient.SetTransportForTests(null);
+            }
+        }
+
+        [Test]
+        public void SecondUnavailableFailureDoesNotBootstrapAgain()
+        {
+            var transport = new AlwaysFailingTransport(
+                "BROKER_UNAVAILABLE");
+            var bootstrap = new RecordingRuntimeBootstrap();
+            try
+            {
+                NativePackageBrokerClient.SetTransportForTests(transport);
+                NativePackageBrokerException failure =
+                    Assert.Throws<NativePackageBrokerException>(() =>
+                        PackageLifecycleCoordinator
+                            .ExecuteBrokerWithBootstrapAsync(
+                                ValidRequest("preflight"),
+                                bootstrap,
+                                _ => { },
+                                _ => { },
+                                CancellationToken.None)
+                            .GetAwaiter()
+                            .GetResult());
+
+                Assert.That(
+                    failure.ErrorCode,
+                    Is.EqualTo("BROKER_UNAVAILABLE"));
+                Assert.That(transport.CallCount, Is.EqualTo(2));
+                Assert.That(bootstrap.CallCount, Is.EqualTo(1));
+            }
+            finally
+            {
+                NativePackageBrokerClient.SetTransportForTests(null);
+            }
+        }
+
         [UnityTest]
         public IEnumerator NamedPipeTransportCompletesTheChallengeAndStreamsProgress()
         {
@@ -873,6 +1321,132 @@ namespace YUCP.Importer.Tests.Editor
                     new string('5', 16) +
                     "-01",
             };
+        }
+
+        private static string Sha256File(string path)
+        {
+            using (var stream = File.OpenRead(path))
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                return BitConverter.ToString(sha256.ComputeHash(stream))
+                    .Replace("-", string.Empty)
+                    .ToLowerInvariant();
+            }
+        }
+
+        private sealed class UnavailableThenSuccessfulTransport
+            : INativePackageBrokerTransport
+        {
+            internal int CallCount { get; private set; }
+
+            internal System.Collections.Generic.List<
+                NativePackageBrokerRequest> Requests { get; } =
+                    new System.Collections.Generic.List<
+                        NativePackageBrokerRequest>();
+
+            public Task<NativePackageBrokerResult> ExecuteAsync(
+                NativePackageBrokerRequest request,
+                Action<NativePackageBrokerProgress> reportProgress,
+                CancellationToken cancellationToken)
+            {
+                CallCount++;
+                Requests.Add(request);
+                if (CallCount == 1)
+                {
+                    throw new NativePackageBrokerException(
+                        "BROKER_UNAVAILABLE",
+                        new string('a', 32),
+                        "The package broker is not running.");
+                }
+                return Task.FromResult(new NativePackageBrokerResult
+                {
+                    activeContentDigest = new string('2', 64),
+                    activePolicyVersion = "active-content-policy-v1",
+                    exitCode = 0,
+                    files =
+                        new System.Collections.Generic.List<
+                            NativePackageBrokerFile>(),
+                    operation = request.operation,
+                    runId = request.runId,
+                    schemaVersion = NativePackageBrokerClient.SchemaVersion,
+                    status = "succeeded",
+                    targetReleaseRoot = new string('1', 64),
+                    traceId = new string('b', 32),
+                });
+            }
+        }
+
+        private sealed class RecordingRuntimeBootstrap
+            : INativePackageRuntimeBootstrap
+        {
+            internal int CallCount { get; private set; }
+            internal Exception Failure { get; set; }
+            internal bool TokenWasCancelable { get; private set; }
+            internal string TraceId { get; private set; } = string.Empty;
+
+            public Task EnsureAsync(
+                string traceId,
+                CancellationToken cancellationToken)
+            {
+                CallCount++;
+                TokenWasCancelable = cancellationToken.CanBeCanceled;
+                TraceId = traceId;
+                if (Failure != null)
+                {
+                    throw Failure;
+                }
+                return Task.CompletedTask;
+            }
+        }
+
+        private sealed class AlwaysFailingTransport
+            : INativePackageBrokerTransport
+        {
+            private readonly string _errorCode;
+
+            internal AlwaysFailingTransport(string errorCode)
+            {
+                _errorCode = errorCode;
+            }
+
+            internal int CallCount { get; private set; }
+
+            public Task<NativePackageBrokerResult> ExecuteAsync(
+                NativePackageBrokerRequest request,
+                Action<NativePackageBrokerProgress> reportProgress,
+                CancellationToken cancellationToken)
+            {
+                CallCount++;
+                throw new NativePackageBrokerException(
+                    _errorCode,
+                    new string('a', 32),
+                    "The broker failed.");
+            }
+        }
+
+        private sealed class RecordingPublisherVerifier
+            : INativePackagePublisherVerifier
+        {
+            internal int CallCount { get; private set; }
+            internal string ExpectedSubject { get; private set; } =
+                string.Empty;
+            internal string ExpectedTrustMode { get; private set; } =
+                string.Empty;
+
+            public void Verify(
+                string executablePath,
+                string expectedSubject,
+                string expectedCertificateSha256,
+                string trustMode)
+            {
+                CallCount++;
+                ExpectedSubject = expectedSubject;
+                ExpectedTrustMode = trustMode;
+                Assert.That(File.Exists(executablePath), Is.True);
+                Assert.That(
+                    expectedCertificateSha256,
+                    Is.EqualTo(new string('c', 64)));
+            }
         }
     }
 }

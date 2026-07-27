@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEditor;
@@ -72,6 +73,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         internal const string EmptyReleaseRoot =
             "0000000000000000000000000000000000000000000000000000000000000000";
+        private static readonly TimeSpan BrokerBootstrapTimeout =
+            TimeSpan.FromSeconds(120);
+        private static readonly INativePackageRuntimeBootstrap
+            ProductionRuntimeBootstrap =
+                new PackagedNativePackageRuntimeBootstrap();
 
         internal static void EnsureSupportedClientPlatform(bool isWindows)
         {
@@ -679,15 +685,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 exactTargetReleaseRoot,
                 approvedActiveContentDigest,
                 approvedPolicyVersion);
-            NativePackageBrokerResult broker =
-                await NativePackageBrokerClient.ExecuteAsync(
-                    brokerRequest,
+            Action<NativePackageBrokerProgress> brokerProgress =
                 progress => Report(
                     reportProgress,
                     BuildBrokerProgress(
                         progress,
                         alias.packageDisplayName,
-                        operation == "preflight")));
+                        operation == "preflight"));
+            NativePackageBrokerResult broker =
+                await ExecuteBrokerWithBootstrapAsync(
+                    brokerRequest,
+                    ProductionRuntimeBootstrap,
+                    brokerProgress,
+                    reportProgress,
+                    CancellationToken.None);
             NativePackageBrokerClient.ValidateResult(
                 brokerRequest,
                 broker);
@@ -888,6 +899,84 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return await CompleteCommittedCheckpointAsync(
                 projectPath,
                 lifecycleCheckpoint);
+        }
+
+        internal static async Task<NativePackageBrokerResult>
+            ExecuteBrokerWithBootstrapAsync(
+                NativePackageBrokerRequest request,
+                INativePackageRuntimeBootstrap runtimeBootstrap,
+                Action<NativePackageBrokerProgress> reportBrokerProgress,
+                Action<PackageLifecycleUserProgress> reportUserProgress,
+                CancellationToken cancellationToken)
+        {
+            if (runtimeBootstrap == null)
+            {
+                throw new ArgumentNullException(nameof(runtimeBootstrap));
+            }
+            NativePackageBrokerException unavailable;
+            try
+            {
+                return await NativePackageBrokerClient.ExecuteAsync(
+                    request,
+                    reportBrokerProgress,
+                    cancellationToken);
+            }
+            catch (NativePackageBrokerException failure)
+            {
+                if (!string.Equals(
+                        failure.ErrorCode,
+                        "BROKER_UNAVAILABLE",
+                        StringComparison.Ordinal))
+                {
+                    throw;
+                }
+                unavailable = failure;
+            }
+
+            bool preflight = string.Equals(
+                request.operation,
+                "preflight",
+                StringComparison.Ordinal);
+            reportUserProgress?.Invoke(
+                Progress(
+                    "Preparing secure package delivery...",
+                    preflight ? 0.21f : 0.41f));
+            using (var bootstrapCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken))
+            {
+                bootstrapCancellation.CancelAfter(BrokerBootstrapTimeout);
+                try
+                {
+                    await runtimeBootstrap.EnsureAsync(
+                        unavailable.TraceId,
+                        bootstrapCancellation.Token);
+                }
+                catch (OperationCanceledException)
+                    when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new NativePackageBrokerException(
+                        "BROKER_BOOTSTRAP_TIMEOUT",
+                        unavailable.TraceId,
+                        "Secure package delivery setup timed out.");
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    throw new NativePackageBrokerException(
+                        "BROKER_BOOTSTRAP_FAILED",
+                        unavailable.TraceId,
+                        "Secure package delivery setup failed.");
+                }
+            }
+
+            return await NativePackageBrokerClient.ExecuteAsync(
+                request,
+                reportBrokerProgress,
+                cancellationToken);
         }
 
         private static async Task<PackageLifecycleExecutionResult> TryResumeAsync(
