@@ -126,6 +126,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             List<VerifiedStagingFile> priorFiles =
                 NormalizeFileRecords(previousFiles, true);
+            var priorFilesByPath = priorFiles.ToDictionary(
+                file => file.normalizedPath,
+                StringComparer.OrdinalIgnoreCase);
+            bool hasPriorInventory = previousFiles != null;
 
             string journalPath = JournalPath(projectRoot, runId);
             if (File.Exists(IoPath(journalPath)))
@@ -146,13 +150,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             foreach (VerifiedStagingFile file in verifiedFiles)
             {
                 string livePath = ResolveInside(projectRoot, file.normalizedPath);
-                bool hadPriorFile = File.Exists(IoPath(livePath));
+                VerifiedStagingFile priorFile;
+                bool hasOwnedPriorFile = priorFilesByPath.TryGetValue(
+                    file.normalizedPath,
+                    out priorFile);
+                bool hadPriorFile = hasOwnedPriorFile ||
+                    (!hasPriorInventory && File.Exists(IoPath(livePath)));
                 document.entries.Add(new ProjectTransactionEntry
                 {
                     backupPath = ResolveInside(backupRoot, file.normalizedPath),
-                    expectedPriorSha256 = hadPriorFile
-                        ? Sha256(livePath)
-                        : string.Empty,
+                    expectedPriorSha256 = hasOwnedPriorFile
+                        ? priorFile.sha256
+                        : hadPriorFile
+                            ? Sha256(livePath)
+                            : string.Empty,
                     hadPriorFile = hadPriorFile,
                     normalizedPath = file.normalizedPath,
                     operation = "write",

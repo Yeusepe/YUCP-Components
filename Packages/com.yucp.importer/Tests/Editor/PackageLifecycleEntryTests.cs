@@ -70,6 +70,94 @@ namespace YUCP.Importer.Editor.Tests
                 Is.False);
         }
 
+        [TestCase("BROKER_BUSY")]
+        [TestCase("BROKER_TIMEOUT")]
+        [TestCase("BROKER_UNAVAILABLE")]
+        [TestCase("TRANSFER_FAILED")]
+        [TestCase("PROJECT_TRANSACTION_FAILED")]
+        [TestCase("INTERNAL_ERROR")]
+        public void RetryableFailuresDoNotBecomeIdempotencyRecords(
+            string errorCode)
+        {
+            MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
+                "ShouldPersistIdempotencyResult",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            var result = new PackageLifecycleResult
+            {
+                errorCode = errorCode,
+                status = "failed",
+            };
+
+            Assert.That(method, Is.Not.Null);
+            Assert.That(
+                (bool)method.Invoke(null, new object[] { result }),
+                Is.False);
+        }
+
+        [Test]
+        public void UnknownFailuresDoNotBecomeIdempotencyRecords()
+        {
+            MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
+                "ShouldPersistIdempotencyResult",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            var result = new PackageLifecycleResult
+            {
+                errorCode = "FUTURE_TRANSIENT_FAILURE",
+                status = "failed",
+            };
+
+            Assert.That(method, Is.Not.Null);
+            Assert.That(
+                (bool)method.Invoke(null, new object[] { result }),
+                Is.False);
+        }
+
+        [TestCase("REQUEST_INVALID")]
+        [TestCase("OPERATION_REJECTED")]
+        [TestCase("COUPLING_FAILED")]
+        [TestCase("BROKER_PROTOCOL_INVALID")]
+        [TestCase("UNITY_WINDOWS_PATH_LIMIT")]
+        public void TerminalFailuresBecomeIdempotencyRecords(string errorCode)
+        {
+            MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
+                "ShouldPersistIdempotencyResult",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            var result = new PackageLifecycleResult
+            {
+                errorCode = errorCode,
+                status = "failed",
+            };
+
+            Assert.That(method, Is.Not.Null);
+            Assert.That(
+                (bool)method.Invoke(null, new object[] { result }),
+                Is.True);
+        }
+
+        [Test]
+        public void BrokerFailurePreservesStableCodeAndTraceIdentifier()
+        {
+            MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
+                "BuildFailure",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            var request = new PackageLifecycleRequest
+            {
+                runId = "lifecycle-run",
+            };
+            var exception = new NativePackageBrokerException(
+                "BROKER_BUSY",
+                "broker-trace",
+                "The broker is busy.");
+
+            Assert.That(method, Is.Not.Null);
+            var result = (PackageLifecycleResult)method.Invoke(
+                null,
+                new object[] { request, exception });
+
+            Assert.That(result.errorCode, Is.EqualTo("BROKER_BUSY"));
+            Assert.That(result.traceId, Is.EqualTo("broker-trace"));
+        }
+
         [Test]
         public void StartupResumesAfterDomainReloadForAnActiveBatchCommand()
         {

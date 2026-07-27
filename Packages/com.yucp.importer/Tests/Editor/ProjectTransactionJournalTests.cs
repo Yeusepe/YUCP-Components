@@ -150,6 +150,56 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ApplyRejectsAUserModifiedOwnedFileDuringUpdate()
+        {
+            string root = CreateScratch();
+            try
+            {
+                string project = Path.Combine(root, "project");
+                string staging = Path.Combine(root, "staging");
+                string product = Path.Combine(project, "Assets", "Product");
+                Directory.CreateDirectory(product);
+                Directory.CreateDirectory(
+                    Path.Combine(staging, "Assets", "Product"));
+                string livePath = Path.Combine(product, "file.txt");
+                string stagedPath = Path.Combine(
+                    staging,
+                    "Assets",
+                    "Product",
+                    "file.txt");
+                File.WriteAllText(livePath, "user change");
+                File.WriteAllText(stagedPath, "version two");
+
+                Assert.Throws<IOException>(() =>
+                    ProjectTransactionJournal.Apply(
+                        project,
+                        staging,
+                        "run-user-modified-update",
+                        new[]
+                        {
+                            Record(stagedPath, "Assets/Product/file.txt"),
+                        },
+                        new[]
+                        {
+                            new VerifiedStagingFile
+                            {
+                                bytes = "version one".Length,
+                                normalizedPath = "Assets/Product/file.txt",
+                                sha256 = Sha256Text("version one"),
+                            },
+                        }));
+
+                Assert.That(
+                    File.ReadAllText(livePath),
+                    Is.EqualTo("user change"));
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
         public void ApplyPreservesAssetWithModifiedMeta()
         {
             string root = CreateScratch();

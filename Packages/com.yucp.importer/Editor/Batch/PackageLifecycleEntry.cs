@@ -74,6 +74,19 @@ namespace YUCP.Importer.Editor.Batch
         private const int CouplingExitCode = 30;
         private const int ProjectExitCode = 40;
         private const int InternalExitCode = 50;
+        private static readonly HashSet<string> TerminalFailureCodes =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "BROKER_PROTOCOL_INVALID",
+                "COUPLING_FAILED",
+                "OPERATION_AUTHORIZATION_CONFLICT",
+                "OPERATION_AUTHORIZATION_INVALID",
+                "OPERATION_AUTHORIZATION_REPLAYED",
+                "OPERATION_REJECTED",
+                "REQUEST_INVALID",
+                "STALE_CONTENT_APPROVAL",
+                "UNITY_WINDOWS_PATH_LIMIT",
+            };
         private static PackageLifecycleRequest _activeRequest;
         private static Task<PackageLifecycleResult> _execution;
         private static bool _finished;
@@ -214,7 +227,8 @@ namespace YUCP.Importer.Editor.Batch
             catch (Exception exception)
             {
                 PackageLifecycleResult failure = BuildFailure(request, exception);
-                if (IsRequestBoundToOpenedProject(request))
+                if (IsRequestBoundToOpenedProject(request) &&
+                    ShouldPersistIdempotencyResult(failure))
                 {
                     try
                     {
@@ -321,7 +335,21 @@ namespace YUCP.Importer.Editor.Batch
         {
             int exitCode = InternalExitCode;
             string errorCode = "INTERNAL_ERROR";
-            if (exception is InvalidDataException ||
+            string traceId = request?.runId ?? string.Empty;
+            if (exception is NativePackageBrokerException brokerFailure)
+            {
+                errorCode = string.IsNullOrWhiteSpace(brokerFailure.ErrorCode)
+                    ? "INTERNAL_ERROR"
+                    : brokerFailure.ErrorCode;
+                exitCode = string.Equals(
+                        errorCode,
+                        "COUPLING_FAILED",
+                        StringComparison.Ordinal)
+                    ? CouplingExitCode
+                    : TransferExitCode;
+                traceId = brokerFailure.TraceId;
+            }
+            else if (exception is InvalidDataException ||
                 exception is ArgumentException ||
                 exception is CryptographicException)
             {
@@ -338,16 +366,6 @@ namespace YUCP.Importer.Editor.Batch
             {
                 exitCode = ProjectExitCode;
                 errorCode = "PROJECT_TRANSACTION_FAILED";
-            }
-            else if (exception.Message.IndexOf(
-                    "materialization",
-                    StringComparison.OrdinalIgnoreCase) >= 0 ||
-                exception.Message.IndexOf(
-                    "receipt",
-                    StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                exitCode = CouplingExitCode;
-                errorCode = "COUPLING_FAILED";
             }
             else if (exception is InvalidOperationException)
             {
@@ -366,8 +384,29 @@ namespace YUCP.Importer.Editor.Batch
                 runId = request?.runId ?? string.Empty,
                 status = "failed",
                 targetReleaseRoot = request?.targetReleaseRoot ?? string.Empty,
-                traceId = request?.runId ?? string.Empty,
+                traceId = traceId,
             };
+        }
+
+        private static bool ShouldPersistIdempotencyResult(
+            PackageLifecycleResult result)
+        {
+            if (result == null)
+            {
+                return false;
+            }
+            if (string.Equals(
+                    result.status,
+                    "succeeded",
+                    StringComparison.Ordinal))
+            {
+                return true;
+            }
+            return string.Equals(
+                    result.status,
+                    "failed",
+                    StringComparison.Ordinal) &&
+                TerminalFailureCodes.Contains(result.errorCode);
         }
 
         private static string SafeCurrentReleaseRoot(
