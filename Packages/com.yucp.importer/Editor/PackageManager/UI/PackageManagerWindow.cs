@@ -3105,6 +3105,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             _isHostedLifecycleRunning = true;
             SetHostedLifecycleControlsEnabled(false);
+            _importButton?.SetEnabled(false);
             SetVerifyStatusLabel(ActionPendingMessage(operation));
             try
             {
@@ -3144,11 +3145,24 @@ namespace YUCP.Importer.Editor.PackageManager
                         DisplayStyle.None;
                 }
             }
+            catch (Exception exception)
+            {
+                Debug.LogError(
+                    "YUCP package management failed: " +
+                    exception.GetType().Name);
+                ShowFlowNotice(
+                    "Package action could not finish",
+                    "Try the action again. Contact support if the problem continues.",
+                    FlowNoticeTone.Error);
+                SetVerifyStatusLabel(
+                    "The package action could not finish.");
+            }
             finally
             {
                 EditorUtility.ClearProgressBar();
                 _isHostedLifecycleRunning = false;
                 SetHostedLifecycleControlsEnabled(true);
+                UpdateImportButtonEnabled();
             }
         }
 
@@ -3158,7 +3172,6 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 button.SetEnabled(enabled);
             }
-            _importButton?.SetEnabled(enabled);
         }
 
         private static string ActionPendingMessage(string operation)

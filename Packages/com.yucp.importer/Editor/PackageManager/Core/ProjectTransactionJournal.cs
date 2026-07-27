@@ -27,6 +27,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal sealed class ProjectTransactionInspection
     {
         public string journalPath = string.Empty;
+        public List<VerifiedStagingFile> preservedModifiedFiles =
+            new List<VerifiedStagingFile>();
+        public List<VerifiedStagingFile> removedFiles =
+            new List<VerifiedStagingFile>();
         public bool requiresPackageResolution;
         public string state = string.Empty;
     }
@@ -34,7 +38,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     [Serializable]
     internal sealed class ProjectTransactionDocument
     {
-        public int schemaVersion = 3;
+        public int schemaVersion = 4;
         public string runId = string.Empty;
         public string projectPath = string.Empty;
         public string stagingPath = string.Empty;
@@ -50,13 +54,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         public bool hadPriorFile;
         public string normalizedPath = string.Empty;
         public string operation = "write";
+        public long preservedBytes;
+        public string preservedSha256 = string.Empty;
         public string state = "pending";
         public string targetSha256 = string.Empty;
     }
 
     internal static class ProjectTransactionJournal
     {
-        private const int SchemaVersion = 3;
+        private const int SchemaVersion = 4;
         private const string TransactionRoot = ".yucp/transactions";
 
         internal static ProjectTransactionResult Apply(
@@ -67,9 +73,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             IEnumerable<VerifiedStagingFile> previousFiles = null)
         {
             string projectRoot = RequireAbsoluteDirectory(projectPath, "project");
+            ValidateRunId(runId);
             using (AcquireProjectLock(projectRoot, runId))
             {
-                Prepare(projectRoot, stagingPath, runId, files, previousFiles);
+                PrepareWithoutLock(
+                    projectRoot,
+                    stagingPath,
+                    runId,
+                    files,
+                    previousFiles);
                 return RecoverWithoutLock(projectRoot, runId);
             }
         }
@@ -82,9 +94,27 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             IEnumerable<VerifiedStagingFile> previousFiles = null)
         {
             string projectRoot = RequireAbsoluteDirectory(projectPath, "project");
+            ValidateRunId(runId);
+            using (AcquireProjectLock(projectRoot, runId))
+            {
+                return PrepareWithoutLock(
+                    projectRoot,
+                    stagingPath,
+                    runId,
+                    files,
+                    previousFiles);
+            }
+        }
+
+        private static ProjectTransactionResult PrepareWithoutLock(
+            string projectRoot,
+            string stagingPath,
+            string runId,
+            IEnumerable<VerifiedStagingFile> files,
+            IEnumerable<VerifiedStagingFile> previousFiles)
+        {
             string stagingRoot = RequireAbsoluteDirectory(stagingPath, "staging");
             ValidateSeparateRoots(projectRoot, stagingRoot);
-            ValidateRunId(runId);
 
             List<VerifiedStagingFile> verifiedFiles = NormalizeFileRecords(files, false);
             var targetPaths = new HashSet<string>(
@@ -116,10 +146,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             foreach (VerifiedStagingFile file in verifiedFiles)
             {
                 string livePath = ResolveInside(projectRoot, file.normalizedPath);
+                bool hadPriorFile = File.Exists(IoPath(livePath));
                 document.entries.Add(new ProjectTransactionEntry
                 {
                     backupPath = ResolveInside(backupRoot, file.normalizedPath),
-                    hadPriorFile = File.Exists(IoPath(livePath)),
+                    expectedPriorSha256 = hadPriorFile
+                        ? Sha256(livePath)
+                        : string.Empty,
+                    hadPriorFile = hadPriorFile,
                     normalizedPath = file.normalizedPath,
                     operation = "write",
                     targetSha256 = file.sha256,
@@ -181,6 +215,38 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return new ProjectTransactionInspection
             {
                 journalPath = journalPath,
+                preservedModifiedFiles = document.entries
+                    .Where(entry =>
+                        string.Equals(
+                            entry.operation,
+                            "delete",
+                            StringComparison.Ordinal) &&
+                        string.Equals(
+                            entry.state,
+                            "preserved-modified",
+                            StringComparison.Ordinal))
+                    .Select(entry => new VerifiedStagingFile
+                    {
+                        bytes = entry.preservedBytes,
+                        normalizedPath = entry.normalizedPath,
+                        sha256 = entry.preservedSha256,
+                    })
+                    .ToList(),
+                removedFiles = document.entries
+                    .Where(entry =>
+                        string.Equals(
+                            entry.operation,
+                            "delete",
+                            StringComparison.Ordinal) &&
+                        !string.Equals(
+                            entry.state,
+                            "preserved-modified",
+                            StringComparison.Ordinal))
+                    .Select(entry => new VerifiedStagingFile
+                    {
+                        normalizedPath = entry.normalizedPath,
+                    })
+                    .ToList(),
                 requiresPackageResolution = document.entries.Any(entry =>
                     EmbeddedPackageResolver.IsEmbeddedPackageDescriptorPath(
                         entry.normalizedPath)),
@@ -253,18 +319,38 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return Result(journalPath, document.state);
             }
+            if (string.Equals(document.state, "rolling-back", StringComparison.Ordinal))
+            {
+                RunUnityAssetEditingTransaction(
+                    () => RollBack(
+                        projectRoot,
+                        document,
+                        journalPath));
+                return Result(journalPath, document.state);
+            }
 
             try
             {
                 RunUnityAssetEditingTransaction(() =>
                 {
+                    bool preparedEntries = false;
                     foreach (ProjectTransactionEntry entry in document.entries)
                     {
-                        ContinueEntry(
+                        preparedEntries |= PrepareEntry(
                             projectRoot,
                             document,
-                            entry,
-                            journalPath);
+                            entry);
+                    }
+                    if (preparedEntries)
+                    {
+                        WriteJournal(journalPath, document);
+                    }
+                    foreach (ProjectTransactionEntry entry in document.entries)
+                    {
+                        CommitEntry(
+                            projectRoot,
+                            document,
+                            entry);
                     }
                     document.state = "committed";
                     WriteJournal(journalPath, document);
@@ -361,32 +447,30 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        private static void ContinueEntry(
+        private static bool PrepareEntry(
             string projectRoot,
             ProjectTransactionDocument document,
-            ProjectTransactionEntry entry,
-            string journalPath)
+            ProjectTransactionEntry entry)
         {
             if (string.Equals(entry.state, "committed", StringComparison.Ordinal) ||
                 string.Equals(entry.state, "preserved-modified", StringComparison.Ordinal) ||
-                string.Equals(entry.state, "skipped-missing", StringComparison.Ordinal))
+                string.Equals(entry.state, "skipped-missing", StringComparison.Ordinal) ||
+                string.Equals(entry.state, "backed-up", StringComparison.Ordinal))
             {
-                return;
+                return false;
             }
             ValidateEntry(projectRoot, document, entry);
             if (string.Equals(entry.operation, "delete", StringComparison.Ordinal))
             {
-                ContinueDelete(projectRoot, document, entry, journalPath);
-                return;
+                return PrepareDelete(projectRoot, entry);
             }
-            ContinueWrite(projectRoot, document, entry, journalPath);
+            return PrepareWrite(projectRoot, document, entry);
         }
 
-        private static void ContinueWrite(
+        private static bool PrepareWrite(
             string projectRoot,
             ProjectTransactionDocument document,
-            ProjectTransactionEntry entry,
-            string journalPath)
+            ProjectTransactionEntry entry)
         {
             string sourcePath = ResolveInside(document.stagingPath, entry.normalizedPath);
             if (!File.Exists(IoPath(sourcePath)) ||
@@ -396,11 +480,120 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     $"The staged file digest is invalid for '{entry.normalizedPath}'.");
             }
             string livePath = ResolveInside(projectRoot, entry.normalizedPath);
-            if (string.Equals(entry.state, "pending", StringComparison.Ordinal))
+            bool liveExists = File.Exists(IoPath(livePath));
+            if (entry.hadPriorFile)
             {
-                BackupPriorFile(livePath, entry);
-                entry.state = "backed-up";
-                WriteJournal(journalPath, document);
+                if (!liveExists ||
+                    !string.Equals(
+                        Sha256(livePath),
+                        entry.expectedPriorSha256,
+                        StringComparison.Ordinal))
+                {
+                    throw new IOException(
+                        $"The project file changed before installation for '{entry.normalizedPath}'.");
+                }
+            }
+            else if (liveExists)
+            {
+                throw new IOException(
+                    $"A project file appeared before installation for '{entry.normalizedPath}'.");
+            }
+            BackupPriorFile(livePath, entry);
+            entry.state = "backed-up";
+            return true;
+        }
+
+        private static bool PrepareDelete(
+            string projectRoot,
+            ProjectTransactionEntry entry)
+        {
+            string livePath = ResolveInside(projectRoot, entry.normalizedPath);
+            if (!File.Exists(IoPath(livePath)))
+            {
+                entry.state = "skipped-missing";
+                return true;
+            }
+            if (!entry.hadPriorFile)
+            {
+                throw new IOException(
+                    $"A project file appeared before removal for '{entry.normalizedPath}'.");
+            }
+            if (!string.Equals(
+                    Sha256(livePath),
+                    entry.expectedPriorSha256,
+                    StringComparison.Ordinal))
+            {
+                entry.preservedBytes = new FileInfo(IoPath(livePath)).Length;
+                entry.preservedSha256 = Sha256(livePath);
+                entry.state = "preserved-modified";
+                return true;
+            }
+            BackupPriorFile(livePath, entry);
+            entry.state = "backed-up";
+            return true;
+        }
+
+        private static void CommitEntry(
+            string projectRoot,
+            ProjectTransactionDocument document,
+            ProjectTransactionEntry entry)
+        {
+            if (!string.Equals(entry.state, "backed-up", StringComparison.Ordinal))
+            {
+                return;
+            }
+            ValidateEntry(projectRoot, document, entry);
+            if (string.Equals(entry.operation, "delete", StringComparison.Ordinal))
+            {
+                CommitDelete(projectRoot, entry);
+                return;
+            }
+            CommitWrite(projectRoot, document, entry);
+        }
+
+        private static void CommitWrite(
+            string projectRoot,
+            ProjectTransactionDocument document,
+            ProjectTransactionEntry entry)
+        {
+            string sourcePath = ResolveInside(document.stagingPath, entry.normalizedPath);
+            if (!File.Exists(IoPath(sourcePath)) ||
+                !string.Equals(Sha256(sourcePath), entry.targetSha256, StringComparison.Ordinal))
+            {
+                throw new CryptographicException(
+                    $"The staged file digest is invalid for '{entry.normalizedPath}'.");
+            }
+            string livePath = ResolveInside(projectRoot, entry.normalizedPath);
+            RequireValidBackup(entry);
+            if (File.Exists(IoPath(livePath)))
+            {
+                string liveSha256 = Sha256(livePath);
+                if (string.Equals(
+                    liveSha256,
+                    entry.targetSha256,
+                    StringComparison.Ordinal))
+                {
+                    entry.state = "committed";
+                    return;
+                }
+                string priorSha256 = entry.hadPriorFile &&
+                    File.Exists(IoPath(entry.backupPath))
+                    ? Sha256(entry.backupPath)
+                    : string.Empty;
+                if (!entry.hadPriorFile ||
+                    !string.Equals(
+                        liveSha256,
+                        priorSha256,
+                        StringComparison.Ordinal))
+                {
+                    throw new IOException(
+                        $"The project file changed during installation for '{entry.normalizedPath}'.");
+                }
+            }
+            else if (entry.hadPriorFile)
+            {
+                throw new IOException(
+                    $"The project file disappeared during installation for '{entry.normalizedPath}'.");
             }
             string liveDirectory = Path.GetDirectoryName(livePath);
             Directory.CreateDirectory(IoPath(liveDirectory));
@@ -410,20 +603,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             CopyDurably(sourcePath, temporaryPath);
             PublishReplacement(temporaryPath, livePath);
             entry.state = "committed";
-            WriteJournal(journalPath, document);
         }
 
-        private static void ContinueDelete(
+        private static void CommitDelete(
             string projectRoot,
-            ProjectTransactionDocument document,
-            ProjectTransactionEntry entry,
-            string journalPath)
+            ProjectTransactionEntry entry)
         {
             string livePath = ResolveInside(projectRoot, entry.normalizedPath);
+            RequireValidBackup(entry);
             if (!File.Exists(IoPath(livePath)))
             {
-                entry.state = "skipped-missing";
-                WriteJournal(journalPath, document);
+                entry.state = "committed";
                 return;
             }
             if (!string.Equals(
@@ -431,19 +621,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     entry.expectedPriorSha256,
                     StringComparison.Ordinal))
             {
+                entry.preservedBytes = new FileInfo(IoPath(livePath)).Length;
+                entry.preservedSha256 = Sha256(livePath);
                 entry.state = "preserved-modified";
-                WriteJournal(journalPath, document);
                 return;
-            }
-            if (string.Equals(entry.state, "pending", StringComparison.Ordinal))
-            {
-                BackupPriorFile(livePath, entry);
-                entry.state = "backed-up";
-                WriteJournal(journalPath, document);
             }
             File.Delete(IoPath(livePath));
             entry.state = "committed";
-            WriteJournal(journalPath, document);
         }
 
         private static void BackupPriorFile(
@@ -462,14 +646,24 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             ProjectTransactionDocument document,
             string journalPath)
         {
+            if (!string.Equals(
+                document.state,
+                "rolling-back",
+                StringComparison.Ordinal))
+            {
+                document.state = "rolling-back";
+                WriteJournal(journalPath, document);
+            }
             for (int index = document.entries.Count - 1; index >= 0; index--)
             {
                 ProjectTransactionEntry entry = document.entries[index];
-                if (!string.Equals(entry.state, "committed", StringComparison.Ordinal))
+                if (!string.Equals(entry.state, "committed", StringComparison.Ordinal) &&
+                    !string.Equals(entry.state, "backed-up", StringComparison.Ordinal))
                 {
                     continue;
                 }
                 string livePath = ResolveInside(projectRoot, entry.normalizedPath);
+                RequireValidBackup(entry);
                 if (entry.hadPriorFile && File.Exists(IoPath(entry.backupPath)))
                 {
                     string temporaryPath = livePath + ".rollback.partial";
@@ -486,10 +680,28 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     File.Delete(IoPath(livePath));
                 }
                 entry.state = "rolled-back";
-                WriteJournal(journalPath, document);
             }
             document.state = "rolled-back";
             WriteJournal(journalPath, document);
+        }
+
+        private static void RequireValidBackup(
+            ProjectTransactionEntry entry)
+        {
+            if (!entry.hadPriorFile)
+            {
+                return;
+            }
+            if (!File.Exists(IoPath(entry.backupPath)) ||
+                !IsSha256(entry.expectedPriorSha256) ||
+                !string.Equals(
+                    Sha256(entry.backupPath),
+                    entry.expectedPriorSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"The project backup is invalid for '{entry.normalizedPath}'.");
+            }
         }
 
         private static List<VerifiedStagingFile> NormalizeFileRecords(
@@ -551,6 +763,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     projectRoot,
                     StringComparison.OrdinalIgnoreCase) ||
                 (document.state != "prepared" &&
+                    document.state != "rolling-back" &&
                     document.state != "committed" &&
                     document.state != "rolled-back") ||
                 document.entries == null ||
@@ -588,7 +801,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (entry == null ||
                 (entry.operation != "write" && entry.operation != "delete") ||
                 (entry.operation == "write" && !IsSha256(entry.targetSha256)) ||
+                (entry.operation == "write" &&
+                    entry.hadPriorFile &&
+                    !IsSha256(entry.expectedPriorSha256)) ||
                 (entry.operation == "delete" && !IsSha256(entry.expectedPriorSha256)) ||
+                (entry.state == "preserved-modified" &&
+                    (entry.preservedBytes < 0 ||
+                        !IsSha256(entry.preservedSha256))) ||
                 (entry.state != "pending" &&
                     entry.state != "backed-up" &&
                     entry.state != "committed" &&

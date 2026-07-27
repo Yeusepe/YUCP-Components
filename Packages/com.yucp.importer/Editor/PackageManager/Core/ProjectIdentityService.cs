@@ -4,14 +4,11 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
-using UnityEditor;
-using UnityEngine;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
     internal static class ProjectIdentityService
     {
-        private const string SessionKey = "yucp.project.identity";
         private const int SchemaVersion = 2;
 
         private static string IdentityFilePath(string projectPath) =>
@@ -24,29 +21,25 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string projectPath)
         {
             string canonicalProjectPath = Path.GetFullPath(projectPath);
-            string sessionKey = SessionKey + "." +
-                HashText(canonicalProjectPath);
-            string cached = SessionState.GetString(sessionKey, null);
-            if (IsSha256(cached))
-            {
-                return cached;
-            }
-
             string identityPath = IdentityFilePath(canonicalProjectPath);
             try
             {
                 if (File.Exists(identityPath))
                 {
-                    ProjectIdentityFile existing =
-                        JsonConvert.DeserializeObject<ProjectIdentityFile>(
-                            File.ReadAllText(identityPath));
+                    ProjectIdentityFile existing = null;
+                    try
+                    {
+                        existing =
+                            JsonConvert.DeserializeObject<ProjectIdentityFile>(
+                                File.ReadAllText(identityPath));
+                    }
+                    catch (JsonException)
+                    {
+                    }
                     if (existing != null &&
                         existing.schemaVersion == SchemaVersion &&
                         IsSha256(existing.projectIdentity))
                     {
-                        SessionState.SetString(
-                            sessionKey,
-                            existing.projectIdentity);
                         return existing.projectIdentity;
                     }
                 }
@@ -60,7 +53,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                             projectIdentity = projectIdentity,
                         },
                         Formatting.Indented));
-                SessionState.SetString(sessionKey, projectIdentity);
                 return projectIdentity;
             }
             catch (Exception exception)
@@ -123,17 +115,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     File.Delete(temporary);
                 }
-            }
-        }
-
-        private static string HashText(string value)
-        {
-            using (SHA256 sha256 = SHA256.Create())
-            {
-                return string.Concat(
-                    sha256.ComputeHash(
-                            Encoding.UTF8.GetBytes(value))
-                        .Select(item => item.ToString("x2")));
             }
         }
 

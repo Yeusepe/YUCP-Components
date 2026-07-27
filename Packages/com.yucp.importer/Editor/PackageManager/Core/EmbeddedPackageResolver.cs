@@ -49,20 +49,31 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         // Unity 2022.3 Package Manager Client.Resolve reference:
         // https://docs.unity3d.com/2022.3/Documentation/ScriptReference/PackageManager.Client.Resolve.html
+        // Unity 2022.3 registeredPackages completion event reference:
+        // https://docs.unity3d.com/2022.3/Documentation/ScriptReference/PackageManager.Events-registeredPackages.html
         internal static Task ResolveAsync()
         {
-            Client.Resolve();
-            ListRequest request = Client.List(false, true);
             var completion = new TaskCompletionSource<bool>();
             DateTime deadline = DateTime.UtcNow + ResolveTimeout;
+            ListRequest request = null;
+            void OnRegisteredPackages(PackageRegistrationEventArgs _)
+            {
+                if (request == null)
+                {
+                    request = Client.List(false, true);
+                }
+            }
+            Events.registeredPackages += OnRegisteredPackages;
             void Poll()
             {
-                if (!request.IsCompleted && DateTime.UtcNow < deadline)
+                if ((request == null || !request.IsCompleted) &&
+                    DateTime.UtcNow < deadline)
                 {
                     return;
                 }
                 EditorApplication.update -= Poll;
-                if (!request.IsCompleted)
+                Events.registeredPackages -= OnRegisteredPackages;
+                if (request == null || !request.IsCompleted)
                 {
                     completion.TrySetException(
                         new TimeoutException(
@@ -80,7 +91,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 completion.TrySetResult(true);
             }
             EditorApplication.update += Poll;
-            Poll();
+            try
+            {
+                Client.Resolve();
+                Poll();
+            }
+            catch (Exception exception)
+            {
+                EditorApplication.update -= Poll;
+                Events.registeredPackages -= OnRegisteredPackages;
+                completion.TrySetException(exception);
+            }
             return completion.Task;
         }
 

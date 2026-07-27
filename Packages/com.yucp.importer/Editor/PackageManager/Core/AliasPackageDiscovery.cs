@@ -134,26 +134,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     continue;
                 }
                 string packageJsonPath = Path.Combine(package.resolvedPath, "package.json");
-                if (!File.Exists(packageJsonPath))
-                {
-                    continue;
-                }
-                try
-                {
-                    if (TryBuildMetadata(
+                if (TryReadPackageJson(
+                    packageJsonPath,
+                    out string packageJson) &&
+                    TryBuildMetadata(
                         package.name,
-                        File.ReadAllText(packageJsonPath),
+                        packageJson,
                         out _,
                         out _))
-                    {
-                        return true;
-                    }
-                }
-                catch (IOException)
                 {
-                }
-                catch (UnauthorizedAccessException)
-                {
+                    return true;
                 }
             }
             return false;
@@ -175,10 +165,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     continue;
                 }
                 string packageJsonPath = Path.Combine(package.resolvedPath, "package.json");
-                if (!File.Exists(packageJsonPath) ||
+                if (!TryReadPackageJson(
+                        packageJsonPath,
+                        out string packageJson) ||
                     !TryBuildMetadata(
                         package.name,
-                        File.ReadAllText(packageJsonPath),
+                        packageJson,
                         out PackageMetadata metadata,
                         out _) ||
                     !string.Equals(
@@ -197,6 +189,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             return match ?? throw new InvalidOperationException(
                 "The requested package alias is not installed through VPM.");
+        }
+
+        private static bool TryReadPackageJson(
+            string path,
+            out string packageJson)
+        {
+            packageJson = string.Empty;
+            try
+            {
+                packageJson = File.ReadAllText(path);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
         }
     }
 }

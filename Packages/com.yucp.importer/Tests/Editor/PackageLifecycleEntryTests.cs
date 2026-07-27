@@ -54,6 +54,23 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void FailurePersistenceRejectsAProjectPathSubstitution()
+        {
+            MethodInfo method = typeof(PackageLifecycleEntry).GetMethod(
+                "IsRequestBoundToOpenedProject",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            var request = new PackageLifecycleRequest
+            {
+                projectPath = Path.GetFullPath(Path.GetTempPath()),
+            };
+
+            Assert.That(method, Is.Not.Null);
+            Assert.That(
+                (bool)method.Invoke(null, new object[] { request }),
+                Is.False);
+        }
+
+        [Test]
         public void StartupResumesAfterDomainReloadForAnActiveBatchCommand()
         {
             bool shouldResume =

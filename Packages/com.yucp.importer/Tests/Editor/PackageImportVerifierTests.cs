@@ -1,10 +1,14 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.Tests
@@ -18,8 +22,8 @@ namespace YUCP.Importer.Editor.Tests
         private const string MissingTypeFixturePath =
             FixtureFolder + "/missing-type.asset";
 
-        [Test]
-        public void ImportAndVerifyRegistersOwnedAsset()
+        [UnityTest]
+        public IEnumerator ImportAndVerifyRegistersOwnedAsset()
         {
             string projectPath = Path.GetFullPath(
                 Path.Combine(Application.dataPath, ".."));
@@ -45,9 +49,10 @@ namespace YUCP.Importer.Editor.Tests
                     },
                 };
 
-                PackageImportVerifier.ImportAndVerify(
-                    projectPath,
-                    files);
+                yield return AwaitSuccess(
+                    PackageImportVerifier.ImportAndVerify(
+                        projectPath,
+                        files));
 
                 Assert.That(
                     AssetDatabase.AssetPathToGUID(FixturePath),
@@ -64,8 +69,8 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
-        [Test]
-        public void ImportAndVerifyReportsTheOwnedPathForByteChanges()
+        [UnityTest]
+        public IEnumerator ImportAndVerifyReportsTheOwnedPathForByteChanges()
         {
             string projectPath = Path.GetFullPath(
                 Path.Combine(Application.dataPath, ".."));
@@ -91,11 +96,12 @@ namespace YUCP.Importer.Editor.Tests
                     },
                 };
 
-                InvalidDataException exception =
-                    Assert.Throws<InvalidDataException>(() =>
-                        PackageImportVerifier.ImportAndVerify(
-                            projectPath,
-                            files));
+                InvalidDataException exception = null;
+                yield return AwaitFailure<InvalidDataException>(
+                    PackageImportVerifier.ImportAndVerify(
+                        projectPath,
+                        files),
+                    caught => exception = caught);
 
                 StringAssert.Contains(FixturePath, exception.Message);
             }
@@ -107,8 +113,8 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
-        [Test]
-        public void ImportAndVerifyAcceptsARegisteredAssetWithAnUnavailableType()
+        [UnityTest]
+        public IEnumerator ImportAndVerifyAcceptsARegisteredAssetWithAnUnavailableType()
         {
             string projectPath = Path.GetFullPath(
                 Path.Combine(Application.dataPath, ".."));
@@ -159,7 +165,7 @@ namespace YUCP.Importer.Editor.Tests
                     },
                 };
 
-                Assert.DoesNotThrow(() =>
+                yield return AwaitSuccess(
                     PackageImportVerifier.ImportAndVerify(
                         projectPath,
                         files));
@@ -172,8 +178,8 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
-        [Test]
-        public void ImportAndVerifyReadsAnOwnedFileBeyondTheWindowsPathLimit()
+        [UnityTest]
+        public IEnumerator ImportAndVerifyReadsAnOwnedFileBeyondTheWindowsPathLimit()
         {
             string projectPath = Path.GetFullPath(
                 Path.Combine(Application.dataPath, ".."));
@@ -211,7 +217,7 @@ namespace YUCP.Importer.Editor.Tests
                     },
                 };
 
-                Assert.DoesNotThrow(() =>
+                yield return AwaitSuccess(
                     PackageImportVerifier.ImportAndVerify(
                         projectPath,
                         files));
@@ -264,9 +270,11 @@ namespace YUCP.Importer.Editor.Tests
                     false));
         }
 
-        [Test]
-        public void ImportAndVerifyRemovalIgnoresRecentlyDeletedAsset()
+        [UnityTest]
+        public IEnumerator ImportAndVerifyRemovalIgnoresRecentlyDeletedAsset()
         {
+            bool priorIgnore = LogAssert.ignoreFailingMessages;
+            LogAssert.ignoreFailingMessages = true;
             string projectPath = Path.GetFullPath(
                 Path.Combine(Application.dataPath, ".."));
             string diskPath = Path.Combine(
@@ -299,9 +307,52 @@ namespace YUCP.Importer.Editor.Tests
                     },
                 };
 
-                PackageImportVerifier.ImportAndVerifyRemoval(
-                    projectPath,
-                    files);
+                yield return AwaitSuccess(
+                    PackageImportVerifier.ImportAndVerifyRemoval(
+                        projectPath,
+                        files));
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = priorIgnore;
+                AssetDatabase.DeleteAsset(FixtureFolder);
+                AssetDatabase.Refresh(
+                    ImportAssetOptions.ForceSynchronousImport);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ImportAndVerifyRemovalRejectsAnOwnedFileThatStillExists()
+        {
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            string diskPath = Path.Combine(
+                projectPath,
+                FixturePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar));
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(diskPath));
+                File.WriteAllText(
+                    diskPath,
+                    "owned content that removal left behind",
+                    new UTF8Encoding(false));
+
+                InvalidDataException exception = null;
+                yield return AwaitFailure<InvalidDataException>(
+                    PackageImportVerifier.ImportAndVerifyRemoval(
+                        projectPath,
+                        new[]
+                        {
+                            new VerifiedStagingFile
+                            {
+                                normalizedPath = FixturePath,
+                            },
+                        }),
+                    caught => exception = caught);
+
+                StringAssert.Contains(FixturePath, exception.Message);
             }
             finally
             {
@@ -309,6 +360,44 @@ namespace YUCP.Importer.Editor.Tests
                 AssetDatabase.Refresh(
                     ImportAssetOptions.ForceSynchronousImport);
             }
+        }
+
+        private static IEnumerator AwaitSuccess(Task task)
+        {
+            while (!task.IsCompleted)
+            {
+                yield return null;
+            }
+            if (task.IsCanceled)
+            {
+                throw new OperationCanceledException();
+            }
+            if (task.IsFaulted)
+            {
+                throw task.Exception.GetBaseException();
+            }
+        }
+
+        private static IEnumerator AwaitFailure<TException>(
+            Task task,
+            Action<TException> capture)
+            where TException : Exception
+        {
+            while (!task.IsCompleted)
+            {
+                yield return null;
+            }
+            if (!task.IsFaulted)
+            {
+                Assert.Fail(
+                    "The asynchronous operation did not fail.");
+            }
+            Exception failure = task.Exception.GetBaseException();
+            if (!(failure is TException expected))
+            {
+                throw failure;
+            }
+            capture(expected);
         }
 
         private static string Sha256(string path)

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using NUnit.Framework;
 using YUCP.Importer.Editor.PackageManager.Core;
 
@@ -80,6 +81,69 @@ namespace YUCP.Importer.Editor.Tests
                     "another-product",
                     "install",
                     new string('0', 64)));
+        }
+
+        [Test]
+        public void InstallAttemptIdentifierPersistsForThePackageAlias()
+        {
+            string project = CreateProject();
+            try
+            {
+                MethodInfo getOrCreate =
+                    typeof(PackageLifecycleCheckpointStore).GetMethod(
+                        "GetOrCreateAttemptId",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                MethodInfo clear =
+                    typeof(PackageLifecycleCheckpointStore).GetMethod(
+                        "ClearAttemptId",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+
+                Assert.That(getOrCreate, Is.Not.Null);
+                Assert.That(clear, Is.Not.Null);
+                string first = (string)getOrCreate.Invoke(
+                    null,
+                    new object[] { project, "jammr" });
+                string second = (string)getOrCreate.Invoke(
+                    null,
+                    new object[] { project, "jammr" });
+                Assert.That(second, Is.EqualTo(first));
+                clear.Invoke(null, new object[] { project, "jammr" });
+                string third = (string)getOrCreate.Invoke(
+                    null,
+                    new object[] { project, "jammr" });
+                Assert.That(third, Is.Not.EqualTo(first));
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
+        }
+
+        [Test]
+        public void CorruptProjectIdentityRegeneratesAtomically()
+        {
+            string project = CreateProject();
+            try
+            {
+                string settings = Path.Combine(project, "ProjectSettings");
+                Directory.CreateDirectory(settings);
+                string identityPath = Path.Combine(
+                    settings,
+                    "YUCPProjectIdentity.json");
+                File.WriteAllText(identityPath, "{not-json");
+
+                string identity =
+                    ProjectIdentityService.GetOrCreateProjectIdentity(project);
+
+                Assert.That(identity, Has.Length.EqualTo(64));
+                StringAssert.Contains(
+                    identity,
+                    File.ReadAllText(identityPath));
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
         }
 
         private static string CreateProject()

@@ -214,7 +214,7 @@ namespace YUCP.Importer.Editor.Batch
             catch (Exception exception)
             {
                 PackageLifecycleResult failure = BuildFailure(request, exception);
-                if (request != null)
+                if (IsRequestBoundToOpenedProject(request))
                 {
                     try
                     {
@@ -266,21 +266,11 @@ namespace YUCP.Importer.Editor.Batch
                 !IsSafeIdentifier(request.idempotencyKey) ||
                 !IsSafeIdentifier(request.productAlias) ||
                 !IsSupportedOperation(request.operation) ||
-                !Path.IsPathRooted(request.projectPath) ||
+                !IsRequestBoundToOpenedProject(request) ||
                 !IsSha256(request.expectedCurrentReleaseRoot))
             {
                 throw new InvalidDataException(
                     "The package lifecycle request fields are invalid.");
-            }
-            string openedProject = Path.GetFullPath(
-                Path.Combine(Application.dataPath, ".."));
-            if (!string.Equals(
-                Path.GetFullPath(request.projectPath),
-                openedProject,
-                StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException(
-                    "The package lifecycle project path does not match the opened project.");
             }
             if (request.operation == "rollback" &&
                 !IsSha256(request.targetReleaseRoot))
@@ -294,6 +284,34 @@ namespace YUCP.Importer.Editor.Batch
             {
                 throw new InvalidDataException(
                     "The package lifecycle approval is invalid.");
+            }
+        }
+
+        private static bool IsRequestBoundToOpenedProject(
+            PackageLifecycleRequest request)
+        {
+            if (request == null ||
+                string.IsNullOrWhiteSpace(request.projectPath) ||
+                !Path.IsPathRooted(request.projectPath))
+            {
+                return false;
+            }
+            try
+            {
+                string openedProject = Path.GetFullPath(
+                    Path.Combine(Application.dataPath, ".."));
+                return string.Equals(
+                    Path.GetFullPath(request.projectPath),
+                    openedProject,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch (
+                Exception exception) when (
+                    exception is ArgumentException ||
+                    exception is NotSupportedException ||
+                    exception is PathTooLongException)
+            {
+                return false;
             }
         }
 
@@ -355,8 +373,7 @@ namespace YUCP.Importer.Editor.Batch
         private static string SafeCurrentReleaseRoot(
             PackageLifecycleRequest request)
         {
-            if (request == null ||
-                !Path.IsPathRooted(request.projectPath) ||
+            if (!IsRequestBoundToOpenedProject(request) ||
                 !IsSafeIdentifier(request.productAlias))
             {
                 return string.Empty;

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.Compilation;
 
@@ -38,12 +39,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        internal static void ImportAndVerify(
+        internal static async Task ImportAndVerify(
             string projectPath,
             IReadOnlyList<NativePackageBrokerFile> files)
         {
             string projectRoot = RequireProjectRoot(projectPath);
-            RefreshAndRequireSuccessfulCompilation();
+            await RefreshAndRequireSuccessfulCompilation();
             foreach (NativePackageBrokerFile file in
                 files ?? Array.Empty<NativePackageBrokerFile>())
             {
@@ -75,34 +76,87 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        internal static void ImportAndVerifyRemoval(
+        internal static async Task ImportAndVerifyRemoval(
             string projectPath,
             IReadOnlyList<VerifiedStagingFile> removedFiles)
         {
+            await ImportAndVerifyRemoval(
+                projectPath,
+                removedFiles,
+                Array.Empty<VerifiedStagingFile>());
+        }
+
+        internal static async Task ImportAndVerifyRemoval(
+            string projectPath,
+            IReadOnlyList<VerifiedStagingFile> removedFiles,
+            IReadOnlyList<VerifiedStagingFile> preservedFiles)
+        {
             string projectRoot = RequireProjectRoot(projectPath);
-            RefreshAndRequireSuccessfulCompilation();
+            await RefreshAndRequireSuccessfulCompilation();
             foreach (VerifiedStagingFile file in
                 removedFiles ?? Array.Empty<VerifiedStagingFile>())
             {
                 string diskPath = ResolveOwnedFile(
                     projectRoot,
                     file.normalizedPath);
-                if (!File.Exists(diskPath) &&
-                    IsImportableAsset(file.normalizedPath) &&
+                if (File.Exists(diskPath))
+                {
+                    throw new InvalidDataException(
+                        "Unity retained the removed package file: " +
+                        file.normalizedPath);
+                }
+                if (IsImportableAsset(file.normalizedPath) &&
                     !string.IsNullOrWhiteSpace(
                         AssetDatabase.AssetPathToGUID(
                             file.normalizedPath,
                             AssetPathToGUIDOptions.OnlyExistingAssets)))
                 {
                     throw new InvalidDataException(
-                        "Unity retained a removed package asset.");
+                        "Unity retained the removed package asset: " +
+                        file.normalizedPath);
+                }
+            }
+            foreach (VerifiedStagingFile file in
+                preservedFiles ?? Array.Empty<VerifiedStagingFile>())
+            {
+                string diskPath = ResolveOwnedFile(
+                    projectRoot,
+                    file.normalizedPath);
+                var info = new FileInfo(diskPath);
+                if (!info.Exists ||
+                    info.Length != file.bytes ||
+                    !string.Equals(
+                        Sha256(diskPath),
+                        file.sha256,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        "Unity changed a user-modified package file during removal: " +
+                        file.normalizedPath);
+                }
+                if (IsImportableAsset(file.normalizedPath) &&
+                    string.IsNullOrWhiteSpace(
+                        AssetDatabase.AssetPathToGUID(
+                            file.normalizedPath,
+                            AssetPathToGUIDOptions.OnlyExistingAssets)))
+                {
+                    throw new InvalidDataException(
+                        "Unity did not retain the user-modified package asset: " +
+                        file.normalizedPath);
                 }
             }
         }
 
-        private static void RefreshAndRequireSuccessfulCompilation()
+        private static async Task RefreshAndRequireSuccessfulCompilation()
         {
+            const int compilationTimeoutMilliseconds = 120000;
             var compilationErrors = new List<string>();
+            var compilationCompleted = new TaskCompletionSource<bool>();
+            bool compilationStarted = false;
+            void OnCompilationStarted(object _)
+            {
+                compilationStarted = true;
+            }
             void OnAssemblyCompilationFinished(
                 string assemblyPath,
                 CompilerMessage[] messages)
@@ -115,21 +169,43 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                             $"{Path.GetFileName(assemblyPath)}: " +
                             message.message));
             }
+            void OnCompilationFinished(object _)
+            {
+                compilationCompleted.TrySetResult(true);
+            }
 
+            CompilationPipeline.compilationStarted += OnCompilationStarted;
             CompilationPipeline.assemblyCompilationFinished +=
                 OnAssemblyCompilationFinished;
+            CompilationPipeline.compilationFinished += OnCompilationFinished;
             try
             {
                 AssetDatabase.Refresh(
                     ImportAssetOptions.ForceSynchronousImport);
+                await NextEditorUpdate();
+                if (compilationStarted || EditorApplication.isCompiling)
+                {
+                    Task completed = await Task.WhenAny(
+                        compilationCompleted.Task,
+                        Task.Delay(compilationTimeoutMilliseconds));
+                    if (completed != compilationCompleted.Task)
+                    {
+                        throw new TimeoutException(
+                            "Unity script compilation did not finish in time.");
+                    }
+                    await compilationCompleted.Task;
+                }
             }
             finally
             {
+                CompilationPipeline.compilationStarted -=
+                    OnCompilationStarted;
                 CompilationPipeline.assemblyCompilationFinished -=
                     OnAssemblyCompilationFinished;
+                CompilationPipeline.compilationFinished -=
+                    OnCompilationFinished;
             }
-            if (EditorApplication.isCompiling ||
-                EditorUtility.scriptCompilationFailed ||
+            if (EditorUtility.scriptCompilationFailed ||
                 compilationErrors.Count > 0)
             {
                 string detail = compilationErrors.Count == 0
@@ -137,6 +213,18 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     : string.Join("\n", compilationErrors);
                 throw new InvalidDataException(detail);
             }
+        }
+
+        private static Task NextEditorUpdate()
+        {
+            var completion = new TaskCompletionSource<bool>();
+            void Complete()
+            {
+                EditorApplication.delayCall -= Complete;
+                completion.TrySetResult(true);
+            }
+            EditorApplication.delayCall += Complete;
+            return completion.Task;
         }
 
         private static string RequireProjectRoot(string value)

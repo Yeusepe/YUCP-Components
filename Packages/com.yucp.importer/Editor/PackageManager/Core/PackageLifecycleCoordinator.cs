@@ -75,13 +75,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             AliasPackageContract alias,
             Action<PackageLifecycleUserProgress> reportProgress)
         {
+            string projectPath = null;
+            string attemptKey = null;
             try
             {
+                ValidateAlias(alias);
                 Report(
                     reportProgress,
                     "checking-access",
                     alias?.packageDisplayName);
-                string projectPath = CurrentProjectPath();
+                projectPath = CurrentProjectPath();
+                attemptKey = alias.aliasId;
                 string currentReleaseRoot = GetCurrentReleaseRoot(
                     projectPath,
                     alias.aliasId);
@@ -89,7 +93,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     projectPath,
                     alias.aliasId,
                     false);
-                string lifecycleId = Guid.NewGuid().ToString("N");
+                string lifecycleId =
+                    PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
+                        projectPath,
+                        attemptKey);
                 Report(
                     reportProgress,
                     "checking-package",
@@ -120,6 +127,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         review.cancelLabel);
                     if (!approved)
                     {
+                        PackageLifecycleCheckpointStore.ClearAttemptId(
+                            projectPath,
+                            attemptKey);
                         return new PackageLifecycleInstallResult
                         {
                             cancelled = true,
@@ -149,6 +159,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "finishing",
                     alias.packageDisplayName);
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                PackageLifecycleCheckpointStore.ClearAttemptId(
+                    projectPath,
+                    attemptKey);
                 return new PackageLifecycleInstallResult
                 {
                     succeeded = true,
@@ -156,6 +169,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             catch (Exception exception)
             {
+                TryClearAttemptId(projectPath, attemptKey);
                 string errorCode = GetDiagnosticErrorCode(exception);
                 string traceId = GetDiagnosticTraceId(exception);
                 LogInstallDiagnostic(errorCode, traceId);
@@ -180,6 +194,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     alias,
                     reportProgress);
             }
+            string projectPath = null;
+            string attemptKey = null;
             try
             {
                 ValidateAlias(alias);
@@ -190,7 +206,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     throw new InvalidOperationException(
                         "The package management action is unsupported.");
                 }
-                string projectPath = CurrentProjectPath();
+                projectPath = CurrentProjectPath();
+                attemptKey = alias.aliasId + "." + operation;
                 PackageDeliveryInstallState current = ReadInstallState(
                     projectPath,
                     alias.aliasId,
@@ -201,7 +218,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     throw new InvalidOperationException(
                         "There is no earlier package version to restore.");
                 }
-                string runId = Guid.NewGuid().ToString("N");
+                string runId =
+                    PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
+                        projectPath,
+                        attemptKey);
                 string targetReleaseRoot = operation == "repair"
                     ? current.releaseRoot
                     : operation == "rollback"
@@ -234,6 +254,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "finishing",
                     alias.packageDisplayName);
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                PackageLifecycleCheckpointStore.ClearAttemptId(
+                    projectPath,
+                    attemptKey);
                 return new PackageLifecycleInstallResult
                 {
                     succeeded = true,
@@ -241,6 +264,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             catch (Exception exception)
             {
+                TryClearAttemptId(projectPath, attemptKey);
                 string errorCode = GetDiagnosticErrorCode(exception);
                 string traceId = GetDiagnosticTraceId(exception);
                 LogInstallDiagnostic(errorCode, traceId);
@@ -250,6 +274,29 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     errorMessage = BuildUserFacingFailureMessage(exception),
                     traceId = traceId,
                 };
+            }
+        }
+
+        private static void TryClearAttemptId(
+            string projectPath,
+            string attemptKey)
+        {
+            if (string.IsNullOrWhiteSpace(projectPath) ||
+                string.IsNullOrWhiteSpace(attemptKey))
+            {
+                return;
+            }
+            try
+            {
+                PackageLifecycleCheckpointStore.ClearAttemptId(
+                    projectPath,
+                    attemptKey);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "YUCP could not clear a completed package attempt: " +
+                    exception.GetType().Name);
             }
         }
 
@@ -468,7 +515,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         "The recovered package version does not match " +
                         "the authorized version.");
                 }
-                PackageImportVerifier.ImportAndVerify(
+                await PackageImportVerifier.ImportAndVerify(
                     projectPath,
                     recoveredState?.files);
                 result.currentReleaseRoot = recoveredReleaseRoot;
@@ -655,11 +702,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         projectPath,
                         checkpoint.runId);
                 }
+                else if (string.Equals(
+                    inspection.state,
+                    "rolling-back",
+                    StringComparison.Ordinal))
+                {
+                    ProjectTransactionJournal.Recover(
+                        projectPath,
+                        checkpoint.runId);
+                }
                 if (inspection.requiresPackageResolution)
                 {
                     await EmbeddedPackageResolver.ResolveAsync();
                 }
-                VerifyRestoredState(projectPath, checkpoint);
+                await VerifyRestoredState(projectPath, checkpoint);
                 checkpoint.phase = "rolled-back";
                 PackageLifecycleCheckpointStore.Write(
                     projectPath,
@@ -694,7 +750,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     await EmbeddedPackageResolver.ResolveAsync();
                 }
-                VerifyCommittedState(projectPath, checkpoint);
+                await VerifyCommittedState(
+                    projectPath,
+                    checkpoint,
+                    inspection);
                 checkpoint.phase = "verified";
                 PackageLifecycleCheckpointStore.Write(
                     projectPath,
@@ -717,7 +776,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     await EmbeddedPackageResolver.ResolveAsync();
                 }
-                VerifyRestoredState(projectPath, checkpoint);
+                await VerifyRestoredState(projectPath, checkpoint);
                 checkpoint.phase = "rolled-back";
                 PackageLifecycleCheckpointStore.Write(
                     projectPath,
@@ -1065,15 +1124,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             reportProgress?.Invoke(progress);
         }
 
-        private static void VerifyCommittedState(
+        private static async Task VerifyCommittedState(
             string projectPath,
-            PackageLifecycleCheckpoint checkpoint)
+            PackageLifecycleCheckpoint checkpoint,
+            ProjectTransactionInspection inspection)
         {
             if (checkpoint.operation == "uninstall")
             {
-                PackageImportVerifier.ImportAndVerifyRemoval(
+                await PackageImportVerifier.ImportAndVerifyRemoval(
                     projectPath,
-                    ToVerifiedFiles(checkpoint.priorState?.files));
+                    inspection.removedFiles,
+                    inspection.preservedModifiedFiles);
                 return;
             }
             if (checkpoint.targetState == null)
@@ -1081,23 +1142,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidDataException(
                     "The package lifecycle target state is missing.");
             }
-            PackageImportVerifier.ImportAndVerify(
+            await PackageImportVerifier.ImportAndVerify(
                 projectPath,
                 checkpoint.targetState.files);
         }
 
-        private static void VerifyRestoredState(
+        private static async Task VerifyRestoredState(
             string projectPath,
             PackageLifecycleCheckpoint checkpoint)
         {
             if (checkpoint.priorState == null)
             {
-                PackageImportVerifier.ImportAndVerifyRemoval(
+                await PackageImportVerifier.ImportAndVerifyRemoval(
                     projectPath,
                     ToVerifiedFiles(checkpoint.targetState?.files));
                 return;
             }
-            PackageImportVerifier.ImportAndVerify(
+            await PackageImportVerifier.ImportAndVerify(
                 projectPath,
                 checkpoint.priorState.files);
         }

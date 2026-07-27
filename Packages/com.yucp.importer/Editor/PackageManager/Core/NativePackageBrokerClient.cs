@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 
@@ -102,7 +103,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         Task<NativePackageBrokerResult> ExecuteAsync(
             NativePackageBrokerRequest request,
-            Action<NativePackageBrokerProgress> reportProgress);
+            Action<NativePackageBrokerProgress> reportProgress,
+            CancellationToken cancellationToken);
     }
 
     [Serializable]
@@ -147,6 +149,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal const string ProductionPipeName =
             "yucp.package-broker.v1";
         private const int ConnectTimeoutMilliseconds = 5000;
+        private const int DefaultFrameTimeoutMilliseconds = 120000;
+        private const int DefaultOperationTimeoutMilliseconds = 14400000;
+        private const int MaximumFrameCharacters = 1024 * 1024;
+        private const int MaximumFrameBytes = 1024 * 1024;
         private static readonly JsonSerializerSettings
             StrictFrameSerializerSettings =
                 new JsonSerializerSettings
@@ -155,9 +161,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         MissingMemberHandling.Error,
                 };
         private readonly string _pipeName;
+        private readonly int _frameTimeoutMilliseconds;
+        private readonly int _operationTimeoutMilliseconds;
 
         internal NamedPipePackageBrokerTransport(
-            string pipeName = ProductionPipeName)
+            string pipeName = ProductionPipeName,
+            int frameTimeoutMilliseconds = DefaultFrameTimeoutMilliseconds,
+            int operationTimeoutMilliseconds =
+                DefaultOperationTimeoutMilliseconds)
         {
             if (string.IsNullOrWhiteSpace(pipeName))
             {
@@ -165,15 +176,30 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "The package broker pipe name is missing.",
                     nameof(pipeName));
             }
+            if (frameTimeoutMilliseconds < 1 ||
+                operationTimeoutMilliseconds < frameTimeoutMilliseconds)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(frameTimeoutMilliseconds),
+                    "The package broker timeouts are invalid.");
+            }
             _pipeName = pipeName;
+            _frameTimeoutMilliseconds = frameTimeoutMilliseconds;
+            _operationTimeoutMilliseconds = operationTimeoutMilliseconds;
         }
 
         public async Task<NativePackageBrokerResult> ExecuteAsync(
             NativePackageBrokerRequest request,
-            Action<NativePackageBrokerProgress> reportProgress)
+            Action<NativePackageBrokerProgress> reportProgress,
+            CancellationToken cancellationToken)
         {
+            using (var operationCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken))
             try
             {
+                operationCancellation.CancelAfter(
+                    _operationTimeoutMilliseconds);
                 using (var pipe = new NamedPipeClientStream(
                     ".",
                     _pipeName,
@@ -181,8 +207,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     PipeOptions.Asynchronous,
                     TokenImpersonationLevel.Impersonation))
                 {
-                    await pipe.ConnectAsync(
-                        ConnectTimeoutMilliseconds);
+                    await AwaitWithTimeout(
+                        pipe.ConnectAsync(ConnectTimeoutMilliseconds),
+                        _frameTimeoutMilliseconds,
+                        operationCancellation.Token);
                     using (var reader = new StreamReader(
                         pipe,
                         new UTF8Encoding(false, true),
@@ -195,6 +223,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         4096,
                         true))
                     {
+                        var frameReader = new BoundedFrameReader(reader);
                         writer.NewLine = "\n";
                         writer.AutoFlush = true;
                         string nonce = CreateNonce();
@@ -203,12 +232,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                             new NativePackageBrokerBeginFrame
                             {
                                 clientNonce = nonce,
-                            });
+                            },
+                            _frameTimeoutMilliseconds,
+                            operationCancellation.Token);
                         NativePackageBrokerChallengeFrame challenge =
                             await ReadFrameAsync<
                                 NativePackageBrokerChallengeFrame>(
-                                reader,
-                                "challenge");
+                                frameReader,
+                                "challenge",
+                                _frameTimeoutMilliseconds,
+                                operationCancellation.Token);
                         ValidateChallenge(challenge, nonce);
 
                         await WriteFrameAsync(
@@ -218,15 +251,19 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                                 operationToken =
                                     challenge.operationToken,
                                 request = request,
-                            });
+                            },
+                            _frameTimeoutMilliseconds,
+                            operationCancellation.Token);
 
                         while (true)
                         {
                             NativePackageBrokerServerFrame frame =
                                 await ReadFrameAsync<
                                     NativePackageBrokerServerFrame>(
-                                    reader,
-                                    null);
+                                    frameReader,
+                                    null,
+                                    _frameTimeoutMilliseconds,
+                                    operationCancellation.Token);
                             if (string.Equals(
                                     frame.kind,
                                     "progress",
@@ -256,9 +293,27 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 throw;
             }
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                throw new NativePackageBrokerException(
+                    "BROKER_TIMEOUT",
+                    TraceId(request.traceparent),
+                    "The YUCP desktop app did not respond in time.");
+            }
+            catch (TimeoutException)
+            {
+                throw new NativePackageBrokerException(
+                    "BROKER_TIMEOUT",
+                    TraceId(request.traceparent),
+                    "The YUCP desktop app did not respond in time.");
+            }
             catch (Exception exception) when (
                 exception is IOException ||
-                exception is TimeoutException ||
                 exception is UnauthorizedAccessException)
             {
                 throw new NativePackageBrokerException(
@@ -269,13 +324,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
 
         private static async Task<T> ReadFrameAsync<T>(
-            StreamReader reader,
-            string expectedKind)
+            BoundedFrameReader reader,
+            string expectedKind,
+            int timeoutMilliseconds,
+            CancellationToken cancellationToken)
             where T : class
         {
-            string line = await reader.ReadLineAsync();
+            string line = await reader.ReadLineAsync(
+                timeoutMilliseconds,
+                cancellationToken);
             if (string.IsNullOrWhiteSpace(line) ||
-                Encoding.UTF8.GetByteCount(line) > 1024 * 1024)
+                Encoding.UTF8.GetByteCount(line) > MaximumFrameBytes)
             {
                 throw InvalidProtocol();
             }
@@ -329,17 +388,128 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return frame;
         }
 
-        private static Task WriteFrameAsync<T>(
+        private static async Task WriteFrameAsync<T>(
             StreamWriter writer,
-            T frame)
+            T frame,
+            int timeoutMilliseconds,
+            CancellationToken cancellationToken)
         {
-            return writer.WriteLineAsync(JsonConvert.SerializeObject(
+            string line = JsonConvert.SerializeObject(
                 frame,
                 Formatting.None,
                 new JsonSerializerSettings
                 {
                     NullValueHandling = NullValueHandling.Ignore,
-                }));
+                });
+            if (Encoding.UTF8.GetByteCount(line) > MaximumFrameBytes)
+            {
+                throw InvalidProtocol();
+            }
+            await AwaitWithTimeout(
+                writer.WriteLineAsync(line),
+                timeoutMilliseconds,
+                cancellationToken);
+        }
+
+        private static async Task AwaitWithTimeout(
+            Task operation,
+            int timeoutMilliseconds,
+            CancellationToken cancellationToken)
+        {
+            Task timeout = Task.Delay(
+                timeoutMilliseconds,
+                cancellationToken);
+            Task completed = await Task.WhenAny(operation, timeout);
+            if (completed == operation)
+            {
+                await operation;
+                return;
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new TimeoutException(
+                "The package broker frame timed out.");
+        }
+
+        private sealed class BoundedFrameReader
+        {
+            private readonly char[] _buffer = new char[4096];
+            private readonly StreamReader _reader;
+            private int _bufferCount;
+            private int _bufferOffset;
+
+            internal BoundedFrameReader(StreamReader reader)
+            {
+                _reader = reader ?? throw new ArgumentNullException(
+                    nameof(reader));
+            }
+
+            internal async Task<string> ReadLineAsync(
+                int timeoutMilliseconds,
+                CancellationToken cancellationToken)
+            {
+                var line = new StringBuilder();
+                while (true)
+                {
+                    if (_bufferOffset >= _bufferCount)
+                    {
+                        _bufferOffset = 0;
+                        _bufferCount = 0;
+                        Task<int> read = _reader.ReadAsync(
+                            _buffer,
+                            0,
+                            _buffer.Length);
+                        Task timeout = Task.Delay(
+                            timeoutMilliseconds,
+                            cancellationToken);
+                        Task completed = await Task.WhenAny(read, timeout);
+                        if (completed != read)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            throw new TimeoutException(
+                                "The package broker frame timed out.");
+                        }
+                        _bufferCount = await read;
+                        if (_bufferCount == 0)
+                        {
+                            throw InvalidProtocol();
+                        }
+                    }
+
+                    int newline = Array.IndexOf(
+                        _buffer,
+                        '\n',
+                        _bufferOffset,
+                        _bufferCount - _bufferOffset);
+                    int end = newline >= 0 ? newline : _bufferCount;
+                    line.Append(
+                        _buffer,
+                        _bufferOffset,
+                        end - _bufferOffset);
+                    if (line.Length > MaximumFrameCharacters)
+                    {
+                        throw InvalidProtocol();
+                    }
+                    _bufferOffset = newline >= 0
+                        ? newline + 1
+                        : _bufferCount;
+                    if (newline < 0)
+                    {
+                        continue;
+                    }
+                    if (line.Length > 0 &&
+                        line[line.Length - 1] == '\r')
+                    {
+                        line.Length -= 1;
+                    }
+                    string value = line.ToString();
+                    if (Encoding.UTF8.GetByteCount(value) >
+                        MaximumFrameBytes)
+                    {
+                        throw InvalidProtocol();
+                    }
+                    return value;
+                }
+            }
         }
 
         private static void ValidateChallenge(
@@ -444,7 +614,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         internal static Task<NativePackageBrokerResult> ExecuteAsync(
             NativePackageBrokerRequest request,
-            Action<NativePackageBrokerProgress> reportProgress = null)
+            Action<NativePackageBrokerProgress> reportProgress = null,
+            CancellationToken cancellationToken = default)
         {
             ValidateRequest(request);
             INativePackageBrokerTransport transport = s_transport;
@@ -452,7 +623,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 ValidateProgress(request, progress);
                 reportProgress?.Invoke(progress);
-            });
+            }, cancellationToken);
         }
 
         internal static string SerializeRequest(

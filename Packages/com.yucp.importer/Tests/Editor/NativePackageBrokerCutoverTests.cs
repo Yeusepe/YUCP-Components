@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using UnityEditor.PackageManager;
@@ -75,6 +76,44 @@ namespace YUCP.Importer.Tests.Editor
                 .ToArray();
 
             Assert.That(fields, Is.EqualTo(ExpectedRequestFields));
+        }
+
+        [UnityTest]
+        public IEnumerator NamedPipeTransportRejectsAnUnboundedFrameBeforeNewline()
+        {
+            string pipeName =
+                "yucp-package-broker-oversized-" +
+                Guid.NewGuid().ToString("N");
+            using (var server = new NamedPipeServerStream(
+                pipeName,
+                PipeDirection.InOut,
+                1,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous))
+            {
+                Task serverTask = RunOversizedFrameServerAsync(server);
+                var transport = new NamedPipePackageBrokerTransport(pipeName);
+                Task<NativePackageBrokerResult> execution =
+                    transport.ExecuteAsync(
+                        ValidRequest("preflight"),
+                        null,
+                        CancellationToken.None);
+                while (!execution.IsCompleted || !serverTask.IsCompleted)
+                {
+                    yield return null;
+                }
+                if (serverTask.IsFaulted)
+                {
+                    throw serverTask.Exception;
+                }
+                Assert.That(execution.IsFaulted, Is.True);
+                var failure = execution.Exception.GetBaseException()
+                    as NativePackageBrokerException;
+                Assert.That(failure, Is.Not.Null);
+                Assert.That(
+                    failure.ErrorCode,
+                    Is.EqualTo("BROKER_PROTOCOL_INVALID"));
+            }
         }
 
         [Test]
@@ -380,6 +419,20 @@ namespace YUCP.Importer.Tests.Editor
             }
         }
 
+        [Test]
+        public void BrokerTransportContractSupportsCancellation()
+        {
+            MethodInfo method = typeof(INativePackageBrokerTransport).GetMethod(
+                "ExecuteAsync");
+
+            Assert.That(method, Is.Not.Null);
+            ParameterInfo[] parameters = method.GetParameters();
+            Assert.That(parameters, Has.Length.EqualTo(3));
+            Assert.That(
+                parameters[2].ParameterType,
+                Is.EqualTo(typeof(CancellationToken)));
+        }
+
         [UnityTest]
         public IEnumerator NamedPipeTransportCompletesTheChallengeAndStreamsProgress()
         {
@@ -405,7 +458,8 @@ namespace YUCP.Importer.Tests.Editor
                 Task<NativePackageBrokerResult> execution =
                     transport.ExecuteAsync(
                         request,
-                        receivedProgress.Add);
+                        receivedProgress.Add,
+                        CancellationToken.None);
                 while (!execution.IsCompleted || !serverTask.IsCompleted)
                 {
                     yield return null;
@@ -452,7 +506,8 @@ namespace YUCP.Importer.Tests.Editor
             Task<NativePackageBrokerResult> execution =
                 transport.ExecuteAsync(
                     request,
-                    receivedProgress.Add);
+                    receivedProgress.Add,
+                    CancellationToken.None);
             while (!execution.IsCompleted)
             {
                 yield return null;
@@ -591,6 +646,29 @@ namespace YUCP.Importer.Tests.Editor
                     }));
             }
         }
+
+        private static async Task RunOversizedFrameServerAsync(
+            NamedPipeServerStream server)
+        {
+            await server.WaitForConnectionAsync();
+            using (var reader = new StreamReader(
+                server,
+                new UTF8Encoding(false, true),
+                true,
+                4096,
+                true))
+            using (var writer = new StreamWriter(
+                server,
+                new UTF8Encoding(false, true),
+                4096,
+                true))
+            {
+                await reader.ReadLineAsync();
+                await writer.WriteAsync(new string('x', 1024 * 1024 + 1));
+                await writer.FlushAsync();
+            }
+        }
+
         private static void ReadFrame<T>(
             string json,
             string expectedKind)

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
 
@@ -25,6 +26,68 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal static class PackageLifecycleCheckpointStore
     {
         private const int MaximumCheckpointBytes = 16 * 1024 * 1024;
+
+        internal static string GetOrCreateAttemptId(
+            string projectPath,
+            string aliasId)
+        {
+            string path = ResolveAttemptPath(projectPath, aliasId);
+            string existing = ReadAttemptId(path);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            string attemptId = Guid.NewGuid().ToString("N");
+            string temporaryPath = path + "." +
+                Guid.NewGuid().ToString("N") + ".partial";
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            try
+            {
+                using (var stream = new FileStream(
+                    temporaryPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None))
+                using (var writer = new StreamWriter(
+                    stream,
+                    new UTF8Encoding(false)))
+                {
+                    writer.Write(attemptId);
+                    writer.Write('\n');
+                    writer.Flush();
+                    stream.Flush(true);
+                }
+                try
+                {
+                    File.Move(temporaryPath, path);
+                }
+                catch (IOException) when (File.Exists(path))
+                {
+                }
+                return ReadAttemptId(path) ??
+                    throw new InvalidDataException(
+                        "The package lifecycle attempt identifier is invalid.");
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
+            }
+        }
+
+        internal static void ClearAttemptId(
+            string projectPath,
+            string aliasId)
+        {
+            string path = ResolveAttemptPath(projectPath, aliasId);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
 
         internal static void Write(
             string projectPath,
@@ -195,6 +258,55 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "The package lifecycle checkpoint escaped the project.");
             }
             return path;
+        }
+
+        private static string ResolveAttemptPath(
+            string projectPath,
+            string aliasId)
+        {
+            if (string.IsNullOrWhiteSpace(projectPath) ||
+                !Path.IsPathRooted(projectPath) ||
+                !IsSafeIdentifier(aliasId))
+            {
+                throw new InvalidDataException(
+                    "The package lifecycle attempt path is invalid.");
+            }
+            string projectRoot = Path.GetFullPath(projectPath);
+            string digest;
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                digest = string.Concat(
+                    sha256.ComputeHash(
+                            Encoding.UTF8.GetBytes(
+                                "yucp:package-lifecycle-attempt:v1\n" +
+                                aliasId))
+                        .Select(value => value.ToString("x2")));
+            }
+            return Path.Combine(
+                projectRoot,
+                ".yucp",
+                "package-lifecycle",
+                "attempts",
+                digest + ".txt");
+        }
+
+        private static string ReadAttemptId(string path)
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+            var info = new FileInfo(path);
+            if (info.Length <= 0 || info.Length > 128)
+            {
+                throw new InvalidDataException(
+                    "The package lifecycle attempt identifier is invalid.");
+            }
+            string attemptId = File.ReadAllText(path, Encoding.UTF8).Trim();
+            return IsSafeIdentifier(attemptId)
+                ? attemptId
+                : throw new InvalidDataException(
+                    "The package lifecycle attempt identifier is invalid.");
         }
 
         private static bool IsSafeIdentifier(string value)

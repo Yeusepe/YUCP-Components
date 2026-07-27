@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using NUnit.Framework;
 using YUCP.Importer.Editor.PackageManager.Core;
@@ -305,11 +307,34 @@ namespace YUCP.Importer.Editor.Tests
                                 sha256 = Sha256Text("owned"),
                             },
                         });
+                ProjectTransactionInspection inspection =
+                    ProjectTransactionJournal.Inspect(
+                        project,
+                        "run-uninstall");
 
                 Assert.That(result.state, Is.EqualTo("committed"));
                 Assert.That(File.Exists(unchanged), Is.False);
                 Assert.That(File.ReadAllText(modified), Is.EqualTo("user change"));
                 Assert.That(File.ReadAllText(unrelated), Is.EqualTo("not owned"));
+                Assert.That(
+                    inspection.removedFiles.Select(
+                        file => file.normalizedPath),
+                    Is.EquivalentTo(new[]
+                    {
+                        "Assets/Product/unchanged.txt",
+                    }));
+                Assert.That(
+                    inspection.preservedModifiedFiles.Count,
+                    Is.EqualTo(1));
+                Assert.That(
+                    inspection.preservedModifiedFiles[0].normalizedPath,
+                    Is.EqualTo("Assets/Product/modified.txt"));
+                Assert.That(
+                    inspection.preservedModifiedFiles[0].bytes,
+                    Is.EqualTo(new FileInfo(modified).Length));
+                Assert.That(
+                    inspection.preservedModifiedFiles[0].sha256,
+                    Is.EqualTo(Sha256Text("user change")));
             }
             finally
             {
@@ -353,6 +378,119 @@ namespace YUCP.Importer.Editor.Tests
                     File.Exists(
                         Path.Combine(project, "Assets", "Product", "file.txt")),
                     Is.False);
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void PrepareRejectsAConcurrentProjectMutation()
+        {
+            string root = CreateScratch();
+            try
+            {
+                string project = Path.Combine(root, "project");
+                string staging = Path.Combine(root, "staging");
+                Directory.CreateDirectory(project);
+                string stagedPath = Path.Combine(
+                    staging,
+                    "Assets",
+                    "Product",
+                    "file.txt");
+                Directory.CreateDirectory(Path.GetDirectoryName(stagedPath));
+                File.WriteAllText(stagedPath, "verified");
+                string lockDirectory = Path.Combine(project, ".yucp", "locks");
+                Directory.CreateDirectory(lockDirectory);
+                using (var held = new FileStream(
+                    Path.Combine(lockDirectory, "package-lifecycle.lock"),
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None))
+                {
+                    Assert.Throws<IOException>(() =>
+                        ProjectTransactionJournal.Prepare(
+                            project,
+                            staging,
+                            "run-prepare-concurrent",
+                            new[]
+                            {
+                                Record(
+                                    stagedPath,
+                                    "Assets/Product/file.txt"),
+                            }));
+                }
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void RollbackRestoresAnEntryWithADurableBackup()
+        {
+            string root = CreateScratch();
+            try
+            {
+                string project = Path.Combine(root, "project");
+                string livePath = Path.Combine(
+                    project,
+                    "Assets",
+                    "Product",
+                    "file.txt");
+                string backupPath = Path.Combine(
+                    root,
+                    "backups",
+                    "Assets",
+                    "Product",
+                    "file.txt");
+                string journalPath = Path.Combine(
+                    root,
+                    "journal",
+                    "transaction.json");
+                Directory.CreateDirectory(Path.GetDirectoryName(livePath));
+                Directory.CreateDirectory(Path.GetDirectoryName(backupPath));
+                Directory.CreateDirectory(Path.GetDirectoryName(journalPath));
+                File.WriteAllText(livePath, "replacement");
+                File.WriteAllText(backupPath, "prior");
+                var document = new ProjectTransactionDocument
+                {
+                    projectPath = project,
+                    runId = "run-backed-up",
+                    entries =
+                    {
+                        new ProjectTransactionEntry
+                        {
+                            backupPath = backupPath,
+                            expectedPriorSha256 = Sha256Text("prior"),
+                            hadPriorFile = true,
+                            normalizedPath = "Assets/Product/file.txt",
+                            state = "backed-up",
+                            targetSha256 = Sha256Text("replacement"),
+                        },
+                    },
+                };
+                MethodInfo rollback = typeof(ProjectTransactionJournal)
+                    .GetMethod(
+                        "RollBack",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+
+                Assert.That(rollback, Is.Not.Null);
+                rollback.Invoke(
+                    null,
+                    new object[]
+                    {
+                        project,
+                        document,
+                        journalPath,
+                    });
+
+                Assert.That(File.ReadAllText(livePath), Is.EqualTo("prior"));
+                Assert.That(
+                    document.entries[0].state,
+                    Is.EqualTo("rolled-back"));
             }
             finally
             {
