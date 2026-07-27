@@ -150,6 +150,63 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ApplyPreservesAssetWithModifiedMeta()
+        {
+            string root = CreateScratch();
+            try
+            {
+                string project = Path.Combine(root, "project");
+                string staging = Path.Combine(root, "staging");
+                string product = Path.Combine(project, "Assets", "Product");
+                string stagedProduct =
+                    Path.Combine(staging, "Assets", "Product");
+                Directory.CreateDirectory(product);
+                Directory.CreateDirectory(stagedProduct);
+                string retained = Path.Combine(product, "retained.txt");
+                string stagedRetained =
+                    Path.Combine(stagedProduct, "retained.txt");
+                string asset = Path.Combine(product, "product.asset");
+                string meta = asset + ".meta";
+                File.WriteAllText(retained, "version one");
+                File.WriteAllText(stagedRetained, "version two");
+                File.WriteAllText(asset, "owned");
+                File.WriteAllText(meta, "guid: changed");
+
+                ProjectTransactionJournal.Apply(
+                    project,
+                    staging,
+                    "run-update-meta",
+                    new[]
+                    {
+                        Record(
+                            stagedRetained,
+                            "Assets/Product/retained.txt"),
+                    },
+                    new[]
+                    {
+                        Record(retained, "Assets/Product/retained.txt"),
+                        Record(asset, "Assets/Product/product.asset"),
+                        new VerifiedStagingFile
+                        {
+                            bytes = 12,
+                            normalizedPath =
+                                "Assets/Product/product.asset.meta",
+                            sha256 = Sha256Text("guid: stable"),
+                        },
+                    });
+
+                Assert.That(File.ReadAllText(asset), Is.EqualTo("owned"));
+                Assert.That(
+                    File.ReadAllText(meta),
+                    Is.EqualTo("guid: changed"));
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
         public void RecoverCommitsAPreparedTransaction()
         {
             string root = CreateScratch();
@@ -335,6 +392,55 @@ namespace YUCP.Importer.Editor.Tests
                 Assert.That(
                     inspection.preservedModifiedFiles[0].sha256,
                     Is.EqualTo(Sha256Text("user change")));
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void RemoveOwnedFilesPreservesMetaWithModifiedAsset()
+        {
+            string root = CreateScratch();
+            try
+            {
+                string project = Path.Combine(root, "project");
+                string product = Path.Combine(project, "Assets", "Product");
+                Directory.CreateDirectory(product);
+                string asset = Path.Combine(product, "product.asset");
+                string meta = asset + ".meta";
+                File.WriteAllText(asset, "user change");
+                File.WriteAllText(meta, "guid: stable");
+
+                ProjectTransactionJournal.RemoveOwnedFiles(
+                    project,
+                    "run-uninstall-meta",
+                    new[]
+                    {
+                        new VerifiedStagingFile
+                        {
+                            bytes = 5,
+                            normalizedPath = "Assets/Product/product.asset",
+                            sha256 = Sha256Text("owned"),
+                        },
+                        Record(meta, "Assets/Product/product.asset.meta"),
+                    });
+                ProjectTransactionInspection inspection =
+                    ProjectTransactionJournal.Inspect(
+                        project,
+                        "run-uninstall-meta");
+
+                Assert.That(File.ReadAllText(asset), Is.EqualTo("user change"));
+                Assert.That(File.ReadAllText(meta), Is.EqualTo("guid: stable"));
+                Assert.That(
+                    inspection.preservedModifiedFiles.Select(
+                        file => file.normalizedPath),
+                    Is.EquivalentTo(new[]
+                    {
+                        "Assets/Product/product.asset",
+                        "Assets/Product/product.asset.meta",
+                    }));
             }
             finally
             {

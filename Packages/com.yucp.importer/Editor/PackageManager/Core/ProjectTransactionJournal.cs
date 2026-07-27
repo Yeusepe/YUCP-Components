@@ -462,7 +462,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             ValidateEntry(projectRoot, document, entry);
             if (string.Equals(entry.operation, "delete", StringComparison.Ordinal))
             {
-                return PrepareDelete(projectRoot, entry);
+                return PrepareDelete(projectRoot, document, entry);
             }
             return PrepareWrite(projectRoot, document, entry);
         }
@@ -505,8 +505,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static bool PrepareDelete(
             string projectRoot,
+            ProjectTransactionDocument document,
             ProjectTransactionEntry entry)
         {
+            if (TryPreserveModifiedDeleteOwnershipUnit(
+                projectRoot,
+                document,
+                entry))
+            {
+                return true;
+            }
             string livePath = ResolveInside(projectRoot, entry.normalizedPath);
             if (!File.Exists(IoPath(livePath)))
             {
@@ -545,7 +553,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             ValidateEntry(projectRoot, document, entry);
             if (string.Equals(entry.operation, "delete", StringComparison.Ordinal))
             {
-                CommitDelete(projectRoot, entry);
+                CommitDelete(projectRoot, document, entry);
                 return;
             }
             CommitWrite(projectRoot, document, entry);
@@ -607,8 +615,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static void CommitDelete(
             string projectRoot,
+            ProjectTransactionDocument document,
             ProjectTransactionEntry entry)
         {
+            if (TryPreserveModifiedDeleteOwnershipUnit(
+                projectRoot,
+                document,
+                entry))
+            {
+                return;
+            }
             string livePath = ResolveInside(projectRoot, entry.normalizedPath);
             RequireValidBackup(entry);
             if (!File.Exists(IoPath(livePath)))
@@ -628,6 +644,111 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             File.Delete(IoPath(livePath));
             entry.state = "committed";
+        }
+
+        private static bool TryPreserveModifiedDeleteOwnershipUnit(
+            string projectRoot,
+            ProjectTransactionDocument document,
+            ProjectTransactionEntry entry)
+        {
+            List<ProjectTransactionEntry> ownershipUnit =
+                DeleteOwnershipUnit(document, entry);
+            if (ownershipUnit.Count != 2 ||
+                !ownershipUnit.Any(member =>
+                    DeleteEntryWasModified(projectRoot, member)))
+            {
+                return false;
+            }
+            foreach (ProjectTransactionEntry member in ownershipUnit)
+            {
+                PreserveDeleteEntry(projectRoot, member);
+            }
+            return true;
+        }
+
+        private static List<ProjectTransactionEntry> DeleteOwnershipUnit(
+            ProjectTransactionDocument document,
+            ProjectTransactionEntry entry)
+        {
+            string companionPath = entry.normalizedPath.EndsWith(
+                ".meta",
+                StringComparison.OrdinalIgnoreCase)
+                ? entry.normalizedPath.Substring(
+                    0,
+                    entry.normalizedPath.Length - ".meta".Length)
+                : entry.normalizedPath + ".meta";
+            return document.entries
+                .Where(member =>
+                    string.Equals(
+                        member.operation,
+                        "delete",
+                        StringComparison.Ordinal) &&
+                    (string.Equals(
+                            member.normalizedPath,
+                            entry.normalizedPath,
+                            StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(
+                            member.normalizedPath,
+                            companionPath,
+                            StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        private static bool DeleteEntryWasModified(
+            string projectRoot,
+            ProjectTransactionEntry entry)
+        {
+            string livePath = ResolveInside(
+                projectRoot,
+                entry.normalizedPath);
+            return File.Exists(IoPath(livePath)) &&
+                entry.hadPriorFile &&
+                !string.Equals(
+                    Sha256(livePath),
+                    entry.expectedPriorSha256,
+                    StringComparison.Ordinal);
+        }
+
+        private static void PreserveDeleteEntry(
+            string projectRoot,
+            ProjectTransactionEntry entry)
+        {
+            string livePath = ResolveInside(
+                projectRoot,
+                entry.normalizedPath);
+            if (string.Equals(
+                    entry.state,
+                    "backed-up",
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    entry.state,
+                    "committed",
+                    StringComparison.Ordinal))
+            {
+                RequireValidBackup(entry);
+            }
+            if (!File.Exists(IoPath(livePath)) &&
+                entry.hadPriorFile &&
+                File.Exists(IoPath(entry.backupPath)))
+            {
+                RequireValidBackup(entry);
+                string temporaryPath = livePath + ".preserve.partial";
+                CopyDurably(entry.backupPath, temporaryPath);
+                PublishReplacement(temporaryPath, livePath);
+            }
+            if (!File.Exists(IoPath(livePath)))
+            {
+                entry.state = "skipped-missing";
+                return;
+            }
+            if (!entry.hadPriorFile)
+            {
+                throw new IOException(
+                    $"A project file appeared before removal for '{entry.normalizedPath}'.");
+            }
+            entry.preservedBytes = new FileInfo(IoPath(livePath)).Length;
+            entry.preservedSha256 = Sha256(livePath);
+            entry.state = "preserved-modified";
         }
 
         private static void BackupPriorFile(
