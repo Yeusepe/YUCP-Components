@@ -733,6 +733,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 ProjectTransactionJournal.Recover(
                     projectPath,
                     checkpoint.runId);
+                inspection = ProjectTransactionJournal.Inspect(
+                    projectPath,
+                    checkpoint.runId);
             }
             else if (!string.Equals(
                 inspection.state,

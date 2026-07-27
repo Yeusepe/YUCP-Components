@@ -419,6 +419,50 @@ namespace YUCP.Importer.Tests.Editor
             }
         }
 
+        [TestCase("targetReleaseRoot")]
+        [TestCase("approvedActiveContentDigest")]
+        [TestCase("approvedPolicyVersion")]
+        public void SuccessfulBrokerResultRejectsMismatchedRequestBinding(
+            string binding)
+        {
+            NativePackageBrokerRequest request = ValidRequest("update");
+            request.targetReleaseRoot = new string('7', 64);
+            request.approvedActiveContentDigest = new string('8', 64);
+            request.approvedPolicyVersion = "active-content-policy-v1";
+            var result = new NativePackageBrokerResult
+            {
+                activeContentDigest = request.approvedActiveContentDigest,
+                activePolicyVersion = request.approvedPolicyVersion,
+                exitCode = 0,
+                files = new System.Collections.Generic.List<
+                    NativePackageBrokerFile>(),
+                operation = request.operation,
+                runId = request.runId,
+                schemaVersion = NativePackageBrokerClient.SchemaVersion,
+                status = "succeeded",
+                targetReleaseRoot = request.targetReleaseRoot,
+            };
+            switch (binding)
+            {
+                case "targetReleaseRoot":
+                    result.targetReleaseRoot = new string('9', 64);
+                    break;
+                case "approvedActiveContentDigest":
+                    result.activeContentDigest = new string('a', 64);
+                    break;
+                case "approvedPolicyVersion":
+                    result.activePolicyVersion =
+                        "active-content-policy-v2";
+                    break;
+                default:
+                    Assert.Fail("The test binding is invalid.");
+                    break;
+            }
+
+            Assert.Throws<InvalidDataException>(() =>
+                NativePackageBrokerClient.ValidateResult(request, result));
+        }
+
         [Test]
         public void BrokerTransportContractSupportsCancellation()
         {

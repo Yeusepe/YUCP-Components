@@ -789,6 +789,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     !IsSha256(result.targetReleaseRoot) ||
                     !IsSha256(result.activeContentDigest) ||
                     string.IsNullOrWhiteSpace(
+                        result.activePolicyVersion) ||
+                    !MatchesSuppliedBinding(
+                        request.targetReleaseRoot,
+                        result.targetReleaseRoot) ||
+                    !MatchesSuppliedBinding(
+                        request.approvedActiveContentDigest,
+                        result.activeContentDigest) ||
+                    !MatchesSuppliedBinding(
+                        request.approvedPolicyVersion,
                         result.activePolicyVersion)))
             {
                 throw new InvalidDataException(
@@ -802,6 +811,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidDataException(
                     "The failed package delivery result is incomplete.");
             }
+        }
+
+        private static bool MatchesSuppliedBinding(
+            string requested,
+            string returned)
+        {
+            return string.IsNullOrEmpty(requested) ||
+                string.Equals(requested, returned, StringComparison.Ordinal);
         }
 
         private static void ValidateProgress(

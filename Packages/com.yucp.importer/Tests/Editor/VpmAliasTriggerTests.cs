@@ -1,11 +1,13 @@
 using NUnit.Framework;
 using System;
+using System.Collections;
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 using UnityEngine.UIElements;
 using YUCP.Importer.Editor.PackageManager;
 using YUCP.Importer.Editor.PackageManager.Core;
@@ -974,6 +976,107 @@ namespace YUCP.Importer.Editor.Tests
                     BindingFlags.NonPublic),
                 Is.Not.Null,
                 "Hosted controls must use the ownership-aware lifecycle coordinator.");
+        }
+
+        [UnityTest]
+        public IEnumerator PreparedUninstallResumePreservesAUserModifiedFile()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-uninstall-resume-" + Guid.NewGuid().ToString("N"));
+            string project = Path.Combine(root, "project");
+            string staging = Path.Combine(root, "staging");
+            string ownedRelativePath = ".yucp/product/owned.txt";
+            string sentinelRelativePath = ".yucp/product/sentinel.txt";
+            string ownedPath = Path.Combine(
+                project,
+                ownedRelativePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar));
+            string sentinelPath = Path.Combine(
+                staging,
+                sentinelRelativePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar));
+            const string runId = "resume-prepared-uninstall";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(ownedPath));
+                Directory.CreateDirectory(Path.GetDirectoryName(sentinelPath));
+                File.WriteAllText(ownedPath, "installed");
+                File.WriteAllText(sentinelPath, "transaction fixture");
+                var owned = new VerifiedStagingFile
+                {
+                    bytes = new FileInfo(ownedPath).Length,
+                    normalizedPath = ownedRelativePath,
+                    sha256 = Sha256(File.ReadAllBytes(ownedPath)),
+                };
+                var sentinel = new VerifiedStagingFile
+                {
+                    bytes = new FileInfo(sentinelPath).Length,
+                    normalizedPath = sentinelRelativePath,
+                    sha256 = Sha256(File.ReadAllBytes(sentinelPath)),
+                };
+                ProjectTransactionJournal.Prepare(
+                    project,
+                    staging,
+                    runId,
+                    new[] { sentinel },
+                    new[] { owned });
+                File.WriteAllText(ownedPath, "user modification");
+                var checkpoint = new PackageLifecycleCheckpoint
+                {
+                    aliasId = "jammr",
+                    expectedCurrentReleaseRoot = new string('1', 64),
+                    operation = "uninstall",
+                    priorState = new PackageDeliveryInstallState
+                    {
+                        aliasId = "jammr",
+                        releaseRoot = new string('1', 64),
+                    },
+                    runId = runId,
+                };
+                PackageLifecycleCheckpointStore.Write(project, checkpoint);
+                MethodInfo method = typeof(PackageLifecycleCoordinator)
+                    .GetMethod(
+                        "CompleteCommittedCheckpointAsync",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(method, Is.Not.Null);
+
+                var completion =
+                    (Task<PackageLifecycleExecutionResult>)method.Invoke(
+                        null,
+                        new object[] { project, checkpoint });
+                while (!completion.IsCompleted)
+                {
+                    yield return null;
+                }
+                if (completion.IsFaulted)
+                {
+                    throw completion.Exception.GetBaseException();
+                }
+
+                Assert.That(
+                    File.ReadAllText(ownedPath),
+                    Is.EqualTo("user modification"));
+                ProjectTransactionInspection inspection =
+                    ProjectTransactionJournal.Inspect(project, runId);
+                Assert.That(inspection.state, Is.EqualTo("committed"));
+                Assert.That(
+                    inspection.preservedModifiedFiles,
+                    Has.Exactly(1).Matches<VerifiedStagingFile>(
+                        file => file.normalizedPath == ownedRelativePath));
+                Assert.That(
+                    PackageLifecycleCheckpointStore.Read(project, runId).phase,
+                    Is.EqualTo("verified"));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
         }
 
         private static string Sha256(byte[] value)
