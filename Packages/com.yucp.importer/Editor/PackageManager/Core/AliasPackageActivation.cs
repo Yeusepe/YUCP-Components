@@ -216,6 +216,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return false;
             }
+            if (PackageLifecycleCoordinator.GetPendingOperation(
+                    projectPath,
+                    activation.Alias.aliasId) != null)
+            {
+                return true;
+            }
             string currentReleaseRoot =
                 PackageLifecycleCoordinator.GetCurrentReleaseRoot(
                     projectPath,

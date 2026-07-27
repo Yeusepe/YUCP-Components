@@ -318,11 +318,28 @@ namespace YUCP.Components.Editor
 
             var rename = new Dictionary<string, string>(StringComparer.Ordinal);
             var removed = new HashSet<(AnimationClip clip, string property)>();
+            var controllerPath = AssetDatabase.GetAssetPath(controller);
             foreach (var congruenceClass in classes)
             {
                 var members = congruenceClass
                     .OrderBy(name => name, StringComparer.Ordinal)
                     .ToList();
+                bool hasExternalWriter = members
+                    .SelectMany(member => sites[member])
+                    .Any(site =>
+                    {
+                        string clipPath =
+                            AssetDatabase.GetAssetPath(site.clip);
+                        return !string.IsNullOrEmpty(clipPath) &&
+                            !string.Equals(
+                                clipPath,
+                                controllerPath,
+                                StringComparison.OrdinalIgnoreCase);
+                    });
+                if (hasExternalWriter)
+                {
+                    continue;
+                }
                 var representative = members[0];
                 foreach (var duplicate in members.Skip(1))
                 {

@@ -77,9 +77,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             string projectPath = null;
             string attemptKey = null;
+            string lifecycleRunId = null;
             try
             {
                 ValidateAlias(alias);
+                PackageLifecycleInstallResult pending =
+                    await TryResumePendingAsync(alias, reportProgress);
+                if (pending != null)
+                {
+                    return pending;
+                }
                 Report(
                     reportProgress,
                     "checking-access",
@@ -97,6 +104,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
                         projectPath,
                         attemptKey);
+                lifecycleRunId = lifecycleId + "-execute";
                 Report(
                     reportProgress,
                     "checking-package",
@@ -147,7 +155,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 await ExecuteAsync(
                     alias,
                     operation,
-                    lifecycleId + "-execute",
+                    lifecycleRunId,
                     lifecycleId,
                     currentReleaseRoot,
                     preflight.targetReleaseRoot,
@@ -169,7 +177,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             catch (Exception exception)
             {
-                TryClearAttemptId(projectPath, attemptKey);
+                ClearAttemptIdWhenTerminal(
+                    projectPath,
+                    attemptKey,
+                    lifecycleRunId);
                 string errorCode = GetDiagnosticErrorCode(exception);
                 string traceId = GetDiagnosticTraceId(exception);
                 LogInstallDiagnostic(errorCode, traceId);
@@ -196,6 +207,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             string projectPath = null;
             string attemptKey = null;
+            string lifecycleRunId = null;
             try
             {
                 ValidateAlias(alias);
@@ -205,6 +217,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     throw new InvalidOperationException(
                         "The package management action is unsupported.");
+                }
+                PackageLifecycleInstallResult pending =
+                    await TryResumePendingAsync(alias, reportProgress);
+                if (pending != null)
+                {
+                    return pending;
                 }
                 projectPath = CurrentProjectPath();
                 attemptKey = alias.aliasId + "." + operation;
@@ -222,6 +240,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
                         projectPath,
                         attemptKey);
+                lifecycleRunId = runId;
                 string targetReleaseRoot = operation == "repair"
                     ? current.releaseRoot
                     : operation == "rollback"
@@ -264,7 +283,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             catch (Exception exception)
             {
-                TryClearAttemptId(projectPath, attemptKey);
+                ClearAttemptIdWhenTerminal(
+                    projectPath,
+                    attemptKey,
+                    lifecycleRunId);
                 string errorCode = GetDiagnosticErrorCode(exception);
                 string traceId = GetDiagnosticTraceId(exception);
                 LogInstallDiagnostic(errorCode, traceId);
@@ -277,9 +299,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
-        private static void TryClearAttemptId(
+        internal static void ClearAttemptIdWhenTerminal(
             string projectPath,
-            string attemptKey)
+            string attemptKey,
+            string runId)
         {
             if (string.IsNullOrWhiteSpace(projectPath) ||
                 string.IsNullOrWhiteSpace(attemptKey))
@@ -288,6 +311,22 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             try
             {
+                if (!string.IsNullOrWhiteSpace(runId) &&
+                    PackageLifecycleCheckpointStore.TryRead(
+                        projectPath,
+                        runId,
+                        out PackageLifecycleCheckpoint checkpoint) &&
+                    !string.Equals(
+                        checkpoint.phase,
+                        "verified",
+                        StringComparison.Ordinal) &&
+                    !string.Equals(
+                        checkpoint.phase,
+                        "rolled-back",
+                        StringComparison.Ordinal))
+                {
+                    return;
+                }
                 PackageLifecycleCheckpointStore.ClearAttemptId(
                     projectPath,
                     attemptKey);
@@ -298,6 +337,138 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "YUCP could not clear a completed package attempt: " +
                     exception.GetType().Name);
             }
+        }
+
+        private sealed class PendingLifecycleAttempt
+        {
+            internal string attemptKey;
+            internal PackageLifecycleCheckpoint checkpoint;
+            internal string runId;
+        }
+
+        internal static string GetPendingOperation(
+            string projectPath,
+            string aliasId)
+        {
+            return TryFindPendingAttempt(
+                projectPath,
+                aliasId,
+                out PendingLifecycleAttempt pending)
+                ? pending.checkpoint.operation
+                : null;
+        }
+
+        internal static async Task<PackageLifecycleInstallResult>
+            TryResumePendingAsync(
+                AliasPackageContract alias,
+                Action<PackageLifecycleUserProgress> reportProgress)
+        {
+            ValidateAlias(alias);
+            string projectPath = CurrentProjectPath();
+            if (!TryFindPendingAttempt(
+                    projectPath,
+                    alias.aliasId,
+                    out PendingLifecycleAttempt pending))
+            {
+                return null;
+            }
+
+            try
+            {
+                Report(
+                    reportProgress,
+                    "finishing",
+                    alias.packageDisplayName);
+                await CompleteCommittedCheckpointAsync(
+                    projectPath,
+                    pending.checkpoint);
+                RequireSuccessfulAliasFinalized(
+                    projectPath,
+                    alias,
+                    pending.checkpoint.operation);
+                ClearAttemptIdWhenTerminal(
+                    projectPath,
+                    pending.attemptKey,
+                    pending.runId);
+                return new PackageLifecycleInstallResult
+                {
+                    succeeded = true,
+                };
+            }
+            catch (Exception exception)
+            {
+                ClearAttemptIdWhenTerminal(
+                    projectPath,
+                    pending.attemptKey,
+                    pending.runId);
+                string errorCode = GetDiagnosticErrorCode(exception);
+                string traceId = GetDiagnosticTraceId(exception);
+                LogInstallDiagnostic(errorCode, traceId);
+                return new PackageLifecycleInstallResult
+                {
+                    errorCode = errorCode,
+                    errorMessage = BuildUserFacingFailureMessage(exception),
+                    traceId = traceId,
+                };
+            }
+        }
+
+        private static bool TryFindPendingAttempt(
+            string projectPath,
+            string aliasId,
+            out PendingLifecycleAttempt pending)
+        {
+            pending = null;
+            string[] attemptKeys =
+            {
+                aliasId,
+                aliasId + ".repair",
+                aliasId + ".rollback",
+                aliasId + ".uninstall",
+            };
+            foreach (string attemptKey in attemptKeys)
+            {
+                if (!PackageLifecycleCheckpointStore.TryGetAttemptId(
+                        projectPath,
+                        attemptKey,
+                        out string attemptId))
+                {
+                    continue;
+                }
+                string runId = string.Equals(
+                        attemptKey,
+                        aliasId,
+                        StringComparison.Ordinal)
+                    ? attemptId + "-execute"
+                    : attemptId;
+                if (!PackageLifecycleCheckpointStore.TryRead(
+                        projectPath,
+                        runId,
+                        out PackageLifecycleCheckpoint checkpoint))
+                {
+                    continue;
+                }
+                if (!string.Equals(
+                        checkpoint.aliasId,
+                        aliasId,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        "The pending package operation identity is invalid.");
+                }
+                if (pending != null)
+                {
+                    throw new InvalidDataException(
+                        "Multiple package operations require recovery.");
+                }
+                pending = new PendingLifecycleAttempt
+                {
+                    attemptKey = attemptKey,
+                    checkpoint = checkpoint,
+                    runId = runId,
+                };
+            }
+            return pending != null;
         }
 
         internal static async Task<PackageLifecycleExecutionResult> ExecuteAsync(
@@ -680,6 +851,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string projectPath,
                 PackageLifecycleCheckpoint checkpoint)
         {
+            if (string.Equals(
+                    checkpoint.phase,
+                    "verified",
+                    StringComparison.Ordinal))
+            {
+                return BuildCheckpointResult(checkpoint);
+            }
+            if (string.Equals(
+                    checkpoint.phase,
+                    "rolled-back",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    string.IsNullOrWhiteSpace(checkpoint.errorMessage)
+                        ? "Unity rejected the package. The prior project was restored."
+                        : checkpoint.errorMessage);
+            }
             ProjectTransactionInspection inspection =
                 ProjectTransactionJournal.Inspect(
                     projectPath,
@@ -1308,6 +1496,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 stagingTree,
                 relativePath.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(destination));
+            bool changedRelease = priorState != null &&
+                !string.Equals(
+                    priorState.releaseRoot,
+                    releaseRoot,
+                    StringComparison.Ordinal);
             var state = new PackageDeliveryInstallState
             {
                 activeContentDigest = activeContentDigest,
@@ -1324,13 +1517,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 releaseRoot = releaseRoot,
                 versionId = versionId,
                 previousActiveContentDigest =
-                    priorState?.activeContentDigest ?? string.Empty,
+                    changedRelease
+                        ? priorState.activeContentDigest
+                        : priorState?.previousActiveContentDigest ??
+                            string.Empty,
                 previousActivePolicyVersion =
-                    priorState?.activePolicyVersion ?? string.Empty,
+                    changedRelease
+                        ? priorState.activePolicyVersion
+                        : priorState?.previousActivePolicyVersion ??
+                            string.Empty,
                 previousReleaseRoot =
-                    priorState?.releaseRoot ?? string.Empty,
+                    changedRelease
+                        ? priorState.releaseRoot
+                        : priorState?.previousReleaseRoot ?? string.Empty,
                 previousVersionId =
-                    priorState?.versionId ?? string.Empty,
+                    changedRelease
+                        ? priorState.versionId
+                        : priorState?.previousVersionId ?? string.Empty,
             };
             File.WriteAllText(
                 destination,

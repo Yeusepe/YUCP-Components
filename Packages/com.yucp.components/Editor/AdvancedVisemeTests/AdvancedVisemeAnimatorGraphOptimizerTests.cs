@@ -445,6 +445,83 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void CongruenceInterningDoesNotMutateExternalAuthoredClips()
+        {
+            var objects = new List<UnityEngine.Object>();
+            string suffix = Guid.NewGuid().ToString("N");
+            string externalPath =
+                "Assets/YUCPOptimizerOwnership-" + suffix + ".anim";
+            try
+            {
+                var controller = NewController(objects);
+                AddFloat(controller, AlwaysOne, 1f);
+                AddFloat(controller, "Input", 0f);
+                AddFloat(controller, Prefix + "First", 0f);
+                AddFloat(controller, Prefix + "Second", 0f);
+                AddFloat(controller, "YUCP/Test/PublicA", 0f);
+                AddFloat(controller, "YUCP/Test/PublicB", 0f);
+
+                var authored = new AnimationClip { name = "Authored writes" };
+                objects.Add(authored);
+                AnimationUtility.SetEditorCurve(
+                    authored,
+                    EditorCurveBinding.FloatCurve(
+                        "",
+                        typeof(Animator),
+                        Prefix + "First"),
+                    AnimationCurve.Constant(0f, 0f, 1f));
+                AnimationUtility.SetEditorCurve(
+                    authored,
+                    EditorCurveBinding.FloatCurve(
+                        "",
+                        typeof(Animator),
+                        Prefix + "Second"),
+                    AnimationCurve.Constant(0f, 0f, 1f));
+                AssetDatabase.CreateAsset(authored, externalPath);
+                AssetDatabase.SaveAssets();
+                AddState(controller, authored);
+                var readers = Direct(
+                    objects,
+                    "Readers",
+                    Child(
+                        Setter(
+                            objects,
+                            "YUCP/Test/PublicA",
+                            1f,
+                            "Publish A"),
+                        Prefix + "First"),
+                    Child(
+                        Setter(
+                            objects,
+                            "YUCP/Test/PublicB",
+                            1f,
+                            "Publish B"),
+                        Prefix + "Second"));
+                AddState(controller, readers);
+
+                var report = AdvancedVisemeAnimatorGraphOptimizer.Optimize(
+                    controller,
+                    Prefix.TrimEnd('/'),
+                    new[] { "YUCP/Test/PublicA", "YUCP/Test/PublicB" });
+
+                Assert.That(report.internedCongruentParameters, Is.Zero);
+                Assert.That(
+                    AnimationUtility.GetCurveBindings(authored)
+                        .Select(binding => binding.propertyName),
+                    Is.EquivalentTo(
+                        new[] { Prefix + "First", Prefix + "Second" }));
+                Assert.That(
+                    controller.parameters.Select(parameter => parameter.name),
+                    Does.Contain(Prefix + "Second"));
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(externalPath);
+                Destroy(objects);
+            }
+        }
+
+        [Test]
         public void CongruenceIsTransitiveThroughCongruentInputs()
         {
             var objects = new List<UnityEngine.Object>();

@@ -14,6 +14,7 @@ namespace YUCP.Importer.Editor.PackageManager
     internal class PackageItemTreeView
     {
         private readonly VisualElement _container;
+        private readonly Func<string, bool> _isLicensedAssetPath;
         private PackageItemNode _rootNode;
         private readonly Dictionary<string, bool> _expandedStates = new Dictionary<string, bool>();
         private readonly Dictionary<string, Toggle> _toggleMap = new Dictionary<string, Toggle>();
@@ -37,9 +38,14 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
-        public PackageItemTreeView(VisualElement container)
+        public PackageItemTreeView(
+            VisualElement container,
+            Func<string, bool> isLicensedAssetPath)
         {
-            _container = container;
+            _container = container ??
+                throw new ArgumentNullException(nameof(container));
+            _isLicensedAssetPath = isLicensedAssetPath ??
+                throw new ArgumentNullException(nameof(isLicensedAssetPath));
         }
 
         public void SetTree(PackageItemNode rootNode)
@@ -301,7 +307,7 @@ namespace YUCP.Importer.Editor.PackageManager
             nameLabel.tooltip = node.FullPath;
             content.Add(nameLabel);
 
-            if (PackageManagerWindow.IsLicensedAssetPath(node.FullPath))
+            if (_isLicensedAssetPath(node.FullPath))
             {
                 content.Add(CreateBadge("Licensed", "yucp-tree-badge-licensed"));
             }
@@ -324,7 +330,7 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             foreach (var child in node.Children)
             {
-                if (!child.IsFolder && PackageManagerWindow.IsLicensedAssetPath(child.FullPath))
+                if (!child.IsFolder && _isLicensedAssetPath(child.FullPath))
                 {
                     return true;
                 }

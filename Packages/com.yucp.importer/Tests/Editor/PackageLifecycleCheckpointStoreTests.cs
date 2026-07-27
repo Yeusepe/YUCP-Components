@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using YUCP.Importer.Editor.PackageManager.Core;
 
@@ -157,6 +161,158 @@ namespace YUCP.Importer.Editor.Tests
                 Assert.That(
                     File.ReadAllText(attemptPaths[0]).Trim(),
                     Is.EqualTo(regenerated));
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
+        }
+
+        [Test]
+        public void InstallAttemptIdentifierRejectsNonHexadecimalText()
+        {
+            string project = CreateProject();
+            try
+            {
+                string first =
+                    PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
+                        project,
+                        "jammr");
+                string attemptPath = Directory.GetFiles(
+                    Path.Combine(
+                        project,
+                        ".yucp",
+                        "package-lifecycle",
+                        "attempts"),
+                    "*.txt").Single();
+                File.WriteAllText(
+                    attemptPath,
+                    "gggggggggggggggggggggggggggggggg");
+
+                string regenerated =
+                    PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
+                        project,
+                        "jammr");
+
+                Assert.That(regenerated, Has.Length.EqualTo(32));
+                Assert.That(regenerated, Is.Not.EqualTo(first));
+                Assert.That(
+                    regenerated.All(character =>
+                        character >= '0' && character <= '9' ||
+                        character >= 'a' && character <= 'f'),
+                    Is.True);
+                Assert.That(
+                    File.ReadAllText(attemptPath).Trim(),
+                    Is.EqualTo(regenerated));
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
+        }
+
+        [Test]
+        public void ConcurrentCorruptAttemptRepairCommitsOneIdentifier()
+        {
+            string project = CreateProject();
+            try
+            {
+                PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
+                    project,
+                    "jammr");
+                string attemptPath = Directory.GetFiles(
+                    Path.Combine(
+                        project,
+                        ".yucp",
+                        "package-lifecycle",
+                        "attempts"),
+                    "*.txt").Single();
+                File.WriteAllText(attemptPath, "corrupt");
+                using (var gate = new ManualResetEventSlim(false))
+                {
+                    var tasks = new List<Task<string>>();
+                    for (int index = 0; index < 32; index++)
+                    {
+                        tasks.Add(Task.Run(() =>
+                        {
+                            gate.Wait();
+                            return PackageLifecycleCheckpointStore
+                                .GetOrCreateAttemptId(
+                                    project,
+                                    "jammr");
+                        }));
+                    }
+
+                    gate.Set();
+                    Assert.That(
+                        Task.WaitAll(
+                            tasks.Cast<Task>().ToArray(),
+                            TimeSpan.FromSeconds(10)),
+                        Is.True);
+                    string[] identifiers = tasks
+                        .Select(task => task.Result)
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray();
+
+                    Assert.That(identifiers, Has.Length.EqualTo(1));
+                    Assert.That(
+                        File.ReadAllText(attemptPath).Trim(),
+                        Is.EqualTo(identifiers[0]));
+                }
+            }
+            finally
+            {
+                Directory.Delete(project, true);
+            }
+        }
+
+        [Test]
+        public void IncompleteRollbackRetainsTheAttemptForRecovery()
+        {
+            string project = CreateProject();
+            try
+            {
+                const string aliasId = "jammr";
+                string attemptId =
+                    PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
+                        project,
+                        aliasId);
+                var checkpoint = new PackageLifecycleCheckpoint
+                {
+                    aliasId = aliasId,
+                    expectedCurrentReleaseRoot = new string('0', 64),
+                    operation = "install",
+                    phase = "rolling-back",
+                    runId = attemptId + "-execute",
+                };
+                PackageLifecycleCheckpointStore.Write(project, checkpoint);
+
+                PackageLifecycleCoordinator.ClearAttemptIdWhenTerminal(
+                    project,
+                    aliasId,
+                    attemptId + "-execute");
+
+                Assert.That(
+                    PackageLifecycleCheckpointStore.TryGetAttemptId(
+                        project,
+                        aliasId,
+                        out string retained),
+                    Is.True);
+                Assert.That(retained, Is.EqualTo(attemptId));
+
+                checkpoint.phase = "rolled-back";
+                PackageLifecycleCheckpointStore.Write(project, checkpoint);
+                PackageLifecycleCoordinator.ClearAttemptIdWhenTerminal(
+                    project,
+                    aliasId,
+                    attemptId + "-execute");
+
+                Assert.That(
+                    PackageLifecycleCheckpointStore.TryGetAttemptId(
+                        project,
+                        aliasId,
+                        out _),
+                    Is.False);
             }
             finally
             {

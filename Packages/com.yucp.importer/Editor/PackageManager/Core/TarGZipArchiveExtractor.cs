@@ -69,8 +69,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 entryName = FirstNonEmpty(
                     pendingPaxPath,
                     pendingLongName,
-                    globalPaxPath,
-                    entryName);
+                    entryName,
+                    globalPaxPath);
                 pendingPaxPath = null;
                 pendingLongName = null;
                 if (string.IsNullOrEmpty(entryName))

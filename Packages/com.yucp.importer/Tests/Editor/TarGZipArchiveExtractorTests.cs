@@ -20,17 +20,10 @@ namespace YUCP.Importer.Editor.Tests
                 "AThirdLongFolderName/ProductPayload.txt";
             try
             {
-                Directory.CreateDirectory(root);
-                using (var archive = BuildArchive(
+                ExtractTo(
+                    root,
                     ("././@LongLink", 'L', longName + "\0"),
-                    ("truncated-name.txt", '0', "payload")))
-                {
-                    TarGZipArchiveExtractor.Extract(
-                        archive,
-                        name => Path.Combine(
-                            root,
-                            name.Replace('/', Path.DirectorySeparatorChar)));
-                }
+                    ("truncated-name.txt", '0', "payload"));
 
                 Assert.That(
                     File.ReadAllText(
@@ -63,17 +56,10 @@ namespace YUCP.Importer.Editor.Tests
                 "package/Assets/Accented-\u00E9/ProductPayload.txt";
             try
             {
-                Directory.CreateDirectory(root);
-                using (var archive = BuildArchive(
+                ExtractTo(
+                    root,
                     ("pax-local", 'x', BuildPaxPathRecord(paxPath)),
-                    ("ignored.txt", '0', "payload")))
-                {
-                    TarGZipArchiveExtractor.Extract(
-                        archive,
-                        name => Path.Combine(
-                            root,
-                            name.Replace('/', Path.DirectorySeparatorChar)));
-                }
+                    ("ignored.txt", '0', "payload"));
 
                 Assert.That(
                     File.ReadAllText(
@@ -109,18 +95,11 @@ namespace YUCP.Importer.Editor.Tests
                 "package/Assets/Local/ProductPayload.txt";
             try
             {
-                Directory.CreateDirectory(root);
-                using (var archive = BuildArchive(
+                ExtractTo(
+                    root,
                     ("pax-global", 'g', BuildPaxPathRecord(globalPath)),
                     ("pax-local", 'x', BuildPaxPathRecord(localPath)),
-                    ("ignored.txt", '0', "payload")))
-                {
-                    TarGZipArchiveExtractor.Extract(
-                        archive,
-                        name => Path.Combine(
-                            root,
-                            name.Replace('/', Path.DirectorySeparatorChar)));
-                }
+                    ("ignored.txt", '0', "payload"));
 
                 Assert.That(
                     File.ReadAllText(
@@ -130,6 +109,48 @@ namespace YUCP.Importer.Editor.Tests
                                 '/',
                                 Path.DirectorySeparatorChar))),
                     Is.EqualTo("payload"));
+                Assert.That(
+                    File.Exists(
+                        Path.Combine(
+                            root,
+                            globalPath.Replace(
+                                '/',
+                                Path.DirectorySeparatorChar))),
+                    Is.False);
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [Test]
+        public void ExtractPrefersEachHeaderNameOverTheGlobalPaxDefault()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-tar-pax-global-" + Guid.NewGuid().ToString("N"));
+            const string globalPath =
+                "package/Assets/Global/DefaultPayload.txt";
+            try
+            {
+                ExtractTo(
+                    root,
+                    ("pax-global", 'g', BuildPaxPathRecord(globalPath)),
+                    ("package/Assets/First.txt", '0', "first"),
+                    ("package/Assets/Second.txt", '0', "second"));
+
+                Assert.That(
+                    File.ReadAllText(
+                        Path.Combine(root, "package", "Assets", "First.txt")),
+                    Is.EqualTo("first"));
+                Assert.That(
+                    File.ReadAllText(
+                        Path.Combine(root, "package", "Assets", "Second.txt")),
+                    Is.EqualTo("second"));
                 Assert.That(
                     File.Exists(
                         Path.Combine(
@@ -161,6 +182,23 @@ namespace YUCP.Importer.Editor.Tests
                     return record;
                 }
                 recordLength = encodedLength;
+            }
+        }
+
+        private static void ExtractTo(
+            string root,
+            params (string name, char type, string body)[] entries)
+        {
+            Directory.CreateDirectory(root);
+            using (MemoryStream archive = BuildArchive(entries))
+            {
+                TarGZipArchiveExtractor.Extract(
+                    archive,
+                    name => Path.Combine(
+                        root,
+                        name.Replace(
+                            '/',
+                            Path.DirectorySeparatorChar)));
             }
         }
 

@@ -26,61 +26,73 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal static class PackageLifecycleCheckpointStore
     {
         private const int MaximumCheckpointBytes = 16 * 1024 * 1024;
+        private static readonly object AttemptLock = new object();
 
         internal static string GetOrCreateAttemptId(
             string projectPath,
             string aliasId)
         {
             string path = ResolveAttemptPath(projectPath, aliasId);
-            string existing = ReadAttemptId(path, false);
-            if (existing != null)
+            lock (AttemptLock)
             {
-                return existing;
-            }
-
-            string attemptId = Guid.NewGuid().ToString("N");
-            string temporaryPath = path + "." +
-                Guid.NewGuid().ToString("N") + ".partial";
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            try
-            {
-                using (var stream = new FileStream(
-                    temporaryPath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None))
-                using (var writer = new StreamWriter(
-                    stream,
-                    new UTF8Encoding(false)))
+                string existing = ReadAttemptId(path, false);
+                if (existing != null)
                 {
-                    writer.Write(attemptId);
-                    writer.Write('\n');
-                    writer.Flush();
-                    stream.Flush(true);
+                    return existing;
                 }
+
+                string attemptId = Guid.NewGuid().ToString("N");
+                string temporaryPath = path + "." +
+                    Guid.NewGuid().ToString("N") + ".partial";
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
                 try
                 {
-                    File.Move(temporaryPath, path);
-                }
-                catch (IOException) when (File.Exists(path))
-                {
-                    existing = ReadAttemptId(path, false);
-                    if (existing != null)
+                    using (var stream = new FileStream(
+                        temporaryPath,
+                        FileMode.CreateNew,
+                        FileAccess.Write,
+                        FileShare.None))
+                    using (var writer = new StreamWriter(
+                        stream,
+                        new UTF8Encoding(false)))
                     {
-                        return existing;
+                        writer.Write(attemptId);
+                        writer.Write('\n');
+                        writer.Flush();
+                        stream.Flush(true);
                     }
-                    File.Replace(temporaryPath, path, null);
+                    if (File.Exists(path))
+                    {
+                        File.Replace(temporaryPath, path, null);
+                    }
+                    else
+                    {
+                        File.Move(temporaryPath, path);
+                    }
+                    return ReadAttemptId(path) ??
+                        throw new InvalidDataException(
+                            "The package lifecycle attempt identifier is invalid.");
                 }
-                return ReadAttemptId(path) ??
-                    throw new InvalidDataException(
-                        "The package lifecycle attempt identifier is invalid.");
-            }
-            finally
-            {
-                if (File.Exists(temporaryPath))
+                finally
                 {
-                    File.Delete(temporaryPath);
+                    if (File.Exists(temporaryPath))
+                    {
+                        File.Delete(temporaryPath);
+                    }
                 }
+            }
+        }
+
+        internal static bool TryGetAttemptId(
+            string projectPath,
+            string aliasId,
+            out string attemptId)
+        {
+            string path = ResolveAttemptPath(projectPath, aliasId);
+            lock (AttemptLock)
+            {
+                attemptId = ReadAttemptId(path, false);
+                return attemptId != null;
             }
         }
 
@@ -89,9 +101,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string aliasId)
         {
             string path = ResolveAttemptPath(projectPath, aliasId);
-            if (File.Exists(path))
+            lock (AttemptLock)
             {
-                File.Delete(path);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
             }
         }
 
@@ -315,7 +330,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "The package lifecycle attempt identifier is invalid.");
             }
             string attemptId = File.ReadAllText(path, Encoding.UTF8).Trim();
-            if (IsSafeIdentifier(attemptId))
+            if (IsAttemptId(attemptId))
             {
                 return attemptId;
             }
@@ -325,6 +340,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             throw new InvalidDataException(
                 "The package lifecycle attempt identifier is invalid.");
+        }
+
+        private static bool IsAttemptId(string value)
+        {
+            return value != null &&
+                value.Length == 32 &&
+                value.All(character =>
+                    character >= '0' && character <= '9' ||
+                    character >= 'a' && character <= 'f');
         }
 
         private static bool IsSafeIdentifier(string value)

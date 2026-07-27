@@ -82,6 +82,26 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void UntrustedCborUsesTheStableFormatExceptionBoundary()
+        {
+            Assert.Throws<FormatException>(() =>
+                PackageContractV2.VerifySignedPayload(
+                    new byte[] { 0x01 },
+                    PackageContractV2.MaterializationReceiptPurpose,
+                    new byte[] { 0x01 },
+                    new byte[32]));
+
+            MethodInfo parse = typeof(MaterializationReceiptV2Verifier).GetMethod(
+                "Parse",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(parse, Is.Not.Null);
+            TargetInvocationException invocation =
+                Assert.Throws<TargetInvocationException>(() =>
+                    parse.Invoke(null, new object[] { new byte[] { 0x01 } }));
+            Assert.That(invocation.InnerException, Is.TypeOf<FormatException>());
+        }
+
+        [Test]
         public void MaterializationReceiptGoldenVectorBindsExactServerRendition()
         {
             GoldenVectorDocument document = LoadVectors();

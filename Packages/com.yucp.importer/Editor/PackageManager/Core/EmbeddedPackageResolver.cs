@@ -49,21 +49,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         // Unity 2022.3 Package Manager Client.Resolve reference:
         // https://docs.unity3d.com/2022.3/Documentation/ScriptReference/PackageManager.Client.Resolve.html
-        // Unity 2022.3 registeredPackages completion event reference:
-        // https://docs.unity3d.com/2022.3/Documentation/ScriptReference/PackageManager.Events-registeredPackages.html
+        // Unity 2022.3 Package Manager Client.List reference:
+        // https://docs.unity3d.com/2022.3/Documentation/ScriptReference/PackageManager.Client.List.html
         internal static Task ResolveAsync()
         {
             var completion = new TaskCompletionSource<bool>();
             DateTime deadline = DateTime.UtcNow + ResolveTimeout;
             ListRequest request = null;
-            void OnRegisteredPackages(PackageRegistrationEventArgs _)
-            {
-                if (request == null)
-                {
-                    request = Client.List(false, true);
-                }
-            }
-            Events.registeredPackages += OnRegisteredPackages;
             void Poll()
             {
                 if ((request == null || !request.IsCompleted) &&
@@ -72,7 +64,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     return;
                 }
                 EditorApplication.update -= Poll;
-                Events.registeredPackages -= OnRegisteredPackages;
                 if (request == null || !request.IsCompleted)
                 {
                     completion.TrySetException(
@@ -94,12 +85,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             try
             {
                 Client.Resolve();
+                request = Client.List(false, true);
                 Poll();
             }
             catch (Exception exception)
             {
                 EditorApplication.update -= Poll;
-                Events.registeredPackages -= OnRegisteredPackages;
                 completion.TrySetException(exception);
             }
             return completion.Task;

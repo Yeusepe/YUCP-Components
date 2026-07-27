@@ -127,6 +127,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool _detailsExpanded = false;
         private bool _preferOverwriteExisting = true;
         private bool _isHostedLifecycleRunning;
+        private bool _pendingLifecycleResumeScheduled;
         private int _cachedGradientHeight = 0;
         private const string DefaultPlaceholderTexturePath = "Packages/com.yucp.importer/Editor/PackageManager/Resources/MainLogo.png";
         private const string ImporterBagIconPath = "Packages/com.yucp.importer/Editor/PackageManager/Resources/Bag.png";
@@ -157,7 +158,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private VisualElement _licenseSection;
         private readonly List<LicensedAssetDescriptor> _licensedAssetDescriptors =
             new List<LicensedAssetDescriptor>();
-        private static readonly HashSet<string> s_licensedAssetPaths =
+        private readonly HashSet<string> _licensedAssetPaths =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private class LicensedAssetDescriptor
@@ -235,6 +236,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     Close();
                 }
             };
+            SchedulePendingLifecycleResume();
         }
 
         private void OnDisable()
@@ -2090,7 +2092,9 @@ namespace YUCP.Importer.Editor.PackageManager
             _treeScrollView = new VisualElement();
             _treeScrollView.AddToClassList("yucp-tree-scroll");
 
-            _treeView = new PackageItemTreeView(_treeScrollView);
+            _treeView = new PackageItemTreeView(
+                _treeScrollView,
+                IsLicensedAssetPath);
 
             // Wrap the tree in a ScrollView so only the asset list scrolls
             _treeScrollWrapper = new ScrollView(ScrollViewMode.Vertical);
@@ -2289,7 +2293,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private void RefreshLicensedAssetDescriptors()
         {
             _licensedAssetDescriptors.Clear();
-            s_licensedAssetPaths.Clear();
+            _licensedAssetPaths.Clear();
 
             var items = _allImportItems ?? _currentImportItems;
             if (items == null || items.Length == 0)
@@ -2310,7 +2314,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     continue;
                 }
 
-                if (s_licensedAssetPaths.Add(descriptor.destinationPath))
+                if (_licensedAssetPaths.Add(descriptor.destinationPath))
                 {
                     _licensedAssetDescriptors.Add(descriptor);
                 }
@@ -2521,13 +2525,13 @@ namespace YUCP.Importer.Editor.PackageManager
             return value is bool b && b;
         }
 
-        private List<string> GetLicensedAssetPaths(System.Array items)
+        private List<string> GetLicensedAssetPaths()
         {
             RefreshLicensedAssetDescriptors();
             return _licensedAssetDescriptors.Select(descriptor => descriptor.destinationPath).ToList();
         }
 
-        internal static bool IsLicensedAssetPath(string path)
+        private bool IsLicensedAssetPath(string path)
         {
             if (string.IsNullOrEmpty(path))
             {
@@ -2535,7 +2539,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             string normalized = NormalizeImportPath(path);
-            return s_licensedAssetPaths.Contains(normalized);
+            return _licensedAssetPaths.Contains(normalized);
         }
 
         private void BuildLicenseSection()
@@ -2785,7 +2789,7 @@ namespace YUCP.Importer.Editor.PackageManager
             if (indicator == null) return;
 
             int dependencyCount = _currentMetadata?.dependencies?.Count ?? 0;
-            int licensedCount = GetLicensedAssetPaths(_allImportItems ?? _currentImportItems).Count;
+            int licensedCount = GetLicensedAssetPaths().Count;
 
             if (dependencyCount > 0 || licensedCount > 0)
             {
@@ -2973,6 +2977,7 @@ namespace YUCP.Importer.Editor.PackageManager
             UpdateButtonStates();
             RefreshUI();
             RestorePendingInstallerView();
+            SchedulePendingLifecycleResume();
 
             if (showWindow)
             {
@@ -3161,6 +3166,105 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 EditorUtility.ClearProgressBar();
                 _isHostedLifecycleRunning = false;
+                SetHostedLifecycleControlsEnabled(true);
+                UpdateImportButtonEnabled();
+            }
+        }
+
+        private void SchedulePendingLifecycleResume()
+        {
+            AliasPackageContract alias =
+                (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
+            if (_pendingLifecycleResumeScheduled ||
+                !_isAliasBootstrapFlow ||
+                alias == null)
+            {
+                return;
+            }
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            if (PackageLifecycleCoordinator.GetPendingOperation(
+                    projectPath,
+                    alias.aliasId) == null)
+            {
+                return;
+            }
+
+            _pendingLifecycleResumeScheduled = true;
+            EditorApplication.delayCall += () =>
+            {
+                _pendingLifecycleResumeScheduled = false;
+                if (this != null)
+                {
+                    ResumePendingLifecycleAfterReload();
+                }
+            };
+        }
+
+        private async void ResumePendingLifecycleAfterReload()
+        {
+            if (_isHostedLifecycleRunning)
+            {
+                return;
+            }
+            PackageMetadata metadata = _currentMetadata ?? _cachedMetadata;
+            if (metadata?.aliasPackage == null)
+            {
+                return;
+            }
+
+            _isHostedLifecycleRunning = true;
+            _pendingImportAfterVerification = true;
+            SetHostedLifecycleControlsEnabled(false);
+            _importButton?.SetEnabled(false);
+            SetVerifyStatusLabel(
+                "Finishing the interrupted package installation...");
+            try
+            {
+                PackageLifecycleInstallResult result =
+                    await PackageLifecycleCoordinator.TryResumePendingAsync(
+                        metadata.aliasPackage,
+                        progress =>
+                        {
+                            SetVerifyStatusLabel(progress.message);
+                            EditorUtility.DisplayProgressBar(
+                                "Finishing Package Installation",
+                                progress.message,
+                                progress.progress);
+                            Repaint();
+                        });
+                if (result == null)
+                {
+                    return;
+                }
+                if (!result.succeeded)
+                {
+                    ShowFlowNotice(
+                        "Package recovery could not finish",
+                        result.errorMessage,
+                        FlowNoticeTone.Error);
+                    return;
+                }
+
+                AliasPackageActivation.DismissForSession(
+                    metadata.aliasPackage);
+                CompleteAliasInstallFlow(metadata.packageName);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError(
+                    "YUCP package recovery failed: " +
+                    exception.GetType().Name);
+                ShowFlowNotice(
+                    "Package recovery could not finish",
+                    "Try again. Contact support if the problem continues.",
+                    FlowNoticeTone.Error);
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+                _isHostedLifecycleRunning = false;
+                _pendingImportAfterVerification = false;
                 SetHostedLifecycleControlsEnabled(true);
                 UpdateImportButtonEnabled();
             }

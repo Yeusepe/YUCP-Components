@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -713,6 +714,195 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void PendingInstallResumesAsInstallAfterDomainReload()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-reload-" + Guid.NewGuid().ToString("N"));
+            var alias = new AliasPackageContract
+            {
+                aliasId = "jammr",
+                packageName = "com.yucp.alias.jammr",
+                packageVersion = "1.2.3",
+            };
+            var activation = new AliasPackageActivationRequest(
+                new PackageMetadata("JAMMR")
+                {
+                    aliasPackage = alias,
+                },
+                "com.yucp.alias.jammr@1.2.3:jammr");
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+                string packagePath = Path.Combine(
+                    projectPath,
+                    "Packages",
+                    alias.packageName);
+                Directory.CreateDirectory(packagePath);
+                string releaseRoot = new string('2', 64);
+                MethodInfo writeState = typeof(PackageLifecycleCoordinator)
+                    .GetMethod(
+                        "WriteInstallState",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(writeState, Is.Not.Null);
+                writeState.Invoke(
+                    null,
+                    new object[]
+                    {
+                        projectPath,
+                        alias.aliasId,
+                        releaseRoot,
+                        "version-2",
+                        "receipt-2",
+                        "receipts/receipt-2.cbor",
+                        new string('a', 64),
+                        "active-content-policy-v1",
+                        new List<NativePackageBrokerFile>(),
+                        null,
+                    });
+                string attemptId =
+                    PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
+                        projectPath,
+                        alias.aliasId);
+                PackageLifecycleCheckpointStore.Write(
+                    projectPath,
+                    new PackageLifecycleCheckpoint
+                    {
+                        aliasId = alias.aliasId,
+                        expectedCurrentReleaseRoot =
+                            PackageLifecycleCoordinator.EmptyReleaseRoot,
+                        operation = "install",
+                        phase = "committed",
+                        runId = attemptId + "-execute",
+                        targetState = new PackageDeliveryInstallState
+                        {
+                            aliasId = alias.aliasId,
+                            releaseRoot = releaseRoot,
+                            versionId = "version-2",
+                        },
+                    });
+
+                Assert.That(
+                    PackageLifecycleCoordinator.GetPendingOperation(
+                        projectPath,
+                        alias.aliasId),
+                    Is.EqualTo("install"));
+                Assert.That(
+                    AliasPackageActivation.ShouldScheduleForProject(
+                        projectPath,
+                        activation),
+                    Is.True,
+                    "A committed install must reopen for verification.");
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [TestCase("verified")]
+        [TestCase("rolled-back")]
+        public void TerminalAttemptRemainsDiscoverableUntilFinalization(
+            string phase)
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-terminal-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+                string attemptId =
+                    PackageLifecycleCheckpointStore.GetOrCreateAttemptId(
+                        projectPath,
+                        "jammr");
+                PackageLifecycleCheckpointStore.Write(
+                    projectPath,
+                    new PackageLifecycleCheckpoint
+                    {
+                        aliasId = "jammr",
+                        expectedCurrentReleaseRoot =
+                            PackageLifecycleCoordinator.EmptyReleaseRoot,
+                        operation = "install",
+                        phase = phase,
+                        runId = attemptId + "-execute",
+                    });
+
+                Assert.That(
+                    PackageLifecycleCoordinator.GetPendingOperation(
+                        projectPath,
+                        "jammr"),
+                    Is.EqualTo("install"));
+                Assert.That(
+                    PackageLifecycleCheckpointStore.TryGetAttemptId(
+                        projectPath,
+                        "jammr",
+                        out string persisted),
+                    Is.True);
+                Assert.That(persisted, Is.EqualTo(attemptId));
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void VerifiedCheckpointResumeDoesNotReplayTheTransaction()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-verified-resume-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+                var checkpoint = new PackageLifecycleCheckpoint
+                {
+                    aliasId = "jammr",
+                    expectedCurrentReleaseRoot =
+                        PackageLifecycleCoordinator.EmptyReleaseRoot,
+                    operation = "install",
+                    phase = "verified",
+                    runId = "verified-resume",
+                    targetState = new PackageDeliveryInstallState
+                    {
+                        aliasId = "jammr",
+                        releaseRoot = new string('2', 64),
+                        versionId = "version-2",
+                    },
+                };
+                MethodInfo method = typeof(PackageLifecycleCoordinator)
+                    .GetMethod(
+                        "CompleteCommittedCheckpointAsync",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(method, Is.Not.Null);
+
+                var completion =
+                    (Task<PackageLifecycleExecutionResult>)method.Invoke(
+                        null,
+                        new object[] { projectPath, checkpoint });
+
+                Assert.DoesNotThrow(
+                    () => completion.GetAwaiter().GetResult());
+                Assert.That(
+                    completion.Result.targetReleaseRoot,
+                    Is.EqualTo(new string('2', 64)));
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
         public void FreshAliasVersionSchedulesOnceAndStopsAfterCompletion()
         {
             string suffix = Guid.NewGuid().ToString("N");
@@ -976,6 +1166,133 @@ namespace YUCP.Importer.Editor.Tests
                     BindingFlags.NonPublic),
                 Is.Not.Null,
                 "Hosted controls must use the ownership-aware lifecycle coordinator.");
+        }
+
+        [Test]
+        public void LicensedAssetLookupIsOwnedByEachImporterWindow()
+        {
+            FieldInfo pathsField = typeof(PackageManagerWindow).GetField(
+                "_licensedAssetPaths",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo lookup = typeof(PackageManagerWindow).GetMethod(
+                "IsLicensedAssetPath",
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+            MethodInfo list = typeof(PackageManagerWindow).GetMethod(
+                "GetLicensedAssetPaths",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.That(pathsField, Is.Not.Null);
+            Assert.That(pathsField.IsStatic, Is.False);
+            Assert.That(lookup, Is.Not.Null);
+            Assert.That(lookup.IsStatic, Is.False);
+            Assert.That(list, Is.Not.Null);
+            Assert.That(list.GetParameters(), Is.Empty);
+
+            var first = ScriptableObject.CreateInstance<PackageManagerWindow>();
+            var second = ScriptableObject.CreateInstance<PackageManagerWindow>();
+            try
+            {
+                var firstPaths =
+                    (HashSet<string>)pathsField.GetValue(first);
+                firstPaths.Add("Assets/Product/Licensed.asset");
+
+                Assert.That(
+                    lookup.Invoke(
+                        first,
+                        new object[] { "Assets/Product/Licensed.asset" }),
+                    Is.True);
+                Assert.That(
+                    lookup.Invoke(
+                        second,
+                        new object[] { "Assets/Product/Licensed.asset" }),
+                    Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(first);
+                UnityEngine.Object.DestroyImmediate(second);
+            }
+        }
+
+        [Test]
+        public void SameReleaseOperationPreservesTheEarlierRollbackTarget()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-same-release-state-" + Guid.NewGuid().ToString("N"));
+            const string aliasId = "jammr";
+            string currentRelease = new string('2', 64);
+            string previousRelease = new string('1', 64);
+            try
+            {
+                var prior = new PackageDeliveryInstallState
+                {
+                    activeContentDigest = new string('a', 64),
+                    activePolicyVersion = "active-content-policy-v1",
+                    aliasId = aliasId,
+                    files = new List<NativePackageBrokerFile>
+                    {
+                        new NativePackageBrokerFile
+                        {
+                            bytes = 7,
+                            normalizedPath = "Assets/Product/file.txt",
+                            sha256 = new string('b', 64),
+                        },
+                    },
+                    previousActiveContentDigest = new string('c', 64),
+                    previousActivePolicyVersion = "active-content-policy-v1",
+                    previousReleaseRoot = previousRelease,
+                    previousVersionId = "version-1",
+                    releaseRoot = currentRelease,
+                    versionId = "version-2",
+                };
+                MethodInfo write = typeof(PackageLifecycleCoordinator).GetMethod(
+                    "WriteInstallState",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                MethodInfo read = typeof(PackageLifecycleCoordinator).GetMethod(
+                    "ReadInstallState",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.That(write, Is.Not.Null);
+                Assert.That(read, Is.Not.Null);
+
+                write.Invoke(
+                    null,
+                    new object[]
+                    {
+                        root,
+                        aliasId,
+                        currentRelease,
+                        "version-2",
+                        string.Empty,
+                        string.Empty,
+                        new string('a', 64),
+                        "active-content-policy-v1",
+                        prior.files,
+                        prior,
+                    });
+                var state = (PackageDeliveryInstallState)read.Invoke(
+                    null,
+                    new object[] { root, aliasId, true });
+
+                Assert.That(
+                    state.previousReleaseRoot,
+                    Is.EqualTo(previousRelease));
+                Assert.That(
+                    state.previousVersionId,
+                    Is.EqualTo("version-1"));
+                Assert.That(
+                    state.previousActiveContentDigest,
+                    Is.EqualTo(new string('c', 64)));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
         }
 
         [UnityTest]

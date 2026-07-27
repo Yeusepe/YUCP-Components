@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -131,8 +132,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     label.style.whiteSpace = WhiteSpace.Normal;
                     row.Add(label);
 
-                    var refresh = new Button(
-                        () => RefreshTrustedUrl(url))
+                    var refresh = new Button
                     {
                         text = "Validate roots",
                     };
@@ -148,12 +148,28 @@ namespace YUCP.Importer.Editor.PackageManager
                     {
                         text = "Remove",
                     };
+                    refresh.clicked += async () =>
+                    {
+                        refresh.SetEnabled(false);
+                        remove.SetEnabled(false);
+                        refresh.text = "Validating...";
+                        try
+                        {
+                            await RefreshTrustedUrlAsync(url);
+                        }
+                        finally
+                        {
+                            refresh.text = "Validate roots";
+                            refresh.SetEnabled(true);
+                            remove.SetEnabled(true);
+                        }
+                    };
                     row.Add(remove);
                     trustedUrls.Add(row);
                 }
             }
 
-            addButton.clicked += () =>
+            addButton.clicked += async () =>
             {
                 string normalized =
                     TrustedAuthoritiesSettings.NormalizeUrl(newUrl.value);
@@ -165,7 +181,21 @@ namespace YUCP.Importer.Editor.PackageManager
                         "OK");
                     return;
                 }
-                if (!RefreshTrustedUrl(normalized))
+                addButton.SetEnabled(false);
+                newUrl.SetEnabled(false);
+                addButton.text = "Validating...";
+                bool valid;
+                try
+                {
+                    valid = await RefreshTrustedUrlAsync(normalized);
+                }
+                finally
+                {
+                    addButton.text = "Add server";
+                    addButton.SetEnabled(true);
+                    newUrl.SetEnabled(true);
+                }
+                if (!valid)
                 {
                     return;
                 }
@@ -177,10 +207,10 @@ namespace YUCP.Importer.Editor.PackageManager
             RefreshList();
         }
 
-        private static bool RefreshTrustedUrl(string url)
+        private static async Task<bool> RefreshTrustedUrlAsync(string url)
         {
             AuthorityKeyFetcher.FetchResult result =
-                AuthorityKeyFetcher.FetchKeysFromUrlSync(url);
+                await AuthorityKeyFetcher.FetchKeysFromUrlAsync(url);
             List<AuthorityKeyFetcher.AuthorityKey> pinnedKeys =
                 result.success
                     ? TrustedAuthority.FilterToPinnedKeys(result.keys)

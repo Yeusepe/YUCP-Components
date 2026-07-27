@@ -84,7 +84,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     expectedKeyId,
                     publicKey);
             }
-            catch (CborContentException exception)
+            catch (Exception exception) when (
+                exception is CborContentException ||
+                exception is InvalidOperationException)
             {
                 throw new FormatException("COSE_Sign1 contains invalid CBOR.", exception);
             }
@@ -129,7 +131,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 reader.SkipValue();
                 RequireFinished(reader, "Package contract payload");
             }
-            catch (CborContentException exception)
+            catch (Exception exception) when (
+                exception is CborContentException ||
+                exception is InvalidOperationException)
             {
                 throw new FormatException(
                     "Package contract payload contains invalid CBOR.",
@@ -300,7 +304,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return ParseCanonical(payload);
             }
-            catch (CborContentException exception)
+            catch (Exception exception) when (
+                exception is CborContentException ||
+                exception is InvalidOperationException)
             {
                 throw new FormatException(
                     "MaterializationReceiptV2 contains invalid CBOR.",

@@ -1,6 +1,11 @@
+using System;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Threading.Tasks;
 using NUnit.Framework;
+using YUCP.Importer.Editor.PackageManager;
 using YUCP.Importer.Editor.PackageManager.Core;
+using YUCP.Importer.Editor.PackageVerifier.Core;
 
 namespace YUCP.Importer.Editor.Tests
 {
@@ -82,6 +87,24 @@ namespace YUCP.Importer.Editor.Tests
             Assert.IsFalse(EmbeddedPackageResolver.RequiresResolution(
                 new[] { Record(path, new string('1', 64)) },
                 new List<VerifiedStagingFile>()));
+        }
+
+        [Test]
+        public void SettingsValidationUsesTheAsynchronousAuthorityFetcher()
+        {
+            MethodInfo refresh = typeof(PackageManagerSettingsProvider).GetMethod(
+                "RefreshTrustedUrlAsync",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            MethodInfo fetch = typeof(AuthorityKeyFetcher).GetMethod(
+                "FetchKeysFromUrlAsync",
+                BindingFlags.Public | BindingFlags.Static);
+
+            Assert.That(refresh, Is.Not.Null);
+            Assert.That(refresh.ReturnType, Is.EqualTo(typeof(Task<bool>)));
+            Assert.That(fetch, Is.Not.Null);
+            Assert.That(
+                fetch.ReturnType,
+                Is.EqualTo(typeof(Task<AuthorityKeyFetcher.FetchResult>)));
         }
 
         private static VerifiedStagingFile Record(
