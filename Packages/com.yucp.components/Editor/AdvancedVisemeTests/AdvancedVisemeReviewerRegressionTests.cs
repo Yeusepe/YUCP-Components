@@ -28,6 +28,25 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void MissingProfileKeepsSpeechLivelinessAtItsAuthoredDefault()
+        {
+            var method = typeof(AdvancedVisemeTuning).GetMethod(
+                             "ConfiguredValue") ??
+                         typeof(AdvancedVisemeTuning).GetMethod(
+                             "DefaultValue");
+            Assert.That(method, Is.Not.Null);
+            var value = (float)method.Invoke(
+                null,
+                new object[]
+                {
+                    null,
+                    AdvancedVisemeTuningControl.SpeechLiveliness
+                });
+
+            Assert.That(value, Is.Zero.Within(1e-6f));
+        }
+
+        [Test]
         public void PackageAndCompilationCoordinationUsesUnityCompletionEvents()
         {
             string projectRoot = Path.GetFullPath(
