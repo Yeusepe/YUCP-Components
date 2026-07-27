@@ -108,6 +108,72 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
+        public void NestedStateMachineTransitionConditionsRemainLiveAndMapped()
+        {
+            var objects = new List<UnityEngine.Object>();
+            var previousDisable = AdvancedVisemeAnimatorGraphOptimizer
+                .DisableOperationLocalNeutralZeroEliminationForTests;
+            try
+            {
+                AdvancedVisemeAnimatorGraphOptimizer
+                    .DisableOperationLocalNeutralZeroEliminationForTests = true;
+                var controller = NewController(objects);
+                AddFloat(controller, AlwaysOne, 1f);
+                AddFloat(controller, "Input", 0f);
+                AddFloat(controller, Prefix + "First", 0f);
+                AddFloat(controller, Prefix + "Second", 0f);
+
+                var firstLow = Setter(
+                    objects, Prefix + "First", 0f, "First low");
+                var firstHigh = Setter(
+                    objects, Prefix + "First", 1f, "First high");
+                var secondLow = Setter(
+                    objects, Prefix + "Second", 0f, "Second low");
+                var secondHigh = Setter(
+                    objects, Prefix + "Second", 1f, "Second high");
+                var root = Direct(objects, "Root",
+                    Child(OneDimensional(objects, "First map", "Input",
+                        (firstLow, 0f), (firstHigh, 1f)), AlwaysOne),
+                    Child(OneDimensional(objects, "Second map", "Input",
+                        (secondLow, 0f), (secondHigh, 1f)), AlwaysOne));
+                var parent = AddState(controller, root).stateMachine;
+                var nested = parent.AddStateMachine("Nested");
+                var destination = parent.AddState("After nested");
+                // Unity 2022.3 API:
+                // https://docs.unity3d.com/2022.3/Documentation/ScriptReference/Animations.AnimatorStateMachine.AddStateMachineTransition.html
+                var transition = parent.AddStateMachineTransition(
+                    nested, destination);
+                transition.AddCondition(
+                    AnimatorConditionMode.Greater, 0.5f, Prefix + "Second");
+
+                var report = AdvancedVisemeAnimatorGraphOptimizer.Optimize(
+                    controller, Prefix.TrimEnd('/'), Array.Empty<string>());
+
+                Assert.That(report.internedCongruentParameters, Is.EqualTo(1));
+                Assert.That(transition.conditions, Has.Length.EqualTo(1));
+                Assert.That(transition.conditions[0].parameter,
+                    Is.EqualTo(Prefix + "First"));
+                Assert.That(
+                    controller.parameters.Select(parameter => parameter.name),
+                    Does.Contain(Prefix + "First"));
+                Assert.That(
+                    controller.parameters.Select(parameter => parameter.name),
+                    Does.Not.Contain(Prefix + "Second"));
+                Assert.That(AnimationUtility.GetCurveBindings(firstLow),
+                    Has.Length.EqualTo(1));
+                Assert.That(AnimationUtility.GetCurveBindings(firstHigh),
+                    Has.Length.EqualTo(1));
+            }
+            finally
+            {
+                AdvancedVisemeAnimatorGraphOptimizer
+                    .DisableOperationLocalNeutralZeroEliminationForTests =
+                    previousDisable;
+                Destroy(objects);
+            }
+        }
+
+        [Test]
         public void NormalizedDirectPhysicalOutputRetainsEverySiblingWeight()
         {
             var objects = new List<UnityEngine.Object>();

@@ -21,6 +21,31 @@ namespace YUCP.Components.Editor.Tests
         private static readonly int[] SampleRates = { 15, 30, 60, 90, 144 };
         private const float SimplexTolerance = 2e-4f;
 
+        [Test]
+        public void FixtureConstructorCleansPartialInitializationFailure()
+        {
+            string createdFolder = null;
+            GameObject createdRoot = null;
+            Mesh createdMesh = null;
+            VisemeReconstructionProfile createdProfile = null;
+
+            Assert.Throws<InvalidOperationException>(() =>
+                new Fixture(false, fixture =>
+                {
+                    createdFolder = fixture.folder;
+                    createdRoot = fixture.authoringRoot;
+                    createdMesh = fixture.SourceMesh;
+                    createdProfile = fixture.profile;
+                    throw new InvalidOperationException(
+                        "Injected partial initialization failure.");
+                }));
+
+            Assert.That(AssetDatabase.IsValidFolder(createdFolder), Is.False);
+            Assert.That(createdRoot == null, Is.True);
+            Assert.That(createdMesh == null, Is.True);
+            Assert.That(createdProfile == null, Is.True);
+        }
+
         [TestCase(10, 11, 10, TestName = "DriveLowerFace_A_B_A_InterruptionsRemainContinuous")]
         [TestCase(10, 11, 12, TestName = "DriveLowerFace_A_B_C_InterruptionsRemainContinuous")]
         public void DriveLowerFaceRapidInterruptionsRemainContinuousAtReviewedRates(
@@ -402,20 +427,35 @@ namespace YUCP.Components.Editor.Tests
 
         private sealed class Fixture : IDisposable
         {
-            private readonly string folder;
-            private readonly GameObject authoringRoot;
-            private readonly VisemeReconstructionProfile profile;
+            internal string folder;
+            internal GameObject authoringRoot;
+            internal VisemeReconstructionProfile profile;
 
-            internal readonly bool Tracking;
-            internal readonly AdvancedVisemeReconstructorData Component;
-            internal readonly Mesh SourceMesh;
-            internal readonly Mesh RenderMesh;
-            internal readonly int[] VisemeBlendShapeIndices;
-            internal readonly AdvancedVisemeAnimatorBuilder.Result Result;
-            internal readonly string SourceMeshSignature;
-            private readonly AdvancedVisemeMeshCalibrator.Result calibration;
+            internal bool Tracking;
+            internal AdvancedVisemeReconstructorData Component;
+            internal Mesh SourceMesh;
+            internal Mesh RenderMesh;
+            internal int[] VisemeBlendShapeIndices;
+            internal AdvancedVisemeAnimatorBuilder.Result Result;
+            internal string SourceMeshSignature;
+            private AdvancedVisemeMeshCalibrator.Result calibration;
 
-            internal Fixture(bool tracking)
+            internal Fixture(bool tracking, Action<Fixture> beforeBuild = null)
+            {
+                try
+                {
+                    Initialize(tracking, beforeBuild);
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
+                }
+            }
+
+            private void Initialize(
+                bool tracking,
+                Action<Fixture> beforeBuild)
             {
                 Tracking = tracking;
                 folder = "Assets/__YUCP_AVR_DirectRender_" +
@@ -456,6 +496,7 @@ namespace YUCP.Components.Editor.Tests
                 Component.fusionMode = AdvancedVisemeFusionMode.TrackerAuthoritative;
                 Component.createFaceTrackingToggle = false;
                 Component.createTuningMenu = false;
+                beforeBuild?.Invoke(this);
 
                 Result = AdvancedVisemeAnimatorBuilder.Build(
                     new AdvancedVisemeAnimatorBuilder.Request
@@ -590,7 +631,8 @@ namespace YUCP.Components.Editor.Tests
 
             public void Dispose()
             {
-                AssetDatabase.DeleteAsset(folder);
+                if (!string.IsNullOrEmpty(folder))
+                    AssetDatabase.DeleteAsset(folder);
                 if (calibration != null && calibration.mesh != null)
                     UnityEngine.Object.DestroyImmediate(calibration.mesh);
                 if (SourceMesh != null) UnityEngine.Object.DestroyImmediate(SourceMesh);

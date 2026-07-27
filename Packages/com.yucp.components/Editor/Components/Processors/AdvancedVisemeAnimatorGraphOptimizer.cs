@@ -704,7 +704,13 @@ namespace YUCP.Components.Editor
                     EditorUtility.SetDirty(state);
                 }
                 foreach (var child in machine.stateMachines)
+                {
+                    foreach (var transition in machine
+                                 .GetStateMachineTransitions(
+                                     child.stateMachine))
+                        RewriteTransition(transition);
                     RewriteMachine(child.stateMachine);
+                }
             }
 
             foreach (var layer in controller.layers)
@@ -1012,8 +1018,14 @@ namespace YUCP.Components.Editor
             }
 
             foreach (var child in stateMachine.stateMachines)
+            {
+                // Unity 2022.3 API:
+                // https://docs.unity3d.com/2022.3/Documentation/ScriptReference/Animations.AnimatorStateMachine.GetStateMachineTransitions.html
+                AnalyzeConditions(stateMachine.GetStateMachineTransitions(
+                    child.stateMachine), analysis.roots);
                 AnalyzeStateMachine(child.stateMachine, analysis, parameterNames,
                     internalPrefix);
+            }
         }
 
         private static void AnalyzeMotion(

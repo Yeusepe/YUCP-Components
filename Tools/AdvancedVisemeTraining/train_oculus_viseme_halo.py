@@ -183,6 +183,23 @@ class CardinalityCandidate:
     grid: list[dict[str, Any]]
 
 
+def render_lead_derivation() -> str:
+    return (
+        "defaultSpeechLiveliness * maximumSpeechLivelinessLead "
+        f"= {EVALUATION_LIVELINESS:g}"
+    )
+
+
+def cardinality_selection_key(
+    candidate: CardinalityCandidate,
+) -> tuple[int, float]:
+    return candidate.top_k, candidate.halo_strength
+
+
+def cardinality_tie_break_description() -> str:
+    return "smallest accepted TopK, then smaller h"
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -1698,7 +1715,7 @@ def select_cardinality_and_strength(
         )
 
     if accepted:
-        selected = min(accepted, key=lambda value: (value.top_k, value.halo_strength))
+        selected = min(accepted, key=cardinality_selection_key)
     else:
         # The dense candidate remains the conservative fallback even if a future
         # extraction fails the sparse acceptance gate.  The audit makes that
@@ -2362,9 +2379,7 @@ def _build_rejected_age_trajectory_experiment(
                 "livelinessDerivation": {
                     "defaultSpeechLiveliness": DEFAULT_SPEECH_LIVELINESS,
                     "maximumSpeechLivelinessLead": MAXIMUM_SPEECH_LIVELINESS_LEAD,
-                    "speechRenderLead": (
-                        "defaultSpeechLiveliness * maximumSpeechLivelinessLead = 0.425"
-                    ),
+                    "speechRenderLead": render_lead_derivation(),
                 },
                 "clockSeconds": (
                     ovr_source.ANALYSIS_BUFFER_SAMPLES
@@ -2980,10 +2995,7 @@ def build_document(
                     "maximumSpeechLivelinessLead": (
                         MAXIMUM_SPEECH_LIVELINESS_LEAD
                     ),
-                    "speechRenderLead": (
-                        "defaultSpeechLiveliness * maximumSpeechLivelinessLead "
-                        "= 0.85"
-                    ),
+                    "speechRenderLead": render_lead_derivation(),
                 },
                 "formula": (
                     "emitFast=S(fast); emitSlow=S(slow); "
@@ -3021,7 +3033,7 @@ def build_document(
                 ),
                 "candidateStrengths": list(HALO_STRENGTH_CANDIDATES),
                 "topKCandidates": list(TOP_K_CANDIDATES),
-                "tieBreak": "smaller h, then smallest accepted TopK",
+                "tieBreak": cardinality_tie_break_description(),
                 "sparseProjection": (
                     "Retain the k largest conditional-barycenter coordinates, "
                     "then apply exact Euclidean projection onto that simplex."

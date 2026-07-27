@@ -95,10 +95,15 @@ namespace YUCP.Components.Editor.Tests
             int method = source.IndexOf(
                 "private async void RunHostedLifecycleAction",
                 StringComparison.Ordinal);
+            Assert.That(method, Is.GreaterThanOrEqualTo(0),
+                "RunHostedLifecycleAction was renamed or removed.");
             int nextMethod = source.IndexOf(
                 "private void SetHostedLifecycleControlsEnabled",
                 method,
                 StringComparison.Ordinal);
+            Assert.That(nextMethod, Is.GreaterThan(method),
+                "SetHostedLifecycleControlsEnabled no longer follows " +
+                "RunHostedLifecycleAction.");
             string body = source.Substring(method, nextMethod - method);
 
             StringAssert.Contains("catch (Exception", body);

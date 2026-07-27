@@ -2103,12 +2103,16 @@ namespace YUCP.Components.Editor.Tests
                             "/Balanced/", StringComparison.Ordinal) +
                                      "/Balanced/".Length;
                         var separator = parameter.name.IndexOf('/', marker);
+                        Assert.That(separator, Is.GreaterThan(marker),
+                            "Unexpected balanced-reduction parameter name: " +
+                            parameter.name);
                         return int.Parse(parameter.name.Substring(
                             marker, separator - marker));
                     })
                     .Max();
                 Assert.That(maximumDepth, Is.LessThanOrEqualTo(3),
-                    "Twelve confidence factors require at most four reduction levels.");
+                    "Twelve confidence factors require at most four reduction " +
+                    "levels (zero-based index 3).");
             }
             finally
             {
