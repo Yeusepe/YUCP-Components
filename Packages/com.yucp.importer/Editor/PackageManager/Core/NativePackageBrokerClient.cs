@@ -206,10 +206,29 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     PipeDirection.InOut,
                     PipeOptions.Asynchronous))
                 {
-                    await AwaitWithTimeout(
-                        pipe.ConnectAsync(ConnectTimeoutMilliseconds),
-                        _frameTimeoutMilliseconds,
-                        operationCancellation.Token);
+                    try
+                    {
+                        await AwaitWithTimeout(
+                            pipe.ConnectAsync(ConnectTimeoutMilliseconds),
+                            _frameTimeoutMilliseconds,
+                            operationCancellation.Token);
+                    }
+                    catch (TimeoutException)
+                    {
+                        throw new NativePackageBrokerException(
+                            "BROKER_UNAVAILABLE",
+                            TraceId(request.traceparent),
+                            "The YUCP package broker is not running.");
+                    }
+                    catch (Exception exception) when (
+                        exception is IOException ||
+                        exception is UnauthorizedAccessException)
+                    {
+                        throw new NativePackageBrokerException(
+                            "BROKER_UNAVAILABLE",
+                            TraceId(request.traceparent),
+                            "The YUCP package broker is not available.");
+                    }
                     using (var reader = new StreamReader(
                         pipe,
                         new UTF8Encoding(false, true),

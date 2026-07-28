@@ -1014,6 +1014,35 @@ namespace YUCP.Importer.Tests.Editor
         }
 
         [UnityTest]
+        public IEnumerator MissingNamedPipeIsReportedUnavailable()
+        {
+            string pipeName =
+                "yucp-package-broker-missing-" +
+                Guid.NewGuid().ToString("N");
+            var transport = new NamedPipePackageBrokerTransport(
+                pipeName,
+                25,
+                100);
+            Task<NativePackageBrokerResult> execution =
+                transport.ExecuteAsync(
+                    ValidRequest("preflight"),
+                    null,
+                    CancellationToken.None);
+
+            while (!execution.IsCompleted)
+            {
+                yield return null;
+            }
+
+            var failure = execution.Exception?.GetBaseException()
+                as NativePackageBrokerException;
+            Assert.That(failure, Is.Not.Null);
+            Assert.That(
+                failure.ErrorCode,
+                Is.EqualTo("BROKER_UNAVAILABLE"));
+        }
+
+        [UnityTest]
         public IEnumerator NamedPipeTransportCompletesTheChallengeAndStreamsProgress()
         {
             string pipeName =
