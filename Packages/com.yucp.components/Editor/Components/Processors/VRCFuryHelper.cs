@@ -213,6 +213,29 @@ namespace YUCP.Components.Editor
             EditorUtility.SetDirty(descriptor.gameObject);
         }
 
+        /// <summary>
+        /// Registers a controller, its expression parameters and a menu as ONE VRCFury Full
+        /// Controller. They must travel together: VRCFury validates each Full Controller component
+        /// in isolation, so a menu on its own component fails with "menu uses parameters that
+        /// aren't in the merged parameters file" even when another component carries them. And
+        /// mutating descriptor.expressionsMenu instead is a trap of its own -- avatars built
+        /// entirely with VRCFury have no root menu asset, so the control silently vanishes.
+        /// </summary>
+        public static void AddFullControllerToVRCFury(
+            VRCAvatarDescriptor descriptor,
+            AnimatorController controller,
+            VRCExpressionParameters parameters,
+            VRCExpressionsMenu menu,
+            string menuPrefix,
+            VRCAvatarDescriptor.AnimLayerType layerType = VRCAvatarDescriptor.AnimLayerType.FX)
+        {
+            var fullController = FuryComponents.CreateFullController(descriptor.gameObject);
+            if (controller != null) fullController.AddController(controller, layerType);
+            if (parameters != null) fullController.AddParams(parameters);
+            if (menu != null) fullController.AddMenu(menu, menuPrefix ?? string.Empty);
+            EditorUtility.SetDirty(descriptor.gameObject);
+        }
+
         public static void AddGlobalParamToVRCFury(VRCAvatarDescriptor descriptor, string parameterName)
         {
             // Always use the public API for consistency and robustness

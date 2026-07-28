@@ -95,7 +95,7 @@ namespace YUCP.Components
         /// Converts the centered Silence Stability control to the release time
         /// constant used by the history observer. The default control value of
         /// 0.5 uses the configured response and the upper half extends it up to
-        /// 2x. The lower half changes hold authority, not the history trajectory;
+        /// 4x. The lower half changes hold authority, not the history trajectory;
         /// its zero endpoint is still an exact observer bypass.
         /// </summary>
         public static float SpeechHistoryReleaseSeconds(
@@ -106,7 +106,7 @@ namespace YUCP.Components
                 ? Mathf.Max(0f, configuredReleaseSeconds)
                 : 0f;
             var extension = Mathf.Clamp01(2f * Sanitize01(silenceStability) - 1f);
-            return configuredReleaseSeconds * (1f + extension);
+            return configuredReleaseSeconds * (1f + 3f * extension);
         }
 
         /// <summary>
@@ -124,7 +124,7 @@ namespace YUCP.Components
                 : 0f;
             var extension = Mathf.Clamp01(2f * Sanitize01(silenceStability) - 1f);
             var configuredAlpha = Alpha(deltaTime, configuredReleaseSeconds);
-            var extendedAlpha = Alpha(deltaTime, 2f * configuredReleaseSeconds);
+            var extendedAlpha = Alpha(deltaTime, 4f * configuredReleaseSeconds);
             return Mathf.Lerp(configuredAlpha, extendedAlpha, extension);
         }
 
@@ -285,6 +285,22 @@ namespace YUCP.Components
             return Mathf.Lerp(
                 slow, fast,
                 SpeechLivelinessLead(speechLiveliness, trackingBlend));
+        }
+
+        /// <summary>
+        /// Numerical reference for the generated Exaggeration graph. The gain
+        /// may amplify a quiet speech envelope, but it cannot leave the authored
+        /// zero-to-one pose domain.
+        /// </summary>
+        public static float ExaggeratedSpeechGain(
+            float speechGain,
+            float exaggeration)
+        {
+            speechGain = IsFinite(speechGain) ? Mathf.Clamp01(speechGain) : 0f;
+            exaggeration = IsFinite(exaggeration)
+                ? Mathf.Clamp(exaggeration, 0f, 2f)
+                : 0f;
+            return Mathf.Clamp01(speechGain * exaggeration);
         }
 
         /// <summary>

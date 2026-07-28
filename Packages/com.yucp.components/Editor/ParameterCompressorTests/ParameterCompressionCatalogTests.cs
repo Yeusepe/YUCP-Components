@@ -156,9 +156,10 @@ namespace YUCP.Components.Editor.Tests
                 reconstructor.tuningSyncMode =
                     AdvancedVisemeTuningSyncMode.LocalOnly;
                 var local = Entry(fixture.Scan(), name);
-                Assert.That(local.explicitlyIncluded, Is.False);
-                Assert.That(local.eligible, Is.False);
-                Assert.That(local.reason, Does.Contain("Automatic selection is disabled"));
+                Assert.That(local.explicitlyIncluded, Is.True,
+                    "Legacy LocalOnly assets are upgraded to shared tuning during validation.");
+                Assert.That(local.eligible, Is.True);
+                Assert.That(local.reason, Does.Contain("Registered by a YUCP producer"));
             }
         }
 

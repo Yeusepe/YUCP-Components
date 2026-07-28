@@ -228,7 +228,7 @@ namespace YUCP.Components.Editor.Tests
                     AssertHardRetention(clips, fixture, winner);
                 }
 
-                AssertTrajectoryDecoderCurves(fixture, " Halo", 1);
+                AssertTrajectoryDecoderCurves(fixture, " Halo", 1, folded: false);
                 AssertStaticDecoderCurves(fixture, false, " Identity");
             }
             finally
@@ -401,7 +401,8 @@ namespace YUCP.Components.Editor.Tests
         private static void AssertTrajectoryDecoderCurves(
             BuildFixture fixture,
             string suffix = "",
-            int firstWinner = 0)
+            int firstWinner = 0,
+            bool folded = true)
         {
             var clips = AssetDatabase.LoadAllAssetsAtPath(fixture.controllerPath)
                 .OfType<AnimationClip>()
@@ -435,10 +436,18 @@ namespace YUCP.Components.Editor.Tests
                         typeof(Animator),
                         trajectoryParameter);
                     var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                    // The decoder bakes the learned trajectory with the
+                    // retention-pull remainder folded in and retracted onto
+                    // the simplex. The shared builder helper is the single
+                    // source of truth so this contract cannot drift.
                     var controls = Enumerable.Range(
                             0, AdvancedVisemeOculusDynamics.ControlPointCount)
-                        .Select(control => AdvancedVisemeOculusDynamics.Weight(
-                            winner, control, output))
+                        .Select(control => folded
+                            ? AdvancedVisemeAnimatorBuilder
+                                .RetentionPullFoldedDecoderWeight(
+                                    winner, control, output)
+                            : AdvancedVisemeOculusDynamics.Weight(
+                                winner, control, output))
                         .ToArray();
                     if (curve == null)
                     {

@@ -22,7 +22,7 @@ namespace YUCP.Components.Editor.Tests
                 Is.EqualTo(ConfiguredReleaseSeconds).Within(1e-7f));
             Assert.That(AdvancedVisemeMath.SpeechHistoryReleaseSeconds(
                     ConfiguredReleaseSeconds, 1f),
-                Is.EqualTo(2f * ConfiguredReleaseSeconds).Within(1e-7f));
+                Is.EqualTo(4f * ConfiguredReleaseSeconds).Within(1e-7f));
 
             const float deltaTime = 1f / 90f;
             Assert.That(AdvancedVisemeMath.SpeechHistoryReleaseAlpha(
@@ -32,7 +32,7 @@ namespace YUCP.Components.Editor.Tests
             Assert.That(AdvancedVisemeMath.SpeechHistoryReleaseAlpha(
                     deltaTime, ConfiguredReleaseSeconds, 1f),
                 Is.EqualTo(AdvancedVisemeMath.Alpha(
-                    deltaTime, 2f * ConfiguredReleaseSeconds)).Within(1e-7f));
+                    deltaTime, 4f * ConfiguredReleaseSeconds)).Within(1e-7f));
 
             Assert.That(AdvancedVisemeMath.SpeechHistoryHoldWeight(1f, 0, 0f),
                 Is.Zero);

@@ -64,7 +64,7 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void PackageAndCompilationCoordinationUsesUnityCompletionEvents()
+        public void PackageAndCompilationCoordinationUsesCompletionRequests()
         {
             string projectRoot = Path.GetFullPath(
                 Path.Combine(Application.dataPath, ".."));
@@ -85,7 +85,9 @@ namespace YUCP.Components.Editor.Tests
                 "Core",
                 "PackageImportVerifier.cs"));
 
-            StringAssert.Contains(
+            StringAssert.Contains("Client.Resolve();", resolver);
+            StringAssert.Contains("Client.List(false, true)", resolver);
+            StringAssert.DoesNotContain(
                 "Events.registeredPackages +=",
                 resolver);
             StringAssert.Contains(

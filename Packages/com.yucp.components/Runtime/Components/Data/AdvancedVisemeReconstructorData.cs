@@ -90,16 +90,16 @@ namespace YUCP.Components
         public string existingTrackingPrefix = "";
 
         [Header("Avatar Tuning Menu")]
-        [Tooltip("Add radial sliders for live viseme tuning. They can stay local or be shared through the compact quantized transport below.")]
+        [Tooltip("Add radial sliders for live viseme tuning. Every slider is shared through one compact quantized transport.")]
         public bool createTuningMenu = true;
 
         [Tooltip("Menu path that contains the generated Speech, Tracking, Phonetics, and Tongue slider groups.")]
         public string tuningMenuPath = "YUCP/Viseme Settings";
 
-        [Tooltip("Remember local tuning slider values when changing worlds or avatars.")]
+        [Tooltip("Remember tuning slider values when changing worlds or avatars. Shared remote values follow these saved settings.")]
         public bool saveTuningValues = true;
 
-        [Tooltip("Compact Synced shares every generated tuning slider through one quantized network bus. Local values stay full precision and can remain saved; remote avatars receive 255 evenly spaced levels using exactly 13 synced bits.")]
+        [Tooltip("Every generated tuning slider is shared through one quantized network bus. Local values stay full precision and can remain saved; remote avatars receive 255 evenly spaced levels using exactly 13 synced bits.")]
         public AdvancedVisemeTuningSyncMode tuningSyncMode =
             AdvancedVisemeTuningSyncMode.CompactSynced;
 
@@ -161,8 +161,16 @@ namespace YUCP.Components
                 tuningSyncMode = AdvancedVisemeTuningSyncMode.CompactSynced;
                 settingsVersion = 2;
             }
-            if (!System.Enum.IsDefined(typeof(AdvancedVisemeTuningSyncMode), tuningSyncMode))
+            if (settingsVersion < 3)
+            {
+                // Runtime tuning now has one invariant contract: every visible
+                // slider is compact-synced so its effect is identical locally
+                // and remotely. Keep the enum serialized for compatibility with
+                // older prefabs, but migrate every instance to that contract.
                 tuningSyncMode = AdvancedVisemeTuningSyncMode.CompactSynced;
+                settingsVersion = 3;
+            }
+            tuningSyncMode = AdvancedVisemeTuningSyncMode.CompactSynced;
             tuningMenuPath = string.IsNullOrWhiteSpace(tuningMenuPath)
                 ? "YUCP/Viseme Settings"
                 : tuningMenuPath.Trim().Trim('/');

@@ -54,6 +54,30 @@ namespace YUCP.Components
     public static class AdvancedVisemeTuning
     {
         public const int CompactSyncQuantizationMaximum = 254;
+        public const float SliderDefault = 0.5f;
+
+        public readonly struct EffectiveRange
+        {
+            public readonly float minimum;
+            public readonly float configured;
+            public readonly float maximum;
+
+            public EffectiveRange(float minimum, float configured, float maximum)
+            {
+                this.minimum = minimum;
+                this.configured = configured;
+                this.maximum = maximum;
+            }
+
+            public float Evaluate(float slider)
+            {
+                slider = Mathf.Clamp01(slider);
+                return slider <= SliderDefault
+                    ? Mathf.Lerp(minimum, configured, slider / SliderDefault)
+                    : Mathf.Lerp(configured, maximum,
+                        (slider - SliderDefault) / SliderDefault);
+            }
+        }
 
         public static readonly IReadOnlyList<AdvancedVisemeTuningControl> Controls =
             (AdvancedVisemeTuningControl[])Enum.GetValues(
@@ -61,15 +85,18 @@ namespace YUCP.Components
 
         /// <summary>
         /// A compact, terminology-free view over the same tuning parameters used
-        /// by the full menu. Keeping this at eight entries lets VRChat display the
-        /// complete friendly surface in one menu without adding parameters.
+        /// by the full menu. These sit at the ROOT of the tuning menu, so the
+        /// count must leave one slot for the Advanced submenu inside VRChat's
+        /// eight-control limit — seven entries, not eight.
+        /// QuietMotion was removed: it only acts through the voice envelope,
+        /// which the lookahead-FIR mouth path deliberately does not apply, so
+        /// the slider moved nothing on the lower face.
         /// </summary>
         public static readonly IReadOnlyList<AdvancedVisemeTuningControl> SimpleControls =
             new[]
             {
                 AdvancedVisemeTuningControl.SpeechMotion,
                 AdvancedVisemeTuningControl.SpeechLiveliness,
-                AdvancedVisemeTuningControl.QuietMotion,
                 AdvancedVisemeTuningControl.SpeechSmoothness,
                 AdvancedVisemeTuningControl.SilenceStability,
                 AdvancedVisemeTuningControl.ConstraintAmount,
@@ -158,12 +185,12 @@ namespace YUCP.Components
         {
             switch (control)
             {
-                case AdvancedVisemeTuningControl.SpeechMotion: return "Expression Strength";
-                case AdvancedVisemeTuningControl.SpeechLiveliness: return "Speech Liveliness";
-                case AdvancedVisemeTuningControl.QuietMotion: return "Quiet Speech Detail";
+                case AdvancedVisemeTuningControl.SpeechMotion: return "Exaggeration";
+                case AdvancedVisemeTuningControl.SpeechLiveliness: return "Snappiness";
+                case AdvancedVisemeTuningControl.QuietMotion: return "Soft Speech";
                 case AdvancedVisemeTuningControl.SpeechSmoothness: return "Reaction Speed";
-                case AdvancedVisemeTuningControl.SilenceStability: return "Pause Stability";
-                case AdvancedVisemeTuningControl.ConstraintAmount: return "Pronunciation Help";
+                case AdvancedVisemeTuningControl.SilenceStability: return "Smooth Pauses";
+                case AdvancedVisemeTuningControl.ConstraintAmount: return "Clear Consonants";
                 case AdvancedVisemeTuningControl.ContradictionFade: return "Follow My Face";
                 case AdvancedVisemeTuningControl.TongueInference: return "Tongue Motion";
                 case AdvancedVisemeTuningControl.Coarticulation: return "Natural Transitions";
@@ -261,11 +288,23 @@ namespace YUCP.Components
             VisemeReconstructionProfile profile,
             AdvancedVisemeTuningControl control)
         {
+            // Public tuning parameters are preferences, not physical gains.
+            // Keeping their neutral point identical lets every radial start in
+            // the middle, serialize predictably, and use the same compact wire
+            // quantizer. The profile's authored value is recovered by the
+            // internal centered response below.
+            return SliderDefault;
+        }
+
+        public static float ConfiguredValue(
+            VisemeReconstructionProfile profile,
+            AdvancedVisemeTuningControl control)
+        {
             if (profile == null)
             {
                 if (control == AdvancedVisemeTuningControl.QuietMotion) return 0.55f;
                 if (control == AdvancedVisemeTuningControl.SpeechLiveliness) return 0f;
-                return IsCenteredControl(control) ? 0.5f : 1f;
+                return IsCenteredControl(control) ? SliderDefault : 1f;
             }
 
             switch (control)
@@ -279,48 +318,112 @@ namespace YUCP.Components
                 case AdvancedVisemeTuningControl.QuietMotion:
                     return Mathf.Clamp01(profile.quietSpeechFloor);
                 case AdvancedVisemeTuningControl.SpeechMotion:
-                    return Mathf.Clamp01(profile.speechMotionStrength);
+                    return Mathf.Clamp(profile.speechMotionStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.SpeechLiveliness:
-                    return Mathf.Clamp01(profile.speechLiveliness);
+                    return Mathf.Clamp(profile.speechLiveliness, -1f, 1f);
                 case AdvancedVisemeTuningControl.AuthoredDetail:
-                    return Mathf.Clamp01(profile.authoredResidualDetail);
+                    return Mathf.Clamp(profile.authoredResidualDetail, 0f, 1.5f);
                 case AdvancedVisemeTuningControl.Coarticulation:
                     return profile.BetaCoarticulationStrength;
                 case AdvancedVisemeTuningControl.RemoteTrust:
                     return Mathf.Clamp01(profile.remoteTrackingTrust);
                 case AdvancedVisemeTuningControl.ContradictionFade:
-                    return Mathf.Clamp01(profile.residualMismatchFade);
+                    return Mathf.Clamp(profile.residualMismatchFade, 0f, 2f);
                 case AdvancedVisemeTuningControl.ConstraintAmount:
-                    return Mathf.Clamp01(profile.phoneticConstraintStrength);
+                    return Mathf.Clamp(profile.phoneticConstraintStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.BilabialAssist:
-                    return Mathf.Clamp01(profile.bilabialAssistStrength);
+                    return Mathf.Clamp(profile.bilabialAssistStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.LabiodentalAssist:
-                    return Mathf.Clamp01(profile.labiodentalAssistStrength);
+                    return Mathf.Clamp(profile.labiodentalAssistStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.SibilantAssist:
-                    return Mathf.Clamp01(profile.sibilantAssistStrength);
+                    return Mathf.Clamp(profile.sibilantAssistStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.HiddenPhone:
-                    return Mathf.Clamp01(profile.hiddenPhoneStrength);
+                    return Mathf.Clamp(profile.hiddenPhoneStrength, 0f, 1.5f);
                 case AdvancedVisemeTuningControl.HiddenDetail:
-                    return Mathf.Clamp01(profile.hiddenDetailStrength);
+                    return Mathf.Clamp(profile.hiddenDetailStrength, 0f, 1.5f);
                 case AdvancedVisemeTuningControl.TongueInference:
-                    return Mathf.Clamp01(profile.tongueInferenceStrength);
+                    return Mathf.Clamp(profile.tongueInferenceStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.TongueOut:
-                    return Mathf.Clamp01(profile.tongueOutStrength);
+                    return Mathf.Clamp(profile.tongueOutStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.TongueVertical:
-                    return Mathf.Clamp01(profile.tongueYStrength);
+                    return Mathf.Clamp(profile.tongueYStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.TongueLateral:
-                    return Mathf.Clamp01(profile.tongueXStrength);
+                    return Mathf.Clamp(profile.tongueXStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.TongueRoll:
-                    return Mathf.Clamp01(profile.tongueRollStrength);
+                    return Mathf.Clamp(profile.tongueRollStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.TongueArch:
-                    return Mathf.Clamp01(profile.tongueArchStrength);
+                    return Mathf.Clamp(profile.tongueArchStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.TongueShape:
-                    return Mathf.Clamp01(profile.tongueShapeStrength);
+                    return Mathf.Clamp(profile.tongueShapeStrength, 0f, 2f);
                 case AdvancedVisemeTuningControl.TongueTwist:
-                    return Mathf.Clamp01(profile.tongueTwistStrength);
+                    return Mathf.Clamp(profile.tongueTwistStrength, 0f, 2f);
                 default:
                     return 1f;
             }
+        }
+
+        public static EffectiveRange Range(
+            VisemeReconstructionProfile profile,
+            AdvancedVisemeTuningControl control)
+        {
+            var configured = ConfiguredValue(profile, control);
+            switch (control)
+            {
+                // These are normalized selectors whose consumers provide the
+                // strongly separated physical endpoints (response time,
+                // sensitivity, acquisition, release, and hangover behavior).
+                case AdvancedVisemeTuningControl.SpeechSmoothness:
+                case AdvancedVisemeTuningControl.VoiceSensitivity:
+                case AdvancedVisemeTuningControl.TrackingSmoothness:
+                case AdvancedVisemeTuningControl.TrackingRelease:
+                case AdvancedVisemeTuningControl.SilenceStability:
+                    return new EffectiveRange(0f, SliderDefault, 1f);
+
+                case AdvancedVisemeTuningControl.QuietMotion:
+                    return new EffectiveRange(0f, configured, 1f);
+                case AdvancedVisemeTuningControl.SpeechMotion:
+                    // Above one boosts quiet speech into the authored range; the
+                    // final speech envelope is saturated, so poses never exceed
+                    // their authored animation capability.
+                    return new EffectiveRange(0f, configured, 2f);
+                case AdvancedVisemeTuningControl.SpeechLiveliness:
+                    // Negative values select the calmer persistent stage; zero
+                    // is the authored behavior and positive values add snap.
+                    return new EffectiveRange(-1f, configured, 1f);
+                case AdvancedVisemeTuningControl.AuthoredDetail:
+                case AdvancedVisemeTuningControl.HiddenDetail:
+                    return new EffectiveRange(0f, configured, 1.5f);
+                case AdvancedVisemeTuningControl.Coarticulation:
+                case AdvancedVisemeTuningControl.HiddenPhone:
+                    return new EffectiveRange(0f, configured, 1.5f);
+                case AdvancedVisemeTuningControl.ConstraintAmount:
+                case AdvancedVisemeTuningControl.BilabialAssist:
+                case AdvancedVisemeTuningControl.LabiodentalAssist:
+                case AdvancedVisemeTuningControl.SibilantAssist:
+                case AdvancedVisemeTuningControl.TongueInference:
+                case AdvancedVisemeTuningControl.ContradictionFade:
+                    return new EffectiveRange(0f, configured, 2f);
+                case AdvancedVisemeTuningControl.TongueOut:
+                case AdvancedVisemeTuningControl.TongueVertical:
+                case AdvancedVisemeTuningControl.TongueLateral:
+                case AdvancedVisemeTuningControl.TongueRoll:
+                case AdvancedVisemeTuningControl.TongueArch:
+                case AdvancedVisemeTuningControl.TongueShape:
+                case AdvancedVisemeTuningControl.TongueTwist:
+                    return new EffectiveRange(0f, configured, 2f);
+                case AdvancedVisemeTuningControl.RemoteTrust:
+                    return new EffectiveRange(0f, configured, 1f);
+                default:
+                    return new EffectiveRange(0f, configured, 1f);
+            }
+        }
+
+        public static float Evaluate(
+            VisemeReconstructionProfile profile,
+            AdvancedVisemeTuningControl control,
+            float slider)
+        {
+            return Range(profile, control).Evaluate(slider);
         }
 
         public static bool IsCenteredControl(AdvancedVisemeTuningControl control)

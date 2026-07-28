@@ -212,7 +212,7 @@ namespace YUCP.Components
     public sealed class VisemeReconstructionProfile : ScriptableObject
     {
         public const int VisemeCount = 15;
-        private const int CurrentDefaultsVersion = 11;
+        private const int CurrentDefaultsVersion = 13;
         public static readonly string[] VisemeNames =
         {
             "sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"
@@ -234,27 +234,28 @@ namespace YUCP.Components
         private float betaCoarticulationStrength = 1f;
 
         [Header("Style Strengths")]
-        [Range(0f, 1f)] public float speechMotionStrength = 1f;
-        [Tooltip("Optional extra snap for speech without face tracking. The learned trajectory and critically damped slow observer are the smooth default; this adds at most a small bounded fast-stage lead and fades out as face tracking becomes active.")]
-        [Range(0f, 1f)] public float speechLiveliness = 0f;
-        [Range(0f, 1f)] public float authoredResidualDetail = 1f;
+        [Tooltip("Authored speech-motion gain. One preserves the current pose strength; values above one make quiet speech more dramatic, while the generated output saturates at the full authored viseme.")]
+        [Range(0f, 2f)] public float speechMotionStrength = 1f;
+        [Tooltip("Speech-only motion character. Zero uses the responsive persistent observer, negative values favor a calmer two-pole trajectory, and positive values move toward the crisp learned target. Face tracking remains unchanged.")]
+        [Range(-1f, 1f)] public float speechLiveliness = 0f;
+        [Range(0f, 1.5f)] public float authoredResidualDetail = 1f;
         [Range(0f, 1f)] public float remoteTrackingTrust = 1f;
-        [Range(0f, 1f)] public float phoneticConstraintStrength = 1f;
-        [Range(0f, 1f)] public float bilabialAssistStrength = 1f;
-        [Range(0f, 1f)] public float labiodentalAssistStrength = 1f;
-        [Range(0f, 1f)] public float sibilantAssistStrength = 1f;
-        [Range(0f, 1f)] public float hiddenPhoneStrength = 1f;
-        [Range(0f, 1f)] public float hiddenDetailStrength = 1f;
-        [Range(0f, 1f)] public float tongueInferenceStrength = 1f;
+        [Range(0f, 2f)] public float phoneticConstraintStrength = 1f;
+        [Range(0f, 2f)] public float bilabialAssistStrength = 1f;
+        [Range(0f, 2f)] public float labiodentalAssistStrength = 1f;
+        [Range(0f, 2f)] public float sibilantAssistStrength = 1f;
+        [Range(0f, 1.5f)] public float hiddenPhoneStrength = 1f;
+        [Range(0f, 1.5f)] public float hiddenDetailStrength = 1f;
+        [Range(0f, 2f)] public float tongueInferenceStrength = 1f;
 
         [Header("Tongue Axis Strengths")]
-        [Range(0f, 1f)] public float tongueOutStrength = 1f;
-        [Range(0f, 1f)] public float tongueYStrength = 1f;
-        [Range(0f, 1f)] public float tongueXStrength = 1f;
-        [Range(0f, 1f)] public float tongueRollStrength = 1f;
-        [Range(0f, 1f)] public float tongueArchStrength = 1f;
-        [Range(0f, 1f)] public float tongueShapeStrength = 1f;
-        [Range(0f, 1f)] public float tongueTwistStrength = 1f;
+        [Range(0f, 2f)] public float tongueOutStrength = 1f;
+        [Range(0f, 2f)] public float tongueYStrength = 1f;
+        [Range(0f, 2f)] public float tongueXStrength = 1f;
+        [Range(0f, 2f)] public float tongueRollStrength = 1f;
+        [Range(0f, 2f)] public float tongueArchStrength = 1f;
+        [Range(0f, 2f)] public float tongueShapeStrength = 1f;
+        [Range(0f, 2f)] public float tongueTwistStrength = 1f;
 
         [Header("Phonetic Constraints")]
         [Range(0f, 1f)] public float bilabialClosure = 0.9f;
@@ -265,7 +266,7 @@ namespace YUCP.Components
         [Tooltip("Legacy compatibility value. Measured vowel coordinates are now authoritative; vowel identity is retained only in unobserved articulators.")]
         [Range(0f, 0.75f)] public float vowelIdentityRetention;
         [Tooltip("How strongly measured face-tracking axes own matching authored surface motion. Unmeasured tongue, teeth, and mouth-interior detail is preserved.")]
-        [Range(0f, 1f)] public float residualMismatchFade = 1f;
+        [Range(0f, 2f)] public float residualMismatchFade = 1f;
 
         [Header("Viseme Poses")]
         public VisemeArticulationPose[] visemePoses = new VisemeArticulationPose[VisemeCount];
@@ -406,11 +407,11 @@ namespace YUCP.Components
                 articulatorBindings = bindings.ToArray();
 
             }
-
             if (isFreshProfile)
             {
                 defaultsVersion = CurrentDefaultsVersion;
             }
+
             if (defaultsVersion < 2)
             {
                 for (var i = 0; i < VisemeCount; i++)
@@ -517,6 +518,19 @@ namespace YUCP.Components
                 visemeResponseSeconds = 0.017f;
                 speechLiveliness = 0f;
             }
+            if (defaultsVersion < 13 &&
+                Mathf.Approximately(visemeResponseSeconds, 0.009f))
+            {
+                // Version 12 briefly recommended a 9 ms observer to pair with
+                // the decoder cross-fade. Corpus re-measurement showed that
+                // value raises the per-frame direction-reversal rate ~32%
+                // above the original continuous weights (0.300 vs 0.227) and
+                // overshoots peak speed by 19%, which reads as bouncing and
+                // jitter. 17 ms matches the original's reversal rate to within
+                // 0.3%, so version 13 restores it. The cross-fade, not the
+                // observer, carries the transition shaping.
+                visemeResponseSeconds = 0.017f;
+            }
             defaultsVersion = CurrentDefaultsVersion;
         }
 
@@ -575,24 +589,25 @@ namespace YUCP.Components
             betaCoarticulationStrength = Mathf.Clamp01(betaCoarticulationStrength);
             trackingAcquireResponseSeconds = Mathf.Clamp(
                 trackingAcquireResponseSeconds, 0.005f, 0.1f);
-            speechMotionStrength = Mathf.Clamp01(speechMotionStrength);
-            speechLiveliness = Mathf.Clamp01(speechLiveliness);
-            authoredResidualDetail = Mathf.Clamp01(authoredResidualDetail);
+            speechMotionStrength = Mathf.Clamp(speechMotionStrength, 0f, 2f);
+            speechLiveliness = Mathf.Clamp(speechLiveliness, -1f, 1f);
+            authoredResidualDetail = Mathf.Clamp(authoredResidualDetail, 0f, 1.5f);
             remoteTrackingTrust = Mathf.Clamp01(remoteTrackingTrust);
-            phoneticConstraintStrength = Mathf.Clamp01(phoneticConstraintStrength);
-            bilabialAssistStrength = Mathf.Clamp01(bilabialAssistStrength);
-            labiodentalAssistStrength = Mathf.Clamp01(labiodentalAssistStrength);
-            sibilantAssistStrength = Mathf.Clamp01(sibilantAssistStrength);
-            hiddenPhoneStrength = Mathf.Clamp01(hiddenPhoneStrength);
-            hiddenDetailStrength = Mathf.Clamp01(hiddenDetailStrength);
-            tongueInferenceStrength = Mathf.Clamp01(tongueInferenceStrength);
-            tongueOutStrength = Mathf.Clamp01(tongueOutStrength);
-            tongueYStrength = Mathf.Clamp01(tongueYStrength);
-            tongueXStrength = Mathf.Clamp01(tongueXStrength);
-            tongueRollStrength = Mathf.Clamp01(tongueRollStrength);
-            tongueArchStrength = Mathf.Clamp01(tongueArchStrength);
-            tongueShapeStrength = Mathf.Clamp01(tongueShapeStrength);
-            tongueTwistStrength = Mathf.Clamp01(tongueTwistStrength);
+            residualMismatchFade = Mathf.Clamp(residualMismatchFade, 0f, 2f);
+            phoneticConstraintStrength = Mathf.Clamp(phoneticConstraintStrength, 0f, 2f);
+            bilabialAssistStrength = Mathf.Clamp(bilabialAssistStrength, 0f, 2f);
+            labiodentalAssistStrength = Mathf.Clamp(labiodentalAssistStrength, 0f, 2f);
+            sibilantAssistStrength = Mathf.Clamp(sibilantAssistStrength, 0f, 2f);
+            hiddenPhoneStrength = Mathf.Clamp(hiddenPhoneStrength, 0f, 1.5f);
+            hiddenDetailStrength = Mathf.Clamp(hiddenDetailStrength, 0f, 1.5f);
+            tongueInferenceStrength = Mathf.Clamp(tongueInferenceStrength, 0f, 2f);
+            tongueOutStrength = Mathf.Clamp(tongueOutStrength, 0f, 2f);
+            tongueYStrength = Mathf.Clamp(tongueYStrength, 0f, 2f);
+            tongueXStrength = Mathf.Clamp(tongueXStrength, 0f, 2f);
+            tongueRollStrength = Mathf.Clamp(tongueRollStrength, 0f, 2f);
+            tongueArchStrength = Mathf.Clamp(tongueArchStrength, 0f, 2f);
+            tongueShapeStrength = Mathf.Clamp(tongueShapeStrength, 0f, 2f);
+            tongueTwistStrength = Mathf.Clamp(tongueTwistStrength, 0f, 2f);
             foreach (var adjustment in visemeAdjustments)
                 adjustment?.Clamp();
         }

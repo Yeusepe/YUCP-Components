@@ -42,19 +42,17 @@ namespace YUCP.Components.Editor
             var root = NewMenu(Path.GetFileNameWithoutExtension(assetPath));
             var submenus = new List<VRCExpressionsMenu>();
 
+            // The simple controls live at the ROOT of the tuning menu rather than
+            // behind a "Simple" folder, so the everyday sliders are reachable
+            // without a hop. The Advanced submenu is appended after them and
+            // consumes the last of VRChat's eight root slots.
             var simpleControls = OrderedSimpleControls(controls);
-            if (simpleControls.Count > 0)
+            foreach (var control in simpleControls)
             {
-                var simple = NewMenu("Simple");
-                foreach (var control in simpleControls)
-                {
-                    simple.controls.Add(NewRadialControl(
-                        AdvancedVisemeTuning.SimpleLabel(control),
-                        controls[control], focusedParameter,
-                        ChannelId(control, controls)));
-                }
-                root.controls.Add(NewSubmenuControl("Simple", simple));
-                submenus.Add(simple);
+                root.controls.Add(NewRadialControl(
+                    AdvancedVisemeTuning.SimpleLabel(control),
+                    controls[control], focusedParameter,
+                    ChannelId(control, controls)));
             }
 
             var advanced = NewMenu("Advanced");
@@ -79,7 +77,9 @@ namespace YUCP.Components.Editor
             }
 
             root.controls.Add(NewSubmenuControl("Advanced", advanced));
-            submenus.Insert(simpleControls.Count > 0 ? 1 : 0, advanced);
+            // The simple controls are radials on the root now, so "Advanced" is
+            // the first submenu asset rather than the second.
+            submenus.Insert(0, advanced);
 
             if (AssetDatabase.LoadMainAssetAtPath(assetPath) != null &&
                 !AssetDatabase.DeleteAsset(assetPath))
@@ -131,10 +131,13 @@ namespace YUCP.Components.Editor
             var counts = CountControlsBySection(controls);
             var simpleControlCount = AdvancedVisemeTuning.SimpleControls.Count(
                 controls.ContainsKey);
-            if (simpleControlCount > MaxControlsPerMenu)
+            // Simple controls sit on the ROOT alongside the "Advanced" submenu
+            // entry, so they may occupy at most MaxControlsPerMenu - 1 slots.
+            if (simpleControlCount + 1 > MaxControlsPerMenu)
                 throw new InvalidOperationException(
-                    $"The simple advanced-viseme menu contains {simpleControlCount} controls; " +
-                    $"VRChat menus allow at most {MaxControlsPerMenu} controls.");
+                    $"The advanced-viseme tuning root contains {simpleControlCount} simple " +
+                    $"controls plus the Advanced submenu; VRChat menus allow at most " +
+                    $"{MaxControlsPerMenu} controls.");
 
             foreach (var section in OrderedSections)
             {
