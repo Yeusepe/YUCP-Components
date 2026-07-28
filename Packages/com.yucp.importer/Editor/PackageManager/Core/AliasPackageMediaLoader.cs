@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -27,6 +28,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             Texture2D icon = null;
             Texture2D banner = null;
+            var gallery = new List<Texture2D>();
+            var productLinks = new List<ProductLink>();
             try
             {
                 icon = Load(
@@ -37,15 +40,48 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     packageRoot,
                     alias.media.banner,
                     "banner");
+                foreach (AliasPackageMediaDescriptor descriptor in
+                    alias.media.gallery ??
+                    new List<AliasPackageMediaDescriptor>())
+                {
+                    gallery.Add(Load(
+                        packageRoot,
+                        descriptor,
+                        "gallery"));
+                }
+                foreach (AliasPackageMediaDescriptor descriptor in
+                    alias.media.productLinks ??
+                    new List<AliasPackageMediaDescriptor>())
+                {
+                    productLinks.Add(new ProductLink(
+                        descriptor.url,
+                        descriptor.label)
+                    {
+                        customIcon = Load(
+                            packageRoot,
+                            descriptor,
+                            "product-link"),
+                    });
+                }
                 PackageMetadataMediaOwnership.Replace(
                     metadata,
                     icon,
-                    banner);
+                    banner,
+                    gallery,
+                    productLinks);
             }
             catch
             {
                 PackageMetadataMediaOwnership.Release(icon);
                 PackageMetadataMediaOwnership.Release(banner);
+                foreach (Texture2D texture in gallery)
+                {
+                    PackageMetadataMediaOwnership.Release(texture);
+                }
+                foreach (ProductLink link in productLinks)
+                {
+                    PackageMetadataMediaOwnership.Release(link?.customIcon);
+                }
                 throw;
             }
         }

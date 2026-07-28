@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace YUCP.Importer.Editor.PackageManager
 {
@@ -40,14 +41,24 @@ namespace YUCP.Importer.Editor.PackageManager
     public class AliasPackageMediaSet
     {
         public AliasPackageMediaDescriptor banner = new AliasPackageMediaDescriptor();
+        public List<AliasPackageMediaDescriptor> gallery =
+            new List<AliasPackageMediaDescriptor>();
         public AliasPackageMediaDescriptor icon = new AliasPackageMediaDescriptor();
+        public List<AliasPackageMediaDescriptor> productLinks =
+            new List<AliasPackageMediaDescriptor>();
 
         public AliasPackageMediaSet Clone()
         {
             return new AliasPackageMediaSet
             {
                 banner = banner?.Clone() ?? new AliasPackageMediaDescriptor(),
+                gallery = gallery?.ConvertAll(item =>
+                    item?.Clone() ?? new AliasPackageMediaDescriptor()) ??
+                    new List<AliasPackageMediaDescriptor>(),
                 icon = icon?.Clone() ?? new AliasPackageMediaDescriptor(),
+                productLinks = productLinks?.ConvertAll(item =>
+                    item?.Clone() ?? new AliasPackageMediaDescriptor()) ??
+                    new List<AliasPackageMediaDescriptor>(),
             };
         }
     }
@@ -58,8 +69,11 @@ namespace YUCP.Importer.Editor.PackageManager
         public string kind = "";
         public string contentType = "";
         public long byteSize;
+        public string label = "";
+        public int ordinal = -1;
         public string sha256 = "";
         public string localPath = "";
+        public string url = "";
 
         public AliasPackageMediaDescriptor Clone()
         {
@@ -68,8 +82,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 kind = kind ?? string.Empty,
                 contentType = contentType ?? string.Empty,
                 byteSize = byteSize,
+                label = label ?? string.Empty,
+                ordinal = ordinal,
                 sha256 = sha256 ?? string.Empty,
                 localPath = localPath ?? string.Empty,
+                url = url ?? string.Empty,
             };
         }
     }

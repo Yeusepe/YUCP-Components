@@ -1544,10 +1544,10 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 return result;
             }
-            if (!(media is JArray entries) || entries.Count > 2)
+            if (!(media is JArray entries) || entries.Count > 42)
             {
                 throw new FormatException(
-                    "Alias package media must be an array with at most two entries.");
+                    "Alias package media must be an array with at most 42 entries.");
             }
 
             foreach (JToken entry in entries)
@@ -1585,9 +1585,58 @@ namespace YUCP.Importer.Editor.PackageManager
                     result.banner = parsed;
                     continue;
                 }
+                if (string.Equals(
+                        parsed.kind,
+                        "gallery",
+                        StringComparison.Ordinal))
+                {
+                    if (parsed.ordinal < 0 || parsed.ordinal >= 8 ||
+                        result.gallery.Any(item =>
+                            item.ordinal == parsed.ordinal))
+                    {
+                        throw new FormatException(
+                            "Alias package gallery media ordinal is invalid.");
+                    }
+                    result.gallery.Add(parsed);
+                    continue;
+                }
+                if (string.Equals(
+                        parsed.kind,
+                        "product-link",
+                        StringComparison.Ordinal))
+                {
+                    if (parsed.ordinal < 0 || parsed.ordinal >= 32 ||
+                        result.productLinks.Any(item =>
+                            item.ordinal == parsed.ordinal) ||
+                        string.IsNullOrWhiteSpace(parsed.label) ||
+                        parsed.label.Trim().Length > 120 ||
+                        !Uri.TryCreate(
+                            parsed.url,
+                            UriKind.Absolute,
+                            out Uri productUrl) ||
+                        !string.Equals(
+                            productUrl.Scheme,
+                            Uri.UriSchemeHttps,
+                            StringComparison.OrdinalIgnoreCase) ||
+                        !string.IsNullOrEmpty(productUrl.UserInfo))
+                    {
+                        throw new FormatException(
+                            "Alias package product link media is invalid.");
+                    }
+                    parsed.label = parsed.label.Trim();
+                    parsed.url = productUrl.AbsoluteUri;
+                    result.productLinks.Add(parsed);
+                    continue;
+                }
                 throw new FormatException(
                     "Alias package media kind is not supported.");
             }
+            result.gallery = result.gallery
+                .OrderBy(item => item.ordinal)
+                .ToList();
+            result.productLinks = result.productLinks
+                .OrderBy(item => item.ordinal)
+                .ToList();
             return result;
         }
 
@@ -1607,9 +1656,15 @@ namespace YUCP.Importer.Editor.PackageManager
                     JTokenType.Integer
                         ? descriptor["byteSize"].Value<long>()
                         : 0,
+                label = GetString(descriptor, "label") ?? string.Empty,
+                ordinal = descriptor["ordinal"]?.Type ==
+                    JTokenType.Integer
+                        ? descriptor["ordinal"].Value<int>()
+                        : -1,
                 sha256 = GetString(descriptor, "sha256") ?? string.Empty,
                 localPath =
                     GetString(descriptor, "localPath") ?? string.Empty,
+                url = GetString(descriptor, "url") ?? string.Empty,
             };
         }
 

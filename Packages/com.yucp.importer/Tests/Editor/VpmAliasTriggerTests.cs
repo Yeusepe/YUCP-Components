@@ -288,6 +288,92 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void AliasLoadsGalleryAndProductLinkMedia()
+        {
+            string packageRoot = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-alias-rich-media-" + Guid.NewGuid().ToString("N"));
+            Texture2D source = null;
+            PackageMetadata metadata = null;
+            try
+            {
+                source = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                source.SetPixels(new[]
+                {
+                    Color.red,
+                    Color.green,
+                    Color.blue,
+                    Color.white,
+                });
+                source.Apply();
+                byte[] bytes = source.EncodeToPNG();
+                string galleryPath = Path.Combine(
+                    packageRoot,
+                    "Documentation~",
+                    "YUCP",
+                    "gallery",
+                    "000.png");
+                string productLinkPath = Path.Combine(
+                    packageRoot,
+                    "Documentation~",
+                    "YUCP",
+                    "product-links",
+                    "000.png");
+                Directory.CreateDirectory(Path.GetDirectoryName(galleryPath));
+                Directory.CreateDirectory(Path.GetDirectoryName(productLinkPath));
+                File.WriteAllBytes(galleryPath, bytes);
+                File.WriteAllBytes(productLinkPath, bytes);
+                string packageJson =
+                    "{\"name\":\"com.yucp.alias.jammr\"," +
+                    "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                    "\"yucp\":{\"kind\":\"alias-v1\"," +
+                    "\"aliasId\":\"jammr\"," +
+                    "\"installStrategy\":\"server-authorized\"," +
+                    "\"importerPackage\":\"com.yucp.importer\"," +
+                    "\"media\":[{\"kind\":\"gallery\",\"ordinal\":0," +
+                    "\"localPath\":\"Documentation~/YUCP/gallery/000.png\"," +
+                    "\"contentType\":\"image/png\",\"byteSize\":" +
+                    bytes.Length + ",\"sha256\":\"" + Sha256(bytes) + "\"}," +
+                    "{\"kind\":\"product-link\",\"ordinal\":0," +
+                    "\"label\":\"Gumroad\"," +
+                    "\"url\":\"https://creator.gumroad.com/l/jammr\"," +
+                    "\"localPath\":\"Documentation~/YUCP/product-links/000.png\"," +
+                    "\"contentType\":\"image/png\",\"byteSize\":" +
+                    bytes.Length + ",\"sha256\":\"" + Sha256(bytes) + "\"}]}}";
+
+                bool built = AliasPackageDiscovery.TryBuildMetadata(
+                    "com.yucp.alias.jammr",
+                    packageJson,
+                    packageRoot,
+                    out metadata,
+                    out string error);
+
+                Assert.That(built, Is.True, error);
+                Assert.That(metadata.galleryImages, Has.Count.EqualTo(1));
+                Assert.That(metadata.productLinks, Has.Count.EqualTo(1));
+                Assert.That(
+                    metadata.productLinks[0].label,
+                    Is.EqualTo("Gumroad"));
+                Assert.That(
+                    metadata.productLinks[0].url,
+                    Is.EqualTo("https://creator.gumroad.com/l/jammr"));
+                Assert.That(metadata.productLinks[0].customIcon, Is.Not.Null);
+            }
+            finally
+            {
+                PackageMetadataMediaOwnership.Release(metadata);
+                if (source != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(source);
+                }
+                if (Directory.Exists(packageRoot))
+                {
+                    Directory.Delete(packageRoot, true);
+                }
+            }
+        }
+
+        [Test]
         public void AliasRejectsMediaThatEscapesTheInstalledPackage()
         {
             string packageRoot = Path.Combine(
