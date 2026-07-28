@@ -14,6 +14,133 @@ namespace YUCP.Components.Editor
     internal static class AdvancedVisemeAnimatorBuilder
     {
         // Test-only A/B seam. Production must leave this at its default false.
+        // Retention pull kill-switch: the additive pipeline is mid-surgery
+        // (transient renormalizer spike at switches reads as a visible pop).
+        // Keep OFF for avatar builds until DirectRender contracts are green.
+        internal static bool EnableRetentionPull = false;
+        // Voice-conditioned target: the only continuous per-frame input we
+        // receive. Measured on a real capture it cuts RMSE ~32% and brings the
+        // park-then-jump speed ratio from 5.82 to ~1.97 (teacher 1.91).
+        internal static bool EnableVoiceResponse = false;
+        // Density-halo reconstruction: the argmax is a naturally dithered
+        // 1-of-15 quantiser, so a higher-order low-pass of the one-hot recovers
+        // the weights (sigma-delta decoding). Uses the refitted matrix and two
+        // extra observer poles.
+        // Superseded by the fusion path (plain sharpened observer + hold
+        // generator), which matches the teacher's transition shape without the
+        // halo's extra latency. Left toggleable for comparison.
+        // Drive the lower-face mouth from the blended reconstructed simplex
+        // (C.p over all 15 weights) instead of the argmax decoder's per-winner
+        // constant (C.e_winner). The decoder path snaps between single-viseme
+        // poses and never co-activates; the blended path is what native
+        // VisemeBlendShape lip-sync does. This is the signal every simplex-side
+        // stage was tuning, which the mouth had been bypassing.
+        internal static bool DriveMouthFromBlendedSimplex = true;
+        internal static bool EnableDensityHalo = false;
+        // Syllabic-rate target: the voice LEVEL measures worse than the frozen
+        // baseline, but the RATE of its syllabic band is the one every-frame
+        // quantity in the channel that both keeps moving between switches and
+        // stays phase-locked to the audio. Held out offline it takes reversals
+        // 100.6 -> 170.4 (teacher 174.6) and still% 9.3 -> 0.4 while improving
+        // RMSE.
+        //
+        internal static bool EnableSyllabicResponse = false;
+        // Fusion hold generator: a FitzHugh-Nagumo relaxation bank, one unit per
+        // channel, biased per channel by that channel's target so high-target
+        // channels oscillate and low-target ones stay subthreshold (this bias is
+        // what desynchronizes the bank; a shared bias synchronizes and cancels
+        // to zero under the zero-sum projection). Gated to holds. This is the one
+        // stage that supplies endogenous motion during a sustained viseme, where
+        // the argmax is constant and every target-driven path necessarily
+        // freezes. Chosen by a scored comparison against 39 alternatives on a
+        // statistic-matching scoreboard (distance 0.167 vs 0.237 for the best
+        // noise method; reversals 195 vs 266). Deterministic, no RNG.
+        // On at low amplitude: this was the best-judged state ("wait a lot
+        // better"). Higher amplitude flaps, so keep it subtle.
+        internal static bool EnableFusionHoldGenerator = false;
+        // The sharpen + slow-tau envelope was measured to introduce a ~4-frame
+        // dead-time on the incoming viseme (the sharpen's renormalization
+        // suppresses the rising channel until it crosses over the still-high
+        // outgoing one). The plain observer has good transitions, so the fusion
+        // ENVELOPE is off by default and only the generator rides on top of it.
+        internal static bool EnableFusionEnvelope = false;
+        // Switch-triggered feedforward kick: on the frame the argmax changes, step
+        // the incoming channel's target up and the outgoing channel's down, then
+        // let a fast pole carry them. This is the causal substitute for the
+        // teacher's anticipatory overlap (which is not predictable from the
+        // channel): the incoming viseme is present AT the switch instead of
+        // crawling up over ~100 ms, which is what reads as discrete. Two-sided so
+        // mass is conserved and co-activation does not blow up.
+        // Off: in-graph the kick decays across the render-to-analysis sampling
+        // (and may hit the graph's op-ordering) before it lands, so it added
+        // reversals without raising the incoming-at-switch. Kept for a later,
+        // ordering-robust rebuild; the dead-time removal is the shippable win.
+        internal static bool EnableFusionKick = false;
+        internal static float FusionKickAmp = 0.20f;
+        internal static float FusionKickSeconds = 0.03f;
+        // Conservative for the first live look: holds move without leaning into
+        // the over-oscillation the replay harness measures (which is partly a
+        // fixed-timestep artifact and partly real). Raise toward 0.08 if the
+        // sustained visemes still read as too still on a real avatar.
+        internal static float FusionHoldAmp = 0.04f;
+        internal static float SpeechRenderLeadCap = 1.0f;
+        // Mouth slew-rate limit. The raw Viseme int is an impulse train (flat,
+        // then a full viseme swap), so exponential smoothing gives park-then-lurch
+        // (piecewise-constant, the staircasing theorem). A slew limiter caps the
+        // per-frame step, producing piecewise-LINEAR (constant-velocity) motion —
+        // the class humans read as smooth/deliberate — and rejects the argmax's
+        // sub-step chatter for free. Applied to mouth (jaw/lip) articulator POSES
+        // only (signed, no simplex sum contract; tongue untouched). Speed in pose
+        // units/sec; swept in-graph. See avr-lower-mouth-pivot memory.
+        internal static bool EnableMouthSlew = false;
+        internal static float MouthSlewSpeed = 2.3f;
+        // Lookahead FIR (dominance model). The argmax stream is an impulse train;
+        // no causal estimator reaches the teacher's motion UNIFORMITY (p99/p50
+        // speed ratio: teacher 1.95, every causal filter >= 3.6 at any capacity,
+        // shipped 5.82). A linear filter over the argmax one-hot with a few frames
+        // of LOOKAHEAD hits 2.33 — anticipatory coarticulation, bought with
+        // latency. Realized as a gamma memory (cascade of the sanctioned one-pole
+        // Smooth, so nothing new can destabilize) whose readout predicts the
+        // simplex delayed by LookaheadFrames; the latency is inherent in the
+        // target, so no delay-line mechanism is needed. Mouth articulators only.
+        internal static bool EnableLookaheadFir = true;
+        // Asymmetric release on the mouth's viseme weights: rise fast (crisp
+        // onset) but fall slow, so the outgoing viseme lingers and overlaps the
+        // incoming one. Without this, each viseme rises and fully falls before
+        // the next rises, so the mouth returns to rest between visemes ("goes and
+        // comes back") instead of blending A->B. Slow release raises the
+        // co-activation toward the teacher's.
+        // Off: the recurrent state update is unstable on this substrate (the
+        // graph does not guarantee the read-before-commit ordering it needs),
+        // so it jittered the mouth worse than the hold it was meant to smooth.
+        internal static bool EnableAsymmetricRelease = false;
+        internal static float ReleaseAttackSeconds = 0.012f;
+        internal static float ReleaseFallSeconds = 0.090f;
+        // Envelope temperature: the per-index target is sharpened (raised to this
+        // power, renormalized) before the observer so co-activation and peakedness
+        // match the teacher. 1.0 disables sharpening.
+        internal static float FusionEnvelopeGamma = 1.45f;
+        // The fusion envelope is a plain two-pole observer at this time constant
+        // (density halo off), which offline matches the teacher on transient
+        // motion, between-switch motion, and co-activation. The hold generator
+        // supplies the sustained-segment motion the observer cannot.
+        internal static float FusionEnvelopeSeconds = 0.035f;
+        // Measured in-graph against the teacher: this lands still% at 2.36
+        // (teacher 3.07) and reversals at 144.6 (teacher 160.8). Reversals are
+        // deliberately left UNDER the teacher because too-still reads as a
+        // note while too-bouncy reads as broken, and the slopes are fitted
+        // against the rate the graph measures, so raising this past ~1 is
+        // pushing past the fit rather than scaling within it.
+        internal static float SyllabicResponseGain = 0.4f;
+        // The rectifier curves saturate here. Measured p99 |rate| is 1.68, so
+        // this clips only the extreme transients; raising it costs resolution
+        // across the range that carries the motion.
+        internal const float SyllabicRateClamp = 2.5f;
+        // Measurement hook: forces the viseme observer time constant past the
+        // halo's paired value so a sweep actually varies something. Zero means
+        // "use the normal resolution order".
+        internal static float ObserverResponseOverride;
+        internal static float VoiceResponseGain = 1f;
         internal static bool DisableInvariantTrackingBranchGatingForTests;
         internal static bool UseSingleInvariantTrackingObserverForTests;
         internal static bool UseSwitchedRetentionRowObserverForTests;
@@ -46,8 +173,17 @@ namespace YUCP.Components.Editor
         // This duration is part of the fitted direct-render contract. Keeping it
         // in the generated model prevents the offline Unity-transition replay
         // and the emitted controller from silently drifting apart.
-        internal const float VisemeTargetCrossfadeSeconds =
-            AdvancedVisemeOculusDynamics.TargetCrossfadeSeconds;
+        // Motion-metric fit on the corpus (fit_transition_motion.py, held-out):
+        // the decoder's interruptible target cross-fade is what spreads
+        // displacement across the dwell instead of parking between switches.
+        // Durations below ~107 ms leave most of a typical 142 ms dwell static,
+        // which is the stair-step the observer alone cannot remove. At 128 ms
+        // the reconstruction's park-then-jump ratio (p99/p50 speed) is 5.43
+        // against the original continuous weights' 5.38, and median frame
+        // speed rises from 0.073 to 0.172 (original 0.195). The learned
+        // trajectory model's own TargetCrossfadeSeconds stays available for
+        // the offline replay contract.
+        internal const float VisemeTargetCrossfadeSeconds = 0.0f;
 
         private const int MaxRuntimeAwareMapBatchStoredBindings = 256;
         private const int MaxExtraMapBindingsPerCollapsedTree = 32;
@@ -69,6 +205,399 @@ namespace YUCP.Components.Editor
                 Math.Min(2, Math.Max(0, pointCount)));
             var after = Math.Min(2, combinedThresholdCount) * combinedOutputCount;
             return after <= before;
+        }
+
+        private static float[][][] retentionPullFoldedWeights;
+
+        /// <summary>
+        /// Decoder trajectory control values with the (cur, age)-only pull
+        /// remainder folded in and retracted onto the simplex (clamp at zero,
+        /// renormalize), so baked rows stay positive and sum to one exactly.
+        /// Trajectory-static winners (sil) pass through unfolded. Shared with
+        /// the trajectory contract tests so builder and tests cannot drift.
+        /// </summary>
+        internal static float RetentionPullFoldedDecoderWeight(
+            int winner,
+            int control,
+            int output)
+        {
+            if (!EnableRetentionPull)
+                return AdvancedVisemeOculusDynamics.Weight(
+                    winner, control, output);
+            if (retentionPullFoldedWeights == null)
+            {
+                var decay = RetentionPullDecayAtControls();
+                var count = VisemeReconstructionProfile.VisemeCount;
+                var table = new float[count][][];
+                for (var w = 0; w < count; w++)
+                {
+                    table[w] = new float[decay.Length][];
+                    var dynamic =
+                        AdvancedVisemeOculusDynamics.HasDynamicTrajectory(w);
+                    for (var k = 0; k < decay.Length; k++)
+                    {
+                        var row = new float[count];
+                        var sum = 0f;
+                        for (var o = 0; o < count; o++)
+                        {
+                            var value = AdvancedVisemeOculusDynamics.Weight(
+                                w, k, o);
+                            if (dynamic)
+                                value += decay[k] *
+                                         AdvancedVisemeRetentionPull
+                                             .FoldedCurrentCorrection(w, o);
+                            row[o] = Mathf.Max(0f, value);
+                            sum += row[o];
+                        }
+                        if (sum > 1e-6f)
+                            for (var o = 0; o < count; o++)
+                                row[o] /= sum;
+                        table[w][k] = row;
+                    }
+                }
+                retentionPullFoldedWeights = table;
+            }
+            return retentionPullFoldedWeights[winner][control][output];
+        }
+
+        private struct FusionVectors
+        {
+            internal string[] fast;
+            internal string[] slow;
+        }
+
+        /// <summary>
+        /// Applies a per-channel asymmetric release: each weight rises with a
+        /// fast attack pole and falls with a slow release pole. The outgoing
+        /// viseme therefore lingers and overlaps the incoming one, so the mouth
+        /// blends A->B instead of returning to rest between visemes. Signed
+        /// deltas stay within +/-1, well inside the +/-2 passthrough clamp.
+        /// </summary>
+        private static string[] AppendAsymmetricRelease(
+            MathGraph graph, BlendTree root, string frameTime,
+            string[] weights, string tag)
+        {
+            var count = weights.Length;
+            var alphaUp = graph.Param($"Release/{tag}/AlphaUp", 0.5f);
+            var alphaDown = graph.Param($"Release/{tag}/AlphaDown", 0.5f);
+            graph.AddOperation(root, graph.AlphaFromDeltaTime(
+                frameTime, alphaUp, ReleaseAttackSeconds));
+            graph.AddOperation(root, graph.AlphaFromDeltaTime(
+                frameTime, alphaDown, ReleaseFallSeconds));
+            var outState = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                var state = graph.Param($"Release/{tag}/State/{i}",
+                    i == 0 ? 1f : 0f);
+                // delta = target - state (signed, in [-1,1])
+                var delta = graph.Param($"Release/{tag}/Delta/{i}", 0f);
+                graph.AddOperation(root, graph.Linear(delta, new[]
+                {
+                    Term.Signed(weights[i], 1f), Term.Signed(state, -1f)
+                }));
+                // deltaPos = max(delta, 0) (the rising part)
+                var deltaPos = graph.Param($"Release/{tag}/Up/{i}", 0f);
+                graph.AddOperation(root, graph.Map(delta, deltaPos, new[]
+                {
+                    Point(-2f, 0f), Point(0f, 0f), Point(2f, 2f)
+                }));
+                // riseTerm = alphaUp * deltaPos, fallTerm = alphaDown*(delta-deltaPos)
+                var riseTerm = graph.Param($"Release/{tag}/Rise/{i}", 0f);
+                graph.AddOperation(root, graph.Multiply(alphaUp, deltaPos, riseTerm, false));
+                var deltaNeg = graph.Param($"Release/{tag}/Down/{i}", 0f);
+                graph.AddOperation(root, graph.Linear(deltaNeg, new[]
+                {
+                    Term.Signed(delta, 1f), Term.Signed(deltaPos, -1f)
+                }));
+                var fallTerm = graph.Param($"Release/{tag}/Fall/{i}", 0f);
+                graph.AddOperation(root, graph.Multiply(alphaDown, deltaNeg, fallTerm, true));
+                var next = graph.Param($"Release/{tag}/Next/{i}", i == 0 ? 1f : 0f);
+                graph.AddOperation(root, graph.Linear(next, new[]
+                {
+                    Term.Signed(state, 1f), Term.Signed(riseTerm, 1f),
+                    Term.Signed(fallTerm, 1f)
+                }));
+                outState[i] = next;
+                graph.AddOperation(root, graph.Copy(next, state, true));
+            }
+            return outState;
+        }
+
+        /// <summary>
+        /// Appends the hold generator: a bank of undamped 2x2 rotation
+        /// oscillators, one per channel, spread across 4-8 Hz. Every
+        /// target-driven path freezes during a sustained viseme because the
+        /// argmax is constant; a rotation has no equilibrium, so it keeps moving
+        /// there. Frequency spread plus staggered initial phase desynchronizes
+        /// the bank (a synchronized bank cancels under the zero-sum projection);
+        /// each channel is masked by whether its own target is active, so quiet
+        /// channels do not ring. The oscillation is zero-sum, gated to holds,
+        /// added to the reconstructed simplex, then renormalized.
+        ///
+        /// Why a rotation and not FitzHugh-Nagumo (which scored better offline):
+        /// FHN needs signed state out to +/-2.7, but every signed passthrough on
+        /// this substrate clamps at +/-2, which decapitates the cubic's restoring
+        /// force and collapses the relaxation cycle into a square wave. The
+        /// rotation state stays within +/-1 by construction, so it transfers
+        /// exactly. The angle step tracks FrameTime, making it render-rate
+        /// independent, and the update is symplectic (area-preserving) so the
+        /// amplitude neither grows nor decays.
+        /// </summary>
+        private static FusionVectors AppendFusionHoldGenerator(
+            MathGraph graph,
+            BlendTree root,
+            string frameTime,
+            string visemeIndex,
+            string[] bias,
+            string[] fastIn,
+            string[] slowIn)
+        {
+            const int count = VisemeReconstructionProfile.VisemeCount;
+            const float analysisPeriod = 1024f / 48000f;
+            var gain = FusionHoldAmp;
+
+            // Phase gate: frames-since-switch ramp, reset by an index-change pulse.
+            // The index (0..14) is scaled to [0,1] first: a signed passthrough
+            // clamps at +/-2, so a raw index difference cannot be formed and the
+            // switch would never be detected for indices above 2.
+            const float indexScale = 1f / (count - 1);
+            var indexScaled = graph.Param("Fusion/IndexScaled", 0f);
+            graph.AddOperation(root, graph.Linear(indexScaled, new[]
+            {
+                Term.Positive(visemeIndex, indexScale)
+            }));
+            var lastIndex = graph.Param("Fusion/LastIndex", 0f);
+            var indexDelta = graph.Param("Fusion/IndexDelta", 0f);
+            graph.AddOperation(root, graph.Linear(indexDelta, new[]
+            {
+                Term.Signed(indexScaled, 1f), Term.Signed(lastIndex, -1f)
+            }));
+            var switchPulse = graph.Param("Fusion/SwitchPulse", 0f);
+            // one index step is indexScale ~= 0.071; a threshold at 0.02 fires
+            // on any change and stays at 1 out to the full range.
+            graph.AddOperation(root, graph.Map(indexDelta, switchPulse, new[]
+            {
+                Point(-1f, 1f), Point(-0.02f, 1f), Point(0f, 0f),
+                Point(0.02f, 1f), Point(1f, 1f)
+            }));
+            var keep = graph.Param("Fusion/Keep", 0f); // 1 - pulse
+            graph.AddOperation(root, graph.Map(switchPulse, keep, new[]
+            {
+                Point(0f, 1f), Point(1f, 0f)
+            }));
+            var phaseInc = graph.Param("Fusion/PhaseInc", 0f); // phase + FrameTime
+            var phase = graph.Param("Fusion/Phase", 0f);
+            graph.AddOperation(root, graph.Linear(phaseInc, new[]
+            {
+                Term.Positive(phase, 1f), Term.Positive(frameTime, 1f)
+            }));
+            var phaseNext = graph.Param("Fusion/PhaseNext", 0f);
+            graph.AddOperation(root, graph.Multiply(keep, phaseInc, phaseNext, false));
+            var gate = graph.Param("Fusion/Gate", 0f);
+            // clip((phase - 2 frames) / 3 frames, 0, 1)
+            var t0 = 2f * analysisPeriod;
+            var t1 = 5f * analysisPeriod;
+            graph.AddOperation(root, graph.Map(phase, gate, new[]
+            {
+                Point(0f, 0f), Point(t0, 0f), Point(t1, 1f), Point(10f, 1f)
+            }));
+
+            // Phase-driven sinusoid bank. Each channel's oscillation is a fixed
+            // sine of the frames-since-switch ramp at a distinct 4-8 Hz frequency
+            // and staggered phase, evaluated as one piecewise-linear map. This is
+            // stateless: bounded to +/-1 by construction, so it cannot diverge
+            // the way a free-running recurrent oscillator does on a substrate
+            // whose signed passthrough clamps at +/-2. The frequency spread
+            // desynchronizes the bank; each channel is masked by whether its own
+            // target is active so quiet channels do not ring.
+            const int knots = 25;
+            const float sineSpan = 0.5f;   // seconds of phase the table covers
+            var oscMasked = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                var freq = 4f + 4f * i / (count - 1);         // 4..8 Hz
+                var phase0 = 2f * Mathf.PI * i / count;
+                var sinePoints = new (float, float)[knots];
+                for (var kk = 0; kk < knots; kk++)
+                {
+                    var ph = sineSpan * kk / (knots - 1);
+                    sinePoints[kk] = (ph,
+                        Mathf.Sin(2f * Mathf.PI * freq * ph + phase0));
+                }
+                var sine = graph.Param($"Fusion/Sine/{i}", Mathf.Sin(phase0));
+                graph.AddOperation(root, graph.Map(phase, sine,
+                    sinePoints.Select(p => Point(p.Item1, p.Item2)).ToArray()));
+                // active mask: 1 where this channel's target is meaningfully on.
+                var active = graph.Param($"Fusion/Active/{i}", 0f);
+                graph.AddOperation(root, graph.Map(bias[i], active, new[]
+                {
+                    Point(0f, 0f), Point(0.04f, 0f), Point(0.06f, 1f), Point(1f, 1f)
+                }));
+                oscMasked[i] = graph.Param($"Fusion/Masked/{i}", 0f);
+                graph.AddOperation(root, graph.Multiply(active, sine, oscMasked[i], true));
+            }
+
+            // Zero-sum the oscillation: osc = masked - mean(masked). Sum-zero
+            // keeps the correction on the simplex.
+            var meanV = graph.Param("Fusion/MeanV", 0f);
+            graph.AddOperation(root, graph.Linear(meanV,
+                oscMasked.Select(x => Term.Signed(x, 1f / count)).ToArray()));
+
+            // Switch-triggered feedforward kick. On the switch frame, step the
+            // incoming channel up and the outgoing channel down, then let each
+            // decay with a fast pole. This puts the incoming viseme present AT the
+            // switch (the teacher has it at ~0.37; the crawl-up otherwise leaves it
+            // at the ~0.07 floor, which reads as discrete). Two-sided so the
+            // simplex mass is preserved. All values stay within +/-0.3.
+            var kickState = new string[count];
+            var kickNext = new string[count];
+            if (EnableFusionKick)
+            {
+                var alphaKick = graph.Param("Fusion/AlphaKick", 0.5f);
+                graph.AddOperation(root, graph.AlphaFromDeltaTime(
+                    frameTime, alphaKick, FusionKickSeconds));
+                var oneMinusAlpha = graph.Param("Fusion/KickRetain", 0f);
+                graph.AddOperation(root, graph.Map(alphaKick, oneMinusAlpha, new[]
+                {
+                    Point(0f, 1f), Point(1f, 0f)
+                }));
+                var kickScale = FusionKickAmp;
+                for (var i = 0; i < count; i++)
+                {
+                    var idxScale = 1f / (count - 1);
+                    var centre = i * idxScale;
+                    // one-hot of the current and previous winner from the scaled
+                    // index; the triangle is 1 at this channel's index and 0 at
+                    // its neighbours (0.5*idxScale half-width < one index step).
+                    var hotIn = graph.Param($"Fusion/HotIn/{i}", i == 0 ? 1f : 0f);
+                    graph.AddOperation(root, graph.Map(indexScaled, hotIn, new[]
+                    {
+                        Point(centre - 0.5f * idxScale, 0f), Point(centre, 1f),
+                        Point(centre + 0.5f * idxScale, 0f)
+                    }));
+                    var hotOut = graph.Param($"Fusion/HotOut/{i}", i == 0 ? 1f : 0f);
+                    graph.AddOperation(root, graph.Map(lastIndex, hotOut, new[]
+                    {
+                        Point(centre - 0.5f * idxScale, 0f), Point(centre, 1f),
+                        Point(centre + 0.5f * idxScale, 0f)
+                    }));
+                    // target of the impulse: +kick on the incoming, -kick on the
+                    // outgoing. Injected only on the switch frame; otherwise the
+                    // previous kick state decays.
+                    var kickTarget = graph.Param($"Fusion/KickTarget/{i}", 0f);
+                    graph.AddOperation(root, graph.Linear(kickTarget, new[]
+                    {
+                        Term.Signed(hotIn, kickScale), Term.Signed(hotOut, -kickScale)
+                    }));
+                    kickState[i] = graph.Param($"Fusion/Kick/{i}", 0f);
+                    var decayed = graph.Param($"Fusion/KickDecay/{i}", 0f);
+                    graph.AddOperation(root, graph.Multiply(
+                        oneMinusAlpha, kickState[i], decayed, true));
+                    var kept = graph.Param($"Fusion/KickKept/{i}", 0f);
+                    graph.AddOperation(root, graph.Multiply(keep, decayed, kept, true));
+                    var injected = graph.Param($"Fusion/KickInj/{i}", 0f);
+                    graph.AddOperation(root, graph.Multiply(
+                        switchPulse, kickTarget, injected, true));
+                    kickNext[i] = graph.Param($"Fusion/KickNext/{i}", 0f);
+                    graph.AddOperation(root, graph.Linear(kickNext[i], new[]
+                    {
+                        Term.Signed(kept, 1f), Term.Signed(injected, 1f)
+                    }));
+                }
+            }
+
+            var fastOut = new string[count];
+            var slowOut = new string[count];
+            var fastRaw = new string[count];
+            var slowRaw = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                var osc = graph.Param($"Fusion/Osc/{i}", 0f);
+                graph.AddOperation(root, graph.Linear(osc, new[]
+                {
+                    Term.Signed(oscMasked[i], 1f), Term.Signed(meanV, -1f)
+                }));
+                // gated oscillation = gate * osc (gate in [0,1], osc signed)
+                var gated = graph.Param($"Fusion/Gated/{i}", 0f);
+                graph.AddOperation(root, graph.Multiply(gate, osc, gated, true));
+
+                var kickTerm = EnableFusionKick
+                    ? new[] { Term.Signed(kickNext[i], 1f) }
+                    : System.Array.Empty<Term>();
+                fastRaw[i] = graph.Param($"Fusion/FastRaw/{i}", i == 0 ? 1f : 0f);
+                graph.AddOperation(root, graph.Linear(fastRaw[i], new[]
+                {
+                    Term.Positive(fastIn[i], 1f), Term.Signed(gated, gain)
+                }.Concat(kickTerm).ToArray()));
+                slowRaw[i] = graph.Param($"Fusion/SlowRaw/{i}", i == 0 ? 1f : 0f);
+                graph.AddOperation(root, graph.Linear(slowRaw[i], new[]
+                {
+                    Term.Positive(slowIn[i], 1f), Term.Signed(gated, gain)
+                }.Concat(kickTerm).ToArray()));
+                fastOut[i] = graph.Param($"Fusion/Fast/{i}", i == 0 ? 1f : 0f);
+                slowOut[i] = graph.Param($"Fusion/Slow/{i}", i == 0 ? 1f : 0f);
+            }
+            EmitExactSimplexNormalizer(graph, root, fastRaw, fastOut,
+                "Fusion fast renormalizer");
+            EmitExactSimplexNormalizer(graph, root, slowRaw, slowOut,
+                "Fusion slow renormalizer");
+
+            // The oscillator is stateless; the switch-tracking state, phase ramp,
+            // and kick state persist. Commit them after every read this frame.
+            // lastIndex must be committed AFTER the kick's hotOut read it.
+            if (EnableFusionKick)
+                for (var i = 0; i < count; i++)
+                    graph.AddOperation(root, graph.Copy(kickNext[i], kickState[i], true));
+            graph.AddOperation(root, graph.Copy(indexScaled, lastIndex, false));
+            graph.AddOperation(root, graph.Copy(phaseNext, phase, false));
+
+            return new FusionVectors { fast = fastOut, slow = slowOut };
+        }
+
+        /// <summary>
+        /// Emits an exact simplex normalization: outputs = inputs / sum(inputs).
+        /// Unity's normalized Direct tree sums each DISTINCT weight parameter
+        /// once and divides only when that sum exceeds one, so the inputs are
+        /// first scaled by a constant through dedicated parameters; the scale
+        /// cancels in the quotient and keeps the divider engaged for any input
+        /// sum above 1/scale.
+        /// </summary>
+        private static void EmitExactSimplexNormalizer(
+            MathGraph graph,
+            BlendTree root,
+            IReadOnlyList<string> inputs,
+            IReadOnlyList<string> outputs,
+            string name)
+        {
+            const float scale = 4f;
+            var scaled = new string[inputs.Count];
+            for (var i = 0; i < inputs.Count; i++)
+            {
+                scaled[i] = graph.Param(
+                    $"{name}/Scaled/{i}", i == 0 ? scale : 0f);
+                graph.AddOperation(root, graph.Linear(scaled[i], new[]
+                {
+                    Term.Positive(inputs[i], scale)
+                }));
+            }
+            graph.AddOperation(root, graph.NormalizeVector(
+                scaled, outputs, name));
+        }
+
+        internal static float[] RetentionPullDecayAtControls()
+        {
+            var core =
+                AdvancedVisemeOculusDynamics.TrajectoryCoreDurationSeconds;
+            var times = new[]
+            {
+                0f, core / 3f, 2f * core / 3f, core,
+                AdvancedVisemeOculusDynamics.TrajectoryDurationSeconds
+            };
+            var decay = new float[times.Length];
+            for (var control = 0; control < times.Length; control++)
+                decay[control] =
+                    AdvancedVisemeRetentionPull.Decay(times[control]);
+            return decay;
         }
 
         internal static bool ShouldUseOculusHalo(bool trackingEnabled)
@@ -98,9 +627,10 @@ namespace YUCP.Components.Editor
                 throw new InvalidOperationException(
                     "The generated Oculus halo does not match the Oculus viseme contract.");
 
-            return useHalo
-                ? AdvancedVisemeOculusHalo.Weight(hardWinner, outputViseme)
-                : hardWinner == outputViseme ? 1f : 0f;
+            if (!useHalo) return hardWinner == outputViseme ? 1f : 0f;
+            return EnableDensityHalo
+                ? AdvancedVisemeDensityHalo.Weight(hardWinner, outputViseme)
+                : AdvancedVisemeOculusHalo.Weight(hardWinner, outputViseme);
         }
 
         internal static float[] CommuteOculusHaloProjection(
@@ -134,6 +664,8 @@ namespace YUCP.Components.Editor
                 AdvancedVisemeOculusDynamics.ControlPointCount != 5)
                 throw new InvalidOperationException(
                     "The generated Oculus dynamics model does not match the decoder contract.");
+            if (EnableDensityHalo)
+                return AdvancedVisemeDensityHalo.Weight(hardWinner, outputViseme);
             return AdvancedVisemeOculusDynamics.Weight(
                 hardWinner, controlPoint, outputViseme);
         }
@@ -230,6 +762,9 @@ namespace YUCP.Components.Editor
                 new Dictionary<AdvancedVisemeArticulator, string>();
             public readonly Dictionary<AdvancedVisemeTuningControl, string> tuningParameters =
                 new Dictionary<AdvancedVisemeTuningControl, string>();
+            public readonly Dictionary<AdvancedVisemeTuningControl, string>
+                effectiveTuningParameters =
+                    new Dictionary<AdvancedVisemeTuningControl, string>();
             public string tuningSyncDataParameter;
             public string tuningSyncFocusParameter;
             public readonly List<string> tuningSyncIndexParameters = new List<string>();
@@ -433,11 +968,28 @@ namespace YUCP.Components.Editor
             }));
             graph.AddOperation(mathRoot, graph.Copy(time, lastTime, false));
 
-            var tuning = BuildTuningParameters(graph, request, result);
+            var tuning = BuildTuningParameters(
+                graph, mathRoot, request, result);
 
+            // The density matrix is fitted against a specific reconstruction
+            // bandwidth, so that path carries its own paired time constant
+            // rather than the profile default. The tuning slider still scales
+            // around it, and disabling the flag restores the profile value.
+            // ObserverResponseOverride exists because the halo branch below
+            // discards the profile value, which silently made every observer
+            // sweep a no-op: six time constants produced bit-identical output
+            // and the conclusion "all time constants falsified" was never
+            // actually tested.
+            var visemeResponseSeconds = ObserverResponseOverride > 0f
+                ? ObserverResponseOverride
+                : EnableFusionEnvelope
+                    ? FusionEnvelopeSeconds
+                    : EnableDensityHalo
+                        ? AdvancedVisemeDensityHalo.ObserverResponseSeconds
+                        : request.profile.visemeResponseSeconds;
             var alphaViseme = BuildTunableAlpha(
                 graph, mathRoot, frameTime, "Alpha/Viseme",
-                request.profile.visemeResponseSeconds,
+                visemeResponseSeconds,
                 tuning[AdvancedVisemeTuningControl.SpeechSmoothness],
                 0.006f, 0.12f);
 
@@ -522,6 +1074,10 @@ namespace YUCP.Components.Editor
             // as Direct BlendTree weights and therefore need no affine encoding.
             var directProjectedRaw = new Dictionary<
                 AdvancedVisemeArticulator, string>();
+            var directProjectedFast = new Dictionary<
+                AdvancedVisemeArticulator, string>();
+            var directProjectedSlow = new Dictionary<
+                AdvancedVisemeArticulator, string>();
             var directProjectionCoefficients = new Dictionary<
                 AdvancedVisemeArticulator, float[]>();
             foreach (var articulator in SynthesizedArticulators())
@@ -536,6 +1092,10 @@ namespace YUCP.Components.Editor
                 directProjectionCoefficients[articulator] = coefficients;
                 directProjectedRaw[articulator] = graph.Param(
                     $"DirectRender/Projected/{articulator}", coefficients[0]);
+                directProjectedFast[articulator] = graph.Param(
+                    $"DirectRender/ProjectedFast/{articulator}", coefficients[0]);
+                directProjectedSlow[articulator] = graph.Param(
+                    $"DirectRender/ProjectedSlow/{articulator}", coefficients[0]);
             }
             var betaRetentionRowTargets = new Dictionary<
                 AdvancedVisemeArticulatorGroup, string[]>();
@@ -642,6 +1202,89 @@ namespace YUCP.Components.Editor
                     .ToArray();
                 hardDecodedVisemeVectors[pair.Value[current]] = hardRetention;
             }
+            // Separable retention pull (Normal mode only; Beta owns its own
+            // retention through TransitionLead). The semantics decoder emits
+            // the current winner's f row; a vector EMA at PullResponseSeconds
+            // carries it across switches, so PullScale * (ema - f[cur]) decays
+            // exactly like d(age) * (f[prev] - f[cur]). The (cur, age)-only
+            // remainder folds into the decoder trajectory curves below, and a
+            // Normalize-Blend-Values Direct tree restores the exact simplex
+            // after the additive step (native division by the weight sum).
+            var pullEnabled = EnableRetentionPull && !betaEnabled;
+            var pullFRows = new string[VisemeReconstructionProfile.VisemeCount];
+            var pullFProjected = new Dictionary<
+                AdvancedVisemeArticulator, string>();
+            var pullFProjectedDefaults = new Dictionary<
+                AdvancedVisemeArticulator, float>();
+            if (pullEnabled)
+            {
+                for (var channel = 0;
+                     channel < VisemeReconstructionProfile.VisemeCount;
+                     channel++)
+                {
+                    var silDefault = AdvancedVisemeRetentionPull.PreviousRow(
+                        0, channel);
+                    pullFRows[channel] = graph.Param(
+                        $"Viseme/Pull/F/{channel}", silDefault);
+                    hardDecodedVisemeVectors[pullFRows[channel]] =
+                        Enumerable.Range(
+                                0, VisemeReconstructionProfile.VisemeCount)
+                            .Select(winner =>
+                                AdvancedVisemeRetentionPull.PreviousRow(
+                                    winner, channel))
+                            .ToArray();
+                }
+                // The physical direct-render path consumes projections of the
+                // same halo rows, so both pull terms ride along or physical
+                // and public trajectories diverge. Projection commutes with
+                // the EMA, so the projected pull is an EMA of a decoder-
+                // emitted projected f row.
+                foreach (var pair in directProjectedRaw)
+                {
+                    var coefficients =
+                        directProjectionCoefficients[pair.Key];
+                    float ProjectF(int winner) => Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
+                        .Sum(channel => coefficients[channel] *
+                            AdvancedVisemeRetentionPull.PreviousRow(
+                                winner, channel));
+                    var projectedF = graph.Param(
+                        $"DirectRender/PullF/{pair.Key}", ProjectF(0));
+                    hardDecodedVisemeVectors[projectedF] = Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
+                        .Select(ProjectF)
+                        .ToArray();
+                    pullFProjected[pair.Key] = projectedF;
+                    pullFProjectedDefaults[pair.Key] = ProjectF(0);
+
+                    if (useOculusHalo &&
+                        haloTrajectoryDecodedVisemeVectors.TryGetValue(
+                            pair.Value, out var trajectoryRows))
+                        for (var winner = 0;
+                             winner < trajectoryRows.Length;
+                             winner++)
+                        {
+                            if (!AdvancedVisemeOculusDynamics
+                                    .HasDynamicTrajectory(winner))
+                                continue;
+                            // Project the same retracted folded rows the
+                            // one-hot decoder bakes, keeping the physical
+                            // projection consistent with the public simplex.
+                            for (var control = 0;
+                                 control < trajectoryRows[winner].Length;
+                                 control++)
+                                trajectoryRows[winner][control] =
+                                    Enumerable.Range(
+                                            0,
+                                            VisemeReconstructionProfile
+                                                .VisemeCount)
+                                        .Sum(channel =>
+                                            coefficients[channel] *
+                                            RetentionPullFoldedDecoderWeight(
+                                                winner, control, channel));
+                        }
+                }
+            }
             // The observer state remains an exact two-pole simplex. Its
             // exponentially decaying tails are useful for recurrence but costly
             // as Direct BlendTree weights: any positive float keeps a child live.
@@ -649,11 +1292,36 @@ namespace YUCP.Components.Editor
             // exact observer state. The motion is attached to the already-present
             // Shared Silence layer below so the decoder contains only one static,
             // interruption-safe target row per hard winner.
+            // With the retention pull active the observer state carries small
+            // transient tails; a tighter cull keeps the epsilon-rescale sum
+            // drift of the published simplex under half the test tolerance.
             var simplexSparsifier = graph.SparsifyNonnegativeVector(
                 fastVisemes.Concat(slowVisemes).ToArray(),
                 sparseFastVisemes.Concat(sparseSlowVisemes).ToArray(),
-                AdvancedVisemeMath.SimplexCullingEpsilon,
+                pullEnabled ? 5e-6f : AdvancedVisemeMath.SimplexCullingEpsilon,
                 "Sparse observer emission");
+            // Winner-selected rows must be registered BEFORE the semantics
+            // layer below consumes the dictionary; registering afterwards
+            // leaves the parameter stuck at its authored default, which reads
+            // as a correction that is wired but inert.
+            var syllabicSlopes = new string[
+                VisemeReconstructionProfile.VisemeCount];
+            if (EnableSyllabicResponse && !betaEnabled)
+            {
+                for (var i = 0; i < syllabicSlopes.Length; i++)
+                {
+                    syllabicSlopes[i] = graph.Param(
+                        $"Viseme/SyllabicSlope/{i}",
+                        AdvancedVisemeSyllabicResponse.Slope(0, i));
+                    var channel = i;
+                    hardDecodedVisemeVectors[syllabicSlopes[i]] = Enumerable
+                        .Range(0, VisemeReconstructionProfile.VisemeCount)
+                        .Select(winner => AdvancedVisemeSyllabicResponse.Slope(
+                            winner, channel))
+                        .ToArray();
+                }
+            }
+
             // Hard semantic state must remain immediate for silence handling and
             // corpus selection. Only the continuous target is cross-faded; this
             // prevents fractional indices from leaking into categorical logic.
@@ -669,7 +1337,8 @@ namespace YUCP.Components.Editor
                 useOculusHalo,
                 request.trackingEnabled ? trackingBlend : null,
                 null, VisemeTargetCrossfadeSeconds,
-                "YUCP AVR Viseme Decoder");
+                "YUCP AVR Viseme Decoder",
+                foldRetentionPull: pullEnabled && useOculusHalo);
 
             // VRChat emits sil both at a real utterance endpoint and in short gaps
             // between words. A leaky speech-history observer treats a short sil as
@@ -702,11 +1371,369 @@ namespace YUCP.Components.Editor
                 ? graph.RegisterSharedSilenceFactoredWeight(
                     alphaViseme, "Viseme")
                 : null;
+            var observerRawVisemes = rawVisemes;
+            var directProjectedObserverRaw = directProjectedRaw;
+            if (EnableVoiceResponse && !betaEnabled)
+            {
+                // target = raw + (Voice - VoiceMean) * Slope[winner]
+                // Slope rows are sum-zero, so the simplex sum is preserved
+                // exactly; the renormalizer below only repairs clamping.
+                var voiceCentered = graph.Param("Voice/Centered", 0f);
+                graph.AddOperation(mathRoot, graph.Linear(voiceCentered, new[]
+                {
+                    Term.Positive(voiceFast, 1f),
+                    Term.Positive(MathGraph.AlwaysOneParameter,
+                        -AdvancedVisemeVoiceResponse.VoiceMean)
+                }));
+
+                var voiced = new string[
+                    VisemeReconstructionProfile.VisemeCount];
+                var slopeRows = new string[
+                    VisemeReconstructionProfile.VisemeCount];
+                for (var i = 0; i < voiced.Length; i++)
+                {
+                    slopeRows[i] = graph.Param(
+                        $"Viseme/VoiceSlope/{i}",
+                        AdvancedVisemeVoiceResponse.Slope(0, i));
+                    var channel = i;
+                    hardDecodedVisemeVectors[slopeRows[i]] = Enumerable
+                        .Range(0, VisemeReconstructionProfile.VisemeCount)
+                        .Select(winner => AdvancedVisemeVoiceResponse.Slope(
+                            winner, channel))
+                        .ToArray();
+                }
+                for (var i = 0; i < voiced.Length; i++)
+                {
+                    var contribution = graph.Param(
+                        $"Viseme/VoiceTerm/{i}", 0f);
+                    graph.AddOperation(mathRoot, graph.Multiply(
+                        voiceCentered, slopeRows[i], contribution, true));
+                    voiced[i] = graph.Param(
+                        $"Viseme/{i}/Voiced", i == 0 ? 1f : 0f);
+                    graph.AddOperation(mathRoot, graph.Linear(voiced[i], new[]
+                    {
+                        Term.Positive(rawVisemes[i], 1f),
+                        Term.Positive(contribution, VoiceResponseGain)
+                    }));
+                }
+                var voicedNorm = new string[voiced.Length];
+                for (var i = 0; i < voiced.Length; i++)
+                    voicedNorm[i] = graph.Param(
+                        $"Viseme/{i}/VoicedNorm", i == 0 ? 1f : 0f);
+                EmitExactSimplexNormalizer(
+                    graph, mathRoot, voiced, voicedNorm,
+                    "Voice-conditioned target renormalizer");
+                observerRawVisemes = voicedNorm;
+            }
+            if (EnableSyllabicResponse && !betaEnabled)
+            {
+                // A target conditioned only on the winner is constant between
+                // switches, so the observer settles and the output staircases.
+                // The rate of the syllabic band is the only every-frame channel
+                // quantity that keeps moving there, and unlike generated noise
+                // it is phase-locked to the audio the listener hears.
+                //
+                //   band = onepole(Voice, T1) - onepole(Voice, T2)   parallel
+                //   rate = (band - onepole(band, TD)) / TD
+                //
+                // Both band poles read Voice directly. Cascading the second off
+                // the first measures no better than the frozen baseline.
+                var rawVoice = graph.Param("Voice", 0f, false);
+                var alphaBandFast = graph.Param("Voice/Syllabic/AlphaFast", 0.5f);
+                var alphaBandSlow = graph.Param("Voice/Syllabic/AlphaSlow", 0.5f);
+                var alphaRate = graph.Param("Voice/Syllabic/AlphaRate", 0.5f);
+                graph.AddOperation(mathRoot, graph.AlphaFromDeltaTime(
+                    frameTime, alphaBandFast,
+                    AdvancedVisemeSyllabicResponse.BandFastSeconds));
+                graph.AddOperation(mathRoot, graph.AlphaFromDeltaTime(
+                    frameTime, alphaBandSlow,
+                    AdvancedVisemeSyllabicResponse.BandSlowSeconds));
+                graph.AddOperation(mathRoot, graph.AlphaFromDeltaTime(
+                    frameTime, alphaRate,
+                    AdvancedVisemeSyllabicResponse.RateSeconds));
+
+                var bandFast = graph.Param("Voice/Syllabic/Fast", 0f);
+                var bandSlow = graph.Param("Voice/Syllabic/Slow", 0f);
+                graph.AddOperation(mathRoot, graph.Smooth(
+                    rawVoice, bandFast, alphaBandFast, false));
+                graph.AddOperation(mathRoot, graph.Smooth(
+                    rawVoice, bandSlow, alphaBandSlow, false));
+
+                var band = graph.Param("Voice/Syllabic/Band", 0f);
+                graph.AddOperation(mathRoot, graph.Linear(band, new[]
+                {
+                    Term.Positive(bandFast, 1f),
+                    Term.Positive(bandSlow, -1f)
+                }));
+
+                // band is the first SIGNED value in this chain, so every node
+                // that consumes it must be signed too. An unsigned Smooth lowers
+                // to Copy -> WeightedSetter, which makes band its own Direct
+                // blend weight and clamps the negative half to zero; the lag
+                // would then track a half-wave-rectified band and the high-pass
+                // below would differentiate the resulting corners into spikes.
+                var bandLag = graph.Param("Voice/Syllabic/BandLag", 0f);
+                graph.AddOperation(mathRoot, graph.Smooth(
+                    band, bandLag, alphaRate, true));
+
+                var inverseRate = 1f / Mathf.Max(
+                    0.005f, AdvancedVisemeSyllabicResponse.RateSeconds);
+                var syllabicRate = graph.Param("Voice/Syllabic/Rate", 0f);
+                graph.AddOperation(mathRoot, graph.Linear(syllabicRate, new[]
+                {
+                    Term.Signed(band, inverseRate),
+                    Term.Signed(bandLag, -inverseRate)
+                }));
+
+                // Slope rows are sum-zero, so this moves mass between visemes
+                // and preserves the simplex total; the renormalizer below only
+                // repairs clamping. The rows themselves are declared and
+                // winner-registered above, before the semantics layer.
+                //
+                // Multiply drives a Direct blend tree by its first argument, and
+                // Unity clamps a negative direct blend parameter to zero. The
+                // rate is signed and near symmetric, so feeding it in raw
+                // silently discards every falling half-cycle. Rectify into two
+                // non-negative halves and recombine with opposite signs.
+                var ratePositive = graph.Param("Voice/Syllabic/RatePositive", 0f);
+                var rateNegative = graph.Param("Voice/Syllabic/RateNegative", 0f);
+                const float rateClamp = SyllabicRateClamp;
+                graph.AddOperation(mathRoot, graph.Map(syllabicRate, ratePositive,
+                    new[] { Point(-rateClamp, 0f), Point(0f, 0f), Point(rateClamp, 1f) }));
+                graph.AddOperation(mathRoot, graph.Map(syllabicRate, rateNegative,
+                    new[] { Point(-rateClamp, 1f), Point(0f, 0f), Point(rateClamp, 0f) }));
+
+                var syllabic = new string[
+                    VisemeReconstructionProfile.VisemeCount];
+                for (var i = 0; i < syllabic.Length; i++)
+                {
+                    var risingTerm = graph.Param($"Viseme/SyllabicRise/{i}", 0f);
+                    var fallingTerm = graph.Param($"Viseme/SyllabicFall/{i}", 0f);
+                    graph.AddOperation(mathRoot, graph.Multiply(
+                        ratePositive, syllabicSlopes[i], risingTerm, true));
+                    graph.AddOperation(mathRoot, graph.Multiply(
+                        rateNegative, syllabicSlopes[i], fallingTerm, true));
+
+                    // The rectifiers carry rate/rateClamp, so the recombination
+                    // scale restores the fitted units.
+                    var scale = SyllabicResponseGain * rateClamp;
+                    syllabic[i] = graph.Param(
+                        $"Viseme/{i}/Syllabic", i == 0 ? 1f : 0f);
+                    // The slope rows are sum-zero, so for any winner about half
+                    // the channels carry a negative slope and both terms go
+                    // negative there. As positive terms those channels would be
+                    // clamped away entirely: mass would be added to the rising
+                    // channels and never removed from the others, destroying the
+                    // sum-zero property before the renormalizer ever sees it.
+                    graph.AddOperation(mathRoot, graph.Linear(syllabic[i], new[]
+                    {
+                        Term.Positive(observerRawVisemes[i], 1f),
+                        Term.Signed(risingTerm, scale),
+                        Term.Signed(fallingTerm, -scale)
+                    }));
+                }
+
+                var syllabicNorm = new string[syllabic.Length];
+                for (var i = 0; i < syllabic.Length; i++)
+                    syllabicNorm[i] = graph.Param(
+                        $"Viseme/{i}/SyllabicNorm", i == 0 ? 1f : 0f);
+                EmitExactSimplexNormalizer(
+                    graph, mathRoot, syllabic, syllabicNorm,
+                    "Syllabic-rate target renormalizer");
+                observerRawVisemes = syllabicNorm;
+            }
+            const bool enableConvexMemory = false; // perceptually over-smooth; see notes
+            if (enableConvexMemory && !pullEnabled && !betaEnabled)
+            {
+                // Convex retention memory (production path; corpus-fitted on
+                // the SPIRE Oculus extraction, dev split: blend 0.30, tau 25
+                // ms; held-out RMSE 0.05296/0.05958 vs baseline
+                // 0.05751/0.06699). A convex combination of simplex points,
+                // so the public-simplex contract holds bit-for-bit. The
+                // additive pull behind EnableRetentionPull scores better
+                // offline but its animator realization is still being made
+                // sum-exact; see avr-transition-design notes.
+                const float memoryBlend = 0.30f;
+                const float memoryResponseSeconds = 0.025f;
+                var alphaMemory = graph.Param("Alpha/Pull", 0.5f);
+                graph.AddOperation(mathRoot, graph.AlphaFromDeltaTime(
+                    frameTime, alphaMemory, memoryResponseSeconds));
+                var mixed = new string[
+                    VisemeReconstructionProfile.VisemeCount];
+                for (var i = 0; i < mixed.Length; i++)
+                {
+                    var memory = graph.Param(
+                        $"Viseme/Pull/M/{i}", i == 0 ? 1f : 0f);
+                    graph.AddOperation(mathRoot, graph.Smooth(
+                        rawVisemes[i], memory, alphaMemory, false));
+                    mixed[i] = graph.Param(
+                        $"Viseme/{i}/Pulled", i == 0 ? 1f : 0f);
+                    graph.AddOperation(mathRoot, graph.Linear(mixed[i], new[]
+                    {
+                        Term.Positive(rawVisemes[i], 1f - memoryBlend),
+                        Term.Positive(memory, memoryBlend)
+                    }));
+                    if (request.trackingEnabled)
+                    {
+                        var gated = graph.Param(
+                            $"Viseme/{i}/PullGated", i == 0 ? 1f : 0f);
+                        graph.AddOperation(mathRoot, graph.Interpolate(
+                            mixed[i], rawVisemes[i], gated,
+                            trackingBlend, false));
+                        mixed[i] = gated;
+                    }
+                }
+                observerRawVisemes = mixed;
+
+                if (directProjectedRaw.Count > 0)
+                {
+                    directProjectedObserverRaw = new Dictionary<
+                        AdvancedVisemeArticulator, string>();
+                    foreach (var pair in directProjectedRaw)
+                    {
+                        var memory = graph.Param(
+                            $"DirectRender/PullM/{pair.Key}",
+                            directProjectionCoefficients[pair.Key][0]);
+                        graph.AddOperation(mathRoot, graph.Smooth(
+                            pair.Value, memory, alphaMemory, true));
+                        var mixedProjected = graph.Param(
+                            $"DirectRender/Pulled/{pair.Key}",
+                            directProjectionCoefficients[pair.Key][0]);
+                        graph.AddOperation(mathRoot, graph.Linear(
+                            mixedProjected, new[]
+                            {
+                                Term.Positive(pair.Value, 1f - memoryBlend),
+                                Term.Positive(memory, memoryBlend)
+                            }));
+                        directProjectedObserverRaw[pair.Key] =
+                            mixedProjected;
+                    }
+                }
+            }
+            if (pullEnabled)
+            {
+                var alphaPull = graph.Param("Alpha/Pull", 0.5f);
+                graph.AddOperation(mathRoot, graph.AlphaFromDeltaTime(
+                    frameTime, alphaPull,
+                    AdvancedVisemeRetentionPull.PullResponseSeconds));
+                var pulled = new string[
+                    VisemeReconstructionProfile.VisemeCount];
+                var normalized = new string[
+                    VisemeReconstructionProfile.VisemeCount];
+                for (var i = 0; i < pulled.Length; i++)
+                {
+                    var silDefault = AdvancedVisemeRetentionPull.PreviousRow(
+                        0, i);
+                    var ema = graph.Param($"Viseme/Pull/Z/{i}", silDefault);
+                    graph.AddOperation(mathRoot, graph.Smooth(
+                        pullFRows[i], ema, alphaPull, true));
+                    // Scaled by four so the normalized Direct tree's divider
+                    // (active only when the distinct-parameter sum exceeds
+                    // one) always engages; the scale cancels in the quotient.
+                    pulled[i] = graph.Param(
+                        $"Viseme/{i}/Pulled4", i == 0 ? 4f : 0f);
+                    graph.AddOperation(mathRoot, graph.Linear(pulled[i], new[]
+                    {
+                        Term.Positive(rawVisemes[i], 4f),
+                        Term.Positive(
+                            ema, 4f * AdvancedVisemeRetentionPull.PullScale),
+                        Term.Positive(
+                            pullFRows[i],
+                            -4f * AdvancedVisemeRetentionPull.PullScale)
+                    }));
+                    normalized[i] = graph.Param(
+                        $"Viseme/{i}/PullNorm", i == 0 ? 1f : 0f);
+                }
+                // Exact clamp-and-renormalize retraction: negative weights
+                // clamp out of the sum and the division restores sum one.
+                graph.AddOperation(mathRoot, graph.NormalizeVector(
+                    pulled, normalized, "Retention pull renormalizer"));
+                for (var i = 0; i < pulled.Length; i++)
+                {
+                    var target = normalized[i];
+                    if (request.trackingEnabled)
+                    {
+                        // Tracked mouths must not inherit the speech-model
+                        // pull; fade it out with tracking authority exactly
+                        // like the liveliness lead. Both endpoints live on
+                        // the simplex, so the gate preserves it.
+                        var gated = graph.Param(
+                            $"Viseme/{i}/PullGated", i == 0 ? 1f : 0f);
+                        graph.AddOperation(mathRoot, graph.Interpolate(
+                            target, rawVisemes[i], gated,
+                            trackingBlend, false));
+                        target = gated;
+                    }
+                    normalized[i] = target;
+                }
+                observerRawVisemes = normalized;
+
+                if (directProjectedRaw.Count > 0)
+                {
+                    // Articulator projections are signed and carry no sum
+                    // constraint, so the additive form needs no renormalizer
+                    // here; projection commutes with the EMA.
+                    directProjectedObserverRaw = new Dictionary<
+                        AdvancedVisemeArticulator, string>();
+                    foreach (var pair in directProjectedRaw)
+                    {
+                        var projectedF = pullFProjected[pair.Key];
+                        var ema = graph.Param(
+                            $"DirectRender/PullZ/{pair.Key}",
+                            pullFProjectedDefaults[pair.Key]);
+                        graph.AddOperation(mathRoot, graph.Smooth(
+                            projectedF, ema, alphaPull, true));
+                        var pulledProjected = graph.Param(
+                            $"DirectRender/Pulled/{pair.Key}",
+                            directProjectionCoefficients[pair.Key][0]);
+                        graph.AddOperation(mathRoot, graph.Linear(
+                            pulledProjected, new[]
+                            {
+                                Term.Positive(pair.Value, 1f),
+                                Term.Positive(
+                                    ema,
+                                    AdvancedVisemeRetentionPull.PullScale),
+                                Term.Positive(
+                                    projectedF,
+                                    -AdvancedVisemeRetentionPull.PullScale)
+                            }));
+                        directProjectedObserverRaw[pair.Key] =
+                            pulledProjected;
+                    }
+                }
+            }
+            if (EnableFusionEnvelope && FusionEnvelopeGamma != 1f && !betaEnabled)
+            {
+                // Sharpen the target before the observer: raise each channel to
+                // the envelope gamma and renormalize. This peaks the simplex so
+                // co-activation and peakedness match the teacher; the observer
+                // then smooths the sharpened target into the visible envelope.
+                var sharp = new string[VisemeReconstructionProfile.VisemeCount];
+                var sharpNorm = new string[VisemeReconstructionProfile.VisemeCount];
+                var gammaPoints = new (float, float)[9];
+                for (var kk = 0; kk < gammaPoints.Length; kk++)
+                {
+                    var x = kk / (float)(gammaPoints.Length - 1);
+                    gammaPoints[kk] = (x, Mathf.Pow(x, FusionEnvelopeGamma));
+                }
+                for (var i = 0; i < sharp.Length; i++)
+                {
+                    sharp[i] = graph.Param($"Viseme/{i}/Sharp", i == 0 ? 1f : 0f);
+                    graph.AddOperation(mathRoot, graph.Map(observerRawVisemes[i], sharp[i],
+                        gammaPoints.Select(p => Point(p.Item1, p.Item2)).ToArray()));
+                    sharpNorm[i] = graph.Param($"Viseme/{i}/SharpNorm", i == 0 ? 1f : 0f);
+                }
+                EmitExactSimplexNormalizer(graph, mathRoot, sharp, sharpNorm,
+                    "Fusion envelope sharpen renormalizer");
+                observerRawVisemes = sharpNorm;
+            }
+
             var projectedOrder = betaProjectedRaw.Keys
                 .OrderBy(articulator => (int)articulator)
                 .ToArray();
-            var speechObserverRaw = rawVisemes.Concat(projectedOrder.Select(
-                articulator => betaProjectedRaw[articulator])).ToArray();
+            var speechObserverRaw = observerRawVisemes
+                .Concat(projectedOrder.Select(
+                    articulator => betaProjectedRaw[articulator])).ToArray();
             var speechObserverFast = fastVisemes.Concat(projectedOrder.Select(
                 articulator => betaProjectedFast[articulator])).ToArray();
             var speechObserverSlow = slowVisemes.Concat(projectedOrder.Select(
@@ -729,6 +1756,27 @@ namespace YUCP.Components.Editor
                 speechObserverFast, speechObserverSlow, alphaViseme,
                 "Viseme and projected-articulation slow observer"));
 
+            if (directProjectedRaw.Count > 0)
+            {
+                var directFastRelease = graph.InterpolateArticulationVector(
+                    directProjectedFast, directProjectedObserverRaw,
+                    directProjectedFast, alphaViseme,
+                    "Direct projected fast observer release");
+                var directFastFreeze = graph.CopyArticulationVector(
+                    directProjectedFast, directProjectedFast,
+                    "Direct projected fast observer freeze");
+                graph.AddOperation(mathRoot, graph.SelectSilenceHoldMotion(
+                    directFastRelease, directFastRelease, directFastFreeze,
+                    visemeIndex, speechHangover.history,
+                    tuning[AdvancedVisemeTuningControl.SilenceStability],
+                    "Direct projected fast observer"));
+                graph.AddOperation(mathRoot,
+                    graph.InterpolateArticulationVector(
+                        directProjectedSlow, directProjectedFast,
+                        directProjectedSlow, alphaViseme,
+                        "Direct projected slow observer"));
+            }
+
             var reconstructedFastVisemes = sparseFastVisemes;
             var reconstructedSlowVisemes = sparseSlowVisemes;
             BetaCoarticulationGraph betaGraph = null;
@@ -746,16 +1794,55 @@ namespace YUCP.Components.Editor
                 reconstructedSlowVisemes = betaGraph.common.slow;
             }
 
+            // Slow the release of each viseme weight so the outgoing viseme
+            // lingers into the incoming one (raises co-activation, stops the
+            // mouth returning to rest between visemes). Applied before the hold
+            // generator so the generator rides the overlapped envelope.
+            if (EnableAsymmetricRelease)
+            {
+                reconstructedFastVisemes = AppendAsymmetricRelease(
+                    graph, mathRoot, frameTime, reconstructedFastVisemes, "Fast");
+                reconstructedSlowVisemes = AppendAsymmetricRelease(
+                    graph, mathRoot, frameTime, reconstructedSlowVisemes, "Slow");
+            }
+
+            // The lower-face mouth reads speechWeights, which come from THESE
+            // vectors (reconstructedFast/Slow), not styledVisemes. So the hold
+            // generator that keeps the mouth alive during a sustained viseme
+            // must inject here, before the speechWeights projection below, and
+            // in both Normal and Beta modes (the avatar runs Beta).
+            if (EnableFusionHoldGenerator)
+            {
+                var hold = AppendFusionHoldGenerator(
+                    graph, mathRoot, frameTime, visemeIndex,
+                    rawVisemes, reconstructedFastVisemes, reconstructedSlowVisemes);
+                reconstructedFastVisemes = hold.fast;
+                reconstructedSlowVisemes = hold.slow;
+            }
+
             var speechPresence = speechHangover.presence;
             var voiceGainBase = graph.Param("Voice/GainBase", 0f);
             graph.AddOperation(mathRoot, graph.MultiplyUnlessHeldSilence(
                 speechPresence, voiceAmplitude, voiceGainBase,
                 visemeIndex, speechHangover.history,
                 tuning[AdvancedVisemeTuningControl.SilenceStability], false));
-            var voiceGain = graph.Param("Voice/Gain", 0f);
+            var voiceGainBoosted = graph.Param("Voice/GainBoosted", 0f);
             graph.AddOperation(mathRoot, graph.Multiply(
                 tuning[AdvancedVisemeTuningControl.SpeechMotion],
-                voiceGainBase, voiceGain, false));
+                voiceGainBase, voiceGainBoosted, false));
+            var voiceGain = graph.Param("Voice/Gain", 0f);
+            // Saturating gate, not a linear amplitude. Scaling the mouth SHAPE by
+            // the loudness envelope (0.55 + 0.45*loudness) made the mouth pull
+            // ~45% toward rest in every inter-syllable dip ("goes and comes back")
+            // and overshoot on onset loudness peaks. Reaching full amplitude at
+            // half the quiet floor keeps the mouth open across the phrase like
+            // native visemes; onset peaks land in the flat region (no overshoot);
+            // rest-close still happens smoothly through speechPresence's release.
+            graph.AddOperation(mathRoot, graph.Map(
+                voiceGainBoosted, voiceGain, new[]
+                {
+                    Point(0f, 0f), Point(0.5f, 1f), Point(2f, 1f)
+                }));
 
             for (var i = 0; i < rawVisemes.Length; i++)
             {
@@ -919,17 +2006,66 @@ namespace YUCP.Components.Editor
                         "Tracking observer slow vector"));
                 }
             }
-            // Speech-only rendering may follow the one-pole observer more
-            // closely, but it never extrapolates beyond it. One shared lead is
-            // used for all visemes and articulators, preserving the simplex and
-            // the calibrated identity U(Cp) + Rp = Vp. TrackingBlend fades the
-            // lead continuously to exact legacy/tracked behavior at one.
+            // One signed, creator-facing character control selects three
+            // persistent endpoints: the calm two-pole state, the responsive
+            // one-pole state, or the learned state-local target. This is a
+            // convex simplex interpolation at every point. The center therefore
+            // stays smooth through arbitrary hard-viseme interruptions, while
+            // the endpoints are deliberately and visibly different.
+            var speechCharacter =
+                tuning[AdvancedVisemeTuningControl.SpeechLiveliness];
+            var styledVisemes = Enumerable.Range(0, rawVisemes.Length)
+                .Select(i => graph.Param(
+                    $"Viseme/{i}/Styled", i == 0 ? 1f : 0f))
+                .ToArray();
+            // A single exponential pole has a decaying step response: it moves
+            // fast then settles, which reads as hold-jump-hold. Cascading poles
+            // drives the impulse response rectangular -> triangular -> Gaussian,
+            // giving an S-shaped step (slow-in, slow-out) and near-uniform
+            // motion. The density matrix is fitted at this order.
+            var styledLow = slowVisemes;
+            var styledMid = fastVisemes;
+            if (EnableDensityHalo)
+            {
+                var pole3 = Enumerable.Range(0, slowVisemes.Length)
+                    .Select(i => graph.Param($"Viseme/{i}/Pole3", i == 0 ? 1f : 0f))
+                    .ToArray();
+                var pole4 = Enumerable.Range(0, slowVisemes.Length)
+                    .Select(i => graph.Param($"Viseme/{i}/Pole4", i == 0 ? 1f : 0f))
+                    .ToArray();
+                var midPole = Enumerable.Range(0, fastVisemes.Length)
+                    .Select(i => graph.Param($"Viseme/{i}/MidPole", i == 0 ? 1f : 0f))
+                    .ToArray();
+                graph.AddOperation(mathRoot, graph.SmoothVector(
+                    slowVisemes, pole3, alphaViseme, "Density observer pole 3"));
+                graph.AddOperation(mathRoot, graph.SmoothVector(
+                    pole3, pole4, alphaViseme, "Density observer pole 4"));
+                graph.AddOperation(mathRoot, graph.SmoothVector(
+                    fastVisemes, midPole, alphaViseme, "Density observer mid pole"));
+                styledLow = pole4;
+                styledMid = midPole;
+            }
+            graph.AddOperation(mathRoot, graph.BlendThreeVectors(
+                styledLow, styledMid, rawVisemes, styledVisemes,
+                speechCharacter, "Speech character simplex"));
+            var publishedStyledVisemes = styledVisemes;
+
+            // (The hold generator now injects on reconstructedFast/Slow above,
+            // which is what the lower-face mouth actually reads; styledVisemes is
+            // only the published diagnostic simplex.)
+
+            // Legacy physical helpers still take a nonnegative lead value. The
+            // direct physical vectors below now use the same styled endpoint in
+            // both slots, so this value is only a harmless compatibility input.
+            // renderLead=1 rides the fast observer entirely (crisp but overshoots
+            // as it leads the slow state). Capping the top endpoint below 1 blends
+            // in the slow observer, damping the onset overshoot the user reported.
             var speechRenderLead = graph.Param("Speech/RenderLead", 0f);
-            graph.AddOperation(mathRoot, graph.ScaleByInverseUnitWeight(
-                tuning[AdvancedVisemeTuningControl.SpeechLiveliness],
-                trackingBlend,
-                speechRenderLead,
-                AdvancedVisemeMath.MaximumSpeechLivelinessLead));
+            graph.AddOperation(mathRoot, graph.Map(
+                speechCharacter, speechRenderLead, new[]
+                {
+                    Point(-1f, 0f), Point(0f, 0f), Point(1f, SpeechRenderLeadCap)
+                }));
 
             var renderedVisemes = new string[reconstructedSlowVisemes.Length];
             for (var i = 0; i < renderedVisemes.Length; i++)
@@ -943,37 +2079,30 @@ namespace YUCP.Components.Editor
             for (var i = 0; i < renderedSpeechWeights.Length; i++)
                 renderedSpeechWeights[i] = graph.Param(
                     $"Viseme/{i}/RenderedSpeechWeight", 0f);
-            // Keep the existing observer/fusion epoch for the tracked endpoint,
-            // but publish the fitted decoder trajectory directly whenever face
-            // tracking authority is zero. This is a convex endpoint selection;
-            // it cannot invalidate the public simplex.
+            var styledSpeechWeights = Enumerable.Range(0, speechWeights.Length)
+                .Select(i => graph.Param(
+                    $"Viseme/{i}/StyledSpeechWeight", 0f))
+                .ToArray();
+            AddElementwiseProductProjection(
+                graph, mathRoot, voiceGain,
+                styledVisemes, styledSpeechWeights,
+                "Styled voice-weighted speech simplex");
+
             if (request.trackingEnabled)
             {
-                var observerRenderedVisemes = Enumerable.Range(
-                        0, renderedVisemes.Length)
-                    .Select(i => graph.Param(
-                        $"Viseme/{i}/ObserverRendered", i == 0 ? 1f : 0f))
-                    .ToArray();
                 graph.AddOperation(mathRoot, graph.InterpolateVector(
+                    publishedStyledVisemes.Concat(styledSpeechWeights).ToArray(),
                     reconstructedSlowVisemes.Concat(speechWeights).ToArray(),
-                    reconstructedFastVisemes.Concat(fastSpeechWeights).ToArray(),
-                    observerRenderedVisemes.Concat(renderedSpeechWeights).ToArray(),
-                    speechRenderLead,
-                    "Speech-liveliness observer render vector"));
-                graph.AddOperation(mathRoot, graph.InterpolateVector(
-                    rawVisemes, observerRenderedVisemes, renderedVisemes,
+                    renderedVisemes.Concat(renderedSpeechWeights).ToArray(),
                     trackingBlend,
-                    "Direct speech to tracked public viseme handoff"));
+                    "Styled speech to tracked observer handoff"));
             }
             else
             {
                 graph.AddOperation(mathRoot, graph.CopyVector(
-                    rawVisemes, renderedVisemes,
-                    "Direct speech public viseme simplex"));
-                AddElementwiseProductProjection(
-                    graph, mathRoot, voiceGain,
-                    rawVisemes, renderedSpeechWeights,
-                    "Direct voice-weighted speech simplex");
+                    publishedStyledVisemes.Concat(styledSpeechWeights).ToArray(),
+                    renderedVisemes.Concat(renderedSpeechWeights).ToArray(),
+                    "Styled speech public render vector"));
             }
 
             var vowelWeightRaw = graph.Param("Speech/VowelWeightRaw", 0f);
@@ -1270,9 +2399,53 @@ namespace YUCP.Components.Editor
                 new Dictionary<AdvancedVisemeArticulator, string>();
             var directPhysicalSpeechArticulationNeedsVoice =
                 new HashSet<AdvancedVisemeArticulator>();
+            var styledDirectArticulation = articulators
+                .Where(articulator =>
+                    directProjectedRaw.ContainsKey(articulator) &&
+                    directProjectedFast.ContainsKey(articulator) &&
+                    directProjectedSlow.ContainsKey(articulator))
+                .ToDictionary(
+                    articulator => articulator,
+                    articulator => graph.Param(
+                        $"DirectRender/Styled/{articulator}", 0f));
+            if (styledDirectArticulation.Count > 0)
+                graph.AddOperation(mathRoot,
+                    graph.BlendThreeArticulationVectors(
+                        directProjectedSlow, directProjectedFast,
+                        directProjectedRaw, styledDirectArticulation,
+                        speechCharacter,
+                        "Speech character direct articulation"));
+            bool IsMouthLane(AdvancedVisemeArticulator candidate)
+            {
+                var group = AdvancedVisemeCoarticulationModel.GroupFor(candidate);
+                return group == AdvancedVisemeArticulatorGroup.Jaw ||
+                       group == AdvancedVisemeArticulatorGroup.Lips;
+            }
+
+            var firPoses = EnableLookaheadFir
+                ? BuildLookaheadFirPose(
+                    request, graph, mathRoot, frameTime, visemeIndex,
+                    tuning[AdvancedVisemeTuningControl.SpeechSmoothness],
+                    tuning[AdvancedVisemeTuningControl.SpeechMotion],
+                    tuning[AdvancedVisemeTuningControl.SpeechLiveliness],
+                    articulators.Where(IsMouthLane))
+                : new Dictionary<AdvancedVisemeArticulator, string>();
+
             foreach (var articulator in articulators)
             {
-                if (directProjectedRaw.TryGetValue(
+                // The direct coordinate is the projection evaluated at the HARD
+                // winner (C.e_winner), baked into the argmax decoder state
+                // machine. It is a single per-winner pose, crossfaded between at
+                // most two winners, so the mouth snaps between discrete viseme
+                // shapes and never co-activates. The smooth path below is the
+                // same projection evaluated on the reconstructed SIMPLEX
+                // (C.p over all 15 blended weights), which is what native
+                // VisemeBlendShape does. Prefer the blended path when it exists.
+                var haveBlended =
+                    physicalSpeechArticulationFast.ContainsKey(articulator) &&
+                    physicalSpeechArticulationSlow.ContainsKey(articulator);
+                if ((!DriveMouthFromBlendedSimplex || !haveBlended) &&
+                    styledDirectArticulation.TryGetValue(
                         articulator, out var directCoordinate))
                 {
                     directPhysicalSpeechArticulationFast[articulator] =
@@ -1280,6 +2453,34 @@ namespace YUCP.Components.Editor
                     directPhysicalSpeechArticulationSlow[articulator] =
                         directCoordinate;
                     directPhysicalSpeechArticulationNeedsVoice.Add(articulator);
+                    continue;
+                }
+                // The FIR pose already reproduces the teacher's own amplitude and
+                // co-activation, so it replaces the observer path outright and is
+                // NOT scaled by voiceGain (voice is one of its basis terms).
+                if (firPoses.TryGetValue(articulator, out var firPose))
+                {
+                    directPhysicalSpeechArticulationFast[articulator] = firPose;
+                    directPhysicalSpeechArticulationSlow[articulator] = firPose;
+                    continue;
+                }
+                // Slew-rate limit the mouth (jaw/lip) pose: cap its per-frame
+                // speed so the argmax's full-swap jumps become constant-velocity
+                // ramps (piecewise-linear = perceived-smooth) and sub-step chatter
+                // is rejected. Pose space is signed with no simplex sum contract,
+                // so per-channel clipping is safe here; tongue lanes are excluded.
+                if (EnableMouthSlew && haveBlended && IsMouthLane(articulator))
+                {
+                    var slew = graph.Param(
+                        $"Articulation/{articulator}/Slew", 0f);
+                    AppendPoseSlew(
+                        graph, mathRoot, frameTime,
+                        physicalSpeechArticulationFast[articulator],
+                        slew, MouthSlewSpeed);
+                    directPhysicalSpeechArticulationFast[articulator] = slew;
+                    directPhysicalSpeechArticulationSlow[articulator] = slew;
+                    if (physicalSpeechArticulationNeedsVoice.Contains(articulator))
+                        directPhysicalSpeechArticulationNeedsVoice.Add(articulator);
                     continue;
                 }
                 directPhysicalSpeechArticulationFast[articulator] =
@@ -1290,14 +2491,44 @@ namespace YUCP.Components.Editor
                     directPhysicalSpeechArticulationNeedsVoice.Add(articulator);
             }
 
+            var styledSpeechArticulation = articulators.ToDictionary(
+                articulator => articulator,
+                articulator => graph.Param(
+                    $"Articulation/{articulator}/StyledSpeech", 0f));
+            var styledDirectSpeech = styledDirectArticulation.Keys.ToDictionary(
+                articulator => articulator,
+                articulator => styledSpeechArticulation[articulator]);
+            if (styledDirectSpeech.Count > 0)
+                graph.AddOperation(mathRoot, graph.ScaleArticulationVector(
+                    voiceGain, styledDirectArticulation, styledDirectSpeech,
+                    "Voice-scaled styled direct articulation"));
+            var nonDirectStyledInputs = articulators
+                .Where(articulator =>
+                    !styledDirectArticulation.ContainsKey(articulator))
+                .ToDictionary(
+                    articulator => articulator,
+                    articulator => speechArticulationFast[articulator]);
+            var nonDirectStyledOutputs = nonDirectStyledInputs.Keys.ToDictionary(
+                articulator => articulator,
+                articulator => styledSpeechArticulation[articulator]);
+            if (nonDirectStyledInputs.Count > 0)
+                graph.AddOperation(mathRoot, graph.CopyArticulationVector(
+                    nonDirectStyledInputs, nonDirectStyledOutputs,
+                    "Styled non-direct articulation"));
+
             var renderedSpeechArticulation = articulators.ToDictionary(
                 articulator => articulator,
                 articulator => graph.Param(
                     $"Articulation/{articulator}/RenderedSpeech", 0f));
-            graph.AddOperation(mathRoot, graph.InterpolateArticulationVector(
-                speechArticulationSlow, speechArticulationFast,
-                renderedSpeechArticulation, speechRenderLead,
-                "Speech-liveliness articulation vector"));
+            graph.AddOperation(mathRoot,
+                request.trackingEnabled
+                    ? graph.InterpolateArticulationVector(
+                        styledSpeechArticulation, speechArticulationSlow,
+                        renderedSpeechArticulation, trackingBlend,
+                        "Styled speech to tracked articulation handoff")
+                    : graph.CopyArticulationVector(
+                        styledSpeechArticulation, renderedSpeechArticulation,
+                        "Styled speech articulation output"));
 
             string hiddenResidualSpeechDelta = null;
             if (facePhonePosterior != null &&
@@ -1511,7 +2742,7 @@ namespace YUCP.Components.Editor
                 // follows the fitted direct simplex trajectory.
                 BuildOutputTree(
                     request, result, graph, outputRoot,
-                    renderedSpeechWeights, visibleSpeechWeights, rawVisemes,
+                    renderedSpeechWeights, visibleSpeechWeights, styledVisemes,
                     voiceGain, speechRenderLead,
                     trackingBlend,
                     directPhysicalSpeechArticulationFast,
@@ -1628,24 +2859,50 @@ namespace YUCP.Components.Editor
 
         private static Dictionary<AdvancedVisemeTuningControl, string> BuildTuningParameters(
             MathGraph graph,
+            BlendTree root,
             Request request,
             Result result)
         {
             var tuning = new Dictionary<AdvancedVisemeTuningControl, string>();
             foreach (var control in AdvancedVisemeTuning.Controls)
             {
-                var defaultValue = AdvancedVisemeTuning.DefaultValue(request.profile, control);
+                var configured =
+                    AdvancedVisemeTuning.ConfiguredValue(request.profile, control);
                 var section = AdvancedVisemeTuning.Section(control);
                 var exposed = request.component.createTuningMenu &&
                               IsTuningControlRelevant(request, control) &&
                               (request.component.tuningMenuSections & section) != 0;
-                var parameter = exposed
-                    ? graph.Param(request.component.TuningParameterName(control), defaultValue, false)
-                    : graph.Param("Tuning/" + control, defaultValue);
-                tuning[control] = parameter;
-                if (!exposed) continue;
-                result.tuningParameters[control] = parameter;
-                result.externalParameters.Add(parameter);
+                if (!exposed)
+                {
+                    var configuredParameter = graph.Param(
+                        "Tuning/" + control, configured);
+                    tuning[control] = configuredParameter;
+                    result.effectiveTuningParameters[control] =
+                        configuredParameter;
+                    continue;
+                }
+
+                var publicParameter = graph.Param(
+                    request.component.TuningParameterName(control),
+                    AdvancedVisemeTuning.SliderDefault, false);
+                var effectiveParameter = graph.Param(
+                    "Tuning/Effective/" + control, configured);
+                var range = AdvancedVisemeTuning.Range(
+                    request.profile, control);
+                graph.AddOperation(root, graph.Map(
+                    publicParameter, effectiveParameter, new[]
+                    {
+                        Point(0f, range.minimum),
+                        Point(AdvancedVisemeTuning.SliderDefault,
+                            range.configured),
+                        Point(1f, range.maximum)
+                    }));
+
+                tuning[control] = effectiveParameter;
+                result.tuningParameters[control] = publicParameter;
+                result.effectiveTuningParameters[control] =
+                    effectiveParameter;
+                result.externalParameters.Add(publicParameter);
             }
             return tuning;
         }
@@ -1656,9 +2913,7 @@ namespace YUCP.Components.Editor
             Request request,
             Result result)
         {
-            if (request.component.tuningSyncMode !=
-                    AdvancedVisemeTuningSyncMode.CompactSynced ||
-                request.useSharedParameterCompressor ||
+            if (request.useSharedParameterCompressor ||
                 result.tuningParameters.Count == 0)
                 return;
 
@@ -2121,8 +3376,12 @@ namespace YUCP.Components.Editor
             float maximumSeconds)
         {
             configuredSeconds = Mathf.Clamp(configuredSeconds, minimumSeconds, maximumSeconds);
-            var slowSeconds = Mathf.Clamp(configuredSeconds * 2f, minimumSeconds, maximumSeconds);
-            var fastSeconds = Mathf.Clamp(configuredSeconds * 0.5f, minimumSeconds, maximumSeconds);
+            // A creator should be able to see the complete supported response
+            // envelope. The center remains the authored profile exactly; the
+            // endpoints now use the full safe timing range instead of the old
+            // subtle 0.5x/2x neighborhood.
+            var slowSeconds = maximumSeconds;
+            var fastSeconds = minimumSeconds;
             var slow = graph.Param(key + "/Slow", 0.25f);
             var configured = graph.Param(key + "/Configured", 0.5f);
             var fast = graph.Param(key + "/Fast", 0.75f);
@@ -2146,10 +3405,15 @@ namespace YUCP.Components.Editor
             var lessSensitive = graph.Param("Voice/Evidence/LessSensitive", 0f);
             var configured = graph.Param("Voice/Evidence/Configured", 0f);
             var moreSensitive = graph.Param("Voice/Evidence/MoreSensitive", 0f);
-            var lessNoise = Mathf.Clamp(baseNoise * 2f, 0f, 0.98f);
-            var lessFull = Mathf.Clamp(baseFull * 2f, lessNoise + 0.001f, 1f);
-            var moreNoise = Mathf.Clamp01(baseNoise * 0.5f);
-            var moreFull = Mathf.Clamp(baseFull * 0.5f, moreNoise + 0.001f, 1f);
+            var lessNoise = Mathf.Clamp(
+                Mathf.Max(baseNoise * 3f, baseNoise + 0.08f),
+                0f, 0.85f);
+            var lessFull = Mathf.Clamp(
+                Mathf.Max(baseFull * 3f, lessNoise + 0.15f),
+                lessNoise + 0.001f, 1f);
+            var moreNoise = 0f;
+            var moreFull = Mathf.Clamp(
+                baseFull * 0.2f, 0.01f, 0.25f);
             graph.AddOperation(root, graph.Map(voice, lessSensitive, new[]
             {
                 Point(0f, 0f), Point(lessNoise, 0f), Point(lessFull, 1f), Point(1f, 1f)
@@ -5425,7 +6689,7 @@ namespace YUCP.Components.Editor
             }
             // Keep corpus lead private. Feeding it into the rendered simplex is
             // a phase-lead/high-frequency bypass around the persistent observer:
-            // it makes categorical edges visible even when Speech Liveliness is
+            // it makes categorical edges visible even when Snappiness is
             // zero. Copying the slow stage preserves the publication epoch and
             // simplex while leaving the trained phone observation above intact.
             graph.AddOperation(root, graph.CopyVector(
@@ -7734,6 +8998,247 @@ namespace YUCP.Components.Editor
                     description + " must keep normalized blend values disabled.");
         }
 
+        // Slew-rate limit `output` toward `target` at a fixed max speed
+        // (pose units/sec), expressed as the sanctioned one-pole Smooth with a
+        // state-dependent alpha = min(1, step/|target-output|). This keeps the
+        // recurrence inside the single-op self-read stability guarantee: alpha is
+        // computed feed-forward and Map-clamped to [0,1], so the self-referential
+        // update is always a convex combination of output and target and cannot
+        // diverge, even if a stale epoch feeds it a slightly wrong alpha (that is
+        // just a wrong SPEED for one render frame, never an overshoot). A raw
+        // `output += clip(target-output)` accumulate would be the multi-op
+        // recurrence that historically hit the +/-2 rails; this is not.
+        private static void AppendPoseSlew(
+            MathGraph graph, BlendTree root, string frameTime,
+            string target, string output, float speed)
+        {
+            const float refHz = 90f;
+            var s0 = Mathf.Max(1e-4f, speed / refHz); // per-render step at ref rate
+
+            var delta = graph.Param(output + "/SlewDelta", 0f);
+            graph.AddOperation(root, graph.Linear(delta, new[]
+            {
+                Term.Positive(target, 1f), Term.Positive(output, -1f)
+            }));
+            var absDelta = graph.Param(output + "/SlewAbs", 0f);
+            graph.AddOperation(root, graph.Map(delta, absDelta, new[]
+            {
+                Point(-2f, 2f), Point(0f, 0f), Point(2f, 2f)
+            }));
+            // min(1, s0/x) sampled at octaves — a hyperbola within a few percent
+            // everywhere; error only perturbs speed, never stability.
+            var alphaBase = graph.Param(output + "/SlewAlphaBase", 1f);
+            graph.AddOperation(root, graph.Map(absDelta, alphaBase, new[]
+            {
+                Point(0f, 1f), Point(s0, 1f), Point(2f * s0, 0.5f),
+                Point(4f * s0, 0.25f), Point(8f * s0, 0.125f), Point(2f, 0.5f * s0)
+            }));
+            // Frame-rate scale: step = speed*dt_render, so alpha *= frameTime*refHz
+            // (== 1 at the reference rate). Keeps constant real speed off 90 fps.
+            var scaled = graph.Param(output + "/SlewScaled", 0f);
+            graph.AddOperation(root,
+                graph.Multiply(alphaBase, frameTime, scaled, false));
+            var alphaRaw = graph.Param(output + "/SlewAlphaRaw", 0f);
+            graph.AddOperation(root, graph.Linear(alphaRaw, new[]
+            {
+                Term.Positive(scaled, refHz)
+            }));
+            var alpha = graph.Param(output + "/SlewAlpha", 1f);
+            graph.AddOperation(root, graph.Map(alphaRaw, alpha, new[]
+            {
+                Point(0f, 0f), Point(1f, 1f), Point(2f, 1f)
+            }));
+            graph.AddOperation(root, graph.Smooth(target, output, alpha, true));
+        }
+
+        /// <summary>
+        /// Linear dominance filter over the hard-winner one-hot, evaluated through
+        /// a gamma memory (cascaded one-pole Smooths). The readout is trained to
+        /// reproduce the viseme simplex delayed by a few analysis frames, which is
+        /// what makes anticipatory coarticulation available: the mouth can move
+        /// toward the NEXT sound because, at the delayed render time, that sound
+        /// has already been observed. The calibration matrix is folded into the
+        /// readout at build time so each articulator costs one Linear op.
+        /// </summary>
+        private static Dictionary<AdvancedVisemeArticulator, string>
+            BuildLookaheadFirPose(
+                Request request, MathGraph graph, BlendTree root,
+                string frameTime, string visemeIndex, string smoothnessTuning,
+                string motionTuning, string livelinessTuning,
+                IEnumerable<AdvancedVisemeArticulator> articulators)
+        {
+            var poses = new Dictionary<AdvancedVisemeArticulator, string>();
+            var count = VisemeReconstructionProfile.VisemeCount;
+            var stages = AdvancedVisemeLookaheadFir.Stages;
+
+            // The winner index is an exact integer, so a triangular map recovers
+            // the one-hot with no interpolation error.
+            var basis = new List<string>();
+            var oneHot = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                var channel = graph.Param($"Fir/OneHot/{i}", i == 0 ? 1f : 0f);
+                graph.AddOperation(root, graph.Map(visemeIndex, channel, new[]
+                {
+                    Point(i - 1f, 0f), Point(i, 1f), Point(i + 1f, 0f)
+                }));
+                oneHot[i] = channel;
+            }
+            basis.AddRange(oneHot);
+
+            // Speech Smoothness drives the cascade time constant: it IS the
+            // memory's response time, so the menu slider keeps its meaning on
+            // the FIR path instead of going dead with the old observer.
+            var alpha = BuildTunableAlpha(
+                graph, root, frameTime, "Fir/Alpha",
+                AdvancedVisemeLookaheadFir.StageTauSeconds,
+                smoothnessTuning, 0.008f, 0.050f);
+            var previous = oneHot;
+            for (var stage = 0; stage < stages; stage++)
+            {
+                var current = new string[count];
+                for (var j = 0; j < count; j++)
+                {
+                    var state = graph.Param($"Fir/G{stage}/{j}", 0f);
+                    graph.AddOperation(root,
+                        graph.Smooth(previous[j], state, alpha, false));
+                    current[j] = state;
+                }
+                basis.AddRange(current);
+                previous = current;
+            }
+            basis.Add(graph.Param("Voice", 0f, false));
+            basis.Add(MathGraph.AlwaysOneParameter);
+
+            if (basis.Count != AdvancedVisemeLookaheadFir.BasisCount)
+                throw new InvalidOperationException(
+                    $"Lookahead FIR basis is {basis.Count} but the trained readout " +
+                    $"expects {AdvancedVisemeLookaheadFir.BasisCount}.");
+
+            // Fold the avatar's calibration into the readout. The readout is
+            // structurally sparse: only the basis rows that survived
+            // prune-and-refit are read. Rows outside the support are still
+            // COMPUTED when a later cascade stage needs them, and the optimizer's
+            // closed-world DCE drops any that nothing reads.
+            var folded = new Dictionary<AdvancedVisemeArticulator, float[]>();
+            foreach (var articulator in articulators)
+            {
+                var coefficients = GetAdjustedSpeechCoefficients(request, articulator);
+                if (coefficients == null || coefficients.Length != count) continue;
+                var row = new float[AdvancedVisemeLookaheadFir.SupportCount];
+                var live = false;
+                for (var slot = 0; slot < row.Length; slot++)
+                {
+                    var weight = 0f;
+                    for (var j = 0; j < count; j++)
+                        weight += coefficients[j] *
+                                  AdvancedVisemeLookaheadFir.Weight(slot, j);
+                    // Basis values are all non-negative, so a negative fold is a
+                    // plain negative COEFFICIENT, not a negative blend weight.
+                    row[slot] = weight;
+                    live |= Mathf.Abs(weight) >= 1e-4f;
+                }
+                if (!live) continue;
+                folded[articulator] = row;
+                poses[articulator] =
+                    graph.Param($"Articulation/{articulator}/Fir", 0f);
+            }
+            if (folded.Count == 0) return poses;
+
+            // Common-subexpression elimination, in the multiple-constant-
+            // multiplication sense: every articulator multiplies the SAME basis
+            // by different constants, so evaluate the basis ONCE and let each
+            // child clip write all articulators at once. One Direct tree with a
+            // child per basis term replaces one Linear per articulator, cutting
+            // the child count by the number of articulators without changing the
+            // algebra or the epoch. Same shape as the viseme matrix projection.
+            var ordered = folded.OrderBy(pair => (int)pair.Key).ToArray();
+            var readout = graph.Direct("Lookahead FIR articulation");
+            var children = new List<ChildMotion>();
+            for (var slot = 0;
+                 slot < AdvancedVisemeLookaheadFir.SupportCount;
+                 slot++)
+            {
+                var local = slot;
+                var values = ordered
+                    .Select(pair => new KeyValuePair<string, float>(
+                        poses[pair.Key], pair.Value[local]))
+                    .Where(pair => Mathf.Abs(pair.Value) >= 1e-4f)
+                    .ToArray();
+                if (values.Length == 0) continue;
+                children.Add(new ChildMotion
+                {
+                    motion = graph.MultiSetter(
+                        $"Lookahead FIR basis {local}", values),
+                    directBlendParameter =
+                        basis[AdvancedVisemeLookaheadFir.Support(local)],
+                    timeScale = 1f
+                });
+            }
+            // Bind every output unconditionally so Unity never blends a pose
+            // against its default when the whole basis is zero.
+            children.Add(new ChildMotion
+            {
+                motion = graph.MultiSetter(
+                    "Lookahead FIR safety zero",
+                    ordered.Select(pair => new KeyValuePair<string, float>(
+                        poses[pair.Key], 0f))),
+                directBlendParameter = MathGraph.AlwaysOneParameter,
+                timeScale = 1f
+            });
+            readout.children = children.ToArray();
+            graph.AddOperation(root, readout);
+
+            // Give the speech sliders real authority over the FIR mouth.
+            // Liveliness scales each pose's deviation from its own slow average
+            // (0 flattens toward a steady shape, 1 is the trained behaviour, 2
+            // exaggerates the peaks); Motion then scales the whole excursion.
+            // Both move the pose along the ray from rest through a hull point,
+            // and the render blend trees clamp at their end thresholds, so
+            // neither can synthesize an uncalibrated shape.
+            var meanAlpha = graph.Param("Fir/MeanAlpha", 0.05f);
+            graph.AddOperation(root,
+                graph.AlphaFromDeltaTime(frameTime, meanAlpha, 0.220f));
+            // The liveliness control is signed, and a signed value used as a
+            // Direct blend weight clamps at zero, so convert it to a
+            // non-negative gain through a Map instead of a Linear.
+            var livelinessGain = graph.Param("Fir/LivelinessGain", 1f);
+            graph.AddOperation(root, graph.Map(
+                livelinessTuning, livelinessGain, new[]
+                {
+                    Point(-1f, 0f), Point(0f, 1f), Point(1f, 2f)
+                }));
+
+            foreach (var pair in ordered)
+            {
+                var articulator = pair.Key;
+                var pose = poses[articulator];
+                var mean = graph.Param($"Articulation/{articulator}/FirMean", 0f);
+                graph.AddOperation(root, graph.Smooth(pose, mean, meanAlpha, true));
+                var deviation =
+                    graph.Param($"Articulation/{articulator}/FirDeviation", 0f);
+                graph.AddOperation(root, graph.Linear(deviation, new[]
+                {
+                    Term.Positive(pose, 1f), Term.Positive(mean, -1f)
+                }));
+                var lively =
+                    graph.Param($"Articulation/{articulator}/FirLively", 0f);
+                graph.AddOperation(root,
+                    graph.Multiply(livelinessGain, deviation, lively, true));
+                var shaped =
+                    graph.Param($"Articulation/{articulator}/FirShaped", 0f);
+                graph.AddOperation(root, graph.Linear(shaped, new[]
+                {
+                    Term.Positive(mean, 1f), Term.Positive(lively, 1f)
+                }));
+                var scaled = graph.Param($"Articulation/{articulator}/FirGain", 0f);
+                graph.AddOperation(root,
+                    graph.Multiply(motionTuning, shaped, scaled, true));
+                poses[articulator] = scaled;
+            }
+            return poses;
+        }
+
         private static void AddIntToFloatLayer(
             AnimatorController controller,
             MathGraph graph,
@@ -7747,7 +9252,8 @@ namespace YUCP.Components.Editor
             string trackingBlend,
             Motion sharedStateMotion,
             float transitionSeconds,
-            string layerName)
+            string layerName,
+            bool foldRetentionPull = false)
         {
             if (float.IsNaN(transitionSeconds) ||
                 float.IsInfinity(transitionSeconds) || transitionSeconds < 0f)
@@ -7800,12 +9306,18 @@ namespace YUCP.Components.Editor
                             output, Constant(i)));
                     if (oneHotOutputs != null)
                         for (var channel = 0; channel < oneHotOutputs.Count; channel++)
+                        {
+                            var local = channel;
                             values.Add(new KeyValuePair<string, float[]>(
                                 oneHotOutputs[channel],
                                 Enumerable.Range(0, controls)
-                                    .Select(control => OculusDynamicsDecoderWeight(
-                                        i, control, channel))
+                                    .Select(control => foldRetentionPull
+                                        ? RetentionPullFoldedDecoderWeight(
+                                            i, control, local)
+                                        : OculusDynamicsDecoderWeight(
+                                            i, control, local))
                                     .ToArray()));
+                        }
                     if (haloDecodedVectors != null)
                         foreach (var pair in haloDecodedVectors)
                         {
@@ -8062,6 +9574,8 @@ namespace YUCP.Components.Editor
                 new Dictionary<(string output, float value), AnimationClip>();
             private readonly Dictionary<string, AlphaBatch> alphaBatches =
                 new Dictionary<string, AlphaBatch>(StringComparer.Ordinal);
+            private readonly HashSet<Motion> normalizedTrees =
+                new HashSet<Motion>();
             private readonly Dictionary<Motion, MapDescriptor> mapDescriptors =
                 new Dictionary<Motion, MapDescriptor>();
             private readonly Dictionary<(BlendTree root, string input), MapBatch> mapBatches =
@@ -9042,6 +10556,35 @@ namespace YUCP.Components.Editor
                     });
             }
 
+            public Motion BlendThreeArticulationVectors(
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> low,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> configured,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> high,
+                IReadOnlyDictionary<AdvancedVisemeArticulator, string> outputs,
+                string weight,
+                string name)
+            {
+                if (low == null || configured == null || high == null ||
+                    outputs == null || outputs.Keys.Any(key =>
+                        !low.ContainsKey(key) || !configured.ContainsKey(key) ||
+                        !high.ContainsKey(key)))
+                    throw new InvalidOperationException(
+                        $"{name} requires matching articulation vectors.");
+
+                return OneDimensional(
+                    name, weight,
+                    new[]
+                    {
+                        Child(CopyArticulationVector(
+                            low, outputs, name + " calm"), -1f),
+                        Child(CopyArticulationVector(
+                            configured, outputs,
+                            name + " configured"), 0f),
+                        Child(CopyArticulationVector(
+                            high, outputs, name + " crisp"), 1f)
+                    });
+            }
+
             public Motion InterpolateAffineArticulationVector(
                 IReadOnlyDictionary<AdvancedVisemeArticulator, string> from,
                 IReadOnlyDictionary<AdvancedVisemeArticulator, string> to,
@@ -9232,6 +10775,61 @@ namespace YUCP.Components.Editor
                     sources = new[] { output, target },
                     signed = signed
                 };
+                return tree;
+            }
+
+            /// <summary>
+            /// Exact simplex retraction via Unity's native normalized Direct
+            /// BlendTree: each child weight is divided by the sum of all
+            /// weights and negative weights clamp at zero, so the outputs are
+            /// the clamp-and-renormalized inputs bit-for-bit. Child i writes
+            /// output i to one and every other output to zero, making the
+            /// blended value of output i exactly w_i / sum(w).
+            /// </summary>
+            public Motion NormalizeVector(
+                IReadOnlyList<string> inputs,
+                IReadOnlyList<string> outputs,
+                string name)
+            {
+                if (inputs == null || outputs == null ||
+                    inputs.Count != outputs.Count || inputs.Count == 0)
+                    throw new ArgumentException(
+                        "NormalizeVector requires matching input/output vectors.");
+
+                var children = new ChildMotion[inputs.Count];
+                for (var i = 0; i < inputs.Count; i++)
+                {
+                    // Every child must bind EVERY output explicitly: a missing
+                    // binding makes Unity blend that property with its default
+                    // value, which breaks the exactness of the division. Build
+                    // the clips directly so no shared-clip cache or zero-curve
+                    // pruning can thin them out.
+                    var clip = Clip($"{name} basis {i}");
+                    for (var j = 0; j < outputs.Count; j++)
+                        AnimationUtility.SetEditorCurve(
+                            clip,
+                            EditorCurveBinding.FloatCurve(
+                                string.Empty, typeof(Animator), outputs[j]),
+                            AnimationCurve.Constant(0f, 0f, j == i ? 1f : 0f));
+                    children[i] = new ChildMotion
+                    {
+                        motion = clip,
+                        directBlendParameter = inputs[i],
+                        timeScale = 1f
+                    };
+                }
+                var tree = new BlendTree
+                {
+                    name = name,
+                    blendType = BlendTreeType.Direct,
+                    children = children
+                };
+                SubAsset(tree);
+                var serialized = new SerializedObject(tree);
+                serialized.FindProperty("m_NormalizedBlendValues").boolValue =
+                    true;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                normalizedTrees.Add(tree);
                 return tree;
             }
 
@@ -9477,6 +11075,30 @@ namespace YUCP.Components.Editor
                     {
                         Child(CopyVector(from, outputs, name + " from"), 0f),
                         Child(CopyVector(to, outputs, name + " to"), 1f)
+                    });
+            }
+
+            public Motion BlendThreeVectors(
+                IReadOnlyList<string> low,
+                IReadOnlyList<string> configured,
+                IReadOnlyList<string> high,
+                IReadOnlyList<string> outputs,
+                string weight,
+                string name)
+            {
+                if (low == null || configured == null || high == null ||
+                    outputs == null || low.Count != configured.Count ||
+                    low.Count != high.Count || low.Count != outputs.Count)
+                    throw new InvalidOperationException(
+                        $"{name} requires four equally sized vectors.");
+                return OneDimensional(
+                    name, weight,
+                    new[]
+                    {
+                        Child(CopyVector(low, outputs, name + " calm"), -1f),
+                        Child(CopyVector(configured, outputs,
+                            name + " configured"), 0f),
+                        Child(CopyVector(high, outputs, name + " crisp"), 1f)
                     });
             }
 
@@ -10183,9 +11805,12 @@ namespace YUCP.Components.Editor
                 // directly into the parent. This is the same semantics-preserving
                 // rewrite VRCFury performs later, but doing it here prevents the
                 // generated controller from containing hundreds of scalar wrapper
-                // trees in the first place.
+                // trees in the first place. A NORMALIZED Direct child is not
+                // grouping — its weights divide by the sibling sum — so it must
+                // stay an intact nested tree.
                 if (unweighted && child.motion is BlendTree direct &&
-                    direct.blendType == BlendTreeType.Direct)
+                    direct.blendType == BlendTreeType.Direct &&
+                    !normalizedTrees.Contains(direct))
                 {
                     foreach (var nested in direct.children)
                         AppendOperationChild(root, nested);
@@ -10580,7 +12205,11 @@ namespace YUCP.Components.Editor
                                 !child.mirror &&
                                 Mathf.Approximately(child.cycleOffset, 0f) &&
                                 child.motion is BlendTree direct &&
-                                direct.blendType == BlendTreeType.Direct)
+                                direct.blendType == BlendTreeType.Direct &&
+                                // A normalized Direct child is not grouping:
+                                // its weights divide by the sibling sum, so
+                                // lowering it into the parent changes the math.
+                                !UsesNormalizedBlendValues(direct))
                                 flattened.AddRange(direct.children);
                             else
                                 flattened.Add(child);

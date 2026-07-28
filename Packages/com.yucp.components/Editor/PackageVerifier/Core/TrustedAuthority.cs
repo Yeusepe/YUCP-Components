@@ -19,6 +19,7 @@ namespace YUCP.Components.Editor.PackageVerifier
 
         private static Dictionary<string, byte[]> _publicKeysByKeyId;
         private static bool _initialized = false;
+        private static bool _editorSourcedKeysLoaded = false;
 
         static TrustedAuthority()
         {
@@ -26,14 +27,21 @@ namespace YUCP.Components.Editor.PackageVerifier
         }
 
         /// <summary>
-        /// Initialize trusted authority with hardcoded root CA key and URL-fetched keys
+        /// Initialize trusted authority with the code-pinned root CA keys.
+        ///
+        /// Deliberately touches no Unity editor API. This runs from a static
+        /// constructor, so it executes on whichever thread first uses the type —
+        /// during package import that is a worker thread, and EditorPrefs and
+        /// AssetDatabase are both main-thread only. The EditorPrefs key cache and
+        /// the SigningSettings asset are read lazily from <see cref="GetPublicKey"/>
+        /// instead, which only runs from editor code on the main thread.
         /// </summary>
         private static void Initialize()
         {
             if (_initialized) return;
 
             _publicKeysByKeyId = new Dictionary<string, byte[]>();
-            
+
             // 1. Load hardcoded YUCP root CA key
             byte[] hardcodedRootKey = LoadHardcodedRootKey();
             if (hardcodedRootKey != null && hardcodedRootKey.Length == 32)
@@ -47,16 +55,6 @@ namespace YUCP.Components.Editor.PackageVerifier
             {
                 Debug.LogWarning("[TrustedAuthority] Hardcoded YUCP root CA key not configured. Package verification may fail.");
             }
-            
-            byte[] settingsRootKey = LoadRootPublicKeyFromSettings();
-            if (settingsRootKey != null && settingsRootKey.Length == 32)
-            {
-                _publicKeysByKeyId["yucp-authority-2025"] = settingsRootKey;
-                _publicKeysByKeyId["yucp-root-2025"] = settingsRootKey;
-            }
-            
-            // 3. Load keys from URL-fetched cache
-            LoadCachedAuthorityKeys();
 
             _initialized = true;
         }
@@ -202,6 +200,27 @@ namespace YUCP.Components.Editor.PackageVerifier
         }
 
         /// <summary>
+        /// Apply the key sources that need Unity editor APIs: the SigningSettings
+        /// asset override and the EditorPrefs key cache. Split out of
+        /// <see cref="Initialize"/> so the static constructor stays thread-safe;
+        /// every caller below reaches this from main-thread editor code.
+        /// </summary>
+        private static void EnsureEditorSourcedKeysLoaded()
+        {
+            if (_editorSourcedKeysLoaded) return;
+            _editorSourcedKeysLoaded = true;
+
+            byte[] settingsRootKey = LoadRootPublicKeyFromSettings();
+            if (settingsRootKey != null && settingsRootKey.Length == 32)
+            {
+                _publicKeysByKeyId["yucp-authority-2025"] = settingsRootKey;
+                _publicKeysByKeyId["yucp-root-2025"] = settingsRootKey;
+            }
+
+            LoadCachedAuthorityKeys();
+        }
+
+        /// <summary>
         /// Get public key by key ID
         /// </summary>
         public static byte[] GetPublicKey(string keyId)
@@ -212,19 +231,13 @@ namespace YUCP.Components.Editor.PackageVerifier
                 Initialize();
             }
 
+            EnsureEditorSourcedKeysLoaded();
+
             if (_publicKeysByKeyId.TryGetValue(keyId, out byte[] key))
             {
                 return key;
             }
-            
-            // Try to reload from cache in case keys were updated
-            LoadCachedAuthorityKeys();
-            
-            if (_publicKeysByKeyId.TryGetValue(keyId, out key))
-            {
-                return key;
-            }
-            
+
             byte[] rootKey = LoadRootPublicKeyFromSettings();
             if (rootKey != null && rootKey.Length == 32)
             {
@@ -259,7 +272,9 @@ namespace YUCP.Components.Editor.PackageVerifier
         public static void ReloadAllKeys()
         {
             _initialized = false;
+            _editorSourcedKeysLoaded = false;
             Initialize();
+            EnsureEditorSourcedKeysLoaded();
         }
 
         /// <summary>
@@ -280,6 +295,7 @@ namespace YUCP.Components.Editor.PackageVerifier
             {
                 Initialize();
             }
+            EnsureEditorSourcedKeysLoaded();
             return _publicKeysByKeyId.ContainsKey(keyId);
         }
     }

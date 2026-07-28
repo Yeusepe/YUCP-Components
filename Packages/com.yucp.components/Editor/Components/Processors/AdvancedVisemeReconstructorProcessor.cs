@@ -258,8 +258,7 @@ namespace YUCP.Components.Editor
                         avatarRoot, renderer, out var rendererBindingError))
                     return Fail(component, rendererBindingError);
                 var useSharedParameterCompressor =
-                    component.tuningSyncMode ==
-                    AdvancedVisemeTuningSyncMode.CompactSynced &&
+                    component.createTuningMenu &&
                     avatarRoot.GetComponentsInChildren<ParameterCompressorData>(true)
                         .Length == 1;
                 var hash = StableHash(
@@ -477,13 +476,11 @@ namespace YUCP.Components.Editor
                     : ", direct-pose fallback";
                 var trackingText = trackingResolution != null ? $", {trackingResolution.Summary}" : string.Empty;
                 var tuningText = built.tuningParameters.Count > 0
-                    ? component.tuningSyncMode == AdvancedVisemeTuningSyncMode.CompactSynced
-                        ? useSharedParameterCompressor
-                            ? $", {built.tuningParameters.Count} saved sliders registered " +
-                              "with the shared Parameter Compressor"
-                            : $", {built.tuningParameters.Count} saved sliders shared through " +
-                              $"{built.tuningSyncBits} compact synced bits"
-                        : $", {built.tuningParameters.Count} saved local sliders (0 synced bits)"
+                    ? useSharedParameterCompressor
+                        ? $", {built.tuningParameters.Count} saved sliders registered " +
+                          "with the shared Parameter Compressor"
+                        : $", {built.tuningParameters.Count} saved sliders shared through " +
+                          $"{built.tuningSyncBits} compact synced bits"
                     : string.Empty;
                 component.SetBuildSummary($"Built {built.globalParameters.Distinct().Count()} reusable outputs, +{trackingBits + built.tuningSyncBits} synced bits{tuningText}{trackingText}{calibrationText}{linkedRendererSummary.Text}");
                 EditorUtility.SetDirty(component);
@@ -1327,11 +1324,22 @@ namespace YUCP.Components.Editor
                             $"{parameter.valueType}. Change its type or use another parameter prefix.";
                     return false;
                 }
+                if (!Mathf.Approximately(
+                        parameter.defaultValue,
+                        AdvancedVisemeTuning.SliderDefault))
+                {
+                    error = $"Existing tuning parameter '{name}' defaults to " +
+                            $"{parameter.defaultValue:0.###}. All Advanced Viseme sliders " +
+                            "use 0.5 as the exact current-profile midpoint; change its " +
+                            "default to 0.5 or use another parameter prefix.";
+                    return false;
+                }
                 if (parameter.networkSynced &&
                     !request.useSharedParameterCompressor)
                 {
                     error = $"Existing tuning parameter '{name}' is synced. Tuning sliders are " +
-                            "local-only by design; make it unsynced or use another parameter prefix.";
+                            "transported through YUCP's compact shared carrier, so the source Float " +
+                            "must remain unsynced. Make it unsynced or use another parameter prefix.";
                     return false;
                 }
                 if (parameter.saved != request.component.saveTuningValues)
@@ -1343,9 +1351,7 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            if (request.component.tuningSyncMode !=
-                    AdvancedVisemeTuningSyncMode.CompactSynced ||
-                generatedControls.Count == 0)
+            if (generatedControls.Count == 0)
                 return true;
 
             // The generic compressor runs against the final merged assets. AVR

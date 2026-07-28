@@ -201,9 +201,7 @@ namespace YUCP.Components.Editor
             foreach (var reconstructor in avatarRoot.GetComponentsInChildren<
                          AdvancedVisemeReconstructorData>(true))
             {
-                if (reconstructor == null || !reconstructor.createTuningMenu ||
-                    reconstructor.tuningSyncMode !=
-                    AdvancedVisemeTuningSyncMode.CompactSynced)
+                if (reconstructor == null || !reconstructor.createTuningMenu)
                     continue;
                 foreach (var control in AdvancedVisemeTuning.Controls)
                     output.Add(reconstructor.TuningParameterName(control));

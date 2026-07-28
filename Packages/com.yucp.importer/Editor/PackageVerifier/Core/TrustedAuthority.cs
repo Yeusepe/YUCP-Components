@@ -27,7 +27,14 @@ namespace YUCP.Importer.Editor.PackageVerifier
         }
 
         /// <summary>
-        /// Initialize trusted authority with hardcoded root CA key and URL-fetched keys
+        /// Initialize trusted authority with the code-pinned root CA keys.
+        ///
+        /// Deliberately touches no Unity editor API. This runs from a static
+        /// constructor, so it executes on whichever thread first uses the type —
+        /// during import that is a worker thread, and EditorPrefs is main-thread
+        /// only. The cached-key store is not read here because trust is pinned:
+        /// only <see cref="PinnedRootPublicKeyBase64"/> is ever accepted, so a
+        /// cache read could not add a key this method has not already added.
         /// </summary>
         private static void Initialize()
         {
@@ -36,7 +43,6 @@ namespace YUCP.Importer.Editor.PackageVerifier
             _publicKeysByKeyId = new Dictionary<string, byte[]>();
 
             LoadBuiltInAuthorityKeys();
-            LoadCachedAuthorityKeys();
 
             _initialized = true;
         }
@@ -46,53 +52,6 @@ namespace YUCP.Importer.Editor.PackageVerifier
             byte[] pinnedRootKey = Convert.FromBase64String(PinnedRootPublicKeyBase64);
             _publicKeysByKeyId[PrimaryRootKeyId] = pinnedRootKey;
             _publicKeysByKeyId[LegacyRootKeyId] = pinnedRootKey;
-        }
-
-        /// <summary>
-        /// Load cached authority keys from TrustedAuthoritiesSettings
-        /// </summary>
-        private static void LoadCachedAuthorityKeys()
-        {
-            try
-            {
-                var cachedKeys = TrustedAuthoritiesSettings.GetCachedKeys();
-                int loadedCount = 0;
-
-                foreach (var kvp in cachedKeys)
-                {
-                    if (string.IsNullOrEmpty(kvp.Value?.publicKey))
-                        continue;
-
-                    if (!TryGetBuiltInPublicKeyBase64(kvp.Key, out string pinnedPublicKeyBase64))
-                        continue;
-
-                    if (!string.Equals(kvp.Value.publicKey.Trim(), pinnedPublicKeyBase64, StringComparison.Ordinal))
-                        continue;
-
-                    try
-                    {
-                        byte[] keyBytes = Convert.FromBase64String(kvp.Value.publicKey);
-                        if (keyBytes.Length == 32)
-                        {
-                            _publicKeysByKeyId[kvp.Key] = keyBytes;
-                            loadedCount++;
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"[TrustedAuthority] Cached key '{kvp.Key}' has invalid length: {keyBytes.Length} (expected 32)");
-                        }
-                    }
-                    catch (FormatException)
-                    {
-                        Debug.LogWarning($"[TrustedAuthority] Failed to parse cached key '{kvp.Key}': invalid base64");
-                    }
-                }
-
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[TrustedAuthority] Failed to load cached authority keys: {ex.Message}");
-            }
         }
 
         /// <summary>
@@ -106,20 +65,7 @@ namespace YUCP.Importer.Editor.PackageVerifier
                 Initialize();
             }
 
-            if (_publicKeysByKeyId.TryGetValue(keyId, out byte[] key))
-            {
-                return key;
-            }
-            
-            // Try to reload from cache in case keys were updated
-            LoadCachedAuthorityKeys();
-            
-            if (_publicKeysByKeyId.TryGetValue(keyId, out key))
-            {
-                return key;
-            }
-
-            return null;
+            return _publicKeysByKeyId.TryGetValue(keyId, out byte[] key) ? key : null;
         }
 
         /// <summary>

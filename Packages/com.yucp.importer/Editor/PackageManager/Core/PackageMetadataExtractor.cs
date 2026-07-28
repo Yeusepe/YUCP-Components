@@ -199,6 +199,38 @@ namespace YUCP.Importer.Editor.PackageManager
             return packageJsonMetadataItem ?? FindItemByDestinationPath(importItems, IsMetadataAssetPath);
         }
 
+        /// <summary>
+        /// Whether the package actually ships compiled assemblies, read from the
+        /// import items rather than the embedded metadata.
+        ///
+        /// The exporter computes its asset breakdown from the project assets it was
+        /// asked to export, which happens before the installer runtime, bundled
+        /// packages, and obfuscated assemblies are injected into the archive. So a
+        /// package that ships DLLs can still carry a breakdown with no Assembly
+        /// entry. The import item list is the archive's real contents.
+        /// </summary>
+        /// <returns>null when the item list is unavailable, so callers can avoid
+        /// making a claim either way.</returns>
+        public static bool? ContainsAssemblies(System.Array importItems)
+        {
+            if (_destinationAssetPathField == null || importItems == null || importItems.Length == 0)
+                return null;
+
+            foreach (var item in importItems)
+            {
+                if (item == null) continue;
+
+                string destinationPath = GetFieldValue<string>(item, _destinationAssetPathField);
+                if (!string.IsNullOrEmpty(destinationPath) &&
+                    destinationPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static object FindItemByDestinationPath(System.Array importItems, Func<string, bool> predicate)
         {
             if (_destinationAssetPathField == null || predicate == null || importItems == null)

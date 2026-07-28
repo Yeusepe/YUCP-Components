@@ -224,8 +224,15 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(profile.trackingAcquireResponseSeconds, Is.InRange(0.005f, 0.1f));
                 Assert.That(profile.speechHangoverSeconds, Is.InRange(0.04f, 0.4f));
                 Assert.That(profile.speechLiveliness, Is.EqualTo(1f).Within(1e-6f));
-                foreach (var fieldName in VersionSixUnitFields)
-                    Assert.That(UnitField(profile, fieldName), Is.InRange(0f, 1f), fieldName);
+                for (var index = 0; index < VersionSixUnitFields.Length; index++)
+                {
+                    var fieldName = VersionSixUnitFields[index];
+                    var expected = index % 2 == 0
+                        ? 0f
+                        : MaximumStyleStrength(fieldName);
+                    Assert.That(UnitField(profile, fieldName),
+                        Is.EqualTo(expected).Within(1e-6f), fieldName);
+                }
 
                 profile.speechHangoverSeconds = -2f;
                 InvokeOnValidate(profile);
@@ -255,7 +262,8 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(Sections, Does.Contain(AdvancedVisemeTuning.Section(control)),
                     control.ToString());
                 Assert.That(AdvancedVisemeTuning.DefaultValue(null, control),
-                    Is.InRange(0f, 1f), control.ToString());
+                    Is.EqualTo(AdvancedVisemeTuning.SliderDefault).Within(1e-7f),
+                    control + " must place the current behavior at the radial midpoint.");
             }
 
             foreach (var section in Sections)
@@ -269,8 +277,10 @@ namespace YUCP.Components.Editor.Tests
                     AdvancedVisemeTuning.Section(control) == AdvancedVisemeTuningMenuSections.Speech),
                 Is.EqualTo(8), "Speech must fit exactly in VRChat's eight-control menu.");
 
+            // The simple controls sit on the menu ROOT next to the Advanced
+            // submenu, so they may use at most MaxControlsPerMenu - 1 slots.
             Assert.That(AdvancedVisemeTuning.SimpleControls.Count,
-                Is.InRange(1, AdvancedVisemeRuntimeMenuBuilder.MaxControlsPerMenu));
+                Is.InRange(1, AdvancedVisemeRuntimeMenuBuilder.MaxControlsPerMenu - 1));
             Assert.That(AdvancedVisemeTuning.SimpleControls, Is.Unique);
             Assert.That(AdvancedVisemeTuning.SimpleControls,
                 Has.All.Matches<AdvancedVisemeTuningControl>(control =>
@@ -367,16 +377,26 @@ namespace YUCP.Components.Editor.Tests
             {
                 foreach (var control in AdvancedVisemeTuning.Controls)
                 {
-                    var expected = AdvancedVisemeTuning.IsCenteredControl(control)
-                        ? 0.5f
-                        : control == AdvancedVisemeTuningControl.QuietMotion
-                            ? 0.55f
-                            : control == AdvancedVisemeTuningControl.SpeechLiveliness
-                                ? 0.5f
-                                : 1f;
                     Assert.That(AdvancedVisemeTuning.DefaultValue(profile, control),
-                        Is.EqualTo(expected).Within(1e-6f), control.ToString());
+                        Is.EqualTo(0.5f).Within(1e-6f), control.ToString());
+                    var range = AdvancedVisemeTuning.Range(profile, control);
+                    Assert.That(AdvancedVisemeTuning.Evaluate(profile, control, 0.5f),
+                        Is.EqualTo(AdvancedVisemeTuning.ConfiguredValue(profile, control))
+                            .Within(1e-6f),
+                        control + " must recover the profile exactly at 50%." );
+                    Assert.That(range.maximum - range.minimum,
+                        Is.GreaterThanOrEqualTo(0.5f),
+                        control + " needs visibly separated 0% and 100% endpoints.");
                 }
+
+                Assert.That(AdvancedVisemeTuning.SimpleLabel(
+                    AdvancedVisemeTuningControl.SpeechMotion), Is.EqualTo("Exaggeration"));
+                Assert.That(AdvancedVisemeTuning.Evaluate(profile,
+                        AdvancedVisemeTuningControl.SpeechMotion, 0f), Is.Zero);
+                Assert.That(AdvancedVisemeTuning.Evaluate(profile,
+                        AdvancedVisemeTuningControl.SpeechMotion, 0.5f), Is.EqualTo(1f));
+                Assert.That(AdvancedVisemeTuning.Evaluate(profile,
+                        AdvancedVisemeTuningControl.SpeechMotion, 1f), Is.EqualTo(2f));
             }
             finally
             {
@@ -445,20 +465,21 @@ namespace YUCP.Components.Editor.Tests
 
                 Assert.That(root, Is.Not.Null);
                 Assert.That(AssetDatabase.GetAssetPath(root), Is.EqualTo(assetPath));
-                Assert.That(root.controls, Has.Count.EqualTo(2));
-                Assert.That(root.controls, Has.All.Matches<VRCExpressionsMenu.Control>(control =>
-                    control.type == VRCExpressionsMenu.Control.ControlType.SubMenu &&
-                    control.subMenu != null));
+                // Simple controls are radials directly on the root; only
+                // "Advanced" is a submenu there.
+                Assert.That(root.controls, Has.Count.EqualTo(
+                    AdvancedVisemeTuning.SimpleControls.Count + 1));
+                Assert.That(root.controls.Count(control =>
+                        control.type == VRCExpressionsMenu.Control.ControlType.SubMenu),
+                    Is.EqualTo(1));
 
-                var simple = root.controls.Single(control => control.name == "Simple").subMenu;
                 var advanced = root.controls.Single(control => control.name == "Advanced").subMenu;
-                Assert.That(simple.controls, Has.Count.EqualTo(
-                    AdvancedVisemeTuning.SimpleControls.Count));
+                Assert.That(advanced, Is.Not.Null);
                 Assert.That(advanced.controls, Has.Count.EqualTo(Sections.Length));
 
                 foreach (var tuningControl in AdvancedVisemeTuning.SimpleControls)
                 {
-                    var radial = simple.controls.Single(control =>
+                    var radial = root.controls.Single(control =>
                         control.name == AdvancedVisemeTuning.SimpleLabel(tuningControl));
                     Assert.That(radial.type,
                         Is.EqualTo(VRCExpressionsMenu.Control.ControlType.RadialPuppet));
@@ -589,7 +610,7 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void GeneratedTuningInputsAreSavedLocalOnlyFloatsWithExactDefaults()
+        public void GeneratedTuningInputsAreSavedFloatsCenteredAtCurrentBehavior()
         {
             var fixture = BuildGraph(
                 AdvancedVisemeTuningMenuSections.All,
@@ -618,9 +639,12 @@ namespace YUCP.Components.Editor.Tests
                     Assert.That(generated[name].networkSynced, Is.False,
                         control + " must not consume eight synced bits.");
                     Assert.That(generated[name].defaultValue, Is.EqualTo(
-                        AdvancedVisemeTuning.DefaultValue(fixture.profile, control)).Within(1e-6f),
+                        AdvancedVisemeTuning.SliderDefault).Within(1e-6f),
                         control.ToString());
                     Assert.That(fixture.result.externalParameters, Does.Contain(name));
+                    Assert.That(fixture.result.effectiveTuningParameters[control],
+                        Is.Not.EqualTo(name),
+                        control + " needs an internal centered response mapping.");
                 }
 
                 var controllerParameters = fixture.result.controller.parameters
@@ -635,6 +659,37 @@ namespace YUCP.Components.Editor.Tests
             finally
             {
                 fixture.Dispose();
+            }
+        }
+
+        [Test]
+        public void ExaggerationSpansZeroToDoubleAndSaturatesAtAuthoredMotion()
+        {
+            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
+            try
+            {
+                var control = AdvancedVisemeTuningControl.SpeechMotion;
+                Assert.That(AdvancedVisemeTuning.Evaluate(profile, control, 0f),
+                    Is.Zero);
+                Assert.That(AdvancedVisemeTuning.Evaluate(profile, control, 0.5f),
+                    Is.EqualTo(1f));
+                Assert.That(AdvancedVisemeTuning.Evaluate(profile, control, 1f),
+                    Is.EqualTo(2f));
+
+                foreach (var speechGain in new[] { 0f, 0.1f, 0.55f, 1f })
+                {
+                    Assert.That(AdvancedVisemeMath.ExaggeratedSpeechGain(
+                            speechGain, 0f), Is.Zero);
+                    Assert.That(AdvancedVisemeMath.ExaggeratedSpeechGain(
+                            speechGain, 1f), Is.EqualTo(speechGain).Within(1e-7f));
+                    Assert.That(AdvancedVisemeMath.ExaggeratedSpeechGain(
+                            speechGain, 2f),
+                        Is.EqualTo(Mathf.Min(1f, 2f * speechGain)).Within(1e-7f));
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(profile);
             }
         }
 
@@ -704,12 +759,13 @@ namespace YUCP.Components.Editor.Tests
                     Assert.That(parameters[name].networkSynced, Is.False, name);
                 }
 
-                Assert.That(localOnly.result.tuningSyncBits, Is.Zero);
-                Assert.That(localOnly.result.tuningSyncDataParameter, Is.Null.Or.Empty);
-                Assert.That(localOnly.result.tuningSyncFocusParameter, Is.Null.Or.Empty);
-                Assert.That(localOnly.result.tuningSyncIndexParameters, Is.Empty);
+                Assert.That(localOnly.result.tuningSyncBits, Is.EqualTo(13),
+                    "Legacy LocalOnly data must migrate to the mandatory compact remote bus.");
+                Assert.That(localOnly.result.tuningSyncDataParameter, Is.Not.Null.And.Not.Empty);
+                Assert.That(localOnly.result.tuningSyncFocusParameter, Is.Not.Null.And.Not.Empty);
+                Assert.That(localOnly.result.tuningSyncIndexParameters, Has.Count.EqualTo(5));
                 Assert.That(localOnly.result.parameters.parameters.Any(parameter =>
-                    parameter.name.Contains("/_TuningSync/")), Is.False);
+                    parameter.name.Contains("/_TuningSync/")), Is.True);
 
                 var compactTrees = AssetDatabase.LoadAllAssetsAtPath(compact.controllerPath)
                     .OfType<BlendTree>().Count();
@@ -745,7 +801,7 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(receiverCopy.destMin, Is.Zero);
                 Assert.That(receiverCopy.destMax, Is.EqualTo(1f));
                 Assert.That(localOnly.result.controller.layers.Any(layer =>
-                    layer.name == "YUCP AVR Compact Tuning Sync"), Is.False);
+                    layer.name == "YUCP AVR Compact Tuning Sync"), Is.True);
             }
             finally
             {
@@ -951,26 +1007,20 @@ namespace YUCP.Components.Editor.Tests
                     var trees = AssetDatabase.LoadAllAssetsAtPath(fixture.controllerPath)
                         .OfType<BlendTree>().ToArray();
                     var prefix = fixture.component.NormalizedPrefix;
-                    var lead = prefix + "/_Internal/Speech/RenderLead";
                     var trackingBlend = prefix + "/Speech/TrackingBlend";
-                    var liveliness = fixture.result.tuningParameters[
+                    var liveliness = fixture.result.effectiveTuningParameters[
                         AdvancedVisemeTuningControl.SpeechLiveliness];
 
-                    var leadGate = trees.SingleOrDefault(tree =>
-                        tree.name == $"Scale {liveliness} by inverse {trackingBlend}");
-                    Assert.That(leadGate, Is.Not.Null, beta ? "Beta" : "Normal");
-                    Assert.That(leadGate.blendParameter, Is.EqualTo(trackingBlend));
-                    Assert.That(leadGate.children.Select(child => child.threshold),
-                        Is.EqualTo(new[] { 0f, 1f }));
-
                     var renderVector = trees.SingleOrDefault(tree =>
-                        tree.name == "Speech-liveliness viseme render vector");
-                    var articulation = trees.SingleOrDefault(tree =>
-                        tree.name == "Speech-liveliness articulation vector");
+                        tree.name == "Speech character simplex");
+                    var handoff = trees.SingleOrDefault(tree =>
+                        tree.name == "Styled speech to tracked observer handoff");
                     Assert.That(renderVector, Is.Not.Null);
-                    Assert.That(articulation, Is.Not.Null);
-                    Assert.That(renderVector.blendParameter, Is.EqualTo(lead));
-                    Assert.That(articulation.blendParameter, Is.EqualTo(lead));
+                    Assert.That(handoff, Is.Not.Null);
+                    Assert.That(renderVector.blendParameter, Is.EqualTo(liveliness));
+                    Assert.That(renderVector.children.Select(child => child.threshold),
+                        Is.EqualTo(new[] { -1f, 0f, 1f }));
+                    Assert.That(handoff.blendParameter, Is.EqualTo(trackingBlend));
                     if (beta)
                     {
                         Assert.That(trees.Any(tree => tree.name.EndsWith(
@@ -1053,7 +1103,7 @@ namespace YUCP.Components.Editor.Tests
                 }
 
                 var visemeIndex = internalPrefix + "/Viseme/Index";
-                var stability = fixture.result.tuningParameters[
+                var stability = fixture.result.effectiveTuningParameters[
                     AdvancedVisemeTuningControl.SilenceStability];
                 var history = internalPrefix + "/Speech/Hangover/History";
                 var historyTree = trees.SingleOrDefault(tree =>
@@ -1067,13 +1117,16 @@ namespace YUCP.Components.Editor.Tests
                     tree.name == "Vector silence hold strength");
                 var historyGate = trees.SingleOrDefault(tree =>
                     tree.name == "Vector silence hold history");
+                var observerGate = trees.SingleOrDefault(tree =>
+                    tree.name == "Vector compact transient-silence hold");
                 Assert.That(gate, Is.Not.Null,
                     "All transient-silence lanes must share one vector router.");
                 Assert.That(gate.blendParameter, Is.EqualTo(visemeIndex));
                 Assert.That(strengthGate, Is.Not.Null);
                 Assert.That(strengthGate.blendParameter, Is.EqualTo(stability));
                 Assert.That(strengthGate.children.Select(child => child.threshold),
-                    Is.EquivalentTo(new[] { 0f, 0.5f, 1f }));
+                    Is.EquivalentTo(new[] { 0f, 0.5f }),
+                    "The upper half changes release duration; hold authority is already full at center.");
                 Assert.That(historyGate, Is.Not.Null);
                 Assert.That(historyGate.blendParameter, Is.EqualTo(history));
                 Assert.That(historyGate.children.Select(child => child.threshold),
@@ -1082,20 +1135,18 @@ namespace YUCP.Components.Editor.Tests
                         AdvancedVisemeMath.SpeechHistoryHoldStart,
                         AdvancedVisemeMath.SpeechHistoryHoldFull
                     }));
+                Assert.That(observerGate, Is.Not.Null,
+                    "The exact observer should consume the factored update authority once.");
+                Assert.That(observerGate.blendParameter,
+                    Is.EqualTo(internalPrefix + "/Speech/Hangover/UpdateAuthority"));
 
-                for (var viseme = 0; viseme < VisemeReconstructionProfile.VisemeCount; viseme++)
-                {
-                    var raw = internalPrefix + $"/Viseme/{viseme}/Raw";
-                    var fast = internalPrefix + $"/Viseme/{viseme}/Fast";
-                    Assert.That(WritesParameter(gate, fast), Is.True,
-                        $"The shared router does not publish viseme {viseme}.");
-                    Assert.That(UsesParameter(gate, raw), Is.True,
-                        $"Viseme {viseme} bypasses the release observer.");
-                }
+                Assert.That(DescendantAnimationClips(observerGate)
+                        .SelectMany(AnimationUtility.GetCurveBindings)
+                        .Any(binding => binding.type == typeof(Animator)),
+                    Is.True,
+                    "The factored observer router must retain animated-parameter writes after optimization.");
 
-                var voiceGainBase = internalPrefix + "/Voice/GainBase";
                 Assert.That(WritesParameter(gate, talking), Is.True);
-                Assert.That(WritesParameter(gate, voiceGainBase), Is.True);
             }
             finally
             {
@@ -2374,6 +2425,17 @@ namespace YUCP.Components.Editor.Tests
         private static float UnitField(VisemeReconstructionProfile profile, string name)
         {
             return (float)typeof(VisemeReconstructionProfile).GetField(name).GetValue(profile);
+        }
+
+        private static float MaximumStyleStrength(string name)
+        {
+            if (name == nameof(VisemeReconstructionProfile.remoteTrackingTrust))
+                return 1f;
+            if (name == nameof(VisemeReconstructionProfile.authoredResidualDetail) ||
+                name == nameof(VisemeReconstructionProfile.hiddenPhoneStrength) ||
+                name == nameof(VisemeReconstructionProfile.hiddenDetailStrength))
+                return 1.5f;
+            return 2f;
         }
 
         private static void SetUnitField(

@@ -902,13 +902,28 @@ namespace YUCP.Importer.Editor.PackageManager
             return parts.Count > 0 ? string.Join(" · ", parts) : null;
         }
 
+        /// <summary>
+        /// A license requirement is only actionable when it names something the
+        /// verification flow can actually check ownership against. A packageId on
+        /// its own is just an identifier — gating the import on it turns "Import"
+        /// into "Verify and Import" for packages that were exported without any
+        /// storefront or Discord entitlement configured, and the verification that
+        /// follows has nothing to verify and always fails.
+        /// </summary>
+        private static bool IsVerifiableLicenseRequirement(LicensePackageRequirement requirement)
+        {
+            return requirement != null &&
+                !string.IsNullOrWhiteSpace(requirement.packageId) &&
+                (!string.IsNullOrWhiteSpace(requirement.productId) ||
+                 !string.IsNullOrWhiteSpace(requirement.gumroadPermalink) ||
+                 !string.IsNullOrWhiteSpace(requirement.jinxxyProductId) ||
+                 !string.IsNullOrWhiteSpace(requirement.discordRoleId));
+        }
+
         private LicensePackageRequirement GetNextUnverifiedLicenseRequirement()
         {
             return _currentMetadata?.licensePackages?
-                .FirstOrDefault(requirement =>
-                    requirement != null &&
-                    !string.IsNullOrWhiteSpace(
-                        requirement.packageId));
+                .FirstOrDefault(IsVerifiableLicenseRequirement);
         }
 
         private bool RequiresVerificationBeforeImport()
@@ -934,7 +949,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 return "Next";
             }
 
-            return RequiresVerificationBeforeImport() ? "Verify and Import" : "Import";
+            // Only the alias bootstrap flow above can actually verify entitlement.
+            // A direct .unitypackage carrying a license requirement is refused
+            // outright further down (it needs the product bootstrap), so promising
+            // "Verify and Import" here would invite a click that cannot succeed.
+            return RequiresVerificationBeforeImport() ? "Requires Creator Companion" : "Import";
         }
 
         private void RefreshPrimaryImportButton()
@@ -1299,13 +1318,25 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             var chips = new List<string>();
 
-            bool hasAssetBreakdown = _currentMetadata?.assetBreakdown != null && _currentMetadata.assetBreakdown.Count > 0;
-            bool hasAssemblies = hasAssetBreakdown && _currentMetadata.assetBreakdown.Any(ab =>
-                string.Equals(ab.type, "Assembly", StringComparison.OrdinalIgnoreCase));
+            // Prefer the archive's real file list. The embedded breakdown is written
+            // before the installer runtime and bundled packages are injected, so it
+            // under-reports assemblies and would otherwise claim "No DLLs" on a
+            // package that ships them.
+            bool? hasAssemblies = PackageMetadataExtractor.ContainsAssemblies(
+                _allImportItems ?? _currentImportItems);
 
-            if (hasAssetBreakdown)
+            if (!hasAssemblies.HasValue && _currentMetadata?.assetBreakdown != null &&
+                _currentMetadata.assetBreakdown.Any(ab =>
+                    string.Equals(ab.type, "Assembly", StringComparison.OrdinalIgnoreCase)))
             {
-                chips.Add(hasAssemblies ? "Contains DLLs" : "No DLLs");
+                // Without the item list only the positive claim is supportable:
+                // the breakdown can prove DLLs are present, never that they aren't.
+                hasAssemblies = true;
+            }
+
+            if (hasAssemblies.HasValue)
+            {
+                chips.Add(hasAssemblies.Value ? "Contains DLLs" : "No DLLs");
             }
 
             if (_currentMetadata?.dependencies != null && _currentMetadata.dependencies.Count > 0)

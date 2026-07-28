@@ -3490,7 +3490,8 @@ namespace YUCP.Components.Editor.Tests
                 component.GetInstanceID());
             var previousMode = SessionState.GetInt(modeKey, 0);
             SessionState.SetInt(modeKey, 0);
-            var editor = UnityEditor.Editor.CreateEditor(component);
+            var editor = (AdvancedVisemeReconstructorDataEditor)
+                UnityEditor.Editor.CreateEditor(component);
             try
             {
                 var root = editor.CreateInspectorGUI();
@@ -3674,9 +3675,65 @@ namespace YUCP.Components.Editor.Tests
             Assert.That(AdvancedVisemeReconstructorDataEditor
                 .ReactionSpeedFromSeconds(0.006f), Is.EqualTo(1f).Within(1e-6f));
             Assert.That(AdvancedVisemeReconstructorDataEditor
+                .ReactionSpeedFromSeconds(0.017f), Is.EqualTo(0.5f).Within(1e-6f));
+            Assert.That(AdvancedVisemeReconstructorDataEditor
                 .PauseStabilityFromSeconds(0.04f), Is.Zero.Within(1e-6f));
             Assert.That(AdvancedVisemeReconstructorDataEditor
                 .PauseStabilityFromSeconds(0.4f), Is.EqualTo(1f).Within(1e-6f));
+            Assert.That(AdvancedVisemeReconstructorDataEditor
+                .PauseStabilityFromSeconds(0.16f), Is.EqualTo(0.5f).Within(1e-6f));
+
+            Assert.That(AdvancedVisemeReconstructorDataEditor
+                .CenteredLinearToSlider(1f, 0f, 1f, 2f),
+                Is.EqualTo(0.5f).Within(1e-6f));
+            Assert.That(AdvancedVisemeReconstructorDataEditor
+                .SliderToCenteredLinear(0f, 0f, 1f, 2f), Is.Zero);
+            Assert.That(AdvancedVisemeReconstructorDataEditor
+                .SliderToCenteredLinear(0.5f, 0f, 1f, 2f), Is.EqualTo(1f));
+            Assert.That(AdvancedVisemeReconstructorDataEditor
+                .SliderToCenteredLinear(1f, 0f, 1f, 2f), Is.EqualTo(2f));
+        }
+
+        [Test]
+        public void SimpleInspectorDisplaysEveryCurrentDefaultAtFiftyPercent()
+        {
+            var gameObject = new GameObject("Advanced Viseme Centered Simple UI Test");
+            var component = gameObject.AddComponent<AdvancedVisemeReconstructorData>();
+            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
+            component.profile = profile;
+            var modeKey = AdvancedVisemeReconstructorDataEditor.InspectorModeSessionKey(
+                component.GetInstanceID());
+            var previousMode = SessionState.GetInt(modeKey, 0);
+            SessionState.SetInt(modeKey, 0);
+            var editor = UnityEditor.Editor.CreateEditor(component);
+            try
+            {
+                var root = editor.CreateInspectorGUI();
+                foreach (var name in new[]
+                         {
+                             "simple-speech-movement",
+                             "simple-speech-liveliness",
+                             "simple-quiet-speech",
+                             "simple-reaction-speed",
+                             "simple-pause-stability",
+                             "simple-pronunciation-help",
+                             "simple-face-tracking-priority",
+                             "simple-tongue-motion"
+                         })
+                {
+                    var slider = UQueryExtensions.Q<Slider>(root, name);
+                    Assert.That(slider, Is.Not.Null, name);
+                    Assert.That(slider.value, Is.EqualTo(0.5f).Within(1e-6f),
+                        name + " must show the current profile at 50%." );
+                }
+            }
+            finally
+            {
+                SessionState.SetInt(modeKey, previousMode);
+                UnityEngine.Object.DestroyImmediate(editor);
+                UnityEngine.Object.DestroyImmediate(profile);
+                UnityEngine.Object.DestroyImmediate(gameObject);
+            }
         }
 
         [Test]
@@ -3690,7 +3747,8 @@ namespace YUCP.Components.Editor.Tests
                 component.GetInstanceID());
             var previousMode = SessionState.GetInt(modeKey, 0);
             SessionState.SetInt(modeKey, 0);
-            var editor = UnityEditor.Editor.CreateEditor(component);
+            var editor = (AdvancedVisemeReconstructorDataEditor)
+                UnityEditor.Editor.CreateEditor(component);
             try
             {
                 var untouchedBilabialAssist = profile.bilabialAssistStrength;
@@ -3706,14 +3764,28 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(liveliness.enabledSelf, Is.True);
                 Assert.That(response.enabledSelf, Is.True);
                 Assert.That(stability.enabledSelf, Is.True);
+                Assert.That(movement.value, Is.EqualTo(0.5f).Within(1e-6f));
+                Assert.That(liveliness.value, Is.EqualTo(0.5f).Within(1e-6f));
+                Assert.That(response.value, Is.EqualTo(0.5f).Within(1e-6f));
+                Assert.That(stability.value, Is.EqualTo(0.5f).Within(1e-6f));
 
-                movement.value = 0.37f;
-                liveliness.value = 0.82f;
-                response.value = 1f;
-                stability.value = 0f;
+                Assert.That(editor.ApplySimpleProfileValue(
+                    "speechMotionStrength", 0.37f,
+                    value => AdvancedVisemeReconstructorDataEditor
+                        .SliderToCenteredLinear(value, 0f, 1f, 2f)), Is.True);
+                Assert.That(editor.ApplySimpleProfileValue(
+                    "speechLiveliness", 0.82f,
+                    value => AdvancedVisemeReconstructorDataEditor
+                        .SliderToCenteredLinear(value, -1f, 0f, 1f)), Is.True);
+                Assert.That(editor.ApplySimpleProfileValue(
+                    "visemeResponseSeconds", 1f,
+                    AdvancedVisemeReconstructorDataEditor.SecondsFromReactionSpeed), Is.True);
+                Assert.That(editor.ApplySimpleProfileValue(
+                    "speechHangoverSeconds", 0f,
+                    AdvancedVisemeReconstructorDataEditor.SecondsFromPauseStability), Is.True);
 
-                Assert.That(profile.speechMotionStrength, Is.EqualTo(0.37f).Within(1e-6f));
-                Assert.That(profile.speechLiveliness, Is.EqualTo(0.82f).Within(1e-6f));
+                Assert.That(profile.speechMotionStrength, Is.EqualTo(0.74f).Within(1e-6f));
+                Assert.That(profile.speechLiveliness, Is.EqualTo(0.64f).Within(1e-6f));
                 Assert.That(profile.visemeResponseSeconds, Is.EqualTo(0.006f).Within(1e-6f));
                 Assert.That(profile.speechHangoverSeconds, Is.EqualTo(0.04f).Within(1e-6f));
                 Assert.That(profile.bilabialAssistStrength,
@@ -3738,7 +3810,8 @@ namespace YUCP.Components.Editor.Tests
                 component.GetInstanceID());
             var previousMode = SessionState.GetInt(modeKey, 0);
             SessionState.SetInt(modeKey, 0);
-            var editor = UnityEditor.Editor.CreateEditor(component);
+            var editor = (AdvancedVisemeReconstructorDataEditor)
+                UnityEditor.Editor.CreateEditor(component);
             string createdPath = null;
             try
             {
@@ -3747,13 +3820,16 @@ namespace YUCP.Components.Editor.Tests
                 var liveliness = UQueryExtensions.Q<Slider>(root, "simple-speech-liveliness");
                 Assert.That(liveliness.enabledSelf, Is.True);
 
-                liveliness.value = 0.82f;
+                Assert.That(editor.ApplySimpleProfileValue(
+                    "speechLiveliness", 0.82f,
+                    value => AdvancedVisemeReconstructorDataEditor
+                        .SliderToCenteredLinear(value, -1f, 0f, 1f)), Is.True);
 
                 Assert.That(component.profile, Is.Not.Null);
                 createdPath = AssetDatabase.GetAssetPath(component.profile);
                 Assert.That(createdPath, Does.StartWith("Assets/YUCP/AdvancedVisemeProfiles/"));
                 Assert.That(component.profile.speechLiveliness,
-                    Is.EqualTo(0.82f).Within(1e-6f));
+                    Is.EqualTo(0.64f).Within(1e-6f));
                 Assert.That(component.profile.speechMotionStrength,
                     Is.EqualTo(1f).Within(1e-6f));
                 Assert.That(component.profile.visemeResponseSeconds,

@@ -23,8 +23,10 @@ namespace YUCP.Components.Editor
 
         private const float MinimumVisemeResponseSeconds = 0.006f;
         private const float MaximumVisemeResponseSeconds = 0.12f;
+        private const float DefaultVisemeResponseSeconds = 0.017f;
         private const float MinimumSpeechHangoverSeconds = 0.04f;
         private const float MaximumSpeechHangoverSeconds = 0.4f;
+        private const float DefaultSpeechHangoverSeconds = 0.16f;
 
         private static readonly AdvancedVisemeTrackingInputs[] SimpleTrackingModes =
         {
@@ -85,7 +87,6 @@ namespace YUCP.Components.Editor
         private SerializedProperty createTuningMenuProp;
         private SerializedProperty tuningMenuPathProp;
         private SerializedProperty saveTuningValuesProp;
-        private SerializedProperty tuningSyncModeProp;
         private SerializedProperty tuningMenuSectionsProp;
         private SerializedProperty verboseLoggingProp;
 
@@ -101,7 +102,6 @@ namespace YUCP.Components.Editor
         private PopupField<string> simpleTrackingPopup;
         private Toggle simpleNaturalTransitionsToggle;
         private Toggle simpleKeepSpeechClearToggle;
-        private Toggle simpleShareTuningToggle;
         private Label simpleTrackingStatusLabel;
         private Label simpleMenuStatusLabel;
         private Slider simpleSpeechMovementSlider;
@@ -159,7 +159,6 @@ namespace YUCP.Components.Editor
             createTuningMenuProp = serializedObject.FindProperty("createTuningMenu");
             tuningMenuPathProp = serializedObject.FindProperty("tuningMenuPath");
             saveTuningValuesProp = serializedObject.FindProperty("saveTuningValues");
-            tuningSyncModeProp = serializedObject.FindProperty("tuningSyncMode");
             tuningMenuSectionsProp = serializedObject.FindProperty("tuningMenuSections");
             verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
 
@@ -234,32 +233,81 @@ namespace YUCP.Components.Editor
         {
             var clamped = Mathf.Clamp(seconds,
                 MinimumVisemeResponseSeconds, MaximumVisemeResponseSeconds);
-            return Mathf.Clamp01(Mathf.Log(MaximumVisemeResponseSeconds / clamped) /
-                                 Mathf.Log(MaximumVisemeResponseSeconds /
-                                           MinimumVisemeResponseSeconds));
+            if (clamped >= DefaultVisemeResponseSeconds)
+                return 0.5f * Mathf.Log(
+                    MaximumVisemeResponseSeconds / clamped) /
+                    Mathf.Log(MaximumVisemeResponseSeconds /
+                              DefaultVisemeResponseSeconds);
+            return 0.5f + 0.5f * Mathf.Log(
+                DefaultVisemeResponseSeconds / clamped) /
+                Mathf.Log(DefaultVisemeResponseSeconds /
+                          MinimumVisemeResponseSeconds);
         }
 
         internal static float SecondsFromReactionSpeed(float reactionSpeed)
         {
-            return MaximumVisemeResponseSeconds * Mathf.Pow(
-                MinimumVisemeResponseSeconds / MaximumVisemeResponseSeconds,
-                Mathf.Clamp01(reactionSpeed));
+            reactionSpeed = Mathf.Clamp01(reactionSpeed);
+            if (reactionSpeed <= 0.5f)
+                return MaximumVisemeResponseSeconds * Mathf.Pow(
+                    DefaultVisemeResponseSeconds /
+                    MaximumVisemeResponseSeconds,
+                    reactionSpeed * 2f);
+            return DefaultVisemeResponseSeconds * Mathf.Pow(
+                MinimumVisemeResponseSeconds /
+                DefaultVisemeResponseSeconds,
+                (reactionSpeed - 0.5f) * 2f);
         }
 
         internal static float PauseStabilityFromSeconds(float seconds)
         {
             var clamped = Mathf.Clamp(seconds,
                 MinimumSpeechHangoverSeconds, MaximumSpeechHangoverSeconds);
-            return Mathf.Clamp01(Mathf.Log(clamped / MinimumSpeechHangoverSeconds) /
-                                 Mathf.Log(MaximumSpeechHangoverSeconds /
-                                           MinimumSpeechHangoverSeconds));
+            if (clamped <= DefaultSpeechHangoverSeconds)
+                return 0.5f * Mathf.Log(
+                    clamped / MinimumSpeechHangoverSeconds) /
+                    Mathf.Log(DefaultSpeechHangoverSeconds /
+                              MinimumSpeechHangoverSeconds);
+            return 0.5f + 0.5f * Mathf.Log(
+                clamped / DefaultSpeechHangoverSeconds) /
+                Mathf.Log(MaximumSpeechHangoverSeconds /
+                          DefaultSpeechHangoverSeconds);
         }
 
         internal static float SecondsFromPauseStability(float pauseStability)
         {
-            return MinimumSpeechHangoverSeconds * Mathf.Pow(
-                MaximumSpeechHangoverSeconds / MinimumSpeechHangoverSeconds,
-                Mathf.Clamp01(pauseStability));
+            pauseStability = Mathf.Clamp01(pauseStability);
+            if (pauseStability <= 0.5f)
+                return MinimumSpeechHangoverSeconds * Mathf.Pow(
+                    DefaultSpeechHangoverSeconds /
+                    MinimumSpeechHangoverSeconds,
+                    pauseStability * 2f);
+            return DefaultSpeechHangoverSeconds * Mathf.Pow(
+                MaximumSpeechHangoverSeconds /
+                DefaultSpeechHangoverSeconds,
+                (pauseStability - 0.5f) * 2f);
+        }
+
+        internal static float CenteredLinearToSlider(
+            float value, float minimum, float configured, float maximum)
+        {
+            value = Mathf.Clamp(value, minimum, maximum);
+            if (value <= configured)
+                return Mathf.Approximately(configured, minimum)
+                    ? 0.5f
+                    : 0.5f * Mathf.InverseLerp(minimum, configured, value);
+            return Mathf.Approximately(maximum, configured)
+                ? 0.5f
+                : 0.5f + 0.5f * Mathf.InverseLerp(
+                    configured, maximum, value);
+        }
+
+        internal static float SliderToCenteredLinear(
+            float slider, float minimum, float configured, float maximum)
+        {
+            slider = Mathf.Clamp01(slider);
+            return slider <= 0.5f
+                ? Mathf.Lerp(minimum, configured, slider * 2f)
+                : Mathf.Lerp(configured, maximum, (slider - 0.5f) * 2f);
         }
 
         private void BuildModeSwitcher(VisualElement root)
@@ -395,17 +443,9 @@ namespace YUCP.Components.Editor
             simpleMenuOptions = new VisualElement { name = "simple-menu-options" };
             simpleMenuOptions.Add(YUCPUIToolkitHelper.CreateField(
                 saveTuningValuesProp, "Remember Avatar Menu Changes"));
-            simpleShareTuningToggle = CreateSimpleToggle(
-                "simple-share-tuning",
-                "Share Changes With Others",
-                "Uses one compact quantized channel so other players see your viseme settings.",
-                value => SetComponentEnum(
-                    tuningSyncModeProp,
-                    value
-                        ? (int)AdvancedVisemeTuningSyncMode.CompactSynced
-                        : (int)AdvancedVisemeTuningSyncMode.LocalOnly,
-                    "Change Advanced Viseme Settings Sharing"));
-            simpleMenuOptions.Add(simpleShareTuningToggle);
+            simpleMenuOptions.Add(Caption(
+                "Changes are automatically shared with other players.",
+                "simple-menu-sharing"));
             avatarControlsContent.Add(simpleMenuOptions);
             simpleMenuStatusLabel = Caption("", "simple-menu-status");
             avatarControlsContent.Add(simpleMenuStatusLabel);
@@ -514,7 +554,9 @@ namespace YUCP.Components.Editor
             tuningMenuOptions = new VisualElement { name = "tuning-menu-options" };
             tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(tuningMenuPathProp, "Menu Path"));
             tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(saveTuningValuesProp, "Save Values"));
-            tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(tuningSyncModeProp, "Share Settings"));
+            tuningMenuOptions.Add(Caption(
+                "All generated sliders are compact-synced for remote players.",
+                "tuning-sharing"));
             tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(tuningMenuSectionsProp, "Slider Groups"));
             foldout.Add(tuningMenuOptions);
             tuningMenuBudgetLabel = Caption("", "runtime-menu-budget");
@@ -599,36 +641,42 @@ namespace YUCP.Components.Editor
             simpleTongueMotionSlider = null;
 
             simpleSpeechMovementSlider = AddSimpleProfileSlider(
-                "simple-speech-movement", "Expression Strength", "speechMotionStrength", 1f,
-                value => value, value => value,
-                "How boldly speech moves the mouth. Face tracking still owns movement it actually measures.");
+                "simple-speech-movement", "Exaggeration", "speechMotionStrength", 1f,
+                value => CenteredLinearToSlider(value, 0f, 1f, 2f),
+                value => SliderToCenteredLinear(value, 0f, 1f, 2f),
+                "Boosts small and quiet mouth movements toward the full authored pose without pushing past it.");
             simpleSpeechLivelinessSlider = AddSimpleProfileSlider(
-                "simple-speech-liveliness", "Speech Liveliness", "speechLiveliness", 0f,
-                value => value, value => value,
-                "Keeps speech-only mouth shapes quick and distinct. Lower is calmer; higher is livelier. Tracked movement stays unchanged.");
+                "simple-speech-liveliness", "Snappiness", "speechLiveliness", 0f,
+                value => CenteredLinearToSlider(value, -1f, 0f, 1f),
+                value => SliderToCenteredLinear(value, -1f, 0f, 1f),
+                "Lower is soft and flowing; higher is sharp and immediate. Face tracking stays unchanged.");
             simpleQuietSpeechSlider = AddSimpleProfileSlider(
-                "simple-quiet-speech", "Quiet Speech Detail", "quietSpeechFloor", 0.55f,
-                value => value, value => value,
+                "simple-quiet-speech", "Soft Speech", "quietSpeechFloor", 0.55f,
+                value => CenteredLinearToSlider(value, 0f, 0.55f, 1f),
+                value => SliderToCenteredLinear(value, 0f, 0.55f, 1f),
                 "Keeps mouth shapes visible while speaking softly or mumbling. This does not change the microphone threshold.");
             simpleReactionSpeedSlider = AddSimpleProfileSlider(
                 "simple-reaction-speed", "Reaction Speed", "visemeResponseSeconds", 0.017f,
                 ReactionSpeedFromSeconds, SecondsFromReactionSpeed,
                 "How quickly the mouth catches each new sound. Faster is crisper; slower is softer.");
             simplePauseStabilitySlider = AddSimpleProfileSlider(
-                "simple-pause-stability", "Pause Stability", "speechHangoverSeconds", 0.16f,
+                "simple-pause-stability", "Smooth Pauses", "speechHangoverSeconds", 0.16f,
                 PauseStabilityFromSeconds, SecondsFromPauseStability,
                 "Bridges very short silent gaps between words. Higher reduces twitching, but holds the last shape a little longer.");
             simplePronunciationHelpSlider = AddSimpleProfileSlider(
-                "simple-pronunciation-help", "Pronunciation Help", "phoneticConstraintStrength", 1f,
-                value => value, value => value,
+                "simple-pronunciation-help", "Clear Consonants", "phoneticConstraintStrength", 1f,
+                value => CenteredLinearToSlider(value, 0f, 1f, 2f),
+                value => SliderToCenteredLinear(value, 0f, 1f, 2f),
                 "How strongly speech fixes closures and sharp consonants that tracking did not already measure.");
             simpleFaceTrackingPrioritySlider = AddSimpleProfileSlider(
                 "simple-face-tracking-priority", "Follow My Face", "residualMismatchFade", 1f,
-                value => value, value => value,
+                value => CenteredLinearToSlider(value, 0f, 1f, 2f),
+                value => SliderToCenteredLinear(value, 0f, 1f, 2f),
                 "How strongly measured face movement replaces matching authored mouth motion. Untracked detail stays intact.");
             simpleTongueMotionSlider = AddSimpleProfileSlider(
                 "simple-tongue-motion", "Tongue Motion", "tongueInferenceStrength", 1f,
-                value => value, value => value,
+                value => CenteredLinearToSlider(value, 0f, 1f, 2f),
+                value => SliderToCenteredLinear(value, 0f, 1f, 2f),
                 "Amount of inferred tongue motion when no real tongue measurement is available. Real tongue tracking always wins.");
         }
 
@@ -652,18 +700,31 @@ namespace YUCP.Components.Editor
             slider.SetValueWithoutNotify(Mathf.Clamp01(toSimpleValue(configured)));
             slider.RegisterValueChangedCallback(evt =>
             {
-                if (!EnsureProfileForSimpleEdit() || profileSerializedObject == null) return;
-                profileSerializedObject.UpdateIfRequiredOrScript();
-                var property = profileSerializedObject.FindProperty(propertyName);
-                if (property == null) return;
-                Undo.RecordObject(displayedProfile, "Tune Advanced Viseme Speech");
-                property.floatValue = fromSimpleValue(Mathf.Clamp01(evt.newValue));
-                profileSerializedObject.ApplyModifiedProperties();
-                EditorUtility.SetDirty(displayedProfile);
-                UpdateDynamicUI();
+                ApplySimpleProfileValue(
+                    propertyName, evt.newValue, fromSimpleValue);
             });
             simpleProfileHost.Add(slider);
             return slider;
+        }
+
+        internal bool ApplySimpleProfileValue(
+            string propertyName,
+            float sliderValue,
+            Func<float, float> fromSimpleValue)
+        {
+            if (fromSimpleValue == null ||
+                !EnsureProfileForSimpleEdit() ||
+                profileSerializedObject == null)
+                return false;
+            profileSerializedObject.UpdateIfRequiredOrScript();
+            var property = profileSerializedObject.FindProperty(propertyName);
+            if (property == null) return false;
+            Undo.RecordObject(displayedProfile, "Tune Advanced Viseme Speech");
+            property.floatValue = fromSimpleValue(Mathf.Clamp01(sliderValue));
+            profileSerializedObject.ApplyModifiedProperties();
+            EditorUtility.SetDirty(displayedProfile);
+            UpdateDynamicUI();
+            return true;
         }
 
         private float ReadProfileFloat(string propertyName, float fallbackValue)
@@ -1325,10 +1386,6 @@ namespace YUCP.Components.Editor
             simpleKeepSpeechClearToggle?.SetValueWithoutNotify(
                 fusionModeProp.enumValueIndex ==
                 (int)AdvancedVisemeFusionMode.PhoneticAssist);
-            simpleShareTuningToggle?.SetValueWithoutNotify(
-                tuningSyncModeProp.enumValueIndex ==
-                (int)AdvancedVisemeTuningSyncMode.CompactSynced);
-
             var trackingEnabled = tracking != AdvancedVisemeTrackingInputs.Disabled;
             simpleKeepSpeechClearToggle?.SetEnabled(trackingEnabled);
             if (simpleFaceRendererContainer != null)
@@ -1373,22 +1430,22 @@ namespace YUCP.Components.Editor
                         (AdvancedVisemeTuningMenuSections)tuningMenuSectionsProp.intValue;
                     var count = AdvancedVisemeTuning.Controls.Count(control =>
                         (sections & AdvancedVisemeTuning.Section(control)) != 0);
-                    var bits = tuningSyncModeProp.enumValueIndex ==
-                               (int)AdvancedVisemeTuningSyncMode.CompactSynced
-                        ? AdvancedVisemeTuning.CompactSyncTransportBits(count)
-                        : 0;
-                    simpleMenuStatusLabel.text = bits > 0
-                        ? $"Shared in {bits} synced bits"
-                        : "Local controls - 0 synced bits";
+                    var bits = AdvancedVisemeTuning
+                        .CompactSyncTransportBits(count);
+                    simpleMenuStatusLabel.text =
+                        $"Shared in {bits} synced bits";
                 }
             }
 
             RefreshSimpleProfileSlider(
-                simpleSpeechMovementSlider, "speechMotionStrength", 1f, value => value);
+                simpleSpeechMovementSlider, "speechMotionStrength", 1f,
+                value => CenteredLinearToSlider(value, 0f, 1f, 2f));
             RefreshSimpleProfileSlider(
-                simpleSpeechLivelinessSlider, "speechLiveliness", 0f, value => value);
+                simpleSpeechLivelinessSlider, "speechLiveliness", 0f,
+                value => CenteredLinearToSlider(value, -1f, 0f, 1f));
             RefreshSimpleProfileSlider(
-                simpleQuietSpeechSlider, "quietSpeechFloor", 0.55f, value => value);
+                simpleQuietSpeechSlider, "quietSpeechFloor", 0.55f,
+                value => CenteredLinearToSlider(value, 0f, 0.55f, 1f));
             RefreshSimpleProfileSlider(
                 simpleReactionSpeedSlider, "visemeResponseSeconds", 0.017f,
                 ReactionSpeedFromSeconds);
@@ -1397,13 +1454,13 @@ namespace YUCP.Components.Editor
                 PauseStabilityFromSeconds);
             RefreshSimpleProfileSlider(
                 simplePronunciationHelpSlider, "phoneticConstraintStrength", 1f,
-                value => value);
+                value => CenteredLinearToSlider(value, 0f, 1f, 2f));
             RefreshSimpleProfileSlider(
                 simpleFaceTrackingPrioritySlider, "residualMismatchFade", 1f,
-                value => value);
+                value => CenteredLinearToSlider(value, 0f, 1f, 2f));
             RefreshSimpleProfileSlider(
                 simpleTongueMotionSlider, "tongueInferenceStrength", 1f,
-                value => value);
+                value => CenteredLinearToSlider(value, 0f, 1f, 2f));
 
             var beta = reconstructionModeProp.enumValueIndex ==
                        (int)AdvancedVisemeReconstructionMode.BetaCoarticulation;
@@ -1441,10 +1498,7 @@ namespace YUCP.Components.Editor
             var sections = (AdvancedVisemeTuningMenuSections)tuningMenuSectionsProp.intValue;
             var count = AdvancedVisemeTuning.Controls.Count(control =>
                 (sections & AdvancedVisemeTuning.Section(control)) != 0);
-            var bits = tuningSyncModeProp.enumValueIndex ==
-                       (int)AdvancedVisemeTuningSyncMode.CompactSynced
-                ? AdvancedVisemeTuning.CompactSyncTransportBits(count)
-                : 0;
+            var bits = AdvancedVisemeTuning.CompactSyncTransportBits(count);
             tuningMenuBudgetLabel.text = saveTuningValuesProp.boolValue
                 ? $"{bits} synced bits / up to {count} saved sliders"
                 : $"{bits} synced bits / up to {count} session sliders";

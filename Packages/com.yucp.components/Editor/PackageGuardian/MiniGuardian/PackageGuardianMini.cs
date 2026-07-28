@@ -74,8 +74,14 @@ namespace YUCP.PackageGuardian.Mini
             if (_hasProcessedThisSession)
                 return;
 
+            // Throwing inside an asset postprocessor used to abort .yucp_disabled
+            // resolution, leaving the just-imported package unusable. pg_verify is
+            // no longer written; stale locks from older builds warn and clear.
             if (ProtectionLatchService.HasKey("pg_verify", out var verifyReason))
-                throw new InvalidOperationException($"Package verification lock active: {verifyReason}");
+            {
+                Debug.LogWarning($"[Package Guardian Mini] Clearing stale verification lock: {verifyReason}");
+                ProtectionLatchService.Clear("pg_verify");
+            }
 
             if (IsCircuitBroken())
             {

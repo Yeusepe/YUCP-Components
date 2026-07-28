@@ -35,6 +35,8 @@ namespace YUCP.Components.Editor
         private VisualElement manualContainer;
         private VisualElement validation;
         private Button previewButton;
+        private Button recordButton;
+        private Label recordLabel;
         private ProgressBar voiceMeter;
         private Label liveLabel;
         private int previousInput;
@@ -97,6 +99,22 @@ namespace YUCP.Components.Editor
             voiceMeter = new ProgressBar { title = "Voice", lowValue = 0f, highValue = 1f, value = 0f };
             voiceMeter.style.marginTop = 4;
             preview.Add(voiceMeter);
+
+            // Recording captures the exact Oculus teacher weights this session
+            // already computes together with whatever reconstruction each
+            // avatar publishes, so the two are directly comparable offline.
+            recordButton = YUCPUIToolkitHelper.CreateButton(
+                "Record Comparison", ToggleRecording,
+                YUCPUIToolkitHelper.ButtonVariant.Secondary);
+            recordButton.style.height = 26;
+            recordButton.style.marginTop = 6;
+            preview.Add(recordButton);
+
+            recordLabel = new Label(string.Empty);
+            recordLabel.style.marginTop = 3;
+            recordLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+            recordLabel.style.whiteSpace = WhiteSpace.Normal;
+            preview.Add(recordLabel);
 
             manualContainer = BuildManualControls();
             preview.Add(manualContainer);
@@ -198,6 +216,20 @@ namespace YUCP.Components.Editor
             return container;
         }
 
+        private void ToggleRecording()
+        {
+            if (VisemeTestRecorder.IsRecording)
+            {
+                var path = VisemeTestRecorder.Stop();
+                if (!string.IsNullOrEmpty(path))
+                    Debug.Log("[YUCP Viseme Test] recorded comparison -> " + path);
+            }
+            else
+            {
+                VisemeTestRecorder.Start(data);
+            }
+        }
+
         private void TogglePreview()
         {
             if (VisemeTestPreviewSession.IsRunning(data))
@@ -274,6 +306,23 @@ namespace YUCP.Components.Editor
 
             var running = VisemeTestPreviewSession.IsRunning(data);
             previewButton.text = running ? "Stop & Restore" : "Start Preview";
+            if (recordButton != null)
+            {
+                recordButton.SetEnabled(running || VisemeTestRecorder.IsRecording);
+                recordButton.text = VisemeTestRecorder.IsRecording
+                    ? "Stop Recording"
+                    : "Record Comparison";
+                if (VisemeTestRecorder.IsRecording)
+                    recordLabel.text =
+                        $"recording {VisemeTestRecorder.DurationSeconds:F1}s  " +
+                        $"({VisemeTestRecorder.FrameCount} frames)\n" +
+                        VisemeTestRecorder.SubjectSummary;
+                else if (!string.IsNullOrEmpty(VisemeTestRecorder.LastWritePath))
+                    recordLabel.text = "Saved " +
+                        System.IO.Path.GetFileName(VisemeTestRecorder.LastWritePath);
+                else
+                    recordLabel.text = string.Empty;
+            }
             var state = VisemeTestPreviewSession.GetState(data);
             if (state == null)
             {

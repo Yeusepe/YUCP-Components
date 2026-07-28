@@ -430,29 +430,26 @@ namespace YUCP.Components.PackageGuardian.Editor.Integration.ImportMonitor
                     }
                 }
 
+                // Advisory only. Package conflicts and missing dependencies are
+                // project-health findings, not entitlement enforcement, so they must
+                // never block importing: the only gate allowed to block is license
+                // verification, which is driven by the package's own metadata.
+                // The unconditional Clear also self-heals machines still carrying a
+                // hard lock written by older versions of this method.
                 string lockReason;
                 if (EvaluateVerificationLock(packageIssues, out lockReason))
                 {
-                    ProtectionLatchService.Set("pg_verify", lockReason);
-                    Debug.LogError($"[Package Guardian] Verification hard lock engaged: {lockReason}");
-
-                    EditorApplication.delayCall += () =>
-                    {
-                        EditorUtility.DisplayDialog(
-                            "Package Guardian - Verification Block",
-                            "Package verification reported critical issues. Imports and builds are blocked until resolved.",
-                            "OK"
-                        );
-                    };
+                    Debug.LogWarning(
+                        $"[Package Guardian] Package validation found critical issues: {lockReason}. " +
+                        "Importing stays available; review the issues above.");
                 }
-                else
-                {
-                    ProtectionLatchService.Clear("pg_verify");
-                }
+                ProtectionLatchService.Clear("pg_verify");
             }
             catch (Exception ex)
             {
-                ProtectionLatchService.Set("pg_verify", "validator_exception");
+                // A failure of the validator itself says nothing about the project,
+                // so it must not lock anything. Latching here used to hard-block all
+                // imports and builds whenever this method had a bug of its own.
                 Debug.LogWarning($"[Package Guardian] Failed to validate package changes: {ex.Message}");
             }
         }
