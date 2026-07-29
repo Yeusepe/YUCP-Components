@@ -607,6 +607,41 @@ namespace YUCP.Importer.Tests.Editor
         }
 
         [Test]
+        public void AvailableBrokerRefreshesRuntimeBeforeFirstRequest()
+        {
+            var bootstrap = new RecordingRuntimeBootstrap();
+            var transport = new SuccessfulTransport(
+                () => bootstrap.CallCount);
+            try
+            {
+                NativePackageBrokerClient.SetTransportForTests(transport);
+
+                NativePackageBrokerResult result =
+                    PackageLifecycleCoordinator
+                        .ExecuteBrokerWithBootstrapAsync(
+                            ValidRequest("preflight"),
+                            bootstrap,
+                            _ => { },
+                            _ => { },
+                            CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+
+                Assert.That(result.status, Is.EqualTo("succeeded"));
+                Assert.That(bootstrap.CallCount, Is.EqualTo(1));
+                Assert.That(transport.CallCount, Is.EqualTo(1));
+                Assert.That(
+                    transport.BootstrapCallCountAtExecute,
+                    Is.EqualTo(1),
+                    "TUF refresh must finish before reusing a running broker.");
+            }
+            finally
+            {
+                NativePackageBrokerClient.SetTransportForTests(null);
+            }
+        }
+
+        [Test]
         public void BrokerUnavailableBootstrapsOnceAndRetriesTheSameRequest()
         {
             var transport = new UnavailableThenSuccessfulTransport();
@@ -996,7 +1031,7 @@ namespace YUCP.Importer.Tests.Editor
         }
 
         [Test]
-        public void BootstrapFailureDoesNotRetryTheBroker()
+        public void BootstrapFailureDoesNotCallTheBroker()
         {
             var transport = new UnavailableThenSuccessfulTransport();
             var bootstrap = new RecordingRuntimeBootstrap
@@ -1026,7 +1061,7 @@ namespace YUCP.Importer.Tests.Editor
                 Assert.That(
                     failure.InnerException,
                     Is.SameAs(bootstrap.Failure));
-                Assert.That(transport.CallCount, Is.EqualTo(1));
+                Assert.That(transport.CallCount, Is.EqualTo(0));
                 Assert.That(bootstrap.CallCount, Is.EqualTo(1));
             }
             finally
@@ -1061,7 +1096,7 @@ namespace YUCP.Importer.Tests.Editor
         }
 
         [Test]
-        public void NonUnavailableBrokerFailureNeverBootstraps()
+        public void NonUnavailableBrokerFailureStillRefreshesRuntime()
         {
             var transport = new AlwaysFailingTransport("BROKER_TIMEOUT");
             var bootstrap = new RecordingRuntimeBootstrap();
@@ -1084,7 +1119,7 @@ namespace YUCP.Importer.Tests.Editor
                     failure.ErrorCode,
                     Is.EqualTo("BROKER_TIMEOUT"));
                 Assert.That(transport.CallCount, Is.EqualTo(1));
-                Assert.That(bootstrap.CallCount, Is.EqualTo(0));
+                Assert.That(bootstrap.CallCount, Is.EqualTo(1));
             }
             finally
             {
@@ -1537,6 +1572,44 @@ namespace YUCP.Importer.Tests.Editor
                     throw Failure;
                 }
                 return Task.CompletedTask;
+            }
+        }
+
+        private sealed class SuccessfulTransport
+            : INativePackageBrokerTransport
+        {
+            private readonly Func<int> _bootstrapCallCount;
+
+            internal SuccessfulTransport(Func<int> bootstrapCallCount)
+            {
+                _bootstrapCallCount = bootstrapCallCount;
+            }
+
+            internal int BootstrapCallCountAtExecute { get; private set; }
+            internal int CallCount { get; private set; }
+
+            public Task<NativePackageBrokerResult> ExecuteAsync(
+                NativePackageBrokerRequest request,
+                Action<NativePackageBrokerProgress> reportProgress,
+                CancellationToken cancellationToken)
+            {
+                CallCount++;
+                BootstrapCallCountAtExecute = _bootstrapCallCount();
+                return Task.FromResult(new NativePackageBrokerResult
+                {
+                    activeContentDigest = new string('2', 64),
+                    activePolicyVersion = "active-content-policy-v1",
+                    exitCode = 0,
+                    files =
+                        new System.Collections.Generic.List<
+                            NativePackageBrokerFile>(),
+                    operation = request.operation,
+                    runId = request.runId,
+                    schemaVersion = NativePackageBrokerClient.SchemaVersion,
+                    status = "succeeded",
+                    targetReleaseRoot = new string('1', 64),
+                    traceId = new string('b', 32),
+                });
             }
         }
 

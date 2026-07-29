@@ -812,8 +812,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static string TraceId(string traceparent)
         {
-            string[] parts = (traceparent ?? string.Empty).Split('-');
-            return parts.Length == 4 ? parts[1] : string.Empty;
+            return NativePackageBrokerClient.TraceId(traceparent);
         }
     }
 
@@ -857,6 +856,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 ValidateProgress(request, progress);
                 reportProgress?.Invoke(progress);
             }, cancellationToken);
+        }
+
+        internal static string TraceId(string traceparent)
+        {
+            string[] parts = (traceparent ?? string.Empty).Split('-');
+            return parts.Length == 4 ? parts[1] : string.Empty;
         }
 
         internal static async Task<

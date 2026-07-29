@@ -977,7 +977,50 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 throw new ArgumentNullException(nameof(runtimeBootstrap));
             }
-            NativePackageBrokerException unavailable;
+
+            bool preflight = string.Equals(
+                request.operation,
+                "preflight",
+                StringComparison.Ordinal);
+            string traceId = NativePackageBrokerClient.TraceId(
+                request.traceparent);
+            reportUserProgress?.Invoke(
+                Progress(
+                    "Preparing secure package delivery...",
+                    preflight ? 0.21f : 0.41f));
+            using (var bootstrapCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken))
+            {
+                bootstrapCancellation.CancelAfter(BrokerBootstrapTimeout);
+                try
+                {
+                    await runtimeBootstrap.EnsureAsync(
+                        traceId,
+                        bootstrapCancellation.Token);
+                }
+                catch (OperationCanceledException)
+                    when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new NativePackageBrokerException(
+                        "BROKER_BOOTSTRAP_TIMEOUT",
+                        traceId,
+                        "Secure package delivery setup timed out.");
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception failure)
+                {
+                    throw new NativePackageBrokerException(
+                        "BROKER_BOOTSTRAP_FAILED",
+                        traceId,
+                        "Secure package delivery setup failed.",
+                        failure);
+                }
+            }
+
             try
             {
                 return await NativePackageBrokerClient.ExecuteAsync(
@@ -993,48 +1036,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         StringComparison.Ordinal))
                 {
                     throw;
-                }
-                unavailable = failure;
-            }
-
-            bool preflight = string.Equals(
-                request.operation,
-                "preflight",
-                StringComparison.Ordinal);
-            reportUserProgress?.Invoke(
-                Progress(
-                    "Preparing secure package delivery...",
-                    preflight ? 0.21f : 0.41f));
-            using (var bootstrapCancellation =
-                CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken))
-            {
-                bootstrapCancellation.CancelAfter(BrokerBootstrapTimeout);
-                try
-                {
-                    await runtimeBootstrap.EnsureAsync(
-                        unavailable.TraceId,
-                        bootstrapCancellation.Token);
-                }
-                catch (OperationCanceledException)
-                    when (!cancellationToken.IsCancellationRequested)
-                {
-                    throw new NativePackageBrokerException(
-                        "BROKER_BOOTSTRAP_TIMEOUT",
-                        unavailable.TraceId,
-                        "Secure package delivery setup timed out.");
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception failure)
-                {
-                    throw new NativePackageBrokerException(
-                        "BROKER_BOOTSTRAP_FAILED",
-                        unavailable.TraceId,
-                        "Secure package delivery setup failed.",
-                        failure);
                 }
             }
 
