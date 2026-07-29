@@ -961,8 +961,9 @@ namespace YUCP.Importer.Tests.Editor
             var transport = new UnavailableThenSuccessfulTransport();
             var bootstrap = new RecordingRuntimeBootstrap
             {
-                Failure = new InvalidDataException(
-                    "The reviewed root is missing."),
+                Failure = new NativePackageRuntimeBootstrapException(
+                    "RUNTIME_INSTALL_FAILED",
+                    "The signed runtime repository was temporarily unavailable."),
             };
             try
             {
@@ -982,6 +983,9 @@ namespace YUCP.Importer.Tests.Editor
                 Assert.That(
                     failure.ErrorCode,
                     Is.EqualTo("BROKER_BOOTSTRAP_FAILED"));
+                Assert.That(
+                    failure.InnerException,
+                    Is.SameAs(bootstrap.Failure));
                 Assert.That(transport.CallCount, Is.EqualTo(1));
                 Assert.That(bootstrap.CallCount, Is.EqualTo(1));
             }
@@ -989,6 +993,31 @@ namespace YUCP.Importer.Tests.Editor
             {
                 NativePackageBrokerClient.SetTransportForTests(null);
             }
+        }
+
+        [Test]
+        public void BootstrapHelperFailurePreservesStructuredDiagnostic()
+        {
+            const string traceId =
+                "0123456789abcdef0123456789abcdef";
+            NativePackageRuntimeBootstrapException failure =
+                Assert.Throws<NativePackageRuntimeBootstrapException>(() =>
+                    PackagedNativePackageRuntimeBootstrap
+                        .ValidateResultForTests(
+                            "{\"errorCode\":\"RUNTIME_INSTALL_FAILED\"," +
+                            "\"message\":\"refresh trusted TUF metadata: " +
+                            "repository returned 503\"," +
+                            "\"status\":\"ERROR\"," +
+                            "\"traceId\":\"" + traceId + "\"}",
+                            1,
+                            traceId));
+
+            Assert.That(
+                failure.ErrorCode,
+                Is.EqualTo("RUNTIME_INSTALL_FAILED"));
+            Assert.That(
+                failure.Message,
+                Does.Contain("repository returned 503"));
         }
 
         [Test]

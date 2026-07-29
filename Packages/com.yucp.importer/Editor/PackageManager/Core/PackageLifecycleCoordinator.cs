@@ -221,7 +221,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     lifecycleRunId);
                 string errorCode = GetDiagnosticErrorCode(exception);
                 string traceId = GetDiagnosticTraceId(exception);
-                LogInstallDiagnostic(errorCode, traceId);
+                LogInstallDiagnostic(errorCode, traceId, exception);
                 return new PackageLifecycleInstallResult
                 {
                     errorCode = errorCode,
@@ -344,7 +344,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     lifecycleRunId);
                 string errorCode = GetDiagnosticErrorCode(exception);
                 string traceId = GetDiagnosticTraceId(exception);
-                LogInstallDiagnostic(errorCode, traceId);
+                LogInstallDiagnostic(errorCode, traceId, exception);
                 return new PackageLifecycleInstallResult
                 {
                     errorCode = errorCode,
@@ -478,7 +478,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     pending.runId);
                 string errorCode = GetDiagnosticErrorCode(exception);
                 string traceId = GetDiagnosticTraceId(exception);
-                LogInstallDiagnostic(errorCode, traceId);
+                LogInstallDiagnostic(errorCode, traceId, exception);
                 return new PackageLifecycleInstallResult
                 {
                     errorCode = errorCode,
@@ -977,12 +977,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     throw;
                 }
-                catch (Exception)
+                catch (Exception failure)
                 {
                     throw new NativePackageBrokerException(
                         "BROKER_BOOTSTRAP_FAILED",
                         unavailable.TraceId,
-                        "Secure package delivery setup failed.");
+                        "Secure package delivery setup failed.",
+                        failure);
                 }
             }
 
@@ -1472,13 +1473,22 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         private static void LogInstallDiagnostic(
             string errorCode,
-            string traceId)
+            string traceId,
+            Exception exception)
         {
+            var bootstrap =
+                (exception as NativePackageBrokerException)
+                    ?.InnerException
+                as NativePackageRuntimeBootstrapException;
             Debug.LogError(JsonConvert.SerializeObject(new
             {
                 eventName = "package_install_failed",
                 errorCode,
                 traceId,
+                bootstrapErrorCode =
+                    bootstrap?.ErrorCode ?? string.Empty,
+                bootstrapDetail =
+                    bootstrap?.Message ?? string.Empty,
             }));
         }
 

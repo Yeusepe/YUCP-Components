@@ -88,7 +88,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string errorCode,
             string traceId,
             string message)
-            : base(message)
+            : this(errorCode, traceId, message, null)
+        {
+        }
+
+        internal NativePackageBrokerException(
+            string errorCode,
+            string traceId,
+            string message,
+            Exception innerException)
+            : base(message, innerException)
         {
             ErrorCode = errorCode ?? string.Empty;
             TraceId = traceId ?? string.Empty;

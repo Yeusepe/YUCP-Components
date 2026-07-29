@@ -26,6 +26,19 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal string stateRoot = string.Empty;
     }
 
+    internal sealed class NativePackageRuntimeBootstrapException : Exception
+    {
+        internal NativePackageRuntimeBootstrapException(
+            string errorCode,
+            string message)
+            : base(message)
+        {
+            ErrorCode = errorCode ?? string.Empty;
+        }
+
+        internal string ErrorCode { get; }
+    }
+
     internal sealed class PackagedNativePackageRuntimeBootstrap
         : INativePackageRuntimeBootstrap
     {
@@ -260,8 +273,48 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
                 NativePackageRuntimeResult result =
                     ParseResult(output.Result.value);
-                if (process.ExitCode != 0 ||
-                    result.schemaVersion != 1 ||
+                ValidateResult(
+                    result,
+                    process.ExitCode,
+                    traceId);
+            }
+        }
+
+        internal static void ValidateResultForTests(
+            string json,
+            int exitCode,
+            string traceId)
+        {
+            ValidateResult(ParseResult(json), exitCode, traceId);
+        }
+
+        private static void ValidateResult(
+            NativePackageRuntimeResult result,
+            int exitCode,
+            string traceId)
+        {
+            if (exitCode != 0 ||
+                string.Equals(
+                    result.status,
+                    "ERROR",
+                    StringComparison.Ordinal))
+            {
+                if (!string.Equals(
+                        result.traceId ?? string.Empty,
+                        traceId ?? string.Empty,
+                        StringComparison.Ordinal) ||
+                    !IsErrorCode(result.errorCode) ||
+                    string.IsNullOrWhiteSpace(result.message) ||
+                    result.message.Length > 4096)
+                {
+                    throw new InvalidDataException(
+                        "The package runtime bootstrap failure is invalid.");
+                }
+                throw new NativePackageRuntimeBootstrapException(
+                    result.errorCode,
+                    result.message.Trim());
+            }
+            if (result.schemaVersion != 1 ||
                     !string.Equals(
                         result.status,
                         "OK",
@@ -280,10 +333,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         result.traceId ?? string.Empty,
                         traceId ?? string.Empty,
                         StringComparison.Ordinal))
-                {
-                    throw new InvalidDataException(
-                        "Secure package delivery setup failed.");
-                }
+            {
+                throw new InvalidDataException(
+                    "Secure package delivery setup failed.");
             }
         }
 
@@ -600,6 +652,25 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 IsLowerHex(value);
         }
 
+        private static bool IsErrorCode(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) ||
+                value.Length > 64)
+            {
+                return false;
+            }
+            foreach (char character in value)
+            {
+                if (!(character >= 'A' && character <= 'Z') &&
+                    !(character >= '0' && character <= '9') &&
+                    character != '_')
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         private static bool IsLowerHex(string value)
         {
             foreach (char character in value)
@@ -621,8 +692,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public int brokerProcessId;
             public string brokerSha256 = string.Empty;
             public bool brokerStarted;
+            public string errorCode = string.Empty;
             public string helperPath = string.Empty;
             public string helperSha256 = string.Empty;
+            public string message = string.Empty;
             public string runtimeDescriptorSha256 = string.Empty;
             public int schemaVersion;
             public string status = string.Empty;
