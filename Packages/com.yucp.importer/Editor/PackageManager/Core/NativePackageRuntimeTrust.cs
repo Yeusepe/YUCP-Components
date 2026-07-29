@@ -122,6 +122,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return true;
             }
+            if (string.Equals(
+                    trustMode,
+                    WindowsAuthenticodePublisherVerifier
+                        .PinnedProductionTrustMode,
+                    StringComparison.Ordinal))
+            {
+                return string.Equals(
+                           publisherSubject,
+                           WindowsAuthenticodePublisherVerifier
+                               .PinnedProductionSubject,
+                           StringComparison.Ordinal) &&
+                       IsHttpsRepositoryUrl(metadataUrl) &&
+                       IsHttpsRepositoryUrl(targetsUrl);
+            }
             return string.Equals(
                        trustMode,
                        WindowsAuthenticodePublisherVerifier
@@ -143,6 +157,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                        Uri.UriSchemeHttp,
                        StringComparison.Ordinal) &&
                    url.IsLoopback;
+        }
+
+        private static bool IsHttpsRepositoryUrl(string value)
+        {
+            Uri url;
+            return Uri.TryCreate(value, UriKind.Absolute, out url) &&
+                   string.Equals(
+                       url.Scheme,
+                       Uri.UriSchemeHttps,
+                       StringComparison.Ordinal);
         }
     }
 
@@ -176,6 +200,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         internal const string PinnedDevelopmentTrustMode =
             "pinned-development";
+        internal const string PinnedProductionTrustMode =
+            "pinned-production";
+        internal const string PinnedProductionSubject =
+            "CN=YUCP Package Runtime";
         internal const string SystemTrustMode = "system";
         private const uint UnionChoiceFile = 1;
         private const uint UiChoiceNone = 2;
@@ -230,10 +258,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         typeof(WinTrustData)),
                     uiChoice = UiChoiceNone,
                     revocationChecks =
-                        string.Equals(
-                            trustMode,
-                            PinnedDevelopmentTrustMode,
-                            StringComparison.Ordinal)
+                        IsPinnedTrustMode(trustMode)
                             ? 0u
                             : RevokeWholeChain,
                     unionChoice = UnionChoiceFile,
@@ -320,20 +345,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             return result == 0 ||
                    (result == CertEUntrustedRoot &&
-                    string.Equals(
-                        trustMode,
-                        PinnedDevelopmentTrustMode,
-                        StringComparison.Ordinal));
+                    IsPinnedTrustMode(trustMode));
         }
 
         internal static uint ProviderFlagsForTests(string trustMode)
         {
-            return string.Equals(
-                trustMode,
-                PinnedDevelopmentTrustMode,
-                StringComparison.Ordinal)
+            return IsPinnedTrustMode(trustMode)
                 ? DisableMd2Md4
                 : DisableMd2Md4 | RevocationCheckChain;
+        }
+
+        private static bool IsPinnedTrustMode(string trustMode)
+        {
+            return string.Equals(
+                       trustMode,
+                       PinnedDevelopmentTrustMode,
+                       StringComparison.Ordinal) ||
+                   string.Equals(
+                       trustMode,
+                       PinnedProductionTrustMode,
+                       StringComparison.Ordinal);
         }
 
         // https://learn.microsoft.com/windows/win32/api/wintrust/nf-wintrust-winverifytrust

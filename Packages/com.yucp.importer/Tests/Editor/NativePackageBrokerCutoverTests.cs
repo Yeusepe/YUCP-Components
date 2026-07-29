@@ -870,6 +870,49 @@ namespace YUCP.Importer.Tests.Editor
                         badDigest,
                         "pinned-development"),
                 Is.False);
+            Assert.That(
+                WindowsAuthenticodePublisherVerifier
+                    .IsAuthenticodeResultAcceptedForTests(
+                        untrustedRoot,
+                        "pinned-production"),
+                Is.True);
+            Assert.That(
+                WindowsAuthenticodePublisherVerifier
+                    .IsAuthenticodeResultAcceptedForTests(
+                        badDigest,
+                        "pinned-production"),
+                Is.False);
+        }
+
+        [Test]
+        public void PinnedProductionPublisherRequiresCanonicalProductionIdentity()
+        {
+            var publisher = new RecordingPublisherVerifier();
+
+            Assert.DoesNotThrow(() =>
+                new NativePackageRuntimeTrust(
+                    new string('a', 64),
+                    new string('b', 64),
+                    "https://verify.creators.yucp.club/api/v2/" +
+                        "package-installer/tuf/metadata",
+                    "https://verify.creators.yucp.club/api/v2/" +
+                        "package-installer/tuf/targets",
+                    "CN=YUCP Package Runtime",
+                    new string('c', 64),
+                    "pinned-production",
+                    publisher));
+            Assert.Throws<InvalidDataException>(() =>
+                new NativePackageRuntimeTrust(
+                    new string('a', 64),
+                    new string('b', 64),
+                    "https://verify.creators.yucp.club/api/v2/" +
+                        "package-installer/tuf/metadata",
+                    "https://verify.creators.yucp.club/api/v2/" +
+                        "package-installer/tuf/targets",
+                    "CN=Different Publisher",
+                    new string('c', 64),
+                    "pinned-production",
+                    publisher));
         }
 
         [Test]
