@@ -24,14 +24,17 @@
     "vrchat.blackstartx.gesture-manager": {
       "version": "3.9.6"
     },
-    "lyuma.av3emulator": {
-      "version": "3.4.9"
-    },
-    "com.poiyomi.toon": {
-      "version": "9.2.79"
-    },
     "com.vrcfury.vrcfury": {
       "version": "1.1298.0"
+    },
+    "adjerry91.vrcft.templates": {
+      "version": "7.0.5"
+    },
+    "com.poiyomi.pro": {
+      "version": "10.0.12"
+    },
+    "lyuma.av3emulator": {
+      "version": "3.4.9"
     }
   },
   "locked": {
@@ -67,19 +70,31 @@
       "dependencies": {}
     },
     "vrchat.blackstartx.gesture-manager": {
-      "version": "3.9.6",
+      "version": "3.9.8",
       "dependencies": {
-        "com.vrchat.avatars": ">=3.5.2 <3.10.X"
+        "com.vrchat.avatars": ">=3.5.2 <3.11.X"
       }
     },
     "com.vrchat.avatars": {
-      "version": "3.10.2",
+      "version": "3.10.4",
       "dependencies": {
-        "com.vrchat.base": "3.10.2"
+        "com.vrchat.base": "3.10.4"
       }
     },
     "com.vrchat.base": {
-      "version": "3.10.2",
+      "version": "3.10.4",
+      "dependencies": {}
+    },
+    "com.vrcfury.vrcfury": {
+      "version": "1.1363.0",
+      "dependencies": {}
+    },
+    "adjerry91.vrcft.templates": {
+      "version": "7.0.5",
+      "dependencies": {}
+    },
+    "com.poiyomi.pro": {
+      "version": "10.0.12",
       "dependencies": {}
     },
     "lyuma.av3emulator": {
@@ -87,14 +102,6 @@
       "dependencies": {
         "com.vrchat.avatars": "^3.1.0"
       }
-    },
-    "com.poiyomi.toon": {
-      "version": "9.2.79",
-      "dependencies": {}
-    },
-    "com.vrcfury.vrcfury": {
-      "version": "1.1298.0",
-      "dependencies": {}
     }
   }
 }

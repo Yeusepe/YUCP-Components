@@ -41,3 +41,7 @@ Packages/com.yucp.importer/Editor/Tests.meta
 /.claude
 /.codex
 /.uloop
+/.npm-cache
+/TestResults
+**/__pycache__/
+*.pyc
