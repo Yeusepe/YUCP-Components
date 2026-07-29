@@ -1001,7 +1001,10 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             string btnText = GetPrimaryImportButtonText();
-            bool showBagIcon = btnText == "Verify and Import" || btnText == "Verify and Unlock";
+            bool showBagIcon =
+                btnText == "Sign in with YUCP" ||
+                btnText == "Verify and Import" ||
+                btnText == "Verify and Unlock";
 
             // Clear any previous content
             _importButton.text = string.Empty;

@@ -639,6 +639,10 @@ namespace YUCP.Importer.Editor.Tests
                     window.PrimaryActionLabel,
                     Is.EqualTo("Sign in with YUCP"));
                 Assert.That(button.enabledSelf, Is.True);
+                Assert.That(
+                    button.Q<Image>(className: "yucp-cta-icon"),
+                    Is.Not.Null,
+                    "The signed-out action must preserve the YUCP bag icon.");
 
                 actionField.SetValue(
                     window,
