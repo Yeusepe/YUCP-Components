@@ -374,6 +374,150 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void AliasLoadsPresentationMediaFromUnityPackageImportContent()
+        {
+            Texture2D source = null;
+            PackageMetadata metadata = null;
+            try
+            {
+                source = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                source.SetPixels(new[]
+                {
+                    Color.red,
+                    Color.green,
+                    Color.blue,
+                    Color.white,
+                });
+                source.Apply();
+                byte[] bytes = source.EncodeToPNG();
+                const string iconPath = "Documentation~/YUCP/icon.png";
+                const string galleryPath = "Documentation~/YUCP/gallery/000.png";
+                const string productLinkPath =
+                    "Documentation~/YUCP/product-links/000.png";
+                var content = new Dictionary<string, byte[]>
+                {
+                    [iconPath] = bytes,
+                    [galleryPath] = bytes,
+                    [productLinkPath] = bytes,
+                };
+                string packageJson =
+                    "{\"name\":\"com.yucp.alias.jammr\"," +
+                    "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                    "\"yucp\":{\"kind\":\"alias-v1\"," +
+                    "\"aliasId\":\"jammr\"," +
+                    "\"installStrategy\":\"server-authorized\"," +
+                    "\"importerPackage\":\"com.yucp.importer\"," +
+                    "\"media\":[{\"kind\":\"icon\",\"localPath\":\"" + iconPath +
+                    "\",\"contentType\":\"image/png\",\"byteSize\":" +
+                    bytes.Length + ",\"sha256\":\"" + Sha256(bytes) + "\"}," +
+                    "{\"kind\":\"gallery\",\"ordinal\":0,\"localPath\":\"" + galleryPath +
+                    "\",\"contentType\":\"image/png\",\"byteSize\":" +
+                    bytes.Length + ",\"sha256\":\"" + Sha256(bytes) + "\"}," +
+                    "{\"kind\":\"product-link\",\"ordinal\":0,\"label\":\"Gumroad\"," +
+                    "\"url\":\"https://creator.gumroad.com/l/jammr\",\"localPath\":\"" +
+                    productLinkPath + "\",\"contentType\":\"image/png\",\"byteSize\":" +
+                    bytes.Length + ",\"sha256\":\"" + Sha256(bytes) + "\"}]}}";
+
+                bool built = AliasPackageDiscovery.TryBuildMetadata(
+                    "com.yucp.alias.jammr",
+                    packageJson,
+                    out metadata,
+                    out string error);
+
+                Assert.That(built, Is.True, error);
+                AliasPackageMediaLoader.ApplyFromImportContent(
+                    metadata,
+                    metadata.aliasPackage,
+                    descriptor => content.TryGetValue(descriptor.localPath, out byte[] value)
+                        ? value
+                        : null);
+
+                Assert.That(metadata.icon, Is.Not.Null);
+                Assert.That(metadata.galleryImages, Has.Count.EqualTo(1));
+                Assert.That(metadata.productLinks, Has.Count.EqualTo(1));
+                Assert.That(metadata.productLinks[0].customIcon, Is.Not.Null);
+            }
+            finally
+            {
+                PackageMetadataMediaOwnership.Release(metadata);
+                if (source != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(source);
+                }
+            }
+        }
+
+        [Test]
+        public void UnityPackageMetadataExtractorLoadsModernAliasMedia()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-unitypackage-metadata-" + Guid.NewGuid().ToString("N"));
+            Texture2D source = null;
+            PackageMetadata metadata = null;
+            try
+            {
+                source = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                source.SetPixels(new[]
+                {
+                    Color.red,
+                    Color.green,
+                    Color.blue,
+                    Color.white,
+                });
+                source.Apply();
+                byte[] bytes = source.EncodeToPNG();
+                const string packageRoot = "Packages/com.yucp.alias.jammr";
+                const string iconPath = "Documentation~/YUCP/icon.png";
+                const string galleryPath = "Documentation~/YUCP/gallery/000.png";
+                string packageJson =
+                    "{\"name\":\"com.yucp.alias.jammr\"," +
+                    "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                    "\"yucp\":{\"kind\":\"alias-v1\"," +
+                    "\"aliasId\":\"jammr\"," +
+                    "\"installStrategy\":\"server-authorized\"," +
+                    "\"importerPackage\":\"com.yucp.importer\"," +
+                    "\"packageMetadata\":{\"packageName\":\"JAMMR\"}," +
+                    "\"media\":[{\"kind\":\"icon\",\"localPath\":\"" + iconPath +
+                    "\",\"contentType\":\"image/png\",\"byteSize\":" +
+                    bytes.Length + ",\"sha256\":\"" + Sha256(bytes) + "\"}," +
+                    "{\"kind\":\"gallery\",\"ordinal\":0,\"localPath\":\"" + galleryPath +
+                    "\",\"contentType\":\"image/png\",\"byteSize\":" +
+                    bytes.Length + ",\"sha256\":\"" + Sha256(bytes) + "\"}]}}";
+
+                System.Array importItems = CreateImportItems(
+                    new Dictionary<string, byte[]>
+                    {
+                        [packageRoot + "/package.json"] =
+                            System.Text.Encoding.UTF8.GetBytes(packageJson),
+                        [packageRoot + "/" + iconPath] = bytes,
+                        [packageRoot + "/" + galleryPath] = bytes,
+                    },
+                    root);
+
+                metadata = PackageMetadataExtractor.ExtractMetadataFromImportItems(
+                    importItems,
+                    "jammr.unitypackage");
+
+                Assert.That(metadata.packageName, Is.EqualTo("JAMMR"));
+                Assert.That(metadata.icon, Is.Not.Null);
+                Assert.That(metadata.galleryImages, Has.Count.EqualTo(1));
+            }
+            finally
+            {
+                PackageMetadataMediaOwnership.Release(metadata);
+                if (source != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(source);
+                }
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [Test]
         public void AliasRejectsMediaThatEscapesTheInstalledPackage()
         {
             string packageRoot = Path.Combine(
@@ -639,6 +783,10 @@ namespace YUCP.Importer.Editor.Tests
                     window.PrimaryActionLabel,
                     Is.EqualTo("Sign in with YUCP"));
                 Assert.That(button.enabledSelf, Is.True);
+                Assert.That(
+                    button.Q<Image>(className: "yucp-cta-icon"),
+                    Is.Not.Null,
+                    "The signed-out action must preserve the YUCP bag icon.");
 
                 actionField.SetValue(
                     window,
@@ -2319,6 +2467,38 @@ namespace YUCP.Importer.Editor.Tests
                     Directory.Delete(root, true);
                 }
             }
+        }
+
+        private static System.Array CreateImportItems(
+            Dictionary<string, byte[]> entries,
+            string root)
+        {
+            Type itemType = Type.GetType(
+                "UnityEditor.ImportPackageItem, UnityEditor.CoreModule");
+            Assert.That(itemType, Is.Not.Null);
+            FieldInfo destinationPath = itemType.GetField("destinationAssetPath");
+            FieldInfo sourceFolder = itemType.GetField("sourceFolder");
+            FieldInfo exportedPath = itemType.GetField("exportedAssetPath");
+            Assert.That(destinationPath, Is.Not.Null);
+            Assert.That(sourceFolder, Is.Not.Null);
+            Assert.That(exportedPath, Is.Not.Null);
+
+            System.Array items = System.Array.CreateInstance(
+                itemType,
+                entries.Count);
+            int index = 0;
+            foreach (KeyValuePair<string, byte[]> entry in entries)
+            {
+                string source = Path.Combine(root, index.ToString("D2"));
+                Directory.CreateDirectory(source);
+                File.WriteAllBytes(Path.Combine(source, "asset"), entry.Value);
+                object item = Activator.CreateInstance(itemType, true);
+                destinationPath.SetValue(item, entry.Key);
+                sourceFolder.SetValue(item, source);
+                exportedPath.SetValue(item, Path.GetFileName(entry.Key));
+                items.SetValue(item, index++);
+            }
+            return items;
         }
 
         private static string Sha256(byte[] value)

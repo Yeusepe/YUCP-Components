@@ -17,6 +17,38 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             AliasPackageContract alias,
             string packageRoot)
         {
+            ApplyFromContent(
+                metadata,
+                alias,
+                descriptor => ReadInstalledPackageContent(
+                    packageRoot,
+                    descriptor,
+                    descriptor?.kind));
+        }
+
+        /// <summary>
+        /// Applies digest-bound alias presentation media from the bytes exposed by
+        /// Unity's import transaction. This is the import-preview counterpart of
+        /// <see cref="Apply"/>, so legacy YUCP_PackageInfo handling remains separate.
+        /// </summary>
+        internal static void ApplyFromImportContent(
+            PackageMetadata metadata,
+            AliasPackageContract alias,
+            Func<AliasPackageMediaDescriptor, byte[]> readContent)
+        {
+            if (readContent == null)
+            {
+                throw new ArgumentNullException(nameof(readContent));
+            }
+
+            ApplyFromContent(metadata, alias, readContent);
+        }
+
+        private static void ApplyFromContent(
+            PackageMetadata metadata,
+            AliasPackageContract alias,
+            Func<AliasPackageMediaDescriptor, byte[]> readContent)
+        {
             if (metadata == null)
             {
                 throw new ArgumentNullException(nameof(metadata));
@@ -33,21 +65,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             try
             {
                 icon = Load(
-                    packageRoot,
                     alias.media.icon,
-                    "icon");
+                    "icon",
+                    readContent);
                 banner = Load(
-                    packageRoot,
                     alias.media.banner,
-                    "banner");
+                    "banner",
+                    readContent);
                 foreach (AliasPackageMediaDescriptor descriptor in
                     alias.media.gallery ??
                     new List<AliasPackageMediaDescriptor>())
                 {
                     gallery.Add(Load(
-                        packageRoot,
                         descriptor,
-                        "gallery"));
+                        "gallery",
+                        readContent));
                 }
                 foreach (AliasPackageMediaDescriptor descriptor in
                     alias.media.productLinks ??
@@ -58,9 +90,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         descriptor.label)
                     {
                         customIcon = Load(
-                            packageRoot,
                             descriptor,
-                            "product-link"),
+                            "product-link",
+                            readContent),
                     });
                 }
                 PackageMetadataMediaOwnership.Replace(
@@ -87,20 +119,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
 
         private static Texture2D Load(
-            string packageRoot,
             AliasPackageMediaDescriptor descriptor,
-            string expectedKind)
+            string expectedKind,
+            Func<AliasPackageMediaDescriptor, byte[]> readContent)
         {
             if (descriptor == null ||
                 string.IsNullOrWhiteSpace(descriptor.localPath))
             {
                 return null;
-            }
-            if (string.IsNullOrWhiteSpace(packageRoot) ||
-                !Path.IsPathRooted(packageRoot))
-            {
-                throw new InvalidDataException(
-                    "Alias package media has no installed package root.");
             }
             if (!string.Equals(
                     descriptor.kind,
@@ -115,37 +141,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     $"Alias package {expectedKind} media is invalid.");
             }
 
-            string root = Path.GetFullPath(packageRoot);
-            string relativePath = NormalizeRelativePath(
-                descriptor.localPath,
-                expectedKind);
-            string path = Path.GetFullPath(
-                Path.Combine(
-                    root,
-                    relativePath.Replace(
-                        '/',
-                        Path.DirectorySeparatorChar)));
-            string boundary = root.TrimEnd(
-                Path.DirectorySeparatorChar,
-                Path.AltDirectorySeparatorChar) +
-                Path.DirectorySeparatorChar;
-            if (!path.StartsWith(
-                    boundary,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException(
-                    $"Alias package {expectedKind} media escapes its package.");
-            }
-            RejectReparsePoints(root, path, expectedKind);
-
-            var info = new FileInfo(path);
-            if (!info.Exists || info.Length != descriptor.byteSize)
-            {
-                throw new InvalidDataException(
-                    $"Alias package {expectedKind} media has an invalid size.");
-            }
-            byte[] bytes = File.ReadAllBytes(path);
-            if (bytes.LongLength != descriptor.byteSize)
+            NormalizeRelativePath(descriptor.localPath, expectedKind);
+            byte[] bytes = readContent(descriptor);
+            if (bytes == null || bytes.LongLength != descriptor.byteSize)
             {
                 throw new InvalidDataException(
                     $"Alias package {expectedKind} media has an invalid size.");
@@ -185,6 +183,50 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     $"Alias package {expectedKind} media cannot be decoded.");
             }
             return texture;
+        }
+
+        private static byte[] ReadInstalledPackageContent(
+            string packageRoot,
+            AliasPackageMediaDescriptor descriptor,
+            string expectedKind)
+        {
+            if (string.IsNullOrWhiteSpace(packageRoot) ||
+                !Path.IsPathRooted(packageRoot))
+            {
+                throw new InvalidDataException(
+                    "Alias package media has no installed package root.");
+            }
+
+            string root = Path.GetFullPath(packageRoot);
+            string relativePath = NormalizeRelativePath(
+                descriptor?.localPath,
+                expectedKind);
+            string path = Path.GetFullPath(
+                Path.Combine(
+                    root,
+                    relativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar)));
+            string boundary = root.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar) +
+                Path.DirectorySeparatorChar;
+            if (!path.StartsWith(
+                    boundary,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    $"Alias package {expectedKind} media escapes its package.");
+            }
+            RejectReparsePoints(root, path, expectedKind);
+
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length != descriptor.byteSize)
+            {
+                throw new InvalidDataException(
+                    $"Alias package {expectedKind} media has an invalid size.");
+            }
+            return File.ReadAllBytes(path);
         }
 
         private static string NormalizeRelativePath(

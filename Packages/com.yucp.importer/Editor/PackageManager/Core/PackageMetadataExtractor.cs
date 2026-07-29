@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEditor;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.PackageManager
 {
@@ -71,6 +72,10 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (aliasMetadata != null)
                 {
                     ApplyPackageJsonData(aliasMetadata, packageJsonData);
+                    ApplyAliasPackageMediaFromImportItems(
+                        aliasMetadata,
+                        packageJsonData?.aliasPackage,
+                        importItems);
                     return aliasMetadata;
                 }
 
@@ -297,6 +302,109 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             return null;
+        }
+
+        private static void ApplyAliasPackageMediaFromImportItems(
+            PackageMetadata metadata,
+            AliasPackageContract alias,
+            System.Array importItems)
+        {
+            if (metadata == null || alias?.media == null ||
+                importItems == null || importItems.Length == 0)
+            {
+                return;
+            }
+
+            string packageRoot = FindAliasPackageRootDestinationPath(
+                importItems,
+                alias.aliasId);
+            if (string.IsNullOrWhiteSpace(packageRoot))
+            {
+                return;
+            }
+
+            try
+            {
+                AliasPackageMediaLoader.ApplyFromImportContent(
+                    metadata,
+                    alias,
+                    descriptor => ReadImportItemBytes(
+                        importItems,
+                        packageRoot + "/" + descriptor.localPath));
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "[YUCP PackageManager] Failed to load alias presentation " +
+                    "media from the Unity package: " + exception.Message);
+            }
+        }
+
+        private static string FindAliasPackageRootDestinationPath(
+            System.Array importItems,
+            string aliasId)
+        {
+            if (string.IsNullOrWhiteSpace(aliasId) || importItems == null)
+            {
+                return null;
+            }
+
+            foreach (object item in importItems)
+            {
+                string destinationPath = GetFieldValue<string>(
+                    item,
+                    _destinationAssetPathField);
+                if (!IsRootPackageJsonPath(destinationPath) ||
+                    !TryReadPackageJsonImportData(item, out PackageJsonImportData data) ||
+                    !string.Equals(
+                        data.aliasPackage?.aliasId,
+                        aliasId,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                int separator = destinationPath.LastIndexOf('/');
+                return separator > 0
+                    ? destinationPath.Substring(0, separator)
+                    : null;
+            }
+
+            return null;
+        }
+
+        private static byte[] ReadImportItemBytes(
+            System.Array importItems,
+            string destinationPath)
+        {
+            object item = FindItemByDestinationPath(
+                importItems,
+                path => string.Equals(
+                    path,
+                    destinationPath,
+                    StringComparison.OrdinalIgnoreCase));
+            if (item == null)
+            {
+                return null;
+            }
+
+            string sourceFolder = GetFieldValue<string>(item, _sourceFolderField);
+            string exportedPath = GetFieldValue<string>(item, _exportedAssetPathField);
+            if (string.IsNullOrWhiteSpace(sourceFolder))
+            {
+                return null;
+            }
+
+            string assetPath = Path.Combine(sourceFolder, "asset");
+            if (File.Exists(assetPath))
+            {
+                return File.ReadAllBytes(assetPath);
+            }
+
+            string alternatePath = Path.Combine(sourceFolder, exportedPath ?? string.Empty);
+            return File.Exists(alternatePath)
+                ? File.ReadAllBytes(alternatePath)
+                : null;
         }
 
         private static string ResolveTexturePath(string relativePath, System.Array importItems)
