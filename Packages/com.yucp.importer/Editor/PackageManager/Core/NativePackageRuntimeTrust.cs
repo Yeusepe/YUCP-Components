@@ -172,14 +172,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
     internal static class NativePackageRuntimeReleaseTrust
     {
-        // Release packaging must replace every value from reviewed artifacts.
-        internal const string ExecutableSha256 = "";
-        internal const string MetadataUrl = "";
-        internal const string PublisherCertificateSha256 = "";
-        internal const string PublisherSubject = "";
-        internal const string PublisherTrustMode = "";
-        internal const string TargetsUrl = "";
-        internal const string TrustedRootSha256 = "";
+        internal const string ExecutableSha256 =
+            "df117742e6003ed3ca4ab7e9d18178ca9a9a8b09b495df311bc3fbd0262581ab";
+        internal const string MetadataUrl =
+            "https://verify.creators.yucp.club/api/v2/package-installer/tuf/metadata";
+        internal const string PublisherCertificateSha256 =
+            "9b6dd710c802f64177ac1a4033fa692dc2b2a9f1c13471edebbe5e121e5cf5e3";
+        internal const string PublisherSubject =
+            "CN=YUCP Package Runtime";
+        internal const string PublisherTrustMode =
+            "pinned-production";
+        internal const string TargetsUrl =
+            "https://verify.creators.yucp.club/api/v2/package-installer/tuf/targets";
+        internal const string TrustedRootSha256 =
+            "89c01b7ae6b44904fc09155abfbdde8abde407b5cdb3272a493e8aab7574a589";
 
         internal static NativePackageRuntimeTrust Load()
         {
