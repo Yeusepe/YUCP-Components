@@ -315,8 +315,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                             sha256.ComputeHash(certificate.RawData))
                         .Replace("-", string.Empty)
                         .ToLowerInvariant();
-                byte[] expectedSubjectBytes =
-                    new X500DistinguishedName(expectedSubject).RawData;
                 bool invalidDevelopmentCertificate =
                     string.Equals(
                         trustMode,
@@ -334,9 +332,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         actualCertificateSha256,
                         expectedCertificateSha256,
                         StringComparison.Ordinal) ||
-                    !StructuralComparisons.StructuralEqualityComparer.Equals(
-                        certificate.SubjectName.RawData,
-                        expectedSubjectBytes) ||
+                    !string.Equals(
+                        certificate.Subject,
+                        expectedSubject,
+                        StringComparison.Ordinal) ||
                     invalidDevelopmentCertificate)
                 {
                     throw new CryptographicException(

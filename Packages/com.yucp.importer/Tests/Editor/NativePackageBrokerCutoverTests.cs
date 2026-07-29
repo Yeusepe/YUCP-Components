@@ -691,6 +691,40 @@ namespace YUCP.Importer.Tests.Editor
         }
 
         [Test]
+        public void PackagedProductionRuntimePassesUnityVerification()
+        {
+            string projectRoot = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            string packageRoot = Path.Combine(
+                projectRoot,
+                "Packages",
+                "com.yucp.importer");
+            string localRoot = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-packaged-runtime-" +
+                Guid.NewGuid().ToString("N"));
+            NativePackageRuntimeInvocation invocation =
+                PackagedNativePackageRuntimeBootstrap
+                    .BuildInvocationForTests(
+                        packageRoot,
+                        localRoot,
+                        true,
+                        new string('a', 32));
+
+            Assert.That(
+                invocation.executablePath,
+                Is.EqualTo(
+                    Path.Combine(
+                        packageRoot,
+                        "Editor",
+                        "PackageManager",
+                        "Runtime",
+                        "Windows",
+                        "x64",
+                        "yucp-transfer-helper.exe")));
+        }
+
+        [Test]
         public void PackagedRuntimeUsesOnlyImmutableProductionInputs()
         {
             string root = Path.Combine(
