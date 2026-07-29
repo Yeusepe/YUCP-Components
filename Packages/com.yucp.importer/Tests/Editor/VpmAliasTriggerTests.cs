@@ -572,8 +572,83 @@ namespace YUCP.Importer.Editor.Tests
                 window.InitializeForAlias(activation.Metadata, false);
 
                 Assert.That(window.IsAliasBootstrapFlow, Is.True);
-                Assert.That(window.PrimaryActionLabel, Is.EqualTo("Verify and Import"));
+                Assert.That(
+                    window.PrimaryActionLabel,
+                    Is.EqualTo("Checking sign-in..."));
                 Assert.That(window.HasPackageImportItems, Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(window);
+            }
+        }
+
+        [Test]
+        public void SignedOutBootstrapUsesClickableSingleFlightSignInAction()
+        {
+            const string packageJson = "{\"name\":\"com.yucp.jammr.alias\"," +
+                "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"}}";
+            Assert.That(
+                AliasPackageActivation.TryBuildActivation(
+                    "com.yucp.jammr.alias",
+                    packageJson,
+                    out AliasPackageActivationRequest activation,
+                    out string error),
+                Is.True,
+                error);
+
+            var window =
+                ScriptableObject.CreateInstance<PackageManagerWindow>();
+            try
+            {
+                window.InitializeForAlias(activation.Metadata, false);
+                window.CreateGUI();
+
+                FieldInfo signedInField =
+                    typeof(PackageManagerWindow).GetField(
+                        "_isBrokerSignedIn",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo actionField =
+                    typeof(PackageManagerWindow).GetField(
+                        "_authenticationOperation",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo buttonField =
+                    typeof(PackageManagerWindow).GetField(
+                        "_importButton",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                MethodInfo updateEnabled =
+                    typeof(PackageManagerWindow).GetMethod(
+                        "UpdateImportButtonEnabled",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.That(signedInField, Is.Not.Null);
+                Assert.That(actionField, Is.Not.Null);
+                Assert.That(buttonField, Is.Not.Null);
+                Assert.That(updateEnabled, Is.Not.Null);
+
+                signedInField.SetValue(window, false);
+                actionField.SetValue(
+                    window,
+                    Enum.Parse(actionField.FieldType, "None"));
+                updateEnabled.Invoke(window, null);
+
+                var button = (Button)buttonField.GetValue(window);
+                Assert.That(
+                    window.PrimaryActionLabel,
+                    Is.EqualTo("Sign in with YUCP"));
+                Assert.That(button.enabledSelf, Is.True);
+
+                actionField.SetValue(
+                    window,
+                    Enum.Parse(actionField.FieldType, "SignIn"));
+                updateEnabled.Invoke(window, null);
+
+                Assert.That(
+                    window.PrimaryActionLabel,
+                    Is.EqualTo("Signing in..."));
+                Assert.That(button.enabledSelf, Is.False);
             }
             finally
             {
@@ -769,7 +844,9 @@ namespace YUCP.Importer.Editor.Tests
                 restored.CreateGUI();
 
                 Assert.That(restored.IsAliasBootstrapFlow, Is.True);
-                Assert.That(restored.PrimaryActionLabel, Is.EqualTo("Verify and Import"));
+                Assert.That(
+                    restored.PrimaryActionLabel,
+                    Is.EqualTo("Checking sign-in..."));
                 VisualElement installer = restored.rootVisualElement.Q<VisualElement>(
                     className: "yucp-installer-root");
                 Assert.That(installer, Is.Not.Null);

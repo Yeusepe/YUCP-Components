@@ -189,6 +189,14 @@ namespace YUCP.Importer.Editor.PackageManager
             Success,
             Error,
         }
+
+        private enum BrokerAuthenticationOperation
+        {
+            None,
+            Refresh,
+            SignIn,
+            SignOut,
+        }
         
         // Domain reload prevention
         private bool _isImportMode = false; // Track if window is in import mode (prevents domain reload)
@@ -212,7 +220,9 @@ namespace YUCP.Importer.Editor.PackageManager
         private string _pendingPackageName;
         private bool _pendingImportAfterVerification = false;
         private bool? _isBrokerSignedIn;
-        private bool _authenticationActionInFlight;
+        private BrokerAuthenticationOperation _authenticationOperation;
+        private bool AuthenticationActionInFlight =>
+            _authenticationOperation != BrokerAuthenticationOperation.None;
         private bool _authenticationRefreshScheduled;
         // Gallery carousel state
         private int _selectedGalleryIndex = -1;
@@ -938,6 +948,29 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             if (_isAliasBootstrapFlow)
             {
+                if (_authenticationOperation ==
+                    BrokerAuthenticationOperation.Refresh)
+                {
+                    return "Checking sign-in...";
+                }
+                if (_authenticationOperation ==
+                    BrokerAuthenticationOperation.SignIn)
+                {
+                    return "Signing in...";
+                }
+                if (_authenticationOperation ==
+                    BrokerAuthenticationOperation.SignOut)
+                {
+                    return "Signing out...";
+                }
+                if (!_isBrokerSignedIn.HasValue)
+                {
+                    return "Checking sign-in...";
+                }
+                if (!_isBrokerSignedIn.Value)
+                {
+                    return "Sign in with YUCP";
+                }
                 return IsCurrentAliasInstalled()
                     ? "Update"
                     : "Verify and Import";
@@ -2639,11 +2672,11 @@ namespace YUCP.Importer.Editor.PackageManager
             block.style.borderBottomWidth = 0;
             block.style.paddingBottom = 10;
 
-            if (_authenticationActionInFlight ||
+            if (AuthenticationActionInFlight ||
                 !_isBrokerSignedIn.HasValue)
             {
                 var checkingTitle = new Label(
-                    _authenticationActionInFlight
+                    AuthenticationActionInFlight
                         ? "Updating YUCP sign-in..."
                         : "Checking YUCP sign-in...");
                 checkingTitle.AddToClassList("lgate-req-name");
@@ -2667,7 +2700,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 };
                 signOutButton.AddToClassList("lgate-link-btn");
                 signOutButton.SetEnabled(
-                    !_authenticationActionInFlight);
+                    !AuthenticationActionInFlight);
                 block.Add(signOutButton);
                 return block;
             }
@@ -2683,7 +2716,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 text = "Sign in with YUCP",
             };
             signInButton.AddToClassList("lgate-solid-btn");
-            signInButton.SetEnabled(!_authenticationActionInFlight);
+            signInButton.SetEnabled(!AuthenticationActionInFlight);
             block.Add(signInButton);
             return block;
         }
@@ -2692,7 +2725,7 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             if (!_isAliasBootstrapFlow ||
                 _authenticationRefreshScheduled ||
-                _authenticationActionInFlight)
+                AuthenticationActionInFlight)
             {
                 return;
             }
@@ -2709,11 +2742,12 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private async Task RefreshAuthenticationStatusAsync()
         {
-            if (_authenticationActionInFlight || !_isAliasBootstrapFlow)
+            if (AuthenticationActionInFlight || !_isAliasBootstrapFlow)
             {
                 return;
             }
-            _authenticationActionInFlight = true;
+            _authenticationOperation =
+                BrokerAuthenticationOperation.Refresh;
             BuildLicenseSection();
             try
             {
@@ -2743,7 +2777,8 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 if (this != null)
                 {
-                    _authenticationActionInFlight = false;
+                    _authenticationOperation =
+                        BrokerAuthenticationOperation.None;
                     BuildLicenseSection();
                 }
             }
@@ -2751,11 +2786,17 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private async void OnBrokerSignInClicked()
         {
-            if (_authenticationActionInFlight)
+            await SignInWithBrokerAsync();
+        }
+
+        private async Task<bool> SignInWithBrokerAsync()
+        {
+            if (AuthenticationActionInFlight)
             {
-                return;
+                return false;
             }
-            _authenticationActionInFlight = true;
+            _authenticationOperation =
+                BrokerAuthenticationOperation.SignIn;
             BuildLicenseSection();
             try
             {
@@ -2769,6 +2810,7 @@ namespace YUCP.Importer.Editor.PackageManager
                         "Your YUCP account is ready for secure package delivery.",
                         FlowNoticeTone.Success);
                 }
+                return result.signedIn;
             }
             catch (Exception exception)
             {
@@ -2783,12 +2825,14 @@ namespace YUCP.Importer.Editor.PackageManager
                         "Could not finish YUCP sign-in. Try again.",
                         FlowNoticeTone.Error);
                 }
+                return false;
             }
             finally
             {
                 if (this != null)
                 {
-                    _authenticationActionInFlight = false;
+                    _authenticationOperation =
+                        BrokerAuthenticationOperation.None;
                     BuildLicenseSection();
                 }
             }
@@ -2796,11 +2840,12 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private async void OnBrokerSignOutClicked()
         {
-            if (_authenticationActionInFlight)
+            if (AuthenticationActionInFlight)
             {
                 return;
             }
-            _authenticationActionInFlight = true;
+            _authenticationOperation =
+                BrokerAuthenticationOperation.SignOut;
             BuildLicenseSection();
             try
             {
@@ -2831,7 +2876,8 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 if (this != null)
                 {
-                    _authenticationActionInFlight = false;
+                    _authenticationOperation =
+                        BrokerAuthenticationOperation.None;
                     BuildLicenseSection();
                 }
             }
@@ -2856,8 +2902,10 @@ namespace YUCP.Importer.Editor.PackageManager
             bool hasUnverifiedLicense = RequiresVerificationBeforeImport();
             bool requiresExternalBootstrap =
                 hasUnverifiedLicense && !_isAliasBootstrapFlow;
-            bool requiresBrokerSignIn =
-                _isAliasBootstrapFlow && _isBrokerSignedIn != true;
+            bool isCheckingBrokerAuthentication =
+                _isAliasBootstrapFlow &&
+                (!_isBrokerSignedIn.HasValue ||
+                 AuthenticationActionInFlight);
 
             if (_pendingImportAfterVerification)
             {
@@ -2875,11 +2923,14 @@ namespace YUCP.Importer.Editor.PackageManager
 
             SetVerifyStatusLabel(null);
             _importButton.SetEnabled(
-                !requiresExternalBootstrap && !requiresBrokerSignIn);
+                !requiresExternalBootstrap &&
+                !isCheckingBrokerAuthentication);
             _importButton.tooltip = requiresExternalBootstrap
                 ? "Install this product through its Creator Companion bootstrap."
-                : requiresBrokerSignIn
-                    ? "Sign in with YUCP to verify and import this package."
+                : isCheckingBrokerAuthentication
+                    ? "Checking the Windows-protected YUCP account."
+                : _isAliasBootstrapFlow && _isBrokerSignedIn == false
+                    ? "Sign in with YUCP to continue."
                 : string.Empty;
             RefreshPrimaryImportButton();
         }
@@ -4347,6 +4398,17 @@ namespace YUCP.Importer.Editor.PackageManager
             try
             {
                 ClearFlowNotice();
+
+                if (_isAliasBootstrapFlow &&
+                    _isBrokerSignedIn != true)
+                {
+                    if (!_isBrokerSignedIn.HasValue ||
+                        AuthenticationActionInFlight ||
+                        !await SignInWithBrokerAsync())
+                    {
+                        return;
+                    }
+                }
 
                 PackageMetadata installMetadata =
                     _currentMetadata ?? _cachedMetadata;
