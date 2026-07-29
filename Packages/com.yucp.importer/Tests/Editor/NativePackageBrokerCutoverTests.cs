@@ -1130,6 +1130,75 @@ namespace YUCP.Importer.Tests.Editor
         }
 
         [Test]
+        public void RuntimeUpdateDiagnosticReportsDownloadedBrokerReplacement()
+        {
+            const string traceId =
+                "c9ce8fef3bd6ad7a3e62e750197a8810";
+            string diagnostic =
+                PackagedNativePackageRuntimeBootstrap
+                    .BuildUpdateDiagnosticForTests(
+                        new string('a', 64),
+                        new string('b', 64),
+                        new string('c', 64),
+                        new string('d', 64),
+                        new string('b', 64),
+                        new string('c', 64),
+                        true,
+                        4242,
+                        traceId);
+
+            Assert.That(
+                diagnostic,
+                Does.Contain(
+                    "\"eventName\":\"package_runtime_update_completed\""));
+            Assert.That(
+                diagnostic,
+                Does.Contain("\"outcome\":\"updated\""));
+            Assert.That(
+                diagnostic,
+                Does.Contain("\"brokerChanged\":true"));
+            Assert.That(
+                diagnostic,
+                Does.Contain("\"helperChanged\":false"));
+            Assert.That(
+                diagnostic,
+                Does.Contain("\"runtimeDescriptorChanged\":false"));
+            Assert.That(
+                diagnostic,
+                Does.Contain("\"brokerStarted\":true"));
+            Assert.That(
+                diagnostic,
+                Does.Contain(
+                    "\"previousBrokerSha256\":\"" +
+                    new string('a', 64) +
+                    "\""));
+            Assert.That(
+                diagnostic,
+                Does.Contain(
+                    "\"brokerSha256\":\"" +
+                    new string('d', 64) +
+                    "\""));
+            Assert.That(
+                diagnostic,
+                Does.Contain("\"brokerProcessId\":4242"));
+            Assert.That(
+                diagnostic,
+                Does.Contain(
+                    "\"brokerPath\":" +
+                    "\"C:\\\\YUCP\\\\runtime\\\\current\\\\" +
+                    "yucp-package-broker.exe\""));
+            Assert.That(
+                diagnostic,
+                Does.Contain(
+                    "\"previousBrokerPath\":" +
+                    "\"C:\\\\YUCP\\\\runtime\\\\previous\\\\" +
+                    "yucp-package-broker.exe\""));
+            Assert.That(
+                diagnostic,
+                Does.Contain("\"traceId\":\"" + traceId + "\""));
+        }
+
+        [Test]
         public void NonUnavailableBrokerFailureStillRefreshesRuntime()
         {
             var transport = new AlwaysFailingTransport("BROKER_TIMEOUT");

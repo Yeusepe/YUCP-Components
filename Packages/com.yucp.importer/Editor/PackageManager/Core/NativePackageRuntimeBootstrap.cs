@@ -74,7 +74,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     isWindowsX64,
                     traceId,
                     LoadProductionTrust(isWindowsX64));
-            await RunAsync(invocation, traceId, cancellationToken);
+            NativePackageRuntimeSnapshot previous =
+                ReadRuntimeSnapshot(invocation.installRoot);
+            LogRuntimeUpdateStarted(previous, traceId);
+            try
+            {
+                NativePackageRuntimeResult result = await RunAsync(
+                    invocation,
+                    traceId,
+                    cancellationToken);
+                UnityEngine.Debug.Log(
+                    BuildUpdateDiagnostic(previous, result, traceId));
+            }
+            catch (Exception failure)
+            {
+                LogRuntimeUpdateFailed(previous, traceId, failure);
+                throw;
+            }
         }
 
         internal static NativePackageRuntimeInvocation
@@ -206,7 +222,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             return NativePackageRuntimeReleaseTrust.Load();
         }
 
-        private static async Task RunAsync(
+        private static async Task<NativePackageRuntimeResult> RunAsync(
             NativePackageRuntimeInvocation invocation,
             string traceId,
             CancellationToken cancellationToken)
@@ -277,6 +293,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     result,
                     process.ExitCode,
                     traceId);
+                return result;
             }
         }
 
@@ -286,6 +303,217 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string traceId)
         {
             ValidateResult(ParseResult(json), exitCode, traceId);
+        }
+
+        internal static string BuildUpdateDiagnosticForTests(
+            string previousBrokerSha256,
+            string previousHelperSha256,
+            string previousRuntimeDescriptorSha256,
+            string brokerSha256,
+            string helperSha256,
+            string runtimeDescriptorSha256,
+            bool brokerStarted,
+            int brokerProcessId,
+            string traceId)
+        {
+            return BuildUpdateDiagnostic(
+                new NativePackageRuntimeSnapshot
+                {
+                    brokerProcessId = 1,
+                    brokerPath =
+                        @"C:\YUCP\runtime\previous\yucp-package-broker.exe",
+                    brokerSha256 = previousBrokerSha256,
+                    helperSha256 = previousHelperSha256,
+                    runtimeDescriptorSha256 =
+                        previousRuntimeDescriptorSha256,
+                    schemaVersion = 1,
+                },
+                new NativePackageRuntimeResult
+                {
+                    brokerPath =
+                        @"C:\YUCP\runtime\current\yucp-package-broker.exe",
+                    brokerProcessId = brokerProcessId,
+                    brokerSha256 = brokerSha256,
+                    brokerStarted = brokerStarted,
+                    helperSha256 = helperSha256,
+                    runtimeDescriptorSha256 =
+                        runtimeDescriptorSha256,
+                    schemaVersion = 1,
+                    status = "OK",
+                    traceId = traceId,
+                },
+                traceId);
+        }
+
+        private static NativePackageRuntimeSnapshot ReadRuntimeSnapshot(
+            string installRoot)
+        {
+            try
+            {
+                string path = Path.Combine(
+                    installRoot,
+                    "active-runtime.json");
+                var info = new FileInfo(path);
+                if (!info.Exists ||
+                    info.Length < 1 ||
+                    info.Length > MaximumOutputCharacters ||
+                    (info.Attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    return null;
+                }
+                string json;
+                using (var stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete))
+                using (var reader = new StreamReader(
+                    stream,
+                    new UTF8Encoding(false, true),
+                    true,
+                    4096))
+                {
+                    json = reader.ReadToEnd();
+                }
+                NativePackageRuntimeSnapshot snapshot =
+                    JsonConvert.DeserializeObject<
+                        NativePackageRuntimeSnapshot>(json);
+                return snapshot != null &&
+                        snapshot.schemaVersion == 1 &&
+                        snapshot.brokerProcessId > 0 &&
+                        IsSha256(snapshot.brokerSha256) &&
+                        IsSha256(snapshot.helperSha256) &&
+                        IsSha256(
+                            snapshot.runtimeDescriptorSha256)
+                    ? snapshot
+                    : null;
+            }
+            catch (Exception)
+            {
+                // Diagnostics must never prevent the signed updater from running.
+                return null;
+            }
+        }
+
+        private static void LogRuntimeUpdateStarted(
+            NativePackageRuntimeSnapshot previous,
+            string traceId)
+        {
+            UnityEngine.Debug.Log(
+                JsonConvert.SerializeObject(
+                    new NativePackageRuntimeUpdateStarted
+                    {
+                        eventName =
+                            "package_runtime_update_check_started",
+                        previousBrokerProcessId =
+                            previous?.brokerProcessId ?? 0,
+                        previousBrokerPath =
+                            previous?.brokerPath ?? string.Empty,
+                        previousBrokerSha256 =
+                            previous?.brokerSha256 ?? string.Empty,
+                        previousHelperSha256 =
+                            previous?.helperSha256 ?? string.Empty,
+                        previousRuntimeDescriptorSha256 =
+                            previous?.runtimeDescriptorSha256 ??
+                            string.Empty,
+                        previousRuntimeFound = previous != null,
+                        traceId = traceId ?? string.Empty,
+                    },
+                    Formatting.None));
+        }
+
+        private static string BuildUpdateDiagnostic(
+            NativePackageRuntimeSnapshot previous,
+            NativePackageRuntimeResult result,
+            string traceId)
+        {
+            bool brokerChanged = previous != null &&
+                !string.Equals(
+                    previous.brokerSha256,
+                    result.brokerSha256,
+                    StringComparison.Ordinal);
+            bool helperChanged = previous != null &&
+                !string.Equals(
+                    previous.helperSha256,
+                    result.helperSha256,
+                    StringComparison.Ordinal);
+            bool runtimeDescriptorChanged = previous != null &&
+                !string.Equals(
+                    previous.runtimeDescriptorSha256,
+                    result.runtimeDescriptorSha256,
+                    StringComparison.Ordinal);
+            string outcome = previous == null
+                ? "installed"
+                : brokerChanged ||
+                    helperChanged ||
+                    runtimeDescriptorChanged
+                    ? "updated"
+                    : result.brokerStarted
+                        ? "restarted"
+                        : "already_current";
+            return JsonConvert.SerializeObject(
+                new NativePackageRuntimeUpdateCompleted
+                {
+                    brokerChanged = brokerChanged,
+                    brokerPath = result.brokerPath,
+                    brokerProcessId = result.brokerProcessId,
+                    brokerSha256 = result.brokerSha256,
+                    brokerStarted = result.brokerStarted,
+                    eventName =
+                        "package_runtime_update_completed",
+                    helperChanged = helperChanged,
+                    helperSha256 = result.helperSha256,
+                    outcome = outcome,
+                    previousBrokerProcessId =
+                        previous?.brokerProcessId ?? 0,
+                    previousBrokerPath =
+                        previous?.brokerPath ?? string.Empty,
+                    previousBrokerSha256 =
+                        previous?.brokerSha256 ?? string.Empty,
+                    previousHelperSha256 =
+                        previous?.helperSha256 ?? string.Empty,
+                    previousRuntimeDescriptorSha256 =
+                        previous?.runtimeDescriptorSha256 ??
+                        string.Empty,
+                    runtimeDescriptorChanged =
+                        runtimeDescriptorChanged,
+                    runtimeDescriptorSha256 =
+                        result.runtimeDescriptorSha256,
+                    traceId = traceId ?? string.Empty,
+                },
+                Formatting.None);
+        }
+
+        private static void LogRuntimeUpdateFailed(
+            NativePackageRuntimeSnapshot previous,
+            string traceId,
+            Exception failure)
+        {
+            var bootstrapFailure =
+                failure as NativePackageRuntimeBootstrapException;
+            UnityEngine.Debug.LogError(
+                JsonConvert.SerializeObject(
+                    new NativePackageRuntimeUpdateFailed
+                    {
+                        errorCode =
+                            bootstrapFailure?.ErrorCode ??
+                            "RUNTIME_UPDATE_FAILED",
+                        errorType =
+                            failure?.GetType().Name ??
+                            string.Empty,
+                        eventName =
+                            "package_runtime_update_failed",
+                        message =
+                            failure?.Message ?? string.Empty,
+                        previousBrokerSha256 =
+                            previous?.brokerSha256 ??
+                            string.Empty,
+                        previousBrokerPath =
+                            previous?.brokerPath ??
+                            string.Empty,
+                        traceId = traceId ?? string.Empty,
+                    },
+                    Formatting.None));
         }
 
         private static void ValidateResult(
@@ -699,6 +927,66 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             public string runtimeDescriptorSha256 = string.Empty;
             public int schemaVersion;
             public string status = string.Empty;
+            public string traceId = string.Empty;
+        }
+
+        [Serializable]
+        private sealed class NativePackageRuntimeSnapshot
+        {
+            public int brokerProcessId;
+            public string brokerPath = string.Empty;
+            public string brokerSha256 = string.Empty;
+            public string helperSha256 = string.Empty;
+            public string runtimeDescriptorSha256 = string.Empty;
+            public int schemaVersion;
+        }
+
+        [Serializable]
+        private sealed class NativePackageRuntimeUpdateStarted
+        {
+            public string eventName = string.Empty;
+            public int previousBrokerProcessId;
+            public string previousBrokerPath = string.Empty;
+            public string previousBrokerSha256 = string.Empty;
+            public string previousHelperSha256 = string.Empty;
+            public string previousRuntimeDescriptorSha256 =
+                string.Empty;
+            public bool previousRuntimeFound;
+            public string traceId = string.Empty;
+        }
+
+        [Serializable]
+        private sealed class NativePackageRuntimeUpdateCompleted
+        {
+            public bool brokerChanged;
+            public string brokerPath = string.Empty;
+            public int brokerProcessId;
+            public string brokerSha256 = string.Empty;
+            public bool brokerStarted;
+            public string eventName = string.Empty;
+            public bool helperChanged;
+            public string helperSha256 = string.Empty;
+            public string outcome = string.Empty;
+            public int previousBrokerProcessId;
+            public string previousBrokerPath = string.Empty;
+            public string previousBrokerSha256 = string.Empty;
+            public string previousHelperSha256 = string.Empty;
+            public string previousRuntimeDescriptorSha256 =
+                string.Empty;
+            public bool runtimeDescriptorChanged;
+            public string runtimeDescriptorSha256 = string.Empty;
+            public string traceId = string.Empty;
+        }
+
+        [Serializable]
+        private sealed class NativePackageRuntimeUpdateFailed
+        {
+            public string errorCode = string.Empty;
+            public string errorType = string.Empty;
+            public string eventName = string.Empty;
+            public string message = string.Empty;
+            public string previousBrokerPath = string.Empty;
+            public string previousBrokerSha256 = string.Empty;
             public string traceId = string.Empty;
         }
 
