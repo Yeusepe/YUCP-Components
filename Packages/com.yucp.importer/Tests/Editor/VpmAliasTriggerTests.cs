@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
@@ -804,6 +805,69 @@ namespace YUCP.Importer.Editor.Tests
             }
         }
 
+        [UnityTest]
+        public IEnumerator InstallRevalidatesCachedBrokerSessionAndSignsInOnce()
+        {
+            const string packageJson = "{\"name\":\"com.yucp.jammr.alias\"," +
+                "\"version\":\"1.0.0\",\"displayName\":\"JAMMR\"," +
+                "\"yucp\":{\"kind\":\"alias-v1\",\"aliasId\":\"jammr\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"}}";
+            Assert.That(
+                AliasPackageActivation.TryBuildActivation(
+                    "com.yucp.jammr.alias",
+                    packageJson,
+                    out AliasPackageActivationRequest activation,
+                    out string error),
+                Is.True,
+                error);
+
+            var transport = new StaleSessionAuthenticationTransport();
+            var window =
+                ScriptableObject.CreateInstance<PackageManagerWindow>();
+            try
+            {
+                NativePackageBrokerClient.SetTransportForTests(transport);
+                window.InitializeForAlias(activation.Metadata, false);
+                window.CreateGUI();
+
+                FieldInfo signedInField =
+                    typeof(PackageManagerWindow).GetField(
+                        "_isBrokerSignedIn",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                MethodInfo ensureAuthentication =
+                    typeof(PackageManagerWindow).GetMethod(
+                        "EnsureBrokerAuthenticationForInstallAsync",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.That(signedInField, Is.Not.Null);
+                Assert.That(
+                    ensureAuthentication,
+                    Is.Not.Null,
+                    "The install action must revalidate cached authentication.");
+
+                signedInField.SetValue(window, true);
+                var execution = (Task<bool>)ensureAuthentication.Invoke(
+                    window,
+                    null);
+                while (!execution.IsCompleted)
+                {
+                    yield return null;
+                }
+
+                Assert.That(execution.IsFaulted, Is.False);
+                Assert.That(execution.Result, Is.True);
+                Assert.That(
+                    transport.AuthenticationActions,
+                    Is.EqualTo(new[] { "status", "sign-in" }));
+                Assert.That(signedInField.GetValue(window), Is.EqualTo(true));
+            }
+            finally
+            {
+                NativePackageBrokerClient.SetTransportForTests(null);
+                UnityEngine.Object.DestroyImmediate(window);
+            }
+        }
+
         [Test]
         public void RepeatedAliasRefreshAndCloseReleasesOwnedMedia()
         {
@@ -844,6 +908,47 @@ namespace YUCP.Importer.Editor.Tests
             Assert.That(CountTextures(texturePrefix), Is.EqualTo(baseline));
             Assert.That(packageTexture, Is.Not.Null);
             Assert.That(AssetDatabase.Contains(packageTexture), Is.True);
+        }
+
+        private sealed class StaleSessionAuthenticationTransport
+            : INativePackageBrokerTransport,
+                INativePackageBrokerAuthenticationTransport
+        {
+            internal List<string> AuthenticationActions { get; } =
+                new List<string>();
+
+            public Task<NativePackageBrokerAuthenticationResult>
+                AuthenticateAsync(
+                    string action,
+                    CancellationToken cancellationToken)
+            {
+                AuthenticationActions.Add(action);
+                if (action == "status")
+                {
+                    return Task.FromResult(
+                        new NativePackageBrokerAuthenticationResult
+                        {
+                            errorCode = "AUTHENTICATION_FAILED",
+                            errorMessage =
+                                "The saved YUCP session is no longer valid.",
+                            signedIn = false,
+                        });
+                }
+                return Task.FromResult(
+                    new NativePackageBrokerAuthenticationResult
+                    {
+                        signedIn = true,
+                    });
+            }
+
+            public Task<NativePackageBrokerResult> ExecuteAsync(
+                NativePackageBrokerRequest request,
+                Action<NativePackageBrokerProgress> reportProgress,
+                CancellationToken cancellationToken)
+            {
+                throw new AssertionException(
+                    "Authentication readiness must finish before installation.");
+            }
         }
 
         [TestCase("already-open")]

@@ -2841,6 +2841,57 @@ namespace YUCP.Importer.Editor.PackageManager
             }
         }
 
+        private async Task<bool> EnsureBrokerAuthenticationForInstallAsync()
+        {
+            if (AuthenticationActionInFlight)
+            {
+                return false;
+            }
+
+            bool signedIn = false;
+            _authenticationOperation =
+                BrokerAuthenticationOperation.Refresh;
+            BuildLicenseSection();
+            try
+            {
+                NativePackageBrokerAuthenticationResult result =
+                    await PackageLifecycleCoordinator
+                        .GetAuthenticationStatusAsync();
+                if (this == null)
+                {
+                    return false;
+                }
+                signedIn = result.signedIn;
+                _isBrokerSignedIn = signedIn;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "[YUCP PackageManager] Saved YUCP sign-in is no " +
+                    "longer reusable: " +
+                    exception.GetType().Name);
+                if (this != null)
+                {
+                    _isBrokerSignedIn = false;
+                }
+            }
+            finally
+            {
+                if (this != null)
+                {
+                    _authenticationOperation =
+                        BrokerAuthenticationOperation.None;
+                    BuildLicenseSection();
+                }
+            }
+
+            if (this == null || signedIn)
+            {
+                return signedIn;
+            }
+            return await SignInWithBrokerAsync();
+        }
+
         private async void OnBrokerSignOutClicked()
         {
             if (AuthenticationActionInFlight)
@@ -4403,14 +4454,9 @@ namespace YUCP.Importer.Editor.PackageManager
                 ClearFlowNotice();
 
                 if (_isAliasBootstrapFlow &&
-                    _isBrokerSignedIn != true)
+                    !await EnsureBrokerAuthenticationForInstallAsync())
                 {
-                    if (!_isBrokerSignedIn.HasValue ||
-                        AuthenticationActionInFlight ||
-                        !await SignInWithBrokerAsync())
-                    {
-                        return;
-                    }
+                    return;
                 }
 
                 PackageMetadata installMetadata =
