@@ -95,6 +95,53 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 RuntimeInformation.OSArchitecture == Architecture.X64);
         }
 
+        internal static Task<NativePackageBrokerAuthenticationResult>
+            GetAuthenticationStatusAsync()
+        {
+            return ExecuteAuthenticationAsync("status");
+        }
+
+        internal static Task<NativePackageBrokerAuthenticationResult>
+            SignInAsync()
+        {
+            return ExecuteAuthenticationAsync("sign-in");
+        }
+
+        internal static Task<NativePackageBrokerAuthenticationResult>
+            SignOutAsync()
+        {
+            return ExecuteAuthenticationAsync("sign-out");
+        }
+
+        private static async Task<
+            NativePackageBrokerAuthenticationResult>
+            ExecuteAuthenticationAsync(string action)
+        {
+            EnsureSupportedClientPlatform();
+            try
+            {
+                return await NativePackageBrokerClient.AuthenticateAsync(
+                    action);
+            }
+            catch (NativePackageBrokerException failure)
+                when (string.Equals(
+                    failure.ErrorCode,
+                    "BROKER_UNAVAILABLE",
+                    StringComparison.Ordinal))
+            {
+                string traceId = Guid.NewGuid().ToString("N");
+                using (var cancellation =
+                    new CancellationTokenSource(BrokerBootstrapTimeout))
+                {
+                    await ProductionRuntimeBootstrap.EnsureAsync(
+                        traceId,
+                        cancellation.Token);
+                }
+                return await NativePackageBrokerClient.AuthenticateAsync(
+                    action);
+            }
+        }
+
         internal static async Task<PackageLifecycleInstallResult> TryInstallAsync(
             AliasPackageContract alias,
             Action<PackageLifecycleUserProgress> reportProgress)

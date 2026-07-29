@@ -164,6 +164,46 @@ namespace YUCP.Importer.Tests.Editor
         }
 
         [Test]
+        public void ImporterRestoresBrokerBackedAuthenticationControls()
+        {
+            string packageRoot = PackageInfo.FindForAssembly(
+                typeof(PackageContractV2).Assembly).resolvedPath;
+            string windowSource = File.ReadAllText(
+                Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "UI",
+                    "PackageManagerWindow.cs"));
+            string brokerSource = File.ReadAllText(
+                Path.Combine(
+                    packageRoot,
+                    "Editor",
+                    "PackageManager",
+                    "Core",
+                    "NativePackageBrokerClient.cs"));
+
+            Assert.That(windowSource, Does.Contain("Sign in with YUCP"));
+            Assert.That(windowSource, Does.Contain("Signed in with YUCP"));
+            Assert.That(windowSource, Does.Contain("Sign out"));
+            Assert.That(
+                windowSource,
+                Does.Contain("RefreshAuthenticationStatusAsync"));
+            Assert.That(
+                brokerSource,
+                Does.Contain("\"authenticate\""));
+            Assert.That(
+                brokerSource,
+                Does.Contain("\"authentication\""));
+            Assert.That(
+                brokerSource,
+                Does.Not.Contain("accessToken").IgnoreCase);
+            Assert.That(
+                brokerSource,
+                Does.Not.Contain("refreshToken").IgnoreCase);
+        }
+
+        [Test]
         public void ImportVerificationDefersAssemblyReloadUntilCompilationEnds()
         {
             string packageRoot = PackageInfo.FindForAssembly(

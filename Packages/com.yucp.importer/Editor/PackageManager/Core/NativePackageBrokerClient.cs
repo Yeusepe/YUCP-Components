@@ -115,6 +115,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             CancellationToken cancellationToken);
     }
 
+    internal interface INativePackageBrokerAuthenticationTransport
+    {
+        Task<NativePackageBrokerAuthenticationResult> AuthenticateAsync(
+            string action,
+            CancellationToken cancellationToken);
+    }
+
+    [Serializable]
+    internal sealed class NativePackageBrokerAuthenticationResult
+    {
+        public string errorCode = string.Empty;
+        public string errorMessage = string.Empty;
+        public bool signedIn;
+    }
+
     [Serializable]
     internal sealed class NativePackageBrokerBeginFrame
     {
@@ -143,6 +158,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     }
 
     [Serializable]
+    internal sealed class NativePackageBrokerAuthenticationFrame
+    {
+        public string action = string.Empty;
+        public string kind = "authenticate";
+        public string operationToken = string.Empty;
+        public int schemaVersion = 1;
+    }
+
+    [Serializable]
+    internal sealed class NativePackageBrokerAuthenticationServerFrame
+    {
+        public NativePackageBrokerAuthenticationResult authentication;
+        public string kind = string.Empty;
+        public int schemaVersion;
+    }
+
+    [Serializable]
     internal sealed class NativePackageBrokerServerFrame
     {
         public string kind = string.Empty;
@@ -152,7 +184,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     }
 
     internal sealed class NamedPipePackageBrokerTransport
-        : INativePackageBrokerTransport
+        : INativePackageBrokerTransport,
+          INativePackageBrokerAuthenticationTransport
     {
         internal const string ProductionPipeName =
             "yucp.package-broker.v1";
@@ -348,6 +381,177 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     TraceId(request.traceparent),
                     "Start the YUCP desktop app, then try again.");
             }
+        }
+
+        public async Task<NativePackageBrokerAuthenticationResult>
+            AuthenticateAsync(
+                string action,
+                CancellationToken cancellationToken)
+        {
+            NativePackageBrokerClient.ValidateAuthenticationAction(action);
+            using (var operationCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken))
+            try
+            {
+                operationCancellation.CancelAfter(
+                    _operationTimeoutMilliseconds);
+                using (var pipe = new NamedPipeClientStream(
+                    ".",
+                    _pipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous))
+                {
+                    try
+                    {
+                        await AwaitWithTimeout(
+                            pipe.ConnectAsync(ConnectTimeoutMilliseconds),
+                            _frameTimeoutMilliseconds,
+                            operationCancellation.Token);
+                    }
+                    catch (TimeoutException)
+                    {
+                        throw new NativePackageBrokerException(
+                            "BROKER_UNAVAILABLE",
+                            string.Empty,
+                            "The YUCP package broker is not running.");
+                    }
+                    catch (Exception exception) when (
+                        exception is IOException ||
+                        exception is UnauthorizedAccessException)
+                    {
+                        throw new NativePackageBrokerException(
+                            "BROKER_UNAVAILABLE",
+                            string.Empty,
+                            "The YUCP package broker is not available.");
+                    }
+                    using (var reader = new StreamReader(
+                        pipe,
+                        new UTF8Encoding(false, true),
+                        true,
+                        4096,
+                        true))
+                    using (var writer = new StreamWriter(
+                        pipe,
+                        new UTF8Encoding(false, true),
+                        4096,
+                        true))
+                    {
+                        var frameReader = new BoundedFrameReader(reader);
+                        writer.NewLine = "\n";
+                        writer.AutoFlush = true;
+                        string nonce = CreateNonce();
+                        await WriteFrameAsync(
+                            writer,
+                            new NativePackageBrokerBeginFrame
+                            {
+                                clientNonce = nonce,
+                            },
+                            _frameTimeoutMilliseconds,
+                            operationCancellation.Token);
+                        NativePackageBrokerChallengeFrame challenge =
+                            await ReadFrameAsync<
+                                NativePackageBrokerChallengeFrame>(
+                                frameReader,
+                                "challenge",
+                                _frameTimeoutMilliseconds,
+                                operationCancellation.Token);
+                        ValidateChallenge(challenge, nonce);
+                        await WriteFrameAsync(
+                            writer,
+                            new NativePackageBrokerAuthenticationFrame
+                            {
+                                action = action,
+                                operationToken =
+                                    challenge.operationToken,
+                            },
+                            _frameTimeoutMilliseconds,
+                            operationCancellation.Token);
+                        NativePackageBrokerAuthenticationServerFrame
+                            response =
+                                await ReadAuthenticationFrameAsync(
+                                    frameReader,
+                                    _frameTimeoutMilliseconds,
+                                    operationCancellation.Token);
+                        NativePackageBrokerClient
+                            .ValidateAuthenticationResult(
+                                response.authentication);
+                        return response.authentication;
+                    }
+                }
+            }
+            catch (NativePackageBrokerException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                throw new NativePackageBrokerException(
+                    "BROKER_TIMEOUT",
+                    string.Empty,
+                    "YUCP authentication did not respond in time.");
+            }
+            catch (TimeoutException)
+            {
+                throw new NativePackageBrokerException(
+                    "BROKER_TIMEOUT",
+                    string.Empty,
+                    "YUCP authentication did not respond in time.");
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is UnauthorizedAccessException)
+            {
+                throw new NativePackageBrokerException(
+                    "BROKER_UNAVAILABLE",
+                    string.Empty,
+                    "Start YUCP secure package delivery, then try again.");
+            }
+        }
+
+        private static async Task<
+            NativePackageBrokerAuthenticationServerFrame>
+            ReadAuthenticationFrameAsync(
+                BoundedFrameReader reader,
+                int timeoutMilliseconds,
+                CancellationToken cancellationToken)
+        {
+            string line = await reader.ReadLineAsync(
+                timeoutMilliseconds,
+                cancellationToken);
+            if (string.IsNullOrWhiteSpace(line) ||
+                Encoding.UTF8.GetByteCount(line) > MaximumFrameBytes)
+            {
+                throw InvalidProtocol();
+            }
+            NativePackageBrokerAuthenticationServerFrame frame;
+            try
+            {
+                frame = JsonConvert.DeserializeObject<
+                    NativePackageBrokerAuthenticationServerFrame>(
+                    line,
+                    StrictFrameSerializerSettings);
+            }
+            catch (JsonException)
+            {
+                throw InvalidProtocol();
+            }
+            if (frame == null ||
+                frame.schemaVersion != 1 ||
+                !string.Equals(
+                    frame.kind,
+                    "authentication",
+                    StringComparison.Ordinal) ||
+                frame.authentication == null)
+            {
+                throw InvalidProtocol();
+            }
+            return frame;
         }
 
         private static async Task<T> ReadFrameAsync<T>(
@@ -633,6 +837,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "uninstall",
                 },
                 StringComparer.Ordinal);
+        private static readonly HashSet<string>
+            SupportedAuthenticationActions =
+                new HashSet<string>(
+                    new[] { "sign-in", "sign-out", "status" },
+                    StringComparer.Ordinal);
         private static INativePackageBrokerTransport s_transport =
             new NamedPipePackageBrokerTransport();
 
@@ -648,6 +857,62 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 ValidateProgress(request, progress);
                 reportProgress?.Invoke(progress);
             }, cancellationToken);
+        }
+
+        internal static async Task<
+            NativePackageBrokerAuthenticationResult>
+            AuthenticateAsync(
+                string action,
+                CancellationToken cancellationToken = default)
+        {
+            ValidateAuthenticationAction(action);
+            if (!(s_transport is
+                INativePackageBrokerAuthenticationTransport transport))
+            {
+                throw new NativePackageBrokerException(
+                    "BROKER_PROTOCOL_INVALID",
+                    string.Empty,
+                    "The YUCP package broker does not support authentication.");
+            }
+            NativePackageBrokerAuthenticationResult result =
+                await transport.AuthenticateAsync(
+                    action,
+                    cancellationToken);
+            ValidateAuthenticationResult(result);
+            if (!string.IsNullOrWhiteSpace(result.errorCode))
+            {
+                throw new NativePackageBrokerException(
+                    result.errorCode,
+                    string.Empty,
+                    string.IsNullOrWhiteSpace(result.errorMessage)
+                        ? "YUCP authentication could not finish."
+                        : result.errorMessage);
+            }
+            return result;
+        }
+
+        internal static void ValidateAuthenticationAction(string action)
+        {
+            if (!SupportedAuthenticationActions.Contains(
+                action ?? string.Empty))
+            {
+                throw new InvalidDataException(
+                    "The package authentication action is invalid.");
+            }
+        }
+
+        internal static void ValidateAuthenticationResult(
+            NativePackageBrokerAuthenticationResult result)
+        {
+            if (result == null ||
+                string.IsNullOrWhiteSpace(result.errorCode) !=
+                string.IsNullOrWhiteSpace(result.errorMessage) ||
+                !string.IsNullOrWhiteSpace(result.errorCode) &&
+                    result.signedIn)
+            {
+                throw new InvalidDataException(
+                    "The package authentication result is invalid.");
+            }
         }
 
         internal static string SerializeRequest(

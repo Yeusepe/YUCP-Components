@@ -211,6 +211,9 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool _waitingForImportCompletion = false;
         private string _pendingPackageName;
         private bool _pendingImportAfterVerification = false;
+        private bool? _isBrokerSignedIn;
+        private bool _authenticationActionInFlight;
+        private bool _authenticationRefreshScheduled;
         // Gallery carousel state
         private int _selectedGalleryIndex = -1;
         private Texture2D _originalBannerTexture;
@@ -251,6 +254,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
             };
             SchedulePendingLifecycleResume();
+            ScheduleAuthenticationRefresh();
         }
 
         private void OnDisable()
@@ -2602,7 +2606,9 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             _licenseSection.Clear();
 
-            if (!RequiresVerificationBeforeImport())
+            bool showBrokerAuthentication = _isAliasBootstrapFlow;
+            if (!showBrokerAuthentication &&
+                !RequiresVerificationBeforeImport())
             {
                 _licenseSection.style.display = DisplayStyle.None;
                 UpdateImportButtonEnabled();
@@ -2612,7 +2618,10 @@ namespace YUCP.Importer.Editor.PackageManager
             _licenseSection.style.display = DisplayStyle.Flex;
             _licenseSection.RemoveFromClassList("yucp-license-gate");
             _licenseSection.AddToClassList("lgate-root");
-            _licenseSection.Add(BuildVerificationServerNotice());
+            _licenseSection.Add(
+                showBrokerAuthentication
+                    ? BuildAuthenticationSection()
+                    : BuildVerificationServerNotice());
 
             VisualElement storefrontActions =
                 BuildStorefrontActionsRow();
@@ -2622,6 +2631,212 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             UpdateImportButtonEnabled();
         }
+
+        private VisualElement BuildAuthenticationSection()
+        {
+            var block = new VisualElement();
+            block.AddToClassList("lgate-req-block");
+            block.style.borderBottomWidth = 0;
+            block.style.paddingBottom = 10;
+
+            if (_authenticationActionInFlight ||
+                !_isBrokerSignedIn.HasValue)
+            {
+                var checkingTitle = new Label(
+                    _authenticationActionInFlight
+                        ? "Updating YUCP sign-in..."
+                        : "Checking YUCP sign-in...");
+                checkingTitle.AddToClassList("lgate-req-name");
+                block.Add(checkingTitle);
+                block.Add(BuildBuyerFlowNote(
+                    "Checking the Windows-protected account saved for secure package delivery."));
+                return block;
+            }
+
+            if (_isBrokerSignedIn.Value)
+            {
+                var signedInTitle = new Label("Signed in with YUCP");
+                signedInTitle.AddToClassList("lgate-req-name");
+                block.Add(signedInTitle);
+                block.Add(BuildBuyerFlowNote(
+                    "Your saved account is verified and ready for this package.",
+                    "You can also revoke YUCP Package Broker access from Authorized applications on the YUCP website."));
+                var signOutButton = new Button(OnBrokerSignOutClicked)
+                {
+                    text = "Sign out",
+                };
+                signOutButton.AddToClassList("lgate-link-btn");
+                signOutButton.SetEnabled(
+                    !_authenticationActionInFlight);
+                block.Add(signOutButton);
+                return block;
+            }
+
+            var signedOutTitle = new Label("Sign in to continue");
+            signedOutTitle.AddToClassList("lgate-req-name");
+            block.Add(signedOutTitle);
+            block.Add(BuildBuyerFlowNote(
+                "Sign in with the YUCP account that owns this product.",
+                "Your browser opens only when Windows does not already have a valid saved YUCP session."));
+            var signInButton = new Button(OnBrokerSignInClicked)
+            {
+                text = "Sign in with YUCP",
+            };
+            signInButton.AddToClassList("lgate-solid-btn");
+            signInButton.SetEnabled(!_authenticationActionInFlight);
+            block.Add(signInButton);
+            return block;
+        }
+
+        private void ScheduleAuthenticationRefresh()
+        {
+            if (!_isAliasBootstrapFlow ||
+                _authenticationRefreshScheduled ||
+                _authenticationActionInFlight)
+            {
+                return;
+            }
+            _authenticationRefreshScheduled = true;
+            EditorApplication.delayCall += async () =>
+            {
+                _authenticationRefreshScheduled = false;
+                if (this != null)
+                {
+                    await RefreshAuthenticationStatusAsync();
+                }
+            };
+        }
+
+        private async Task RefreshAuthenticationStatusAsync()
+        {
+            if (_authenticationActionInFlight || !_isAliasBootstrapFlow)
+            {
+                return;
+            }
+            _authenticationActionInFlight = true;
+            BuildLicenseSection();
+            try
+            {
+                NativePackageBrokerAuthenticationResult result =
+                    await PackageLifecycleCoordinator
+                        .GetAuthenticationStatusAsync();
+                if (this != null)
+                {
+                    _isBrokerSignedIn = result.signedIn;
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "[YUCP PackageManager] Could not verify saved sign-in: " +
+                    exception.GetType().Name);
+                if (this != null)
+                {
+                    _isBrokerSignedIn = false;
+                    ShowFlowNotice(
+                        "Sign-in status unavailable",
+                        "Sign in with YUCP to reconnect secure package delivery.",
+                        FlowNoticeTone.Info);
+                }
+            }
+            finally
+            {
+                if (this != null)
+                {
+                    _authenticationActionInFlight = false;
+                    BuildLicenseSection();
+                }
+            }
+        }
+
+        private async void OnBrokerSignInClicked()
+        {
+            if (_authenticationActionInFlight)
+            {
+                return;
+            }
+            _authenticationActionInFlight = true;
+            BuildLicenseSection();
+            try
+            {
+                NativePackageBrokerAuthenticationResult result =
+                    await PackageLifecycleCoordinator.SignInAsync();
+                if (this != null)
+                {
+                    _isBrokerSignedIn = result.signedIn;
+                    ShowFlowNotice(
+                        "Signed in",
+                        "Your YUCP account is ready for secure package delivery.",
+                        FlowNoticeTone.Success);
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "[YUCP PackageManager] YUCP sign-in failed: " +
+                    exception.GetType().Name);
+                if (this != null)
+                {
+                    _isBrokerSignedIn = false;
+                    ShowFlowNotice(
+                        "Sign-in failed",
+                        "Could not finish YUCP sign-in. Try again.",
+                        FlowNoticeTone.Error);
+                }
+            }
+            finally
+            {
+                if (this != null)
+                {
+                    _authenticationActionInFlight = false;
+                    BuildLicenseSection();
+                }
+            }
+        }
+
+        private async void OnBrokerSignOutClicked()
+        {
+            if (_authenticationActionInFlight)
+            {
+                return;
+            }
+            _authenticationActionInFlight = true;
+            BuildLicenseSection();
+            try
+            {
+                await PackageLifecycleCoordinator.SignOutAsync();
+                if (this != null)
+                {
+                    _isBrokerSignedIn = false;
+                    ShowFlowNotice(
+                        "Signed out",
+                        "The saved YUCP package session was removed from Windows.",
+                        FlowNoticeTone.Success);
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "[YUCP PackageManager] YUCP sign-out failed: " +
+                    exception.GetType().Name);
+                if (this != null)
+                {
+                    ShowFlowNotice(
+                        "Sign-out failed",
+                        "Could not finish signing out. Try again.",
+                        FlowNoticeTone.Error);
+                }
+            }
+            finally
+            {
+                if (this != null)
+                {
+                    _authenticationActionInFlight = false;
+                    BuildLicenseSection();
+                }
+            }
+        }
+
         private static VisualElement BuildHeroPill(string text)
         {
             var pill = new VisualElement();
@@ -2639,6 +2854,10 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             if (_importButton == null) return;
             bool hasUnverifiedLicense = RequiresVerificationBeforeImport();
+            bool requiresExternalBootstrap =
+                hasUnverifiedLicense && !_isAliasBootstrapFlow;
+            bool requiresBrokerSignIn =
+                _isAliasBootstrapFlow && _isBrokerSignedIn != true;
 
             if (_pendingImportAfterVerification)
             {
@@ -2655,9 +2874,12 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             SetVerifyStatusLabel(null);
-            _importButton.SetEnabled(!hasUnverifiedLicense);
-            _importButton.tooltip = hasUnverifiedLicense
+            _importButton.SetEnabled(
+                !requiresExternalBootstrap && !requiresBrokerSignIn);
+            _importButton.tooltip = requiresExternalBootstrap
                 ? "Install this product through its Creator Companion bootstrap."
+                : requiresBrokerSignIn
+                    ? "Sign in with YUCP to verify and import this package."
                 : string.Empty;
             RefreshPrimaryImportButton();
         }
@@ -3030,6 +3252,7 @@ namespace YUCP.Importer.Editor.PackageManager
             RefreshUI();
             RestorePendingInstallerView();
             SchedulePendingLifecycleResume();
+            ScheduleAuthenticationRefresh();
 
             if (showWindow)
             {
