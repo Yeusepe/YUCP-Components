@@ -1,0 +1,56 @@
+{
+  "SHIPPED  T=0    tau=17ms": {
+    "energyRatio": 0.8262840923733866,
+    "speedW1": 0.045736637246534456,
+    "concentrationRecon": 0.3431592042325204,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.08232163779192306,
+    "argmaxLagMeanMs": 50.39999999999999,
+    "rmse": 0.05439838616639451
+  },
+  "fast obs T=0    tau=6ms ": {
+    "energyRatio": 1.0465740209900285,
+    "speedW1": 0.1255235548784295,
+    "concentrationRecon": 0.5067424197082613,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.14060459368398812,
+    "argmaxLagMeanMs": 0.0,
+    "rmse": 0.0564388279848547
+  },
+  "FITTED   T=72   tau=6ms ": {
+    "energyRatio": 0.9874880787174736,
+    "speedW1": 0.03208168721253879,
+    "concentrationRecon": 0.3662044039693546,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.10895881096979135,
+    "argmaxLagMeanMs": 40.420512820512826,
+    "rmse": 0.07885475548656612
+  },
+  "alt      T=72   tau=9ms ": {
+    "energyRatio": 0.9261340744567427,
+    "speedW1": 0.03565249864329784,
+    "concentrationRecon": 0.356135079542387,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.09248294144566976,
+    "argmaxLagMeanMs": 42.76410256410257,
+    "rmse": 0.07965322340638332
+  },
+  "alt      T=64   tau=6ms ": {
+    "energyRatio": 0.9971896530420656,
+    "speedW1": 0.04605109774918625,
+    "concentrationRecon": 0.36196532661457537,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.12220710389049702,
+    "argmaxLagMeanMs": 39.723076923076924,
+    "rmse": 0.07699124902233732
+  },
+  "alt      T=85   tau=6ms ": {
+    "energyRatio": 0.984876990830858,
+    "speedW1": 0.03724688303800383,
+    "concentrationRecon": 0.37855978825730485,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.10178266461947547,
+    "argmaxLagMeanMs": 48.96410256410257,
+    "rmse": 0.08216882629693315
+  }
+}

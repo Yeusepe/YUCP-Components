@@ -1,0 +1,101 @@
+{
+  "0.0": {
+    "energyRatio": 0.8262840923733866,
+    "speedW1": 0.045736637246534456,
+    "concentrationRecon": 0.3431592042325204,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.08232163779192306,
+    "argmaxLagMeanMs": 50.39999999999999,
+    "rmse": 0.05439838616639451
+  },
+  "21.3": {
+    "energyRatio": 0.8473490258339992,
+    "speedW1": 0.05628269900553608,
+    "concentrationRecon": 0.36190039570594956,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.06751536379157896,
+    "argmaxLagMeanMs": 56.15384615384615,
+    "rmse": 0.06922361506362061
+  },
+  "42.7": {
+    "energyRatio": 0.8104273853678597,
+    "speedW1": 0.042646799546950914,
+    "concentrationRecon": 0.33046909752094733,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.059519419524611636,
+    "argmaxLagMeanMs": 45.42564102564103,
+    "rmse": 0.07577509293014098
+  },
+  "64.0": {
+    "energyRatio": 0.7913249163116298,
+    "speedW1": 0.04395200280792451,
+    "concentrationRecon": 0.31334390405069606,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.08617999545486107,
+    "argmaxLagMeanMs": 56.80512820512821,
+    "rmse": 0.08164366839378516
+  },
+  "72.0": {
+    "energyRatio": 0.7834712368485185,
+    "speedW1": 0.045781316417343586,
+    "concentrationRecon": 0.31075429147498584,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.10726826207860904,
+    "argmaxLagMeanMs": 57.08205128205128,
+    "rmse": 0.08367745285638419
+  },
+  "85.3": {
+    "energyRatio": 0.7783456449632857,
+    "speedW1": 0.047294716850654984,
+    "concentrationRecon": 0.3158524594909693,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.12169427967656102,
+    "argmaxLagMeanMs": 57.91794871794872,
+    "rmse": 0.08675038397328205
+  },
+  "106.7": {
+    "energyRatio": 0.7693179551403344,
+    "speedW1": 0.05027639704241191,
+    "concentrationRecon": 0.3227839280939852,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.1494584079121734,
+    "argmaxLagMeanMs": 66.09230769230768,
+    "rmse": 0.09120037846837298
+  },
+  "128.0": {
+    "energyRatio": 0.7647262915409762,
+    "speedW1": 0.05259513058657958,
+    "concentrationRecon": 0.3334536483194424,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.1672209865562991,
+    "argmaxLagMeanMs": 67.86153846153846,
+    "rmse": 0.09504566930735005
+  },
+  "149.3": {
+    "energyRatio": 0.7632331955551175,
+    "speedW1": 0.05505535701962051,
+    "concentrationRecon": 0.3418906003894684,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.17543727541381293,
+    "argmaxLagMeanMs": 73.21025641025642,
+    "rmse": 0.09841052383321251
+  },
+  "170.7": {
+    "energyRatio": 0.764238533001418,
+    "speedW1": 0.0573171577962275,
+    "concentrationRecon": 0.3476671878025512,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.1770118919120663,
+    "argmaxLagMeanMs": 75.31794871794871,
+    "rmse": 0.10138439721706027
+  },
+  "213.3": {
+    "energyRatio": 0.7705680663279949,
+    "speedW1": 0.05984281590385385,
+    "concentrationRecon": 0.35407734841899674,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.17112350945788554,
+    "argmaxLagMeanMs": 80.33333333333333,
+    "rmse": 0.10633727693235098
+  }
+}

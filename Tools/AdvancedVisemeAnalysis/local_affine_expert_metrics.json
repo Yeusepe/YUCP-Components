@@ -1,0 +1,835 @@
+{
+  "acceptance": {
+    "passed": true,
+    "summary": "fitted max=8.993e-15; pruned replay p99=0.010993, max=0.024460; constraints=0; connected clips=10 steady/20 transitioning."
+  },
+  "clip_estimates": {
+    "fitted_coefficients_per_state": 10,
+    "hard_routed_fused_steady_connected_clips": 10,
+    "hard_routed_fused_transition_connected_clips": 20,
+    "measured_dense_reference_connected_clips_per_frame": 2084,
+    "naive_shared_plus_residual_connected": {
+      "maximum": 15,
+      "median": 14.0,
+      "minimum": 12
+    },
+    "note": "Common and retained residual coefficients must be fused into each active tracker clip. Evaluating them as separate shared/residual layers saves storage but can increase frame cost.",
+    "pruned_unique_authored_clips_estimate": 91,
+    "states": 15,
+    "steady_connected_reduction_fraction": 0.9952015355086372,
+    "transition_connected_reduction_fraction": 0.9904030710172744,
+    "unpruned_unique_authored_clips": 150
+  },
+  "configuration": {
+    "fps": [
+      15,
+      30,
+      60,
+      90,
+      144
+    ],
+    "heldout_per_viseme": 1536,
+    "outputs": 19,
+    "prune_relative": 0.055,
+    "seed": 20260718,
+    "tracker_inputs": 8,
+    "train_per_viseme": 768,
+    "visemes": 15
+  },
+  "decomposition": {
+    "common_matrix_frobenius_norm": 2.6910040408068903,
+    "retained_residual_frobenius_norm": 1.1445014894067411
+  },
+  "fit": {
+    "maximum_design_condition_number": 11.157838416402225,
+    "maximum_training_error": 8.93729534823251e-15,
+    "rms_training_error": 1.1471252904532434e-15,
+    "samples_per_state": 768
+  },
+  "pruning": {
+    "constraint_bias_repairs": 1,
+    "fraction_pruned": 0.55,
+    "groups_pruned": 66,
+    "groups_retained": 54,
+    "largest_pruned_normalized_norm": 0.05390455983512003,
+    "pruned_groups_per_input": [
+      7,
+      7,
+      0,
+      10,
+      11,
+      11,
+      11,
+      9
+    ],
+    "pruned_groups_per_state": [
+      6,
+      4,
+      4,
+      4,
+      4,
+      5,
+      4,
+      6,
+      5,
+      4,
+      5,
+      4,
+      4,
+      4,
+      3
+    ],
+    "relative_group_threshold": 0.055,
+    "retained_groups_per_input": [
+      8,
+      8,
+      15,
+      5,
+      4,
+      4,
+      4,
+      6
+    ],
+    "retained_groups_per_state": [
+      2,
+      4,
+      4,
+      4,
+      4,
+      3,
+      4,
+      2,
+      3,
+      4,
+      3,
+      4,
+      4,
+      4,
+      5
+    ],
+    "smallest_retained_normalized_norm": 0.05801344901225277,
+    "total_groups": 120
+  },
+  "schema_version": 1,
+  "sequence_replay": {
+    "fitted": {
+      "by_category_and_fps": {
+        "interruptions@144": {
+          "frames": 3456,
+          "output_error": {
+            "maximum_absolute": 4.773959005888173e-15,
+            "p99_absolute": 3.3306690738754696e-15,
+            "rms": 8.028440473108874e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 7.354117315117037e-13,
+            "p99_absolute": 1.2789769243681803e-13,
+            "rms": 3.1265265681692494e-14
+          }
+        },
+        "interruptions@15": {
+          "frames": 480,
+          "output_error": {
+            "maximum_absolute": 4.385380947269368e-15,
+            "p99_absolute": 3.3861802251067274e-15,
+            "rms": 8.159091871453518e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 6.682154829462661e-14,
+            "p99_absolute": 4.839878497975292e-14,
+            "rms": 9.012353415710006e-15
+          }
+        },
+        "interruptions@30": {
+          "frames": 768,
+          "output_error": {
+            "maximum_absolute": 4.551914400963142e-15,
+            "p99_absolute": 3.3306690738754696e-15,
+            "rms": 8.171650313929767e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 1.4155343563970746e-13,
+            "p99_absolute": 6.624700787938418e-14,
+            "rms": 1.4194499590572047e-14
+          }
+        },
+        "interruptions@60": {
+          "frames": 1488,
+          "output_error": {
+            "maximum_absolute": 4.6074255521944e-15,
+            "p99_absolute": 3.0692115515762937e-15,
+            "rms": 7.85645944804848e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 2.881028748902281e-13,
+            "p99_absolute": 7.827072323607354e-14,
+            "rms": 1.9641684383252715e-14
+          }
+        },
+        "interruptions@90": {
+          "frames": 2208,
+          "output_error": {
+            "maximum_absolute": 4.718447854656915e-15,
+            "p99_absolute": 3.1086244689504383e-15,
+            "rms": 8.090068728054072e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 4.496403249731884e-13,
+            "p99_absolute": 1.0116907311896739e-13,
+            "rms": 2.4451745145847214e-14
+          }
+        },
+        "random@144": {
+          "frames": 4608,
+          "output_error": {
+            "maximum_absolute": 4.496403249731884e-15,
+            "p99_absolute": 2.248201624865942e-15,
+            "rms": 7.356181514104838e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 6.554756737386924e-13,
+            "p99_absolute": 1.3389289676979388e-13,
+            "rms": 2.901153854119525e-14
+          }
+        },
+        "random@15": {
+          "frames": 480,
+          "output_error": {
+            "maximum_absolute": 4.3298697960381105e-15,
+            "p99_absolute": 2.1094237467877974e-15,
+            "rms": 7.073763228055424e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 6.869504964868156e-14,
+            "p99_absolute": 4.413136522884997e-14,
+            "rms": 8.785086882883663e-15
+          }
+        },
+        "random@30": {
+          "frames": 960,
+          "output_error": {
+            "maximum_absolute": 4.3298697960381105e-15,
+            "p99_absolute": 2.220446049250313e-15,
+            "rms": 7.421664702059176e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 1.4363510381087963e-13,
+            "p99_absolute": 5.3028414992439397e-14,
+            "rms": 1.3184381249910268e-14
+          }
+        },
+        "random@60": {
+          "frames": 1920,
+          "output_error": {
+            "maximum_absolute": 4.3298697960381105e-15,
+            "p99_absolute": 2.0816681711721685e-15,
+            "rms": 7.301378599149677e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 2.76445533131664e-13,
+            "p99_absolute": 7.577272143066693e-14,
+            "rms": 1.9050629474203654e-14
+          }
+        },
+        "random@90": {
+          "frames": 2880,
+          "output_error": {
+            "maximum_absolute": 4.6629367034256575e-15,
+            "p99_absolute": 2.1649348980190553e-15,
+            "rms": 7.199227729435588e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 4.371503159461554e-13,
+            "p99_absolute": 9.992007221626409e-14,
+            "rms": 2.1886536710439817e-14
+          }
+        },
+        "transitions@144": {
+          "frames": 8190,
+          "output_error": {
+            "maximum_absolute": 4.801714581503802e-15,
+            "p99_absolute": 3.219646771412954e-15,
+            "rms": 7.824898933747176e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 7.364109322338663e-13,
+            "p99_absolute": 9.592326932761353e-14,
+            "rms": 2.4867621575231956e-14
+          }
+        },
+        "transitions@15": {
+          "frames": 840,
+          "output_error": {
+            "maximum_absolute": 4.496403249731884e-15,
+            "p99_absolute": 3.164135620181696e-15,
+            "rms": 7.80157780264531e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 7.004813395994347e-14,
+            "p99_absolute": 3.9968028886505635e-14,
+            "rms": 7.888277288998343e-15
+          }
+        },
+        "transitions@30": {
+          "frames": 1680,
+          "output_error": {
+            "maximum_absolute": 4.385380947269368e-15,
+            "p99_absolute": 3.1086244689504383e-15,
+            "rms": 7.839201257216648e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 1.4405143744511406e-13,
+            "p99_absolute": 4.4547698863084406e-14,
+            "rms": 1.126341800825404e-14
+          }
+        },
+        "transitions@60": {
+          "frames": 3570,
+          "output_error": {
+            "maximum_absolute": 4.551914400963142e-15,
+            "p99_absolute": 3.1086244689504383e-15,
+            "rms": 7.838377447601787e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 2.939315457695102e-13,
+            "p99_absolute": 6.661338147750939e-14,
+            "rms": 1.5534701839338622e-14
+          }
+        },
+        "transitions@90": {
+          "frames": 5040,
+          "output_error": {
+            "maximum_absolute": 4.551914400963142e-15,
+            "p99_absolute": 3.1086244689504383e-15,
+            "rms": 7.811209676871211e-16
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 4.1966430330830917e-13,
+            "p99_absolute": 8.368306048112117e-14,
+            "rms": 1.954987988048721e-14
+          }
+        }
+      },
+      "overall_output_error": {
+        "maximum_absolute": 4.801714581503802e-15,
+        "p99_absolute": 2.9976021664879227e-15,
+        "rms": 7.727262747059164e-16
+      },
+      "overall_velocity_error_per_second": {
+        "maximum_absolute": 7.364109322338663e-13,
+        "p99_absolute": 9.192646643896296e-14,
+        "rms": 2.2627409089991416e-14
+      }
+    },
+    "frame_count": 38568,
+    "pruned": {
+      "by_category_and_fps": {
+        "interruptions@144": {
+          "frames": 3456,
+          "output_error": {
+            "maximum_absolute": 0.022313041741581607,
+            "p99_absolute": 0.010630970089160079,
+            "rms": 0.003173789865245049
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 3.057883010297246,
+            "p99_absolute": 0.882904763102222,
+            "rms": 0.16915616776285355
+          }
+        },
+        "interruptions@15": {
+          "frames": 480,
+          "output_error": {
+            "maximum_absolute": 0.019625417706413045,
+            "p99_absolute": 0.011333164179988182,
+            "rms": 0.0032558079775715496
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 0.3484544890903878,
+            "p99_absolute": 0.17657827662637418,
+            "rms": 0.04755486550729843
+          }
+        },
+        "interruptions@30": {
+          "frames": 768,
+          "output_error": {
+            "maximum_absolute": 0.01918633231237668,
+            "p99_absolute": 0.010555920367799258,
+            "rms": 0.0030773549723991612
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 0.6392684322919107,
+            "p99_absolute": 0.2803428754052365,
+            "rms": 0.07169799866055693
+          }
+        },
+        "interruptions@60": {
+          "frames": 1488,
+          "output_error": {
+            "maximum_absolute": 0.02009849426773952,
+            "p99_absolute": 0.011726056678051638,
+            "rms": 0.0033153793710867666
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 1.3272363799711924,
+            "p99_absolute": 0.49607212085415403,
+            "rms": 0.10772894829385396
+          }
+        },
+        "interruptions@90": {
+          "frames": 2208,
+          "output_error": {
+            "maximum_absolute": 0.020935164532000228,
+            "p99_absolute": 0.011576025032811072,
+            "rms": 0.00330294682840622
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 2.1876088838921413,
+            "p99_absolute": 0.6460204772605371,
+            "rms": 0.1331363725860178
+          }
+        },
+        "random@144": {
+          "frames": 4608,
+          "output_error": {
+            "maximum_absolute": 0.02220457477135651,
+            "p99_absolute": 0.011298744171595454,
+            "rms": 0.003209192552174164
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 3.396442927361176,
+            "p99_absolute": 0.8455221617198999,
+            "rms": 0.16720548398208077
+          }
+        },
+        "random@15": {
+          "frames": 480,
+          "output_error": {
+            "maximum_absolute": 0.018056314037789345,
+            "p99_absolute": 0.01048155177955198,
+            "rms": 0.003210607639906731
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 0.32576945924058676,
+            "p99_absolute": 0.16910630034286403,
+            "rms": 0.04910613355828277
+          }
+        },
+        "random@30": {
+          "frames": 960,
+          "output_error": {
+            "maximum_absolute": 0.0199046320391279,
+            "p99_absolute": 0.010614387419397643,
+            "rms": 0.0032161437442564025
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 0.643221438256135,
+            "p99_absolute": 0.2971807610629807,
+            "rms": 0.07369926627725196
+          }
+        },
+        "random@60": {
+          "frames": 1920,
+          "output_error": {
+            "maximum_absolute": 0.019209729882276816,
+            "p99_absolute": 0.010742517010738431,
+            "rms": 0.0031846792036726
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 1.3132941124415807,
+            "p99_absolute": 0.48711554122100315,
+            "rms": 0.10844224560646473
+          }
+        },
+        "random@90": {
+          "frames": 2880,
+          "output_error": {
+            "maximum_absolute": 0.022657326760071372,
+            "p99_absolute": 0.010128527072104909,
+            "rms": 0.0031225523612136486
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 2.113602110448611,
+            "p99_absolute": 0.6291728388861652,
+            "rms": 0.12855651615857214
+          }
+        },
+        "transitions@144": {
+          "frames": 8190,
+          "output_error": {
+            "maximum_absolute": 0.02383498570762793,
+            "p99_absolute": 0.011217180330565537,
+            "rms": 0.003238960146273431
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 3.6493495814380674,
+            "p99_absolute": 0.7066256605894815,
+            "rms": 0.13930330326228016
+          }
+        },
+        "transitions@15": {
+          "frames": 840,
+          "output_error": {
+            "maximum_absolute": 0.02059661788134179,
+            "p99_absolute": 0.010908318834488829,
+            "rms": 0.0032222578399019497
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 0.3564934681481059,
+            "p99_absolute": 0.16257970277916703,
+            "rms": 0.04354072883072554
+          }
+        },
+        "transitions@30": {
+          "frames": 1680,
+          "output_error": {
+            "maximum_absolute": 0.01960550056055349,
+            "p99_absolute": 0.011001202326976007,
+            "rms": 0.0032247683151726456
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 0.7027761057420985,
+            "p99_absolute": 0.268127814715238,
+            "rms": 0.06159620915999743
+          }
+        },
+        "transitions@60": {
+          "frames": 3570,
+          "output_error": {
+            "maximum_absolute": 0.02139717460532853,
+            "p99_absolute": 0.010959682246813722,
+            "rms": 0.0032072395704289317
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 1.4251047436438364,
+            "p99_absolute": 0.412055471450666,
+            "rms": 0.084955376074492
+          }
+        },
+        "transitions@90": {
+          "frames": 5040,
+          "output_error": {
+            "maximum_absolute": 0.02446001679552612,
+            "p99_absolute": 0.010941013413187525,
+            "rms": 0.003207164736731113
+          },
+          "velocity_error_per_second": {
+            "maximum_absolute": 2.2867719059056375,
+            "p99_absolute": 0.5448695749290334,
+            "rms": 0.10868151942214864
+          }
+        }
+      },
+      "overall_output_error": {
+        "maximum_absolute": 0.02446001679552612,
+        "p99_absolute": 0.010992953552799471,
+        "rms": 0.0032131216339622817
+      },
+      "overall_velocity_error_per_second": {
+        "maximum_absolute": 3.6493495814380674,
+        "p99_absolute": 0.6067605601609058,
+        "rms": 0.12658603671596075
+      }
+    },
+    "trace_count": 30
+  },
+  "static_held_out": {
+    "models": {
+      "fitted": {
+        "constraints": {
+          "details": {
+            "CH mouth opening": {
+              "analytic_extreme": 0.33999999999999375,
+              "bound": 0.34,
+              "direction": "max",
+              "margin": 6.2727600891321345e-15,
+              "violates": false
+            },
+            "FF labiodental bite": {
+              "analytic_extreme": 0.7200000000000057,
+              "bound": 0.72,
+              "direction": "min",
+              "margin": 5.773159728050814e-15,
+              "violates": false
+            },
+            "PP lip closure": {
+              "analytic_extreme": 0.880000000000002,
+              "bound": 0.88,
+              "direction": "min",
+              "margin": 1.9984014443252818e-15,
+              "violates": false
+            },
+            "PP mouth opening": {
+              "analytic_extreme": 0.17999999999999483,
+              "bound": 0.18,
+              "direction": "max",
+              "margin": 5.162537064506978e-15,
+              "violates": false
+            },
+            "SS mouth opening": {
+              "analytic_extreme": 0.3399999999999986,
+              "bound": 0.34,
+              "direction": "max",
+              "margin": 1.4432899320127035e-15,
+              "violates": false
+            },
+            "exact shared jaw passthrough": {
+              "maximum_coefficient_error": 0.0,
+              "violates": false
+            }
+          },
+          "violation_count": 0,
+          "worst_violation": 0.0
+        },
+        "maximum_absolute": 8.992806499463768e-15,
+        "p99_absolute": 4.274358644806853e-15,
+        "per_output": {
+          "JawOpen": {
+            "maximum_absolute": 0.0,
+            "p99_absolute": 0.0,
+            "rms": 0.0
+          },
+          "JawX": {
+            "maximum_absolute": 3.7470027081099033e-16,
+            "p99_absolute": 2.7755575615628914e-16,
+            "rms": 1.3145664926019025e-16
+          },
+          "JawZ": {
+            "maximum_absolute": 1.1102230246251565e-15,
+            "p99_absolute": 8.049116928532385e-16,
+            "rms": 3.3836052975448104e-16
+          },
+          "LipBite": {
+            "maximum_absolute": 8.215650382226158e-15,
+            "p99_absolute": 5.773159728050814e-15,
+            "rms": 1.4117309294334703e-15
+          },
+          "LipClose": {
+            "maximum_absolute": 4.9960036108132044e-15,
+            "p99_absolute": 3.3432978607805788e-15,
+            "rms": 1.4191656046548778e-15
+          },
+          "LipFunnel": {
+            "maximum_absolute": 4.884981308350689e-15,
+            "p99_absolute": 3.219646771412954e-15,
+            "rms": 1.304259085838343e-15
+          },
+          "LipPucker": {
+            "maximum_absolute": 4.3298697960381105e-15,
+            "p99_absolute": 3.1086244689504383e-15,
+            "rms": 1.4350250749597467e-15
+          },
+          "LipSuck": {
+            "maximum_absolute": 3.9968028886505635e-15,
+            "p99_absolute": 2.6645352591003757e-15,
+            "rms": 1.2218627254740082e-15
+          },
+          "LowerLipIn": {
+            "maximum_absolute": 2.886579864025407e-15,
+            "p99_absolute": 2.0539125955565396e-15,
+            "rms": 8.380728388230149e-16
+          },
+          "MouthOpen": {
+            "maximum_absolute": 8.992806499463768e-15,
+            "p99_absolute": 6.161737786669619e-15,
+            "rms": 2.146536621215999e-15
+          },
+          "MouthX": {
+            "maximum_absolute": 9.228728892196614e-16,
+            "p99_absolute": 6.38378239159465e-16,
+            "rms": 3.3210587500186673e-16
+          },
+          "SmileSad": {
+            "maximum_absolute": 3.8719027983802334e-15,
+            "p99_absolute": 2.7755575615628914e-15,
+            "rms": 1.36115001053142e-15
+          },
+          "TongueNarrow": {
+            "maximum_absolute": 1.7763568394002505e-15,
+            "p99_absolute": 1.3322676295501878e-15,
+            "rms": 6.765911805465325e-16
+          },
+          "TongueOut": {
+            "maximum_absolute": 4.107825191113079e-15,
+            "p99_absolute": 2.7755575615628914e-15,
+            "rms": 1.5248554610723563e-15
+          },
+          "TongueTipDown": {
+            "maximum_absolute": 9.159339953157541e-16,
+            "p99_absolute": 6.106226635438361e-16,
+            "rms": 3.045714755086761e-16
+          },
+          "TongueTipUp": {
+            "maximum_absolute": 1.7763568394002505e-15,
+            "p99_absolute": 1.216249323476851e-15,
+            "rms": 5.815163932511155e-16
+          },
+          "TongueWide": {
+            "maximum_absolute": 2.4980018054066022e-15,
+            "p99_absolute": 1.7208456881689926e-15,
+            "rms": 6.1335044611585905e-16
+          },
+          "TongueY": {
+            "maximum_absolute": 3.3306690738754696e-15,
+            "p99_absolute": 2.4980018054066022e-15,
+            "rms": 1.2069973296659464e-15
+          },
+          "UpperLipIn": {
+            "maximum_absolute": 2.942091015256665e-15,
+            "p99_absolute": 1.887379141862766e-15,
+            "rms": 7.848933112672114e-16
+          }
+        },
+        "rms": 1.0840497688718149e-15
+      },
+      "pruned": {
+        "constraints": {
+          "details": {
+            "CH mouth opening": {
+              "analytic_extreme": 0.3066288701969717,
+              "bound": 0.34,
+              "direction": "max",
+              "margin": 0.03337112980302831,
+              "violates": false
+            },
+            "FF labiodental bite": {
+              "analytic_extreme": 0.72,
+              "bound": 0.72,
+              "direction": "min",
+              "margin": 0.0,
+              "violates": false
+            },
+            "PP lip closure": {
+              "analytic_extreme": 0.8831047310507643,
+              "bound": 0.88,
+              "direction": "min",
+              "margin": 0.0031047310507642534,
+              "violates": false
+            },
+            "PP mouth opening": {
+              "analytic_extreme": 0.17338362032374077,
+              "bound": 0.18,
+              "direction": "max",
+              "margin": 0.006616379676259221,
+              "violates": false
+            },
+            "SS mouth opening": {
+              "analytic_extreme": 0.3051784256685946,
+              "bound": 0.34,
+              "direction": "max",
+              "margin": 0.034821574331405425,
+              "violates": false
+            },
+            "exact shared jaw passthrough": {
+              "maximum_coefficient_error": 0.0,
+              "violates": false
+            }
+          },
+          "violation_count": 0,
+          "worst_violation": 0.0
+        },
+        "maximum_absolute": 0.05282318409126552,
+        "p99_absolute": 0.02483973813406932,
+        "per_output": {
+          "JawOpen": {
+            "maximum_absolute": 0.0,
+            "p99_absolute": 0.0,
+            "rms": 0.0
+          },
+          "JawX": {
+            "maximum_absolute": 0.02751251292219363,
+            "p99_absolute": 0.015998229972042685,
+            "rms": 0.005923757003995747
+          },
+          "JawZ": {
+            "maximum_absolute": 0.031919999668805266,
+            "p99_absolute": 0.019329446978589113,
+            "rms": 0.00636623639735396
+          },
+          "LipBite": {
+            "maximum_absolute": 0.025472266029088975,
+            "p99_absolute": 0.014395957300617702,
+            "rms": 0.005338806016236949
+          },
+          "LipClose": {
+            "maximum_absolute": 0.028274658422236643,
+            "p99_absolute": 0.018211820333848647,
+            "rms": 0.007223650072161128
+          },
+          "LipFunnel": {
+            "maximum_absolute": 0.0312814999859411,
+            "p99_absolute": 0.019164811023315503,
+            "rms": 0.006925631387725671
+          },
+          "LipPucker": {
+            "maximum_absolute": 0.027430547841479913,
+            "p99_absolute": 0.01601529143247107,
+            "rms": 0.005943513644229876
+          },
+          "LipSuck": {
+            "maximum_absolute": 0.025429729971561253,
+            "p99_absolute": 0.01790012241241493,
+            "rms": 0.006331729264832201
+          },
+          "LowerLipIn": {
+            "maximum_absolute": 0.03226852266725433,
+            "p99_absolute": 0.021555390578002043,
+            "rms": 0.007447788789765599
+          },
+          "MouthOpen": {
+            "maximum_absolute": 0.05282318409126552,
+            "p99_absolute": 0.038046035821483554,
+            "rms": 0.014347307420500614
+          },
+          "MouthX": {
+            "maximum_absolute": 0.0404791603223344,
+            "p99_absolute": 0.023278399047278867,
+            "rms": 0.008094791651751105
+          },
+          "SmileSad": {
+            "maximum_absolute": 0.04872076440758799,
+            "p99_absolute": 0.02803482609233563,
+            "rms": 0.0084345848297027
+          },
+          "TongueNarrow": {
+            "maximum_absolute": 0.03616160928840034,
+            "p99_absolute": 0.026145011261044744,
+            "rms": 0.010618462172369308
+          },
+          "TongueOut": {
+            "maximum_absolute": 0.038054721040839956,
+            "p99_absolute": 0.02247682960575918,
+            "rms": 0.008736023992125952
+          },
+          "TongueTipDown": {
+            "maximum_absolute": 0.04520178143486392,
+            "p99_absolute": 0.02815296739917363,
+            "rms": 0.010964420580872698
+          },
+          "TongueTipUp": {
+            "maximum_absolute": 0.03573446209672243,
+            "p99_absolute": 0.023363671973696837,
+            "rms": 0.008335341385592339
+          },
+          "TongueWide": {
+            "maximum_absolute": 0.03291196789681619,
+            "p99_absolute": 0.020980067859761458,
+            "rms": 0.007728948180774357
+          },
+          "TongueY": {
+            "maximum_absolute": 0.021392184782119995,
+            "p99_absolute": 0.014202658992508038,
+            "rms": 0.005367925886765033
+          },
+          "UpperLipIn": {
+            "maximum_absolute": 0.03584757456258014,
+            "p99_absolute": 0.02454494794884783,
+            "rms": 0.009868557404600641
+          }
+        },
+        "rms": 0.00808628792770382
+      }
+    },
+    "sample_count": 23310
+  }
+}

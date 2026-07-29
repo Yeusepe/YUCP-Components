@@ -1,0 +1,22 @@
+{
+  "T_ms": 72.0,
+  "tau_ms": 6.0,
+  "heldout": {
+    "energyRatio": 0.9874880787174736,
+    "speedW1": 0.03208168721253879,
+    "concentrationRecon": 0.3662044039693546,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 0.10895881096979135,
+    "argmaxLagMeanMs": 40.420512820512826,
+    "rmse": 0.07885475548656612
+  },
+  "baseline": {
+    "energyRatio": 0.0009268145676741019,
+    "speedW1": 0.19777248678806716,
+    "concentrationRecon": 0.5790457113996912,
+    "concentrationOrig": 0.2888040323610076,
+    "spectralLogDist": 4.924491578793873,
+    "argmaxLagMeanMs": 409.4358974358974,
+    "rmse": 0.17741336058024576
+  }
+}
