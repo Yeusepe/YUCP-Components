@@ -198,7 +198,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     alias,
                     "preflight",
                     lifecycleId + "-preflight",
-                    lifecycleId,
+                    BuildOperationIdempotencyKey(
+                        lifecycleId,
+                        "preflight"),
                     currentReleaseRoot,
                     string.Empty,
                     string.Empty,
@@ -241,7 +243,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     alias,
                     operation,
                     lifecycleRunId,
-                    lifecycleId,
+                    BuildOperationIdempotencyKey(
+                        lifecycleId,
+                        operation),
                     currentReleaseRoot,
                     preflight.targetReleaseRoot,
                     preflight.activeContentDigest,
@@ -1754,6 +1758,26 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 traceparent =
                     NativePackageBrokerClient.CreateTraceparent(),
             };
+        }
+
+        internal static string BuildOperationIdempotencyKey(
+            string attemptId,
+            string operation)
+        {
+            if (!PackageProtocolIdentifier.IsSafe(attemptId) ||
+                !PackageProtocolIdentifier.IsSafe(operation))
+            {
+                throw new InvalidDataException(
+                    "The package operation idempotency identity is invalid.");
+            }
+
+            string key = attemptId + "-" + operation;
+            if (!PackageProtocolIdentifier.IsSafe(key))
+            {
+                throw new InvalidDataException(
+                    "The package operation idempotency key is invalid.");
+            }
+            return key;
         }
 
         private static PackageLifecycleExecutionResult BuildExecutionResult(

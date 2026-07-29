@@ -395,6 +395,36 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void PackageOperationsUseDistinctRetrySafeIdempotencyKeys()
+        {
+            string attemptId = "0123456789abcdef0123456789abcdef";
+
+            string preflight =
+                PackageLifecycleCoordinator.BuildOperationIdempotencyKey(
+                    attemptId,
+                    "preflight");
+            string install =
+                PackageLifecycleCoordinator.BuildOperationIdempotencyKey(
+                    attemptId,
+                    "install");
+
+            Assert.That(
+                preflight,
+                Is.EqualTo(
+                    "0123456789abcdef0123456789abcdef-preflight"));
+            Assert.That(
+                install,
+                Is.EqualTo(
+                    "0123456789abcdef0123456789abcdef-install"));
+            Assert.That(install, Is.Not.EqualTo(preflight));
+            Assert.That(
+                PackageLifecycleCoordinator.BuildOperationIdempotencyKey(
+                    attemptId,
+                    "install"),
+                Is.EqualTo(install));
+        }
+
+        [Test]
         public void InstallStateUsesTheTransactionControlRoot()
         {
             string path =
