@@ -1638,10 +1638,39 @@ namespace YUCP.Importer.Editor.PackageManager
                 minImporterVersion = GetString(yucp, "minImporterVersion") ?? string.Empty,
                 channel = GetString(yucp, "channel") ?? string.Empty,
                 media = ParseAliasPackageMedia(yucp["media"]),
+                bootstrapIntent = ParseBootstrapIntent(yucp["bootstrapIntent"]),
                 rawContractJson = yucp.ToString(Formatting.None),
             };
 
             return string.IsNullOrWhiteSpace(contract.aliasId) ? null : contract;
+        }
+
+        private static BootstrapIntentContract ParseBootstrapIntent(
+            JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return null;
+            }
+            if (!(token is JObject intent))
+            {
+                throw new FormatException(
+                    "Bootstrap intent metadata must be an object.");
+            }
+            return new BootstrapIntentContract
+            {
+                schemaVersion = intent.Value<int?>("schemaVersion") ?? 0,
+                intentId = GetString(intent, "intentId") ?? string.Empty,
+                mode = GetString(intent, "mode") ?? string.Empty,
+                issuedAt = intent.Value<long?>("issuedAt") ?? 0,
+                keyId = GetString(intent, "keyId") ?? string.Empty,
+                editionId = GetString(intent, "editionId") ?? string.Empty,
+                version = GetString(intent, "version") ?? string.Empty,
+                versionId = GetString(intent, "versionId") ?? string.Empty,
+                releaseRoot = GetString(intent, "releaseRoot") ?? string.Empty,
+                signature = GetString(intent, "signature") ?? string.Empty,
+                rawIntentJson = intent.ToString(Formatting.None),
+            };
         }
 
         private static AliasPackageMediaSet ParseAliasPackageMedia(

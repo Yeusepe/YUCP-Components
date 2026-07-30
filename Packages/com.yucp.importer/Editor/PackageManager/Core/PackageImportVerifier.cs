@@ -117,35 +117,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         file.normalizedPath);
                 }
             }
-            foreach (VerifiedStagingFile file in
-                preservedFiles ?? Array.Empty<VerifiedStagingFile>())
-            {
-                string diskPath = ResolveOwnedFile(
-                    projectRoot,
-                    file.normalizedPath);
-                var info = new FileInfo(diskPath);
-                if (!info.Exists ||
-                    info.Length != file.bytes ||
-                    !string.Equals(
-                        Sha256(diskPath),
-                        file.sha256,
-                        StringComparison.Ordinal))
-                {
-                    throw new InvalidDataException(
-                        "Unity changed a user-modified package file during removal: " +
-                        file.normalizedPath);
-                }
-                if (IsImportableAsset(file.normalizedPath) &&
-                    string.IsNullOrWhiteSpace(
-                        AssetDatabase.AssetPathToGUID(
-                            file.normalizedPath,
-                            AssetPathToGUIDOptions.OnlyExistingAssets)))
-                {
-                    throw new InvalidDataException(
-                        "Unity did not retain the user-modified package asset: " +
-                        file.normalizedPath);
-                }
-            }
+            // Modified owned files are removed from their package paths too.
+            // Their byte-for-byte journal snapshot and user-visible copy are
+            // verified before this import verification boundary.
         }
 
         private static async Task RefreshAndRequireSuccessfulCompilation()

@@ -674,6 +674,246 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void VersionedAliasActivationUsesTheSignedIntentIdentity()
+        {
+            const string intentId =
+                "11111111-1111-4111-8111-111111111111";
+            const string packageJson =
+                "{\"name\":\"com.yucp.jammr\",\"version\":\"2.4.0-beta.1\"," +
+                "\"displayName\":\"JAMMR\",\"yucp\":{\"kind\":\"alias-v2\"," +
+                "\"aliasId\":\"com.yucp.jammr\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"," +
+                "\"bootstrapIntent\":{\"schemaVersion\":1," +
+                "\"intentId\":\"" + intentId + "\",\"mode\":\"specific\"," +
+                "\"issuedAt\":1785384000,\"keyId\":\"bootstrap-key\"," +
+                "\"editionId\":\"pro\",\"version\":\"2.4.0-beta.1\"," +
+                "\"versionId\":\"version-beta-1\",\"releaseRoot\":\"" +
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"," +
+                "\"signature\":\"" +
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+                "\"}}}";
+
+            Assert.That(
+                AliasPackageActivation.TryBuildActivation(
+                    "com.yucp.jammr",
+                    packageJson,
+                    out AliasPackageActivationRequest activation,
+                    out string error),
+                Is.True,
+                error);
+            Assert.That(activation.Key, Is.EqualTo(intentId));
+            Assert.That(
+                activation.Alias.bootstrapIntent.releaseRoot,
+                Is.EqualTo(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+            Assert.That(
+                activation.Alias.bootstrapIntent.mode,
+                Is.EqualTo("specific"));
+        }
+
+        [Test]
+        public void UnityPackageBootstrapHandoffPreservesTheSignedIntent()
+        {
+            const string intentId =
+                "33333333-3333-4333-8333-333333333333";
+            const string intentJson =
+                "{\"schemaVersion\":1," +
+                "\"intentId\":\"" + intentId + "\",\"mode\":\"specific\"," +
+                "\"issuedAt\":1785384000,\"keyId\":\"bootstrap-key\"," +
+                "\"editionId\":\"pro\",\"version\":\"2.4.0-beta.1\"," +
+                "\"versionId\":\"version-beta-1\",\"releaseRoot\":\"" +
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"," +
+                "\"signature\":\"" +
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+                "\"}";
+            const string packageJson =
+                "{\"name\":\"com.yucp.jammr\",\"version\":\"2.4.0-beta.1\"," +
+                "\"displayName\":\"JAMMR\",\"yucp\":{\"kind\":\"alias-v2\"," +
+                "\"aliasId\":\"com.yucp.jammr\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"," +
+                "\"bootstrapIntent\":" + intentJson + "}}";
+
+            Assert.That(
+                AliasPackageActivation.TryBuildUnityPackageActivation(
+                    packageJson,
+                    out AliasPackageActivationRequest activation,
+                    out string error),
+                Is.True,
+                error);
+            Assert.That(activation.Key, Is.EqualTo(intentId));
+            Assert.That(
+                activation.Alias.bootstrapIntent.rawIntentJson,
+                Is.EqualTo(intentJson));
+            Assert.That(
+                activation.Alias.directUnityPackageBootstrap,
+                Is.True);
+        }
+
+        [Test]
+        public void DirectUnityPackageCompletionDoesNotRequireRegisteredVpmBootstrap()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-unitypackage-completion-" +
+                Guid.NewGuid().ToString("N"));
+            var alias = new AliasPackageContract
+            {
+                aliasId = "jammr",
+                bootstrapIntent = new BootstrapIntentContract
+                {
+                    intentId =
+                        "44444444-4444-4444-8444-444444444444",
+                },
+                directUnityPackageBootstrap = true,
+                kind = "alias-v2",
+                packageName = "com.yucp.jammr",
+                packageVersion = "2.4.0",
+            };
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+                DirectUnityPackageBootstrapStore.Persist(
+                    projectPath,
+                    alias,
+                    "{\"name\":\"com.yucp.jammr\"}");
+                alias.directUnityPackageBootstrap = false;
+
+                string error =
+                    PackageLifecycleCoordinator.FinalizeSuccessfulAliasOperation(
+                        projectPath,
+                        alias,
+                        "update");
+
+                Assert.That(error, Is.Null);
+                Assert.That(
+                    AliasPackageActivationStateStore.IsHandled(
+                        projectPath,
+                        alias),
+                    Is.True);
+                Assert.That(
+                    DirectUnityPackageBootstrapStore.ReadAll(projectPath),
+                    Is.Empty);
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void VpmCompletionStillRequiresARegisteredBootstrap()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-vpm-missing-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+
+                string error =
+                    PackageLifecycleCoordinator.FinalizeSuccessfulAliasOperation(
+                        projectPath,
+                        new AliasPackageContract
+                        {
+                            aliasId = "jammr",
+                            kind = "alias-v2",
+                            packageName = "com.yucp.jammr",
+                            packageVersion = "2.4.0",
+                            bootstrapIntent = new BootstrapIntentContract
+                            {
+                                intentId =
+                                    "55555555-5555-4555-8555-555555555555",
+                            },
+                        },
+                        "update");
+
+                Assert.That(
+                    error,
+                    Is.EqualTo(
+                        "The VPM bootstrap is no longer registered."));
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void VersionedAliasWithoutAnIntentIsRejected()
+        {
+            const string packageJson =
+                "{\"name\":\"com.yucp.jammr\",\"version\":\"2.4.0\"," +
+                "\"yucp\":{\"kind\":\"alias-v2\"," +
+                "\"aliasId\":\"com.yucp.jammr\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"}}";
+
+            Assert.That(
+                AliasPackageActivation.TryBuildActivation(
+                    "com.yucp.jammr",
+                    packageJson,
+                    out AliasPackageActivationRequest activation,
+                    out string error),
+                Is.False);
+            Assert.That(activation, Is.Null);
+            Assert.That(error, Does.Contain("server-authorized"));
+        }
+
+        [Test]
+        public void VersionedIntentSchedulesAnExplicitUpdateButLegacyAliasDoesNot()
+        {
+            var versioned = new AliasPackageContract
+            {
+                kind = "alias-v2",
+                bootstrapIntent = new BootstrapIntentContract
+                {
+                    intentId = "22222222-2222-4222-8222-222222222222",
+                },
+            };
+            var legacy = new AliasPackageContract { kind = "alias-v1" };
+
+            Assert.That(
+                AliasPackageActivation.ShouldSchedule(
+                    versioned,
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    false),
+                Is.True);
+            Assert.That(
+                AliasPackageActivation.ShouldSchedule(
+                    legacy,
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    false),
+                Is.False);
+        }
+
+        [Test]
+        public void AliasActivationDoesNotDiscoverUpdatesOnEditorStartup()
+        {
+            string source = File.ReadAllText(
+                Path.Combine(
+                    Path.GetFullPath(Path.Combine(Application.dataPath, "..")),
+                    "Packages",
+                    "com.yucp.importer",
+                    "Editor",
+                    "PackageManager",
+                    "Core",
+                    "AliasPackageActivation.cs"));
+
+            Assert.That(
+                source,
+                Does.Not.Contain(
+                    "EditorApplication.delayCall += ReconcileRegisteredAliases"));
+        }
+
+        [Test]
         public void RegisteredAliasRejectsABlankAliasIdentifier()
         {
             const string packageJson = "{\"name\":\"com.yucp.blank.alias\"," +
@@ -1384,6 +1624,7 @@ namespace YUCP.Importer.Editor.Tests
                         alias.aliasId,
                         releaseRoot,
                         "version-2",
+                        "2.0.0",
                         "receipt-2",
                         "receipts/receipt-2.cbor",
                         new string('a', 64),
@@ -1790,7 +2031,6 @@ namespace YUCP.Importer.Editor.Tests
                 withRollback,
                 Is.EqualTo(new[]
                 {
-                    "Update",
                     "Repair",
                     "Roll back",
                     "Uninstall",
@@ -1799,7 +2039,6 @@ namespace YUCP.Importer.Editor.Tests
                 withoutRollback,
                 Is.EqualTo(new[]
                 {
-                    "Update",
                     "Repair",
                     "Uninstall",
                 }));
@@ -1812,6 +2051,38 @@ namespace YUCP.Importer.Editor.Tests
                     BindingFlags.NonPublic),
                 Is.Not.Null,
                 "Hosted controls must use the ownership-aware lifecycle coordinator.");
+        }
+
+        [Test]
+        public void ExplicitBootstrapLabelsOlderSpecificTargetsAsDowngrades()
+        {
+            Assert.That(
+                PackageLifecycleCoordinator.BuildRequestedTargetLabel(
+                    "2.4.0",
+                    new BootstrapIntentContract
+                    {
+                        mode = "specific",
+                        version = "2.3.1",
+                    }),
+                Is.EqualTo("Downgrade to 2.3.1"));
+            Assert.That(
+                PackageLifecycleCoordinator.BuildRequestedTargetLabel(
+                    "2.4.0",
+                    new BootstrapIntentContract
+                    {
+                        mode = "specific",
+                        version = "2.5.0-beta.1",
+                    }),
+                Is.EqualTo("Update to 2.5.0-beta.1"));
+            Assert.That(
+                PackageLifecycleCoordinator.BuildRequestedTargetLabel(
+                    "2.4.0",
+                    new BootstrapIntentContract
+                    {
+                        mode = "latest",
+                    }),
+                Is.EqualTo(
+                    "Latest stable resolved for this bootstrap"));
         }
 
         [Test]
@@ -1951,8 +2222,19 @@ namespace YUCP.Importer.Editor.Tests
                     previousActiveContentDigest = new string('c', 64),
                     previousActivePolicyVersion = "active-content-policy-v1",
                     previousReleaseRoot = previousRelease,
+                    previousVersion = "1.0.0",
                     previousVersionId = "version-1",
+                    previousFiles = new List<NativePackageBrokerFile>
+                    {
+                        new NativePackageBrokerFile
+                        {
+                            bytes = 6,
+                            normalizedPath = "Assets/Product/file.txt",
+                            sha256 = new string('c', 64),
+                        },
+                    },
                     releaseRoot = currentRelease,
+                    version = "2.0.0",
                     versionId = "version-2",
                 };
                 MethodInfo write = typeof(PackageLifecycleCoordinator).GetMethod(
@@ -1972,6 +2254,7 @@ namespace YUCP.Importer.Editor.Tests
                         aliasId,
                         currentRelease,
                         "version-2",
+                        "2.0.0",
                         string.Empty,
                         string.Empty,
                         new string('a', 64),
@@ -1989,6 +2272,12 @@ namespace YUCP.Importer.Editor.Tests
                 Assert.That(
                     state.previousVersionId,
                     Is.EqualTo("version-1"));
+                Assert.That(
+                    state.previousVersion,
+                    Is.EqualTo("1.0.0"));
+                Assert.That(
+                    state.previousFiles.Single().sha256,
+                    Is.EqualTo(new string('c', 64)));
                 Assert.That(
                     state.previousActiveContentDigest,
                     Is.EqualTo(new string('c', 64)));
@@ -2369,7 +2658,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [UnityTest]
-        public IEnumerator PreparedUninstallResumePreservesAUserModifiedFile()
+        public IEnumerator PreparedUninstallResumeSnapshotsAndRemovesAUserModifiedFile()
         {
             string root = Path.Combine(
                 Path.GetTempPath(),
@@ -2422,6 +2711,15 @@ namespace YUCP.Importer.Editor.Tests
                     priorState = new PackageDeliveryInstallState
                     {
                         aliasId = "jammr",
+                        files = new List<NativePackageBrokerFile>
+                        {
+                            new NativePackageBrokerFile
+                            {
+                                bytes = owned.bytes,
+                                normalizedPath = owned.normalizedPath,
+                                sha256 = owned.sha256,
+                            },
+                        },
                         releaseRoot = new string('1', 64),
                     },
                     runId = runId,
@@ -2446,9 +2744,7 @@ namespace YUCP.Importer.Editor.Tests
                     throw completion.Exception.GetBaseException();
                 }
 
-                Assert.That(
-                    File.ReadAllText(ownedPath),
-                    Is.EqualTo("user modification"));
+                Assert.That(File.Exists(ownedPath), Is.False);
                 ProjectTransactionInspection inspection =
                     ProjectTransactionJournal.Inspect(project, runId);
                 Assert.That(inspection.state, Is.EqualTo("committed"));

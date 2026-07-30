@@ -4,6 +4,8 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using NUnit.Framework;
+using UnityEditor;
+using UnityEngine;
 using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.Tests
@@ -131,6 +133,203 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ChangePlanClassifiesOwnedChangesAndUnownedCollisions()
+        {
+            string root = CreateScratch();
+            try
+            {
+                string project = Path.Combine(root, "project");
+                string product = Path.Combine(project, "Assets", "Product");
+                Directory.CreateDirectory(product);
+                File.WriteAllText(
+                    Path.Combine(product, "collision.txt"),
+                    "user file");
+                File.WriteAllText(
+                    Path.Combine(product, "replace.txt"),
+                    "user edit");
+                File.WriteAllText(
+                    Path.Combine(product, "remove.txt"),
+                    "user edit");
+
+                PackageChangePlan plan = PackageChangePlanBuilder.Build(
+                    project,
+                    new string('a', 64),
+                    new string('b', 64),
+                    "version-two",
+                    new[]
+                    {
+                        BrokerFile(
+                            "Assets/Product/added.txt",
+                            "added"),
+                        BrokerFile(
+                            "Assets/Product/collision.txt",
+                            "target"),
+                        BrokerFile(
+                            "Assets/Product/missing.txt",
+                            "restored"),
+                        BrokerFile(
+                            "Assets/Product/replace.txt",
+                            "version two"),
+                    },
+                    new[]
+                    {
+                        BrokerFile(
+                            "Assets/Product/missing.txt",
+                            "version one"),
+                        BrokerFile(
+                            "Assets/Product/replace.txt",
+                            "version one"),
+                        BrokerFile(
+                            "Assets/Product/remove.txt",
+                            "version one"),
+                    });
+
+                Assert.That(
+                    plan.entries.Single(entry =>
+                        entry.normalizedPath.EndsWith("added.txt"))
+                        .changeKind,
+                    Is.EqualTo(PackageChangeKind.Added));
+                Assert.That(
+                    plan.entries.Single(entry =>
+                        entry.normalizedPath.EndsWith("collision.txt"))
+                        .changeKind,
+                    Is.EqualTo(PackageChangeKind.BlockedCollision));
+                Assert.That(
+                    plan.entries.Single(entry =>
+                        entry.normalizedPath.EndsWith("missing.txt"))
+                        .changeKind,
+                    Is.EqualTo(PackageChangeKind.Added));
+                Assert.That(
+                    plan.entries.Single(entry =>
+                        entry.normalizedPath.EndsWith("replace.txt"))
+                        .changeKind,
+                    Is.EqualTo(
+                        PackageChangeKind
+                            .ReplacedWithLocalModifications));
+                Assert.That(
+                    plan.entries.Single(entry =>
+                        entry.normalizedPath.EndsWith("remove.txt"))
+                        .changeKind,
+                    Is.EqualTo(
+                        PackageChangeKind
+                            .RemovedWithLocalModifications));
+                Assert.That(plan.HasBlockedCollisions, Is.True);
+                Assert.That(plan.targetInventoryDigest, Has.Length.EqualTo(64));
+                Assert.That(
+                    PackageChangePlanSigner.Verify(plan),
+                    Is.True);
+                Assert.That(
+                    plan.signatureAlgorithm,
+                    Is.EqualTo("hmac-sha256-session-v1"));
+                Assert.That(plan.signature, Is.Not.Empty);
+
+                plan.entries[0].targetSha256 = new string('f', 64);
+                Assert.That(
+                    PackageChangePlanSigner.Verify(plan),
+                    Is.False,
+                    "Changing a reviewed operation must invalidate its signature.");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void ModifiedAssetPreserverCreatesHiddenAndNewGuidCopies()
+        {
+            string project = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            string suffix = Guid.NewGuid().ToString("N");
+            string aliasId = "preserver-" + suffix;
+            string runId = "run-" + suffix;
+            string sourceDirectory =
+                "Assets/YUCPPreserverTest_" + suffix;
+            string sourceAsset = sourceDirectory + "/modified.txt";
+            string hiddenDirectory = Path.Combine(
+                project,
+                ".yucp",
+                "preserved-changes",
+                aliasId,
+                runId);
+            string visibleDirectory =
+                "Assets/YUCP Preserved Changes/" + aliasId;
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(
+                    project,
+                    sourceDirectory.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar)));
+                File.WriteAllText(
+                    Path.Combine(
+                        project,
+                        sourceAsset.Replace(
+                            '/',
+                            Path.DirectorySeparatorChar)),
+                    "user edit");
+                AssetDatabase.ImportAsset(
+                    sourceAsset,
+                    ImportAssetOptions.ForceSynchronousImport);
+                string sourceGuid =
+                    AssetDatabase.AssetPathToGUID(sourceAsset);
+                var plan = new PackageChangePlan
+                {
+                    entries =
+                    {
+                        new PackageChangePlanEntry
+                        {
+                            changeKind = PackageChangeKind
+                                .ReplacedWithLocalModifications,
+                            normalizedPath = sourceAsset,
+                        },
+                    },
+                };
+
+                var copies = PackageModifiedAssetPreserver.Preserve(
+                    project,
+                    aliasId,
+                    runId,
+                    plan);
+
+                PackagePreservedCopy sourceCopy = copies.Single(
+                    copy => copy.normalizedPath == sourceAsset);
+                Assert.That(
+                    File.ReadAllText(sourceCopy.hiddenPath),
+                    Is.EqualTo("user edit"));
+                Assert.That(
+                    sourceCopy.visibleAssetPath,
+                    Is.Not.Empty);
+                Assert.That(
+                    AssetDatabase.AssetPathToGUID(
+                        sourceCopy.visibleAssetPath),
+                    Is.Not.EqualTo(sourceGuid));
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(sourceDirectory);
+                AssetDatabase.DeleteAsset(visibleDirectory);
+                string visibleRootPath = Path.Combine(
+                    project,
+                    "Assets",
+                    "YUCP Preserved Changes");
+                if (Directory.Exists(visibleRootPath) &&
+                    !Directory.EnumerateFileSystemEntries(
+                        visibleRootPath).Any())
+                {
+                    AssetDatabase.DeleteAsset(
+                        "Assets/YUCP Preserved Changes");
+                }
+                if (Directory.Exists(hiddenDirectory))
+                {
+                    Directory.Delete(hiddenDirectory, true);
+                }
+                AssetDatabase.Refresh(
+                    ImportAssetOptions.ForceSynchronousImport);
+            }
+        }
+
+        [Test]
         public void ApplyRejectsCorruptStagingBeforeLiveMutation()
         {
             string root = CreateScratch();
@@ -169,7 +368,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void ApplyRemovesOnlyUnchangedObsoleteOwnedFiles()
+        public void ApplyRemovesObsoleteOwnedFilesAfterSnapshottingModifications()
         {
             string root = CreateScratch();
             try
@@ -219,7 +418,7 @@ namespace YUCP.Importer.Editor.Tests
 
                 Assert.That(File.ReadAllText(retained), Is.EqualTo("version two"));
                 Assert.That(File.Exists(obsolete), Is.False);
-                Assert.That(File.ReadAllText(modified), Is.EqualTo("user change"));
+                Assert.That(File.Exists(modified), Is.False);
             }
             finally
             {
@@ -228,7 +427,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void ApplyRejectsAUserModifiedOwnedFileDuringUpdate()
+        public void ApplyReplacesAUserModifiedOwnedFileAfterSnapshottingIt()
         {
             string root = CreateScratch();
             try
@@ -248,28 +447,34 @@ namespace YUCP.Importer.Editor.Tests
                 File.WriteAllText(livePath, "user change");
                 File.WriteAllText(stagedPath, "version two");
 
-                Assert.Throws<IOException>(() =>
-                    ProjectTransactionJournal.Apply(
-                        project,
-                        staging,
-                        "run-user-modified-update",
-                        new[]
+                ProjectTransactionJournal.Apply(
+                    project,
+                    staging,
+                    "run-user-modified-update",
+                    new[]
+                    {
+                        Record(stagedPath, "Assets/Product/file.txt"),
+                    },
+                    new[]
+                    {
+                        new VerifiedStagingFile
                         {
-                            Record(stagedPath, "Assets/Product/file.txt"),
+                            bytes = "version one".Length,
+                            normalizedPath = "Assets/Product/file.txt",
+                            sha256 = Sha256Text("version one"),
                         },
-                        new[]
-                        {
-                            new VerifiedStagingFile
-                            {
-                                bytes = "version one".Length,
-                                normalizedPath = "Assets/Product/file.txt",
-                                sha256 = Sha256Text("version one"),
-                            },
-                        }));
+                    });
+                ProjectTransactionInspection inspection =
+                    ProjectTransactionJournal.Inspect(
+                        project,
+                        "run-user-modified-update");
 
                 Assert.That(
                     File.ReadAllText(livePath),
-                    Is.EqualTo("user change"));
+                    Is.EqualTo("version two"));
+                Assert.That(
+                    inspection.preservedModifiedFiles.Single().sha256,
+                    Is.EqualTo(Sha256Text("user change")));
             }
             finally
             {
@@ -278,7 +483,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void ApplyPreservesAssetWithModifiedMeta()
+        public void ApplySnapshotsAndRemovesAssetWithModifiedMeta()
         {
             string root = CreateScratch();
             try
@@ -323,10 +528,8 @@ namespace YUCP.Importer.Editor.Tests
                         },
                     });
 
-                Assert.That(File.ReadAllText(asset), Is.EqualTo("owned"));
-                Assert.That(
-                    File.ReadAllText(meta),
-                    Is.EqualTo("guid: changed"));
+                Assert.That(File.Exists(asset), Is.False);
+                Assert.That(File.Exists(meta), Is.False);
             }
             finally
             {
@@ -458,7 +661,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void RemoveOwnedFilesPreservesModifiedContent()
+        public void RemoveOwnedFilesSnapshotsAndRemovesModifiedContent()
         {
             string root = CreateScratch();
             try
@@ -472,6 +675,7 @@ namespace YUCP.Importer.Editor.Tests
                 File.WriteAllText(unchanged, "owned");
                 File.WriteAllText(modified, "user change");
                 File.WriteAllText(unrelated, "not owned");
+                bool afterJournalPrepared = false;
 
                 ProjectTransactionResult result =
                     ProjectTransactionJournal.RemoveOwnedFiles(
@@ -491,6 +695,19 @@ namespace YUCP.Importer.Editor.Tests
                                 normalizedPath = "Assets/Product/modified.txt",
                                 sha256 = Sha256Text("owned"),
                             },
+                        },
+                        () =>
+                        {
+                            afterJournalPrepared = true;
+                            Assert.That(
+                                File.Exists(Path.Combine(
+                                    project,
+                                    ".yucp",
+                                    "transactions",
+                                    "run-uninstall",
+                                    "journal.json")),
+                                Is.True);
+                            Assert.That(File.Exists(modified), Is.True);
                         });
                 ProjectTransactionInspection inspection =
                     ProjectTransactionJournal.Inspect(
@@ -498,8 +715,9 @@ namespace YUCP.Importer.Editor.Tests
                         "run-uninstall");
 
                 Assert.That(result.state, Is.EqualTo("committed"));
+                Assert.That(afterJournalPrepared, Is.True);
                 Assert.That(File.Exists(unchanged), Is.False);
-                Assert.That(File.ReadAllText(modified), Is.EqualTo("user change"));
+                Assert.That(File.Exists(modified), Is.False);
                 Assert.That(File.ReadAllText(unrelated), Is.EqualTo("not owned"));
                 Assert.That(
                     inspection.removedFiles.Select(
@@ -507,6 +725,7 @@ namespace YUCP.Importer.Editor.Tests
                     Is.EquivalentTo(new[]
                     {
                         "Assets/Product/unchanged.txt",
+                        "Assets/Product/modified.txt",
                     }));
                 Assert.That(
                     inspection.preservedModifiedFiles.Count,
@@ -516,7 +735,7 @@ namespace YUCP.Importer.Editor.Tests
                     Is.EqualTo("Assets/Product/modified.txt"));
                 Assert.That(
                     inspection.preservedModifiedFiles[0].bytes,
-                    Is.EqualTo(new FileInfo(modified).Length));
+                    Is.EqualTo("user change".Length));
                 Assert.That(
                     inspection.preservedModifiedFiles[0].sha256,
                     Is.EqualTo(Sha256Text("user change")));
@@ -528,7 +747,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void RemoveOwnedFilesPreservesMetaWithModifiedAsset()
+        public void RemoveOwnedFilesSnapshotsAndRemovesMetaWithModifiedAsset()
         {
             string root = CreateScratch();
             try
@@ -559,8 +778,8 @@ namespace YUCP.Importer.Editor.Tests
                         project,
                         "run-uninstall-meta");
 
-                Assert.That(File.ReadAllText(asset), Is.EqualTo("user change"));
-                Assert.That(File.ReadAllText(meta), Is.EqualTo("guid: stable"));
+                Assert.That(File.Exists(asset), Is.False);
+                Assert.That(File.Exists(meta), Is.False);
                 Assert.That(
                     inspection.preservedModifiedFiles.Select(
                         file => file.normalizedPath),
@@ -849,6 +1068,18 @@ namespace YUCP.Importer.Editor.Tests
                     .Replace("-", string.Empty)
                     .ToLowerInvariant();
             }
+        }
+
+        private static NativePackageBrokerFile BrokerFile(
+            string normalizedPath,
+            string content)
+        {
+            return new NativePackageBrokerFile
+            {
+                bytes = content.Length,
+                normalizedPath = normalizedPath,
+                sha256 = Sha256Text(content),
+            };
         }
     }
 }

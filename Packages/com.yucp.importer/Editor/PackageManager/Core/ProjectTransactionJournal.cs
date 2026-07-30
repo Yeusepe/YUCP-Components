@@ -55,6 +55,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         public string normalizedPath = string.Empty;
         public string operation = "write";
         public long preservedBytes;
+        public bool preservedModified;
         public string preservedSha256 = string.Empty;
         public string state = "pending";
         public string targetSha256 = string.Empty;
@@ -155,12 +156,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 bool hasOwnedPriorFile = priorFilesByPath.TryGetValue(
                     file.normalizedPath,
                     out priorFile);
-                bool hadPriorFile = hasOwnedPriorFile ||
-                    (!hasPriorInventory && File.Exists(IoPath(livePath)));
+                bool liveFileExists = File.Exists(IoPath(livePath));
+                bool hadPriorFile = liveFileExists &&
+                    (hasOwnedPriorFile || !hasPriorInventory);
                 document.entries.Add(new ProjectTransactionEntry
                 {
                     backupPath = ResolveInside(backupRoot, file.normalizedPath),
-                    expectedPriorSha256 = hasOwnedPriorFile
+                    expectedPriorSha256 = hadPriorFile &&
+                        hasOwnedPriorFile
                         ? priorFile.sha256
                         : hadPriorFile
                             ? Sha256(livePath)
@@ -229,10 +232,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 journalPath = journalPath,
                 preservedModifiedFiles = document.entries
                     .Where(entry =>
-                        string.Equals(
-                            entry.operation,
-                            "delete",
-                            StringComparison.Ordinal) &&
+                        entry.preservedModified ||
                         string.Equals(
                             entry.state,
                             "preserved-modified",
@@ -413,7 +413,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal static ProjectTransactionResult RemoveOwnedFiles(
             string projectPath,
             string runId,
-            IEnumerable<VerifiedStagingFile> files)
+            IEnumerable<VerifiedStagingFile> files,
+            Action afterJournalPrepared = null)
         {
             string projectRoot = RequireAbsoluteDirectory(projectPath, "project");
             ValidateRunId(runId);
@@ -455,6 +456,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         .ToList(),
                 };
                 WriteJournal(journalPath, document);
+                afterJournalPrepared?.Invoke();
                 return RecoverWithoutLock(projectRoot, runId);
             }
         }
@@ -495,14 +497,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             bool liveExists = File.Exists(IoPath(livePath));
             if (entry.hadPriorFile)
             {
-                if (!liveExists ||
-                    !string.Equals(
-                        Sha256(livePath),
-                        entry.expectedPriorSha256,
-                        StringComparison.Ordinal))
+                if (!liveExists)
                 {
                     throw new IOException(
                         $"The project file changed before installation for '{entry.normalizedPath}'.");
+                }
+                string liveSha256 = Sha256(livePath);
+                if (!string.Equals(
+                        liveSha256,
+                        entry.expectedPriorSha256,
+                        StringComparison.Ordinal))
+                {
+                    entry.preservedBytes =
+                        new FileInfo(IoPath(livePath)).Length;
+                    entry.preservedModified = true;
+                    entry.preservedSha256 = liveSha256;
                 }
             }
             else if (liveExists)
@@ -520,7 +529,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             ProjectTransactionDocument document,
             ProjectTransactionEntry entry)
         {
-            if (TryPreserveModifiedDeleteOwnershipUnit(
+            if (TryPrepareModifiedDeleteOwnershipUnit(
                 projectRoot,
                 document,
                 entry))
@@ -538,15 +547,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new IOException(
                     $"A project file appeared before removal for '{entry.normalizedPath}'.");
             }
+            string liveSha256 = Sha256(livePath);
             if (!string.Equals(
-                    Sha256(livePath),
+                    liveSha256,
                     entry.expectedPriorSha256,
                     StringComparison.Ordinal))
             {
-                entry.preservedBytes = new FileInfo(IoPath(livePath)).Length;
-                entry.preservedSha256 = Sha256(livePath);
-                entry.state = "preserved-modified";
-                return true;
+                entry.preservedBytes =
+                    new FileInfo(IoPath(livePath)).Length;
+                entry.preservedModified = true;
+                entry.preservedSha256 = liveSha256;
             }
             BackupPriorFile(livePath, entry);
             entry.state = "backed-up";
@@ -630,13 +640,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             ProjectTransactionDocument document,
             ProjectTransactionEntry entry)
         {
-            if (TryPreserveModifiedDeleteOwnershipUnit(
-                projectRoot,
-                document,
-                entry))
-            {
-                return;
-            }
             string livePath = ResolveInside(projectRoot, entry.normalizedPath);
             RequireValidBackup(entry);
             if (!File.Exists(IoPath(livePath)))
@@ -646,19 +649,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             if (!string.Equals(
                     Sha256(livePath),
-                    entry.expectedPriorSha256,
+                    Sha256(entry.backupPath),
                     StringComparison.Ordinal))
             {
-                entry.preservedBytes = new FileInfo(IoPath(livePath)).Length;
-                entry.preservedSha256 = Sha256(livePath);
-                entry.state = "preserved-modified";
-                return;
+                throw new IOException(
+                    $"The project file changed during removal for '{entry.normalizedPath}'.");
             }
             File.Delete(IoPath(livePath));
             entry.state = "committed";
         }
 
-        private static bool TryPreserveModifiedDeleteOwnershipUnit(
+        private static bool TryPrepareModifiedDeleteOwnershipUnit(
             string projectRoot,
             ProjectTransactionDocument document,
             ProjectTransactionEntry entry)
@@ -673,7 +674,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
             foreach (ProjectTransactionEntry member in ownershipUnit)
             {
-                PreserveDeleteEntry(projectRoot, member);
+                PrepareModifiedDeleteEntry(projectRoot, member);
             }
             return true;
         }
@@ -721,32 +722,19 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     StringComparison.Ordinal);
         }
 
-        private static void PreserveDeleteEntry(
+        private static void PrepareModifiedDeleteEntry(
             string projectRoot,
             ProjectTransactionEntry entry)
         {
             string livePath = ResolveInside(
                 projectRoot,
                 entry.normalizedPath);
-            if (string.Equals(
+            if (!string.Equals(
                     entry.state,
-                    "backed-up",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    entry.state,
-                    "committed",
+                    "pending",
                     StringComparison.Ordinal))
             {
-                RequireValidBackup(entry);
-            }
-            if (!File.Exists(IoPath(livePath)) &&
-                entry.hadPriorFile &&
-                File.Exists(IoPath(entry.backupPath)))
-            {
-                RequireValidBackup(entry);
-                string temporaryPath = livePath + ".preserve.partial";
-                CopyDurably(entry.backupPath, temporaryPath);
-                PublishReplacement(temporaryPath, livePath);
+                return;
             }
             if (!File.Exists(IoPath(livePath)))
             {
@@ -758,9 +746,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new IOException(
                     $"A project file appeared before removal for '{entry.normalizedPath}'.");
             }
+            BackupPriorFile(livePath, entry);
             entry.preservedBytes = new FileInfo(IoPath(livePath)).Length;
+            entry.preservedModified = true;
             entry.preservedSha256 = Sha256(livePath);
-            entry.state = "preserved-modified";
+            entry.state = "backed-up";
         }
 
         private static void BackupPriorFile(
@@ -825,11 +815,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return;
             }
+            string expectedBackupSha256 = entry.preservedModified
+                ? entry.preservedSha256
+                : entry.expectedPriorSha256;
             if (!File.Exists(IoPath(entry.backupPath)) ||
-                !IsSha256(entry.expectedPriorSha256) ||
+                !IsSha256(expectedBackupSha256) ||
                 !string.Equals(
                     Sha256(entry.backupPath),
-                    entry.expectedPriorSha256,
+                    expectedBackupSha256,
                     StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
@@ -937,7 +930,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     entry.hadPriorFile &&
                     !IsSha256(entry.expectedPriorSha256)) ||
                 (entry.operation == "delete" && !IsSha256(entry.expectedPriorSha256)) ||
-                (entry.state == "preserved-modified" &&
+                ((entry.preservedModified ||
+                        entry.state == "preserved-modified") &&
                     (entry.preservedBytes < 0 ||
                         !IsSha256(entry.preservedSha256))) ||
                 (entry.state != "pending" &&

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEditor.PackageManager;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
@@ -9,6 +10,21 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal static class AliasPackageDiscovery
     {
         internal const string ServerAuthorizedInstallStrategy = "server-authorized";
+        private static readonly Regex Sha256Pattern = new Regex(
+            "^[a-f0-9]{64}$",
+            RegexOptions.CultureInvariant);
+        private static readonly Regex SafeIdentifierPattern = new Regex(
+            "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+            RegexOptions.CultureInvariant);
+        private static readonly Regex SignaturePattern = new Regex(
+            "^[A-Za-z0-9_-]{86}$",
+            RegexOptions.CultureInvariant);
+        private static readonly Regex StrictSemverPattern = new Regex(
+            "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)" +
+            "(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)" +
+            "(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?" +
+            "(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+            RegexOptions.CultureInvariant);
 
         internal static bool TryBuildMetadata(
             string packageId,
@@ -107,7 +123,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal static bool IsServerAuthorized(AliasPackageContract alias)
         {
             return alias != null &&
-                string.Equals(alias.kind, "alias-v1", StringComparison.Ordinal) &&
+                (string.Equals(alias.kind, "alias-v1", StringComparison.Ordinal) ||
+                    (string.Equals(
+                            alias.kind,
+                            "alias-v2",
+                            StringComparison.Ordinal) &&
+                        IsValidBootstrapIntent(alias.bootstrapIntent))) &&
                 string.Equals(
                     alias.installStrategy,
                     ServerAuthorizedInstallStrategy,
@@ -117,6 +138,40 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "com.yucp.importer",
                     StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(alias.aliasId);
+        }
+
+        private static bool IsValidBootstrapIntent(
+            BootstrapIntentContract intent)
+        {
+            if (intent == null ||
+                intent.schemaVersion != 1 ||
+                !IsUuidV4(intent.intentId) ||
+                intent.issuedAt <= 0 ||
+                !SafeIdentifierPattern.IsMatch(intent.keyId ?? string.Empty) ||
+                !SafeIdentifierPattern.IsMatch(intent.editionId ?? string.Empty) ||
+                !SignaturePattern.IsMatch(intent.signature ?? string.Empty))
+            {
+                return false;
+            }
+            if (string.Equals(intent.mode, "latest", StringComparison.Ordinal))
+            {
+                return string.IsNullOrEmpty(intent.version) &&
+                    string.IsNullOrEmpty(intent.versionId) &&
+                    string.IsNullOrEmpty(intent.releaseRoot);
+            }
+            return string.Equals(intent.mode, "specific", StringComparison.Ordinal) &&
+                StrictSemverPattern.IsMatch(intent.version ?? string.Empty) &&
+                SafeIdentifierPattern.IsMatch(intent.versionId ?? string.Empty) &&
+                Sha256Pattern.IsMatch(intent.releaseRoot ?? string.Empty);
+        }
+
+        private static bool IsUuidV4(string value)
+        {
+            return !string.IsNullOrEmpty(value) &&
+                value.Length == 36 &&
+                value[14] == '4' &&
+                "89abAB".IndexOf(value[19]) >= 0 &&
+                Guid.TryParseExact(value, "D", out _);
         }
 
         private static string FirstNonEmpty(params string[] values)

@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEditor;
 using UnityEngine;
+using YUCP.Importer.Editor.PackageManager;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
 {
@@ -30,6 +31,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
     internal sealed class PackageLifecycleInstallResult
     {
+        internal bool alreadyInstalled;
         internal bool cancelled;
         internal string errorCode = string.Empty;
         internal string errorMessage = string.Empty;
@@ -47,11 +49,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         public string receiptId = string.Empty;
         public string receiptPath = string.Empty;
         public string releaseRoot = string.Empty;
+        public string version = string.Empty;
         public string versionId = string.Empty;
         public string previousActiveContentDigest = string.Empty;
         public string previousActivePolicyVersion = string.Empty;
         public string previousReleaseRoot = string.Empty;
+        public string previousVersion = string.Empty;
         public string previousVersionId = string.Empty;
+        public List<NativePackageBrokerFile> previousFiles =
+            new List<NativePackageBrokerFile>();
         public List<NativePackageBrokerFile> files =
             new List<NativePackageBrokerFile>();
     }
@@ -61,9 +67,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal string activeContentDigest = string.Empty;
         internal string activePolicyVersion = string.Empty;
         internal string currentReleaseRoot = string.Empty;
+        internal List<NativePackageBrokerFile> files =
+            new List<NativePackageBrokerFile>();
         internal List<string> receiptReferences = new List<string>();
         internal string journalId = string.Empty;
         internal string journalState = string.Empty;
+        internal string stagingTree = string.Empty;
         internal string targetReleaseRoot = string.Empty;
         internal string traceId = string.Empty;
         internal string versionId = string.Empty;
@@ -206,6 +215,25 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     string.Empty,
                     string.Empty,
                     reportProgress);
+                if (currentReleaseRoot != EmptyReleaseRoot &&
+                    string.Equals(
+                        preflight.targetReleaseRoot,
+                        currentReleaseRoot,
+                        StringComparison.Ordinal))
+                {
+                    AliasPackageActivationStateStore.MarkHandled(
+                        projectPath,
+                        alias,
+                        "update");
+                    PackageLifecycleCheckpointStore.ClearAttemptId(
+                        projectPath,
+                        attemptKey);
+                    return new PackageLifecycleInstallResult
+                    {
+                        alreadyInstalled = true,
+                        succeeded = true,
+                    };
+                }
                 if (RequiresActiveContentApproval(
                         preflight.activeContentDigest,
                         preflight.activePolicyVersion,
@@ -232,6 +260,41 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         };
                     }
                 }
+                PackageChangePlan changePlan =
+                    PackageChangePlanBuilder.Build(
+                        projectPath,
+                        currentReleaseRoot,
+                        preflight.targetReleaseRoot,
+                        preflight.versionId,
+                        preflight.files,
+                        currentState?.files);
+                List<string> dirtyAssets =
+                    PackageChangePlanBuilder.FindDirtyAffectedAssets(
+                        changePlan);
+                string requestedVersion = BuildRequestedTargetLabel(
+                    currentState?.version,
+                    alias.bootstrapIntent);
+                bool approvedChanges =
+                    PackageChangePlanReviewWindow.ShowReview(
+                        changePlan,
+                        dirtyAssets,
+                        requestedVersion);
+                if (!approvedChanges)
+                {
+                    PackageLifecycleCheckpointStore.ClearAttemptId(
+                        projectPath,
+                        attemptKey);
+                    return new PackageLifecycleInstallResult
+                    {
+                        cancelled = true,
+                        errorMessage =
+                            dirtyAssets.Count > 0
+                                ? "Save or revert the affected Unity assets, then retry."
+                                : changePlan.HasBlockedCollisions
+                                    ? "Resolve the unowned file collisions, then retry."
+                                    : "Installation was canceled.",
+                    };
+                }
                 string operation = currentReleaseRoot == EmptyReleaseRoot
                     ? "install"
                     : "update";
@@ -250,7 +313,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     preflight.targetReleaseRoot,
                     preflight.activeContentDigest,
                     preflight.activePolicyVersion,
-                    reportProgress);
+                    reportProgress,
+                    changePlan.reviewDigest,
+                    changePlan.signature);
                 Report(
                     reportProgress,
                     "finishing",
@@ -358,6 +423,63 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string approvedPolicy = operation == "rollback"
                     ? current.previousActivePolicyVersion
                     : current.activePolicyVersion;
+                List<NativePackageBrokerFile> reviewedTargetFiles =
+                    operation == "uninstall"
+                        ? new List<NativePackageBrokerFile>()
+                        : operation == "rollback"
+                            ? current.previousFiles
+                            : current.files;
+                if (operation == "rollback" &&
+                    (reviewedTargetFiles == null ||
+                     reviewedTargetFiles.Count == 0))
+                {
+                    throw new InvalidOperationException(
+                        "The earlier release has no retained file inventory.");
+                }
+                PackageChangePlan changePlan =
+                    PackageChangePlanBuilder.Build(
+                        projectPath,
+                        current.releaseRoot,
+                        operation == "uninstall"
+                            ? EmptyReleaseRoot
+                            : targetReleaseRoot,
+                        operation == "rollback"
+                            ? current.previousVersionId
+                            : current.versionId,
+                        reviewedTargetFiles,
+                        current.files);
+                List<string> dirtyAssets =
+                    PackageChangePlanBuilder.FindDirtyAffectedAssets(
+                        changePlan);
+                bool approvedChanges =
+                    PackageChangePlanReviewWindow.ShowReview(
+                        changePlan,
+                        dirtyAssets,
+                        operation == "uninstall"
+                            ? "Uninstall the current package release"
+                            : operation == "rollback"
+                                ? "Restore " +
+                                    (string.IsNullOrWhiteSpace(
+                                        current.previousVersion)
+                                        ? "the earlier retained release"
+                                        : current.previousVersion)
+                                : "Repair the current package release");
+                if (!approvedChanges)
+                {
+                    PackageLifecycleCheckpointStore.ClearAttemptId(
+                        projectPath,
+                        attemptKey);
+                    return new PackageLifecycleInstallResult
+                    {
+                        cancelled = true,
+                        errorMessage =
+                            dirtyAssets.Count > 0
+                                ? "Save or revert the affected Unity assets, then retry."
+                                : changePlan.HasBlockedCollisions
+                                    ? "Resolve the unowned file collisions, then retry."
+                                    : "Package action was canceled.",
+                    };
+                }
                 Report(
                     reportProgress,
                     operation == "uninstall"
@@ -373,7 +495,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     targetReleaseRoot,
                     approvedDigest,
                     approvedPolicy,
-                    reportProgress);
+                    reportProgress,
+                    changePlan.reviewDigest,
+                    changePlan.signature);
                 Report(
                     reportProgress,
                     "finishing",
@@ -606,7 +730,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string targetReleaseRoot,
             string approvedActiveContentDigest,
             string approvedPolicyVersion,
-            Action<PackageLifecycleUserProgress> reportProgress = null)
+            Action<PackageLifecycleUserProgress> reportProgress = null,
+            string approvedChangePlanDigest = "",
+            string approvedChangePlanSignature = "")
         {
             ValidateAlias(alias);
             EnsureSupportedClientPlatform();
@@ -641,7 +767,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 targetReleaseRoot,
                 approvedActiveContentDigest,
                 approvedPolicyVersion,
-                reportProgress);
+                reportProgress,
+                approvedChangePlanDigest,
+                approvedChangePlanSignature);
             RequireSuccessfulAliasFinalized(
                 projectPath,
                 alias,
@@ -671,7 +799,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 Path.GetFullPath(projectPath),
                 "Packages",
                 alias.packageName);
-            if (!Directory.Exists(packagePath))
+            bool directUnityPackageBootstrap =
+                alias.directUnityPackageBootstrap ||
+                DirectUnityPackageBootstrapStore.Contains(
+                    projectPath,
+                    alias);
+            if (!directUnityPackageBootstrap &&
+                !Directory.Exists(packagePath))
             {
                 return "The VPM bootstrap is no longer registered.";
             }
@@ -710,7 +844,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string targetReleaseRoot,
             string approvedActiveContentDigest,
             string approvedPolicyVersion,
-            Action<PackageLifecycleUserProgress> reportProgress)
+            Action<PackageLifecycleUserProgress> reportProgress,
+            string approvedChangePlanDigest = "",
+            string approvedChangePlanSignature = "")
         {
             ValidateAlias(alias);
             string projectPath = CurrentProjectPath();
@@ -749,6 +885,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 exactTargetReleaseRoot,
                 approvedActiveContentDigest,
                 approvedPolicyVersion);
+            brokerRequest.bootstrapIntentJson =
+                alias.bootstrapIntent?.rawIntentJson ?? string.Empty;
             Action<NativePackageBrokerProgress> brokerProgress =
                 progress => Report(
                     reportProgress,
@@ -839,6 +977,32 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
                 List<VerifiedStagingFile> owned = ToVerifiedFiles(
                     current.files);
+                PackageChangePlan uninstallPlan =
+                    PackageChangePlanBuilder.Build(
+                        projectPath,
+                        current.releaseRoot,
+                        EmptyReleaseRoot,
+                        current.versionId,
+                        Array.Empty<NativePackageBrokerFile>(),
+                        current.files);
+                if (!string.IsNullOrWhiteSpace(
+                        approvedChangePlanDigest) &&
+                    !PackageChangePlanSigner.VerifyApproval(
+                        uninstallPlan,
+                        approvedChangePlanDigest,
+                        approvedChangePlanSignature))
+                {
+                    throw new InvalidOperationException(
+                        "The signed package plan is invalid or the project " +
+                        "changed after review. Review the operation again.");
+                }
+                if (uninstallPlan.HasBlockedCollisions ||
+                    PackageChangePlanBuilder
+                        .FindDirtyAffectedAssets(uninstallPlan).Count > 0)
+                {
+                    throw new InvalidOperationException(
+                        "The project changed after the uninstall review.");
+                }
                 owned.Add(ReadInstallStateRecord(
                     projectPath,
                     alias.aliasId));
@@ -864,7 +1028,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     ProjectTransactionJournal.RemoveOwnedFiles(
                         projectPath,
                         runId,
-                        owned);
+                        owned,
+                        () => PackageModifiedAssetPreserver.Preserve(
+                            projectPath,
+                            alias.aliasId,
+                            runId,
+                            uninstallPlan));
                 uninstallCheckpoint.phase = removed.state;
                 PackageLifecycleCheckpointStore.Write(
                     projectPath,
@@ -891,6 +1060,36 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             List<VerifiedStagingFile> targetFiles = ToVerifiedFiles(
                 broker.files);
+            PackageChangePlan executionPlan =
+                PackageChangePlanBuilder.Build(
+                    projectPath,
+                    currentReleaseRoot,
+                    broker.targetReleaseRoot,
+                    broker.versionId,
+                    broker.files,
+                    current?.files);
+            if (!string.IsNullOrWhiteSpace(
+                    approvedChangePlanDigest) &&
+                !PackageChangePlanSigner.VerifyApproval(
+                    executionPlan,
+                    approvedChangePlanDigest,
+                    approvedChangePlanSignature))
+            {
+                throw new InvalidOperationException(
+                    "The signed package plan is invalid or the project " +
+                    "changed after review. Review the operation again.");
+            }
+            if (executionPlan.HasBlockedCollisions)
+            {
+                throw new IOException(
+                    "An unowned project path collides with the package.");
+            }
+            if (PackageChangePlanBuilder
+                .FindDirtyAffectedAssets(executionPlan).Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "An affected Unity asset became dirty after review.");
+            }
             PackageImportVerifier.ValidateUnityPathCompatibility(
                 projectPath,
                 broker.files,
@@ -900,6 +1099,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 alias.aliasId,
                 broker.targetReleaseRoot,
                 broker.versionId,
+                operation == "rollback"
+                    ? current?.previousVersion ?? string.Empty
+                    : ResolveTargetVersion(alias, broker.versionId),
                 broker.receiptId,
                 broker.receiptPath,
                 broker.activeContentDigest,
@@ -945,6 +1147,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     runId,
                     targetFiles,
                     previousFiles);
+            PackageModifiedAssetPreserver.Preserve(
+                projectPath,
+                alias.aliasId,
+                runId,
+                executionPlan);
             lifecycleCheckpoint.phase = transaction.state;
             PackageLifecycleCheckpointStore.Write(
                 projectPath,
@@ -1728,7 +1935,178 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 aliasId,
                 false);
             return state != null &&
-                IsSha256(state.previousReleaseRoot);
+                IsSha256(state.previousReleaseRoot) &&
+                state.previousFiles != null &&
+                state.previousFiles.Count > 0;
+        }
+
+        internal static string BuildRequestedTargetLabel(
+            string currentVersion,
+            BootstrapIntentContract intent)
+        {
+            if (intent == null ||
+                !string.Equals(
+                    intent.mode,
+                    "specific",
+                    StringComparison.Ordinal))
+            {
+                return "Latest stable resolved for this bootstrap";
+            }
+            string requestedVersion = intent.version ?? string.Empty;
+            if (TryCompareSemanticVersions(
+                    requestedVersion,
+                    currentVersion,
+                    out int comparison) &&
+                comparison < 0)
+            {
+                return "Downgrade to " + requestedVersion;
+            }
+            return "Update to " + requestedVersion;
+        }
+
+        private static string ResolveTargetVersion(
+            AliasPackageContract alias,
+            string versionId)
+        {
+            BootstrapIntentContract intent = alias?.bootstrapIntent;
+            return intent != null &&
+                string.Equals(
+                    intent.mode,
+                    "specific",
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    intent.versionId,
+                    versionId,
+                    StringComparison.Ordinal)
+                    ? intent.version ?? string.Empty
+                    : string.Empty;
+        }
+
+        private static bool TryCompareSemanticVersions(
+            string left,
+            string right,
+            out int comparison)
+        {
+            comparison = 0;
+            if (!TryParseSemanticVersion(
+                    left,
+                    out string[] leftCore,
+                    out string[] leftPrerelease) ||
+                !TryParseSemanticVersion(
+                    right,
+                    out string[] rightCore,
+                    out string[] rightPrerelease))
+            {
+                return false;
+            }
+            for (int index = 0; index < 3; index++)
+            {
+                comparison = CompareNumericIdentifier(
+                    leftCore[index],
+                    rightCore[index]);
+                if (comparison != 0)
+                {
+                    return true;
+                }
+            }
+            if (leftPrerelease.Length == 0 ||
+                rightPrerelease.Length == 0)
+            {
+                comparison = leftPrerelease.Length ==
+                        rightPrerelease.Length
+                    ? 0
+                    : leftPrerelease.Length == 0 ? 1 : -1;
+                return true;
+            }
+            int identifiers = Math.Max(
+                leftPrerelease.Length,
+                rightPrerelease.Length);
+            for (int index = 0; index < identifiers; index++)
+            {
+                if (index >= leftPrerelease.Length ||
+                    index >= rightPrerelease.Length)
+                {
+                    comparison = index >= leftPrerelease.Length
+                        ? -1
+                        : 1;
+                    return true;
+                }
+                string leftIdentifier = leftPrerelease[index];
+                string rightIdentifier = rightPrerelease[index];
+                bool leftNumeric = leftIdentifier.All(char.IsDigit);
+                bool rightNumeric = rightIdentifier.All(char.IsDigit);
+                if (leftNumeric && rightNumeric)
+                {
+                    comparison = CompareNumericIdentifier(
+                        leftIdentifier,
+                        rightIdentifier);
+                }
+                else if (leftNumeric != rightNumeric)
+                {
+                    comparison = leftNumeric ? -1 : 1;
+                }
+                else
+                {
+                    comparison = Math.Sign(string.CompareOrdinal(
+                        leftIdentifier,
+                        rightIdentifier));
+                }
+                if (comparison != 0)
+                {
+                    return true;
+                }
+            }
+            return true;
+        }
+
+        private static bool TryParseSemanticVersion(
+            string value,
+            out string[] core,
+            out string[] prerelease)
+        {
+            core = Array.Empty<string>();
+            prerelease = Array.Empty<string>();
+            if (string.IsNullOrWhiteSpace(value) ||
+                !string.Equals(value, value.Trim(), StringComparison.Ordinal))
+            {
+                return false;
+            }
+            string withoutBuild = value.Split('+')[0];
+            string[] releaseParts = withoutBuild.Split(
+                new[] { '-' },
+                2);
+            core = releaseParts[0].Split('.');
+            if (core.Length != 3 ||
+                core.Any(identifier =>
+                    string.IsNullOrEmpty(identifier) ||
+                    !identifier.All(char.IsDigit) ||
+                    identifier.Length > 1 &&
+                    identifier[0] == '0'))
+            {
+                return false;
+            }
+            prerelease = releaseParts.Length == 2
+                ? releaseParts[1].Split('.')
+                : Array.Empty<string>();
+            return prerelease.All(identifier =>
+                !string.IsNullOrEmpty(identifier) &&
+                identifier.All(character =>
+                    char.IsLetterOrDigit(character) ||
+                    character == '-') &&
+                (!identifier.All(char.IsDigit) ||
+                    identifier.Length == 1 ||
+                    identifier[0] != '0'));
+        }
+
+        private static int CompareNumericIdentifier(
+            string left,
+            string right)
+        {
+            if (left.Length != right.Length)
+            {
+                return left.Length > right.Length ? 1 : -1;
+            }
+            return Math.Sign(string.CompareOrdinal(left, right));
         }
 
         internal static NativePackageBrokerRequest BuildBrokerRequest(
@@ -1800,8 +2178,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 activeContentDigest = broker.activeContentDigest,
                 activePolicyVersion = broker.activePolicyVersion,
                 currentReleaseRoot = currentReleaseRoot,
+                files = broker.files ?? new List<NativePackageBrokerFile>(),
                 receiptReferences = receipts,
                 journalState = broker.journalState,
+                stagingTree = broker.stagingTree,
                 targetReleaseRoot = targetReleaseRoot,
                 traceId = broker.traceId,
                 versionId = broker.versionId,
@@ -1826,6 +2206,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string aliasId,
             string releaseRoot,
             string versionId,
+            string version,
             string receiptId,
             string receiptPath,
             string activeContentDigest,
@@ -1857,6 +2238,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 receiptId = receiptId ?? string.Empty,
                 receiptPath = receiptPath ?? string.Empty,
                 releaseRoot = releaseRoot,
+                version = version ?? string.Empty,
                 versionId = versionId,
                 previousActiveContentDigest =
                     changedRelease
@@ -1872,16 +2254,37 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     changedRelease
                         ? priorState.releaseRoot
                         : priorState?.previousReleaseRoot ?? string.Empty,
+                previousVersion =
+                    changedRelease
+                        ? priorState.version
+                        : priorState?.previousVersion ?? string.Empty,
                 previousVersionId =
                     changedRelease
                         ? priorState.versionId
                         : priorState?.previousVersionId ?? string.Empty,
+                previousFiles =
+                    changedRelease
+                        ? CloneBrokerFiles(priorState.files)
+                        : CloneBrokerFiles(priorState?.previousFiles),
             };
             File.WriteAllText(
                 destination,
                 JsonConvert.SerializeObject(state, Formatting.Indented),
                 new UTF8Encoding(false));
             return FileRecord(destination, relativePath);
+        }
+
+        private static List<NativePackageBrokerFile> CloneBrokerFiles(
+            IEnumerable<NativePackageBrokerFile> files)
+        {
+            return (files ?? Enumerable.Empty<NativePackageBrokerFile>())
+                .Select(file => new NativePackageBrokerFile
+                {
+                    bytes = file.bytes,
+                    normalizedPath = file.normalizedPath,
+                    sha256 = file.sha256,
+                })
+                .ToList();
         }
 
         private static PackageDeliveryInstallState ReadInstallState(
@@ -1914,8 +2317,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string.IsNullOrWhiteSpace(state.versionId) ||
                 state.files == null ||
                 state.files.Count == 0 ||
+                state.previousFiles == null ||
                 !IsValidPriorReleaseState(state) ||
-                state.files.Any(file =>
+                state.files.Concat(state.previousFiles).Any(file =>
                     file == null ||
                     file.bytes < 0 ||
                     !IsSha256(file.sha256) ||

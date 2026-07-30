@@ -97,10 +97,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             // and domain reload. InitializeOnLoad preserves the subscription.
             // https://docs.unity3d.com/2022.3/Documentation/ScriptReference/PackageManager.Events-registeredPackages.html
             Events.registeredPackages += OnRegisteredPackages;
-
-            // Reconcile aliases that arrived in the same package graph as the
-            // importer. The importer could not subscribe before it compiled.
-            EditorApplication.delayCall += ReconcileRegisteredAliases;
+            EditorApplication.delayCall +=
+                ResumePendingUnityPackageActivations;
         }
 
         [MenuItem(ManualInstallerMenuPath, false, 200)]
@@ -206,10 +204,93 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             activation = new AliasPackageActivationRequest(
                 metadata,
-                $"{packageName}@{packageVersion}:{aliasId}",
+                BuildActivationKey(metadata.aliasPackage),
                 packageRoot);
             error = null;
             return true;
+        }
+
+        internal static bool TryBuildUnityPackageActivation(
+            string descriptorJson,
+            out AliasPackageActivationRequest activation,
+            out string error)
+        {
+            bool built = TryBuildActivation(
+                string.Empty,
+                descriptorJson,
+                out activation,
+                out error);
+            if (built)
+            {
+                activation.Alias.directUnityPackageBootstrap = true;
+            }
+            return built;
+        }
+
+        /// <summary>
+        /// Receives a complete bootstrap descriptor from the source-built direct
+        /// Unitypackage installer after com.yucp.importer is available.
+        /// </summary>
+        public static void SubmitUnityPackageDescriptor(
+            string descriptorJson)
+        {
+            if (!TryBuildUnityPackageActivation(
+                    descriptorJson,
+                    out AliasPackageActivationRequest activation,
+                    out string error))
+            {
+                throw new FormatException(
+                    "The Unitypackage bootstrap descriptor is invalid: " +
+                    error);
+            }
+
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            if (AliasPackageActivationStateStore.IsHandled(
+                    projectPath,
+                    activation.Alias))
+            {
+                activation.Dispose();
+                return;
+            }
+            DirectUnityPackageBootstrapStore.Persist(
+                projectPath,
+                activation.Alias,
+                descriptorJson);
+            Schedule(activation);
+        }
+
+        private static void ResumePendingUnityPackageActivations()
+        {
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            IReadOnlyList<string> descriptors;
+            try
+            {
+                descriptors =
+                    DirectUnityPackageBootstrapStore.ReadAll(projectPath);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError(
+                    $"{LogPrefix} Could not read pending Unitypackage " +
+                    "bootstraps: " + exception.Message);
+                return;
+            }
+
+            foreach (string descriptor in descriptors)
+            {
+                try
+                {
+                    SubmitUnityPackageDescriptor(descriptor);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError(
+                        $"{LogPrefix} A pending Unitypackage bootstrap " +
+                        "is invalid: " + exception.Message);
+                }
+            }
         }
 
         internal static string BuildDismissalSessionKey(string activationKey)
@@ -234,11 +315,24 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return;
             }
 
-            string activationKey =
-                $"{alias.packageName}@{alias.packageVersion}:{alias.aliasId}";
             SessionState.SetBool(
-                BuildDismissalSessionKey(activationKey),
+                BuildDismissalSessionKey(BuildActivationKey(alias)),
                 true);
+        }
+
+        internal static string BuildActivationKey(
+            AliasPackageContract alias)
+        {
+            if (alias == null)
+            {
+                throw new ArgumentNullException(nameof(alias));
+            }
+            if (string.Equals(alias.kind, "alias-v2", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(alias.bootstrapIntent?.intentId))
+            {
+                return alias.bootstrapIntent.intentId;
+            }
+            return $"{alias.packageName}@{alias.packageVersion}:{alias.aliasId}";
         }
 
         internal static bool ShouldSchedule(
@@ -250,6 +344,23 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     PackageLifecycleCoordinator.EmptyReleaseRoot,
                     StringComparison.Ordinal) &&
                 !activationHandled;
+        }
+
+        internal static bool ShouldSchedule(
+            AliasPackageContract alias,
+            string currentReleaseRoot,
+            bool activationHandled)
+        {
+            if (activationHandled || alias == null)
+            {
+                return false;
+            }
+            if (string.Equals(alias.kind, "alias-v2", StringComparison.Ordinal))
+            {
+                return !string.IsNullOrWhiteSpace(
+                    alias.bootstrapIntent?.intentId);
+            }
+            return ShouldSchedule(currentReleaseRoot, false);
         }
 
         internal static bool ShouldScheduleForProject(
@@ -275,6 +386,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     projectPath,
                     activation.Alias);
             return ShouldSchedule(
+                activation.Alias,
                 currentReleaseRoot,
                 activationHandled);
         }
@@ -289,15 +401,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             SchedulePackages(args.added);
             SchedulePackages(args.changedTo);
-        }
-
-        private static void ReconcileRegisteredAliases()
-        {
-            foreach (AliasPackageActivationRequest activation in
-                GetRegisteredActivations())
-            {
-                Schedule(activation);
-            }
         }
 
         private static IEnumerable<AliasPackageActivationRequest>

@@ -18,6 +18,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         public string aliasId = string.Empty;
         public string approvedActiveContentDigest = string.Empty;
         public string approvedPolicyVersion = string.Empty;
+        public string bootstrapIntentJson = string.Empty;
         public string expectedCurrentReleaseRoot = string.Empty;
         public string idempotencyKey = string.Empty;
         public string operation = string.Empty;
@@ -33,6 +34,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
         public bool ShouldSerializeapprovedPolicyVersion() =>
             !string.IsNullOrEmpty(approvedPolicyVersion);
+
+        public bool ShouldSerializebootstrapIntentJson() =>
+            !string.IsNullOrEmpty(bootstrapIntentJson);
 
         public bool ShouldSerializetargetReleaseRoot() =>
             !string.IsNullOrEmpty(targetReleaseRoot);
@@ -818,7 +822,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
     internal static class NativePackageBrokerClient
     {
-        internal const int SchemaVersion = 3;
+        internal const int SchemaVersion = 4;
         internal const int ProgressSchemaVersion = 1;
         private static readonly Regex Traceparent = new Regex(
             "^00-[0-9a-f]{32}-[0-9a-f]{16}-(00|01)$",

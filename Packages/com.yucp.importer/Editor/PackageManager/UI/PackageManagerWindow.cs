@@ -971,9 +971,13 @@ namespace YUCP.Importer.Editor.PackageManager
                 {
                     return "Sign in with YUCP";
                 }
-                return IsCurrentAliasInstalled()
-                    ? "Update"
-                    : "Verify and Import";
+                if (!IsCurrentAliasInstalled())
+                {
+                    return "Verify and Import";
+                }
+                return HasUnhandledVersionedBootstrap()
+                    ? "Review version change"
+                    : "Install a version from VCC";
             }
 
             bool isMultiStep = _packageImportWizardInstance != null &&
@@ -2909,6 +2913,10 @@ namespace YUCP.Importer.Editor.PackageManager
                 _isAliasBootstrapFlow &&
                 (!_isBrokerSignedIn.HasValue ||
                  AuthenticationActionInFlight);
+            bool requiresExplicitBootstrap =
+                _isAliasBootstrapFlow &&
+                IsCurrentAliasInstalled() &&
+                !HasUnhandledVersionedBootstrap();
 
             if (_pendingImportAfterVerification)
             {
@@ -2927,11 +2935,14 @@ namespace YUCP.Importer.Editor.PackageManager
             SetVerifyStatusLabel(null);
             _importButton.SetEnabled(
                 !requiresExternalBootstrap &&
-                !isCheckingBrokerAuthentication);
+                !isCheckingBrokerAuthentication &&
+                !requiresExplicitBootstrap);
             _importButton.tooltip = requiresExternalBootstrap
                 ? "Install this product through its Creator Companion bootstrap."
                 : isCheckingBrokerAuthentication
                     ? "Checking the Windows-protected YUCP account."
+                : requiresExplicitBootstrap
+                    ? "Install an exact version through VCC or import a new bootstrap."
                 : _isAliasBootstrapFlow && _isBrokerSignedIn == false
                     ? "Sign in with YUCP to continue."
                 : string.Empty;
@@ -3325,7 +3336,6 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             var actions = new List<string>
             {
-                "Update",
                 "Repair",
             };
             if (hasRollback)
@@ -3355,10 +3365,6 @@ namespace YUCP.Importer.Editor.PackageManager
             row.style.marginTop = 8;
             foreach (string action in actions)
             {
-                if (action == "Update")
-                {
-                    continue;
-                }
                 string operation = action == "Roll back"
                     ? "rollback"
                     : action.ToLowerInvariant();
@@ -3392,6 +3398,27 @@ namespace YUCP.Importer.Editor.PackageManager
                 PackageLifecycleCoordinator.EmptyReleaseRoot;
         }
 
+        private bool HasUnhandledVersionedBootstrap()
+        {
+            AliasPackageContract alias =
+                (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
+            if (alias == null ||
+                !string.Equals(
+                    alias.kind,
+                    "alias-v2",
+                    StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(
+                    alias.bootstrapIntent?.intentId))
+            {
+                return false;
+            }
+            string projectPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, ".."));
+            return !AliasPackageActivationStateStore.IsHandled(
+                projectPath,
+                alias);
+        }
+
         private bool HasCurrentAliasRollback()
         {
             AliasPackageContract alias =
@@ -3415,25 +3442,6 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             PackageMetadata metadata = _currentMetadata ?? _cachedMetadata;
             if (metadata?.aliasPackage == null)
-            {
-                return;
-            }
-            if (operation == "uninstall" &&
-                !EditorUtility.DisplayDialog(
-                    "Uninstall package",
-                    "YUCP will remove unchanged files installed by this " +
-                    "package. Files you changed will stay in the project.",
-                    "Uninstall",
-                    "Cancel"))
-            {
-                return;
-            }
-            if (operation == "rollback" &&
-                !EditorUtility.DisplayDialog(
-                    "Restore earlier version",
-                    "Restore the previous installed version of this package?",
-                    "Restore",
-                    "Cancel"))
             {
                 return;
             }
@@ -4561,6 +4569,16 @@ namespace YUCP.Importer.Editor.PackageManager
                         "Install Package",
                         installResult.errorMessage,
                         FlowNoticeTone.Error);
+                    return;
+                }
+                if (installResult.alreadyInstalled)
+                {
+                    AliasPackageActivation.DismissForSession(
+                        metadata.aliasPackage);
+                    ShowFlowNotice(
+                        "Already installed",
+                        "This project already has the release requested by this bootstrap.",
+                        FlowNoticeTone.Success);
                     return;
                 }
 

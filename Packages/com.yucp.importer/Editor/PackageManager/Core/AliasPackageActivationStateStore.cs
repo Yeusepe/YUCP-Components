@@ -11,6 +11,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     {
         public string aliasId = string.Empty;
         public string handledOperation = string.Empty;
+        public string intentId = string.Empty;
         public string packageName = string.Empty;
         public string packageVersion = string.Empty;
         public int schemaVersion = 1;
@@ -45,12 +46,20 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 return false;
             }
+            bool versioned =
+                string.Equals(alias.kind, "alias-v2", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(alias.bootstrapIntent?.intentId);
             return state != null &&
-                state.schemaVersion == 1 &&
+                state.schemaVersion == (versioned ? 2 : 1) &&
                 string.Equals(
                     state.aliasId,
                     alias.aliasId,
                     StringComparison.Ordinal) &&
+                (!versioned ||
+                    string.Equals(
+                        state.intentId,
+                        alias.bootstrapIntent.intentId,
+                        StringComparison.Ordinal)) &&
                 string.Equals(
                     state.packageName,
                     alias.packageName,
@@ -96,6 +105,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 handledOperation = operation,
                 packageName = alias.packageName,
                 packageVersion = alias.packageVersion,
+                intentId = alias.bootstrapIntent?.intentId ?? string.Empty,
+                schemaVersion =
+                    string.Equals(alias.kind, "alias-v2", StringComparison.Ordinal)
+                        ? 2
+                        : 1,
             };
             byte[] bytes = new UTF8Encoding(false).GetBytes(
                 JsonConvert.SerializeObject(state, Formatting.Indented));
@@ -120,6 +134,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 {
                     File.Move(temporaryPath, path);
                 }
+                if (alias.directUnityPackageBootstrap ||
+                    DirectUnityPackageBootstrapStore.Contains(
+                        projectPath,
+                        alias))
+                {
+                    DirectUnityPackageBootstrapStore.Remove(
+                        projectPath,
+                        alias);
+                }
             }
             finally
             {
@@ -135,9 +158,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             AliasPackageContract alias)
         {
             string key =
-                alias.packageName + "\n" +
-                alias.packageVersion + "\n" +
-                alias.aliasId;
+                string.Equals(alias.kind, "alias-v2", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(alias.bootstrapIntent?.intentId)
+                    ? alias.aliasId + "\n" + alias.bootstrapIntent.intentId
+                    : alias.packageName + "\n" +
+                        alias.packageVersion + "\n" +
+                        alias.aliasId;
             string digest;
             using (SHA256 sha256 = SHA256.Create())
             {

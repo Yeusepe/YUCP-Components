@@ -16,7 +16,10 @@ namespace YUCP.Importer.Editor.PackageManager
         public string minImporterVersion = "";
         public string channel = "";
         public AliasPackageMediaSet media = new AliasPackageMediaSet();
+        public BootstrapIntentContract bootstrapIntent;
         public string rawContractJson = "";
+        [NonSerialized]
+        public bool directUnityPackageBootstrap;
 
         public AliasPackageContract Clone()
         {
@@ -32,7 +35,43 @@ namespace YUCP.Importer.Editor.PackageManager
                 minImporterVersion = minImporterVersion ?? string.Empty,
                 channel = channel ?? string.Empty,
                 media = media?.Clone() ?? new AliasPackageMediaSet(),
+                bootstrapIntent = bootstrapIntent?.Clone(),
                 rawContractJson = rawContractJson ?? string.Empty,
+                directUnityPackageBootstrap = directUnityPackageBootstrap,
+            };
+        }
+    }
+
+    [Serializable]
+    public class BootstrapIntentContract
+    {
+        public int schemaVersion;
+        public string intentId = "";
+        public string mode = "";
+        public long issuedAt;
+        public string keyId = "";
+        public string editionId = "";
+        public string version = "";
+        public string versionId = "";
+        public string releaseRoot = "";
+        public string signature = "";
+        public string rawIntentJson = "";
+
+        public BootstrapIntentContract Clone()
+        {
+            return new BootstrapIntentContract
+            {
+                schemaVersion = schemaVersion,
+                intentId = intentId ?? string.Empty,
+                mode = mode ?? string.Empty,
+                issuedAt = issuedAt,
+                keyId = keyId ?? string.Empty,
+                editionId = editionId ?? string.Empty,
+                version = version ?? string.Empty,
+                versionId = versionId ?? string.Empty,
+                releaseRoot = releaseRoot ?? string.Empty,
+                signature = signature ?? string.Empty,
+                rawIntentJson = rawIntentJson ?? string.Empty,
             };
         }
     }
