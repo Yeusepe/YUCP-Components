@@ -1531,74 +1531,108 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             string name = string.IsNullOrWhiteSpace(productName)
                 ? "your package"
                 : "'" + productName.Trim() + "'";
+            float downloadRatio = brokerProgress.totalBytes > 0
+                ? Mathf.Clamp01(
+                    (float)brokerProgress.completedBytes /
+                    brokerProgress.totalBytes)
+                : 0f;
+            string downloaded = BuildByteProgress(
+                brokerProgress.completedBytes,
+                brokerProgress.totalBytes,
+                downloadRatio);
+            // Nothing transfers while the server personalizes, so files are the
+            // only measure that moves.
+            float preparedRatio = brokerProgress.totalFiles > 0
+                ? Mathf.Clamp01(
+                    (float)brokerProgress.completedFiles /
+                    brokerProgress.totalFiles)
+                : 0f;
+            string prepared = BuildFileProgress(
+                brokerProgress.completedFiles,
+                brokerProgress.totalFiles);
             if (preflight)
             {
                 switch (brokerProgress.phase)
                 {
                     case "preparing":
-                        return Progress($"Preparing to check {name}...", 0.22f);
+                        return Progress($"Getting {name} ready...", 0.22f);
                     case "signing-in":
                         return Progress("Opening secure sign-in...", 0.24f);
                     case "verifying-access":
-                        return Progress(
-                            "Waiting for purchase confirmation...",
-                            0.26f);
+                        return Progress("Confirming your purchase...", 0.26f);
                     case "downloading":
-                        return Progress($"Checking {name}...", 0.28f);
-                    case "verifying":
-                        return Progress($"Checking {name}...", 0.30f);
-                    case "assembling":
-                        return Progress($"Preparing {name}...", 0.32f);
-                    case "finalizing":
                         return Progress(
-                            "Finishing the package check...",
-                            0.34f);
+                            $"Getting {name} ready...{downloaded}",
+                            0.28f + downloadRatio * 0.52f);
+                    case "personalizing":
+                        return Progress(
+                            $"Preparing your copy of {name}...{prepared}",
+                            0.28f + preparedRatio * 0.52f);
+                    case "verifying":
+                        return Progress(
+                            "Checking everything arrived...",
+                            0.86f);
+                    case "assembling":
+                        return Progress(
+                            $"Getting {name} ready for your project...",
+                            0.90f);
+                    case "finalizing":
+                        return Progress("Almost ready...", 0.94f);
                     default:
-                        throw new ArgumentOutOfRangeException(
-                            nameof(brokerProgress),
-                            "The package progress phase is invalid.");
+                        // A newer broker may report a phase this build predates.
+                        return Progress($"Getting {name} ready...", 0.28f);
                 }
             }
             switch (brokerProgress.phase)
             {
                 case "preparing":
-                    return Progress($"Preparing {name}...", 0.36f);
+                    return Progress($"Getting {name} ready...", 0.22f);
                 case "signing-in":
-                    return Progress("Opening secure sign-in...", 0.38f);
+                    return Progress("Opening secure sign-in...", 0.24f);
                 case "verifying-access":
-                    return Progress(
-                        "Waiting for purchase confirmation...",
-                        0.40f);
+                    return Progress("Confirming your purchase...", 0.26f);
                 case "downloading":
-                    float ratio = brokerProgress.totalBytes > 0
-                        ? Mathf.Clamp01(
-                            (float)brokerProgress.completedBytes /
-                            brokerProgress.totalBytes)
-                        : 0f;
-                    string amount = BuildByteProgress(
-                        brokerProgress.completedBytes,
-                        brokerProgress.totalBytes,
-                        ratio);
                     return Progress(
-                        $"Downloading {name}...{amount}",
-                        0.42f + ratio * 0.18f);
+                        $"Downloading {name}...{downloaded}",
+                        0.28f + downloadRatio * 0.30f);
+                case "personalizing":
+                    return Progress(
+                        $"Preparing your copy of {name}...{prepared}",
+                        0.28f + preparedRatio * 0.30f);
                 case "verifying":
-                    return Progress(
-                        $"Checking the downloaded files for {name}...",
-                        0.64f);
+                    return Progress("Checking everything arrived...", 0.62f);
                 case "assembling":
                     return Progress(
-                        $"Preparing {name} for your project...",
-                        0.70f);
+                        $"Adding {name} to your project...",
+                        0.68f);
                 case "finalizing":
-                    return Progress(
-                        $"Finishing the download of {name}...",
-                        0.74f);
+                    return Progress("Almost done...", 0.74f);
                 default:
-                    throw new ArgumentOutOfRangeException(
-                        nameof(brokerProgress),
-                        "The package progress phase is invalid.");
+                    // A newer broker may report a phase this build predates.
+                    return Progress($"Working on {name}...", 0.28f);
             }
+        }
+
+        internal static string BuildFileProgress(
+            long completedFiles,
+            long totalFiles)
+        {
+            if (completedFiles < 0 || totalFiles < 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(completedFiles),
+                    "Package file progress cannot be negative.");
+            }
+            if (totalFiles == 0)
+            {
+                return string.Empty;
+            }
+            long completed = Math.Min(completedFiles, totalFiles);
+            int percent = (int)Math.Round(
+                completed / (double)totalFiles * 100d,
+                MidpointRounding.AwayFromZero);
+            return
+                $" {completed:N0} of {totalFiles:N0} files ({percent}%)";
         }
 
         internal static string BuildByteProgress(

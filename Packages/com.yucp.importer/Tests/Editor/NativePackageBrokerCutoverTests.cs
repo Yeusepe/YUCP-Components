@@ -328,6 +328,18 @@ namespace YUCP.Importer.Tests.Editor
                     100,
                     100),
                 Is.EqualTo("Finishing installation"));
+            Assert.That(
+                NativePackageBrokerClient.GetFriendlyProgressMessage(
+                    "personalizing",
+                    0,
+                    100),
+                Is.EqualTo("Preparing your copy"));
+            Assert.That(
+                NativePackageBrokerClient.GetFriendlyProgressMessage(
+                    "a-phase-from-a-newer-runtime",
+                    0,
+                    100),
+                Is.Not.Empty);
         }
 
         [Test]

@@ -752,6 +752,47 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void InterceptedUnityPackageCompletesWithoutAPackagesFolder()
+        {
+            const string packageJson = "{\"name\":\"com.lunararray.druffle\"," +
+                "\"version\":\"1.0.0\",\"displayName\":\"Druffle Avatar\"," +
+                "\"yucp\":{\"kind\":\"alias-v1\"," +
+                "\"aliasId\":\"com.lunararray.druffle\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"}}";
+            AliasPackageContract alias =
+                PackageMetadataExtractor.MergePackageJsonImportData(
+                    PackageMetadataExtractor.ParsePackageJsonImportDataStrict(
+                        packageJson),
+                    null).aliasPackage;
+            Assert.That(alias.packageName, Is.EqualTo("com.lunararray.druffle"));
+            Assert.That(alias.packageVersion, Is.EqualTo("1.0.0"));
+
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-intercepted-completion-" +
+                Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+
+                Assert.That(
+                    PackageLifecycleCoordinator.FinalizeSuccessfulAliasOperation(
+                        projectPath,
+                        alias,
+                        "update"),
+                    Is.Null);
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
         public void DirectUnityPackageCompletionDoesNotRequireRegisteredVpmBootstrap()
         {
             string projectPath = Path.Combine(

@@ -18,7 +18,8 @@ namespace YUCP.Importer.Editor.PackageManager
         public AliasPackageMediaSet media = new AliasPackageMediaSet();
         public BootstrapIntentContract bootstrapIntent;
         public string rawContractJson = "";
-        [NonSerialized]
+        // Never read from package.json: ParseAliasPackageContract fills this
+        // contract field by field. Serialized to survive domain reloads.
         public bool directUnityPackageBootstrap;
 
         public AliasPackageContract Clone()

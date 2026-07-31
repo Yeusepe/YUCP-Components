@@ -898,6 +898,12 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             packageJsonData.ApplyMetadataJson(packageMetadataJson);
+            if (packageJsonData.aliasPackage != null)
+            {
+                // An intercepted import is cancelled before Unity writes
+                // anything, so no Packages/<id> folder lands on disk.
+                packageJsonData.aliasPackage.directUnityPackageBootstrap = true;
+            }
             return packageJsonData;
         }
 
@@ -1460,10 +1466,9 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private static bool IsAliasPackageJsonData(PackageJsonImportData importData)
         {
-            return string.Equals(
-                importData?.aliasPackage?.kind,
-                "alias-v1",
-                StringComparison.OrdinalIgnoreCase);
+            string kind = importData?.aliasPackage?.kind;
+            return string.Equals(kind, "alias-v1", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(kind, "alias-v2", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool HasEmbeddedPackageMetadata(PackageJsonImportData importData)

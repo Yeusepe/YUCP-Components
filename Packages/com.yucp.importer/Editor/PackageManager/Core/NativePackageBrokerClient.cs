@@ -79,11 +79,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal sealed class NativePackageBrokerProgress
     {
         public long completedBytes;
+        public long completedFiles;
         public string phase = string.Empty;
         public string runId = string.Empty;
         public int schemaVersion;
         public long sequence;
         public long totalBytes;
+        public long totalFiles;
     }
 
     internal sealed class NativePackageBrokerException : Exception
@@ -951,6 +953,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     return "Opening secure sign-in";
                 case "verifying-access":
                     return "Checking your package access";
+                case "personalizing":
+                    return "Preparing your copy";
                 case "downloading":
                     if (totalBytes > 0 &&
                         completedBytes >= 0 &&
@@ -969,8 +973,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 case "finalizing":
                     return "Finishing installation";
                 default:
-                    throw new InvalidDataException(
-                        "The package delivery progress phase is invalid.");
+                    // Rejecting a phase this build predates would abort a
+                    // delivery that is going fine.
+                    return "Preparing your package";
             }
         }
 

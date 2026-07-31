@@ -3180,6 +3180,39 @@
 }
 
 
+.yucp-review-bar {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 8px;
+    margin-right: 8px;
+    margin-bottom: 4px;
+    padding-left: 16px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.045);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.10);
+    border-right-color: rgba(255, 255, 255, 0.10);
+    border-bottom-color: rgba(255, 255, 255, 0.10);
+    border-left-color: rgba(255, 255, 255, 0.10);
+}
+
+.yucp-review-bar-caption {
+    font-size: 11px;
+    color: rgba(218, 218, 224, 0.58);
+    flex-shrink: 1;
+    margin-right: 12px;
+}
+
 .yucp-review {
     flex-grow: 1;
     flex-shrink: 1;

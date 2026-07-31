@@ -137,7 +137,13 @@ namespace YUCP.Importer.Editor.PackageManager
         };
         private const int ChangeReviewPathsPerGroup = 40;
         private VisualElement _changeReviewSection;
+        private VisualElement _reviewActionBar;
+        private Button _reviewConfirmButton;
+        private Button _reviewCancelButton;
         private PackageReviewRequest _changeReviewRequest;
+        private string _lifecycleProgressMessage = string.Empty;
+        private double _lifecycleProgressStartedAt;
+        private IVisualElementScheduledItem _lifecycleProgressTicker;
         private VisualElement _importProgressFill;
         private VisualElement _importProgressMirror;
         private Label _importProgressMirrorLabel;
@@ -299,9 +305,31 @@ namespace YUCP.Importer.Editor.PackageManager
             ScheduleAuthenticationRefresh();
         }
 
+        // The exe owns the sign-in state and it can change while Unity sits in
+        // the background, so nothing it said earlier survives a focus change.
+        private void OnFocus()
+        {
+            InvalidateBrokerSignIn();
+        }
+
+        private void InvalidateBrokerSignIn()
+        {
+            if (!_isAliasBootstrapFlow ||
+                AuthenticationActionInFlight ||
+                _pendingImportAfterVerification ||
+                _waitingForImportCompletion)
+            {
+                return;
+            }
+            _isBrokerSignedIn = null;
+            BuildLicenseSection();
+            ScheduleAuthenticationRefresh();
+        }
+
         private void OnDisable()
         {
             CompletePendingChangeReview(false);
+            StopLifecycleProgressMessage();
             StopImportProgressSweep();
             _importProgressFill = null;
             _changeReviewRegistration?.Dispose();
@@ -438,6 +466,9 @@ namespace YUCP.Importer.Editor.PackageManager
             _detailsToggleButton.style.marginRight = 8;
             _detailsToggleButton.style.marginBottom = 4;
             _installerRoot.Add(_detailsToggleButton);
+
+            _reviewActionBar = CreateReviewActionBar();
+            _installerRoot.Add(_reviewActionBar);
 
             // Update banner height when window resizes
             root.RegisterCallback<GeometryChangedEvent>(OnWindowGeometryChanged);
@@ -2116,6 +2147,104 @@ namespace YUCP.Importer.Editor.PackageManager
             return container;
         }
 
+        private VisualElement CreateReviewActionBar()
+        {
+            var bar = new VisualElement();
+            bar.AddToClassList("yucp-review-bar");
+            bar.style.display = DisplayStyle.None;
+
+            var caption = new Label();
+            caption.name = "review-bar-caption";
+            caption.AddToClassList("yucp-review-bar-caption");
+            caption.style.whiteSpace = WhiteSpace.Normal;
+            bar.Add(caption);
+
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1;
+            bar.Add(spacer);
+
+            _reviewCancelButton = new Button(() => CompletePendingChangeReview(false))
+            {
+                text = "Cancel",
+            };
+            _reviewCancelButton.AddToClassList("yucp-cta-cancel");
+            bar.Add(_reviewCancelButton);
+
+            _reviewConfirmButton = new Button(() =>
+            {
+                if (!_changeReviewBlocked)
+                {
+                    CompletePendingChangeReview(true);
+                }
+            });
+            _reviewConfirmButton.AddToClassList("yucp-cta-button");
+            _reviewConfirmButton.style.marginLeft = 8;
+            _reviewConfirmButton.text = "Continue";
+            bar.Add(_reviewConfirmButton);
+
+            return bar;
+        }
+
+        private void UpdateReviewScreenChrome()
+        {
+            bool reviewing = ChangeReviewPending;
+            if (_reviewActionBar != null)
+            {
+                _reviewActionBar.style.display =
+                    reviewing ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            if (_detailsToggleButton != null)
+            {
+                _detailsToggleButton.style.display =
+                    reviewing ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+            if (_contentsSection != null)
+            {
+                var title = _contentsSection.Q<Label>("details-title");
+                if (title != null)
+                {
+                    title.text = reviewing ? "Confirm Changes" : "Package Contents";
+                }
+                var subtitle = _contentsSection.Q<Label>("details-subtitle");
+                if (subtitle != null)
+                {
+                    subtitle.text = reviewing
+                        ? "Nothing has been written yet. Continue applies exactly " +
+                          "these changes to your project."
+                        : "Review files and existing-file conflicts before installing.";
+                }
+            }
+            if (!reviewing)
+            {
+                return;
+            }
+            if (_reviewConfirmButton != null)
+            {
+                _reviewConfirmButton.text =
+                    string.IsNullOrWhiteSpace(_changeReviewRequest?.ApproveLabel)
+                        ? "Continue"
+                        : _changeReviewRequest.ApproveLabel;
+                _reviewConfirmButton.SetEnabled(!_changeReviewBlocked);
+                _reviewConfirmButton.tooltip = _changeReviewBlocked
+                    ? "Resolve the problems listed above, then retry."
+                    : "Apply exactly the changes listed above.";
+            }
+            if (_reviewCancelButton != null)
+            {
+                _reviewCancelButton.text =
+                    string.IsNullOrWhiteSpace(_changeReviewRequest?.CancelLabel)
+                        ? "Cancel"
+                        : _changeReviewRequest.CancelLabel;
+            }
+            var barCaption = _reviewActionBar?.Q<Label>("review-bar-caption");
+            if (barCaption != null)
+            {
+                barCaption.text = _changeReviewBlocked
+                    ? "This install cannot continue yet."
+                    : "Step 2 of 2 — nothing is written until you continue.";
+            }
+        }
+
         private VisualElement CreateDetailsToggleButton()
         {
             var row = new VisualElement();
@@ -2180,11 +2309,13 @@ namespace YUCP.Importer.Editor.PackageManager
             detailsHeader.AddToClassList("yucp-details-header");
 
             var detailsTitle = new Label("Package Contents");
+            detailsTitle.name = "details-title";
             detailsTitle.AddToClassList("yucp-details-title");
             detailsHeader.Add(detailsTitle);
 
             var detailsSubtitle = new Label(
                 "Review files and existing-file conflicts before installing.");
+            detailsSubtitle.name = "details-subtitle";
             detailsSubtitle.AddToClassList("yucp-details-subtitle");
             detailsSubtitle.style.whiteSpace = WhiteSpace.Normal;
             detailsHeader.Add(detailsSubtitle);
@@ -2280,10 +2411,11 @@ namespace YUCP.Importer.Editor.PackageManager
                  request.Plan.HasBlockedCollisions);
             _changeReviewCompletion = new TaskCompletionSource<bool>();
 
-            SetImportButtonProgress(null);
+            SetImportButtonProgress(-1f);
             RenderChangeReview();
             _detailsExpanded = true;
             UpdateInstallerLayout();
+            UpdateReviewScreenChrome();
             UpdateImportButtonEnabled();
             Focus();
             return _changeReviewCompletion.Task;
@@ -2315,6 +2447,13 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 _conflictModeSection.style.display = DisplayStyle.Flex;
             }
+            if (approved)
+            {
+                _detailsExpanded = false;
+                UpdateInstallerLayout();
+            }
+            UpdateReviewScreenChrome();
+            UpdateImportButtonEnabled();
             completion.TrySetResult(approved);
         }
 
@@ -2542,6 +2681,17 @@ namespace YUCP.Importer.Editor.PackageManager
         }
 
         private void AnimateImportButtonWidth()
+        {
+            if (_importButton == null)
+            {
+                return;
+            }
+            // Measured a frame later: the font and icon widths are not resolved
+            // until then, and measuring early undershoots.
+            _importButton.schedule.Execute(MeasureImportButtonWidth);
+        }
+
+        private void MeasureImportButtonWidth()
         {
             if (_importButton == null)
             {
@@ -3381,22 +3531,7 @@ namespace YUCP.Importer.Editor.PackageManager
             if (ChangeReviewPending)
             {
                 SetImportButtonProgress(-1f);
-                _importButton.SetEnabled(!_changeReviewBlocked);
-                _importButton.Clear();
-                _importProgressFill = null;
-                UpdateButtonLabel(
-                    _importButton,
-                    string.IsNullOrWhiteSpace(_changeReviewRequest?.ApproveLabel)
-                        ? "Confirm changes"
-                        : _changeReviewRequest.ApproveLabel);
-                AnimateImportButtonWidth();
-                _importButton.tooltip = _changeReviewBlocked
-                    ? "Resolve the problems listed above, then retry."
-                    : "Apply exactly the changes listed above.";
-                SetVerifyStatusLabel(
-                    _changeReviewBlocked
-                        ? "These changes cannot be applied yet."
-                        : "Review the exact project changes before applying.");
+                SetVerifyStatusLabel(null);
                 return;
             }
             bool hasUnverifiedLicense = RequiresVerificationBeforeImport();
@@ -3413,7 +3548,10 @@ namespace YUCP.Importer.Editor.PackageManager
 
             if (_pendingImportAfterVerification)
             {
-                _importButton.SetEnabled(false);
+                // Disabling tints the whole control, which drains the white out
+                // of the progress bar. Left enabled and unclickable instead.
+                _importButton.SetEnabled(true);
+                _importButton.pickingMode = PickingMode.Ignore;
                 _importButton.tooltip =
                     "YUCP is preparing and checking this package.";
                 const string statusText =
@@ -3427,8 +3565,10 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
+            StopLifecycleProgressMessage();
             SetVerifyStatusLabel(null);
             SetImportButtonProgress(-1f);
+            _importButton.pickingMode = PickingMode.Position;
             _importButton.SetEnabled(
                 !requiresExternalBootstrap &&
                 !isCheckingBrokerAuthentication &&
@@ -3893,11 +4033,20 @@ namespace YUCP.Importer.Editor.PackageManager
             parent.Add(row);
         }
 
+        /// <summary>
+        /// The lifecycle store addresses its state by alias id, so an import
+        /// carrying no usable alias is simply not installed rather than an
+        /// error thrown while the window is still being built.
+        /// </summary>
+        private bool TryGetLifecycleAlias(out AliasPackageContract alias)
+        {
+            alias = (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
+            return alias != null && PackageProtocolIdentifier.IsSafe(alias.aliasId);
+        }
+
         private bool IsCurrentAliasInstalled()
         {
-            AliasPackageContract alias =
-                (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
-            if (alias == null)
+            if (!TryGetLifecycleAlias(out AliasPackageContract alias))
             {
                 return false;
             }
@@ -3911,10 +4060,11 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private bool HasUnhandledVersionedBootstrap()
         {
-            AliasPackageContract alias =
-                (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
-            if (alias == null ||
-                !string.Equals(
+            if (!TryGetLifecycleAlias(out AliasPackageContract alias))
+            {
+                return false;
+            }
+            if (!string.Equals(
                     alias.kind,
                     "alias-v2",
                     StringComparison.Ordinal) ||
@@ -3932,9 +4082,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private bool HasCurrentAliasRollback()
         {
-            AliasPackageContract alias =
-                (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
-            if (alias == null)
+            if (!TryGetLifecycleAlias(out AliasPackageContract alias))
             {
                 return false;
             }
@@ -4027,11 +4175,9 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void SchedulePendingLifecycleResume()
         {
-            AliasPackageContract alias =
-                (_currentMetadata ?? _cachedMetadata)?.aliasPackage;
             if (_pendingLifecycleResumeScheduled ||
                 !_isAliasBootstrapFlow ||
-                alias == null)
+                !TryGetLifecycleAlias(out AliasPackageContract alias))
             {
                 return;
             }
@@ -4141,11 +4287,62 @@ namespace YUCP.Importer.Editor.PackageManager
                 {
                     return;
                 }
-                window.SetVerifyStatusLabel(progress.message);
+                window.SetLifecycleProgressMessage(progress.message);
                 window.SetImportButtonProgress(
                     progress.progress > 0f ? progress.progress : (float?)null);
                 window.Repaint();
             };
+        }
+
+        /// <summary>
+        /// Shows the message with a running elapsed time, so a step that takes
+        /// minutes does not read as a stall.
+        /// </summary>
+        private void SetLifecycleProgressMessage(string message)
+        {
+            _lifecycleProgressMessage = message ?? string.Empty;
+            if (_lifecycleProgressStartedAt <= 0d)
+            {
+                _lifecycleProgressStartedAt = EditorApplication.timeSinceStartup;
+            }
+            RenderLifecycleProgressMessage();
+            if (_lifecycleProgressTicker == null && rootVisualElement != null)
+            {
+                _lifecycleProgressTicker = rootVisualElement.schedule
+                    .Execute(RenderLifecycleProgressMessage)
+                    .Every(1000);
+            }
+        }
+
+        private void RenderLifecycleProgressMessage()
+        {
+            if (string.IsNullOrEmpty(_lifecycleProgressMessage))
+            {
+                return;
+            }
+            double elapsed =
+                EditorApplication.timeSinceStartup - _lifecycleProgressStartedAt;
+            SetVerifyStatusLabel(
+                elapsed >= 10d
+                    ? $"{_lifecycleProgressMessage}   {FormatElapsed(elapsed)}"
+                    : _lifecycleProgressMessage);
+        }
+
+        private void StopLifecycleProgressMessage()
+        {
+            _lifecycleProgressTicker?.Pause();
+            _lifecycleProgressTicker = null;
+            _lifecycleProgressMessage = string.Empty;
+            _lifecycleProgressStartedAt = 0d;
+        }
+
+        private static string FormatElapsed(double seconds)
+        {
+            int total = (int)Math.Max(0d, seconds);
+            int minutes = total / 60;
+            return minutes > 0
+                ? $"{minutes}m {total % 60}s"
+                : $"{total}s";
         }
 
         private void SetHostedLifecycleControlsEnabled(bool enabled)
@@ -4825,35 +5022,24 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
-            EditorApplication.delayCall += () =>
+            // Applied inline: a deferred callback is not guaranteed to run before
+            // the installer is shown, which left the title and version blank.
+            try
             {
-                if (this == null)
+                if (!string.IsNullOrWhiteSpace(alias.packageDisplayName))
                 {
-                    return;
+                    current.packageName = alias.packageDisplayName;
                 }
-
-                try
+                if (!string.IsNullOrWhiteSpace(alias.packageVersion))
                 {
-                    SetImportButtonProgress(null);
-                    if (!string.IsNullOrWhiteSpace(alias.packageDisplayName))
-                    {
-                        current.packageName = alias.packageDisplayName;
-                    }
-                    if (!string.IsNullOrWhiteSpace(alias.packageVersion))
-                    {
-                        current.version = alias.packageVersion;
-                    }
-                    SetMetadata(current);
+                    current.version = alias.packageVersion;
                 }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[YUCP PackageManager] Alias metadata normalization failed: {ex.Message}");
-                }
-                finally
-                {
-                    SetImportButtonProgress(-1f);
-                }
-            };
+                SetMetadata(current);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP PackageManager] Alias metadata normalization failed: {ex.Message}");
+            }
         }
 
         private void OnImportPackageStarted(string packageName)
@@ -4939,12 +5125,8 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 if (_isAliasBootstrapFlow)
                 {
-                    // This answer was cached when the screen opened and the
-                    // session can lapse in between, so confirm it with the
-                    // broker rather than starting work that will be refused.
-                    // The status call also renews a token that is merely stale.
-                    if (_isBrokerSignedIn == true &&
-                        !AuthenticationActionInFlight)
+                    // No remembered answer is good enough to start work on.
+                    if (!AuthenticationActionInFlight)
                     {
                         await RefreshAuthenticationStatusAsync();
                         if (this == null)
@@ -4954,8 +5136,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     }
                     if (_isBrokerSignedIn != true)
                     {
-                        if (!_isBrokerSignedIn.HasValue ||
-                            AuthenticationActionInFlight ||
+                        if (AuthenticationActionInFlight ||
                             !await SignInWithBrokerAsync())
                         {
                             return;
