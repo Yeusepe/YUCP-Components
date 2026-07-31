@@ -173,7 +173,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal static class NativePackageRuntimeReleaseTrust
     {
         internal const string ExecutableSha256 =
-            "df117742e6003ed3ca4ab7e9d18178ca9a9a8b09b495df311bc3fbd0262581ab";
+            "b7552bfbd649273b0d25fc28544a0ccf9b07e72fb41e7f7d05c045bb5f053372";
         internal const string MetadataUrl =
             "https://verify.creators.yucp.club/api/v2/package-installer/tuf/metadata";
         internal const string PublisherCertificateSha256 =
