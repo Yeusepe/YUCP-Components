@@ -1,19 +1,90 @@
 name: Build Release
 
-on: 
+on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - Packages/com.yucp.components/package.json
+      - Packages/com.yucp.importer/package.json
+
+env:
+  packageNames: com.yucp.components com.yucp.importer
+
+permissions:
+  contents: read
 
 jobs:
+
+  detect-version-changes:
+    name: Detect Version Changes
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+      packages: ${{ steps.detect.outputs.packages }}
+    steps:
+
+      # Checkout Local Repository
+      - name: Checkout
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac
+        with:
+          fetch-depth: 0
+
+      # Build a matrix of packages whose version is not released yet. A package
+      # sitting at an already tagged version cannot be released again: the tag
+      # push fails, the run concludes failed, and the listing build that follows
+      # it never publishes the package that did release.
+      - name: Detect Unreleased Package Versions
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          unreleased_packages=()
+
+          for package in ${{ env.packageNames }}; do
+            manifest="Packages/${package}/package.json"
+            version="$(jq -r '.version // empty' "$manifest")"
+
+            if [[ -z "$version" ]]; then
+              echo "::error::${manifest} has no version."
+              exit 1
+            fi
+
+            tag="${package}-${version}"
+
+            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+              echo "${tag} is already released."
+              continue
+            fi
+
+            echo "${tag} is not released yet."
+            unreleased_packages+=("\"$package\"")
+          done
+
+          packages_json="[$(IFS=,; echo "${unreleased_packages[*]}")]"
+          echo "packages=${packages_json}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$packages_json" == "[]" ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "Every package version is already released."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Releasing: ${packages_json}"
+          fi
+
+  # Build and release the Packages
   build:
+    needs: detect-version-changes
+    if: ${{ needs.detect-version-changes.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - com.yucp.components
-          - com.yucp.importer
+        package: ${{ fromJSON(needs.detect-version-changes.outputs.packages) }}
     env:
       packageName: ${{ matrix.package }}
       packagePath: Packages/${{ matrix.package }}
@@ -27,10 +98,10 @@ jobs:
       - name: Get Version
         id: version
         uses: zoexx/github-action-json-file-properties@b9f36ce6ee6fe2680cd3c32b2c62e22eade7e590
-        with: 
+        with:
             file_path: "${{ env.packagePath }}/package.json"
             prop_path: "version"
-    
+
       # Configure the Environment Variables needed for releasing the Package
       - name: Set Environment Variables
         run: |
@@ -43,25 +114,25 @@ jobs:
       - name: Create Package Zip
         working-directory: "${{ env.packagePath }}"
         run: zip -r "${{ github.workspace }}/${{ env.zipFile }}" .
-      
+
       # Build a list of .meta files for future use
       - name: Track Package Meta Files
         run: find "${{ env.packagePath }}/" -name \*.meta >> metaList
-      
+
       # Make a UnityPackage version of the Package for release
       - name: Create UnityPackage
         uses: pCYSl5EDgo/create-unitypackage@v1.2.3
         with:
           package-path: ${{ env.unityPackage }}
           include-files: metaList
-      
-      # Make a release tag of the version from the package.json file 
+
+      # Make a release tag of the version from the package.json file
       - name: Create Tag
         id: tag_version
         uses: rickstaa/action-create-tag@88dbf7ff6fe2405f8e8f6c6fdfd78829bc631f83
         with:
           tag: "${{ env.packageTag }}"
-      
+
       # Publish the Release to GitHub
       - name: Make Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
@@ -71,3 +142,17 @@ jobs:
             ${{ env.unityPackage }}
             ${{ env.packagePath }}/package.json
           tag_name: ${{ env.packageTag }}
+
+  # Called rather than triggered: a release GITHUB_TOKEN publishes raises no
+  # workflow event, and a workflow_run trigger would skip whenever any part of
+  # this run failed.
+  build-listing:
+    needs:
+      - detect-version-changes
+      - build
+    if: ${{ !cancelled() && needs.detect-version-changes.outputs.has_changes == 'true' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/build-listing.yml
