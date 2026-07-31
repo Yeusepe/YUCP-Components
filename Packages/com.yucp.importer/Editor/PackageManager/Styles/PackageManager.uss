@@ -2435,11 +2435,15 @@
     border-bottom-color: rgba(255, 255, 255, 0.26);
     border-left-color: rgba(255, 255, 255, 0.26);
     color: rgba(10, 10, 14, 0.96);
+    -unity-font-style: bold;
+    font-size: 13px;
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    transition-property: background-color, scale, border-color;
-    transition-duration: 0.16s;
+    overflow: hidden;
+    transition-property: background-color, scale, border-color, width, min-width, color, opacity;
+    transition-duration: 0.16s, 0.16s, 0.22s, 0.26s, 0.26s, 0.22s, 0.22s;
+    transition-timing-function: ease-out;
 }
 
 .yucp-cta-button:hover {
@@ -2475,9 +2479,21 @@
 .yucp-verify-status {
     font-size: 10px;
     color: rgba(180, 200, 255, 0.75);
-    margin-top: 4px;
+    margin-top: 0;
     -unity-text-align: middle-right;
     -unity-font-style: italic;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition-property: max-height, opacity, margin-top;
+    transition-duration: 0.26s, 0.20s, 0.26s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-verify-status--visible {
+    max-height: 48px;
+    opacity: 1;
+    margin-top: 4px;
 }
 
 .dark .yucp-verify-status {
@@ -2488,12 +2504,18 @@
     flex-shrink: 0;
     margin-left: 20px;
     margin-right: 20px;
-    margin-top: 10px;
+    margin-top: 0;
     margin-bottom: 0;
     padding-left: 14px;
     padding-right: 14px;
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition-property: max-height, opacity, margin-top, padding-top, padding-bottom;
+    transition-duration: 0.30s, 0.22s, 0.30s, 0.30s, 0.30s;
+    transition-timing-function: ease-out;
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
     border-bottom-left-radius: 8px;
@@ -2515,6 +2537,27 @@
     border-right-color: rgba(255, 255, 255, 0.08);
     border-bottom-color: rgba(255, 255, 255, 0.08);
     border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.yucp-flow-notice-link {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgb(138, 172, 255);
+    margin-top: 8px;
+    transition-property: color;
+    transition-duration: 0.14s;
+}
+
+.yucp-flow-notice-link--hover {
+    color: rgb(176, 200, 255);
+}
+
+.yucp-flow-notice--visible {
+    max-height: 260px;
+    opacity: 1;
+    margin-top: 10px;
+    padding-top: 10px;
+    padding-bottom: 10px;
 }
 
 .yucp-flow-notice-info {
@@ -2609,8 +2652,9 @@
     border-bottom-color: rgba(255, 255, 255, 0.08);
     border-left-color: rgba(255, 255, 255, 0.08);
     color: rgba(240, 240, 244, 0.60);
-    transition-property: background-color, color;
-    transition-duration: 0.14s;
+    transition-property: background-color, color, translate;
+    transition-duration: 0.14s, 0.14s, 0.26s;
+    transition-timing-function: ease-out;
 }
 
 .yucp-cta-cancel:hover {
@@ -3087,6 +3131,18 @@
     flex-grow: 1;
     flex-shrink: 1;
     min-height: 0;
+    margin-top: 0;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition-property: max-height, opacity, margin-top;
+    transition-duration: 0.32s, 0.24s, 0.32s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-meta-grid--expanded {
+    max-height: 620px;
+    opacity: 1;
     margin-top: 10px;
 }
 
@@ -3123,3 +3179,179 @@
     overflow: hidden;
 }
 
+
+.yucp-review {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+}
+
+.yucp-review-heading {
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: rgba(246, 246, 250, 0.96);
+    margin-bottom: 2px;
+}
+
+.yucp-review-summary {
+    font-size: 11px;
+    color: rgba(218, 218, 224, 0.62);
+    white-space: normal;
+    margin-bottom: 10px;
+}
+
+.yucp-review-scroll {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+}
+
+.yucp-review-notice {
+    flex-direction: row;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    padding-left: 11px;
+    padding-right: 11px;
+    margin-bottom: 8px;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-left-width: 2px;
+    background-color: rgba(255, 255, 255, 0.045);
+    border-left-color: rgba(255, 255, 255, 0.22);
+}
+
+.yucp-review-notice--blocking {
+    background-color: rgba(226, 74, 84, 0.10);
+    border-left-color: rgba(226, 74, 84, 0.85);
+}
+
+.yucp-review-notice--caution {
+    background-color: rgba(232, 176, 68, 0.10);
+    border-left-color: rgba(232, 176, 68, 0.85);
+}
+
+.yucp-review-notice-text {
+    font-size: 11px;
+    color: rgba(232, 232, 238, 0.88);
+    white-space: normal;
+    flex-shrink: 1;
+}
+
+.yucp-review-group {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 12px;
+    margin-bottom: 4px;
+}
+
+.yucp-review-group-dot {
+    width: 7px;
+    height: 7px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.yucp-review-group-label {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(240, 240, 246, 0.90);
+    letter-spacing: 0.4px;
+}
+
+.yucp-review-group-count {
+    font-size: 10px;
+    color: rgba(218, 218, 224, 0.42);
+    margin-left: 6px;
+}
+
+.yucp-review-path {
+    font-size: 11px;
+    color: rgba(214, 214, 222, 0.66);
+    white-space: normal;
+    margin-left: 15px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.yucp-review-more {
+    font-size: 10px;
+    color: rgba(214, 214, 222, 0.40);
+    margin-left: 15px;
+    margin-top: 2px;
+    -unity-font-style: italic;
+}
+
+.yucp-cta-progress {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    background-color: rgb(255, 255, 255);
+    opacity: 0;
+    overflow: hidden;
+    transition-property: width, opacity;
+    transition-duration: 0.28s, 0.18s;
+}
+
+.yucp-cta-progress--active {
+    opacity: 1;
+}
+
+.yucp-cta-progress--indeterminate {
+    width: 38%;
+    background-color: rgb(255, 255, 255);
+    transition-property: left;
+    transition-duration: 0.9s;
+}
+
+.yucp-cta-button--busy {
+    background-color: rgb(24, 24, 30);
+    border-top-color: rgba(255, 255, 255, 0.20);
+    border-right-color: rgba(255, 255, 255, 0.20);
+    border-bottom-color: rgba(255, 255, 255, 0.20);
+    border-left-color: rgba(255, 255, 255, 0.20);
+    color: rgb(255, 255, 255);
+}
+
+.yucp-cta-button--busy Label {
+    color: rgb(255, 255, 255);
+}
+
+.yucp-cta-button--busy .yucp-cta-icon {
+    -unity-background-image-tint-color: rgb(255, 255, 255);
+}
+
+.yucp-cta-button--busy:hover {
+    scale: 1 1;
+    background-color: rgb(24, 24, 30);
+    color: rgb(255, 255, 255);
+}
+
+.yucp-cta-progress-mirror {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    padding-left: 20px;
+    padding-right: 24px;
+}
+
+.yucp-cta-progress-mirror Label {
+    color: rgb(8, 8, 12);
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.yucp-cta-cancel-progress {
+    background-color: rgba(255, 255, 255, 0.14);
+}

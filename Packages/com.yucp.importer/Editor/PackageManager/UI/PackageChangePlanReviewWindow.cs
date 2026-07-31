@@ -7,6 +7,25 @@ using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.Importer.Editor.PackageManager
 {
+    [InitializeOnLoad]
+    internal static class PackageChangePlanReviewFallback
+    {
+        static PackageChangePlanReviewFallback()
+        {
+            PackageChangePlanReview.SetFallback(request =>
+                request.Plan != null
+                    ? PackageChangePlanReviewWindow.ShowReview(
+                        request.Plan,
+                        request.DirtyAssets,
+                        request.Summary)
+                    : EditorUtility.DisplayDialog(
+                        request.Heading,
+                        request.Summary,
+                        request.ApproveLabel,
+                        request.CancelLabel));
+        }
+    }
+
     internal sealed class PackageChangePlanReviewWindow : EditorWindow
     {
         private static readonly (string Kind, string Label)[] Groups =

@@ -23,7 +23,7 @@ namespace YUCP.Importer.Editor.PackageManager
     /// Initially displays read-only metadata (banner, icon, author, description, links).
     /// Future: Will handle package downloads and updates.
     /// </summary>
-    public class PackageManagerWindow : EditorWindow
+    public class PackageManagerWindow : EditorWindow, IPackageChangePlanReviewHost
     {
         internal bool HasPackageImportItems =>
             _currentImportItems != null && _currentImportItems.Length > 0;
@@ -122,8 +122,39 @@ namespace YUCP.Importer.Editor.PackageManager
         private VisualElement _detailsToggleButton;
         private Button _importButton;
         private Button _cancelButton;
+        private static readonly (string Kind, string Label)[] ChangeReviewGroups =
+        {
+            (PackageChangeKind.Added, "Added"),
+            (PackageChangeKind.ReplacedUnchanged, "Replaced unchanged"),
+            (
+                PackageChangeKind.ReplacedWithLocalModifications,
+                "Replaced with local modifications"),
+            (PackageChangeKind.Removed, "Removed"),
+            (
+                PackageChangeKind.RemovedWithLocalModifications,
+                "Removed with local modifications"),
+            (PackageChangeKind.BlockedCollision, "Blocked collisions"),
+        };
+        private const int ChangeReviewPathsPerGroup = 40;
+        private VisualElement _changeReviewSection;
+        private PackageReviewRequest _changeReviewRequest;
+        private VisualElement _importProgressFill;
+        private VisualElement _importProgressMirror;
+        private Label _importProgressMirrorLabel;
+        private bool _importProgressGeometryHooked;
+        private IVisualElementScheduledItem _importProgressSweep;
+        private float _importProgressSweepOffset;
+        private TaskCompletionSource<bool> _changeReviewCompletion;
+        private PackageChangePlan _changeReviewPlan;
+        private IReadOnlyList<string> _changeReviewDirtyAssets =
+            Array.Empty<string>();
+        private string _changeReviewTargetLabel = string.Empty;
+        private bool _changeReviewBlocked;
+        private IDisposable _changeReviewRegistration;
         private Button _backButton;
         private Label _verifyStatusLabel;
+        private Label _flowNoticeLinkLabel;
+        private const string SupportDiscordUrl = "https://discord.gg/5YzqbBTA5e";
         private readonly List<Button> _hostedLifecycleButtons =
             new List<Button>();
         private VisualElement _hostedLifecycleControls;
@@ -243,6 +274,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
+            _changeReviewRegistration = PackageChangePlanReview.Register(this);
             AssetDatabase.importPackageStarted += OnImportPackageStarted;
             AssetDatabase.importPackageCompleted += OnImportPackageCompleted;
             
@@ -269,6 +301,11 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private void OnDisable()
         {
+            CompletePendingChangeReview(false);
+            StopImportProgressSweep();
+            _importProgressFill = null;
+            _changeReviewRegistration?.Dispose();
+            _changeReviewRegistration = null;
             AssetDatabase.importPackageStarted -= OnImportPackageStarted;
             AssetDatabase.importPackageCompleted -= OnImportPackageCompleted;
             DestroyCreatedTextures();
@@ -645,7 +682,6 @@ namespace YUCP.Importer.Editor.PackageManager
 
             _verifyStatusLabel = new Label();
             _verifyStatusLabel.AddToClassList("yucp-verify-status");
-            _verifyStatusLabel.style.display = DisplayStyle.None;
             ctaColumn.Add(_verifyStatusLabel);
 
             string ctaSub = BuildCtaSublabel();
@@ -821,14 +857,19 @@ namespace YUCP.Importer.Editor.PackageManager
             grid.style.flexGrow = 0;
             grid.style.flexShrink = 1;
             grid.style.minHeight = 0;
-            grid.style.marginTop = 10;
-            grid.style.display = DisplayStyle.None; // collapsed by default
             _metadataGridElement = grid;
 
             showMoreBtn.clicked += () =>
             {
                 _metadataGridExpanded = !_metadataGridExpanded;
-                grid.style.display = _metadataGridExpanded ? DisplayStyle.Flex : DisplayStyle.None;
+                if (_metadataGridExpanded)
+                {
+                    grid.AddToClassList("yucp-meta-grid--expanded");
+                }
+                else
+                {
+                    grid.RemoveFromClassList("yucp-meta-grid--expanded");
+                }
                 showMoreBtn.text = _metadataGridExpanded ? "Show less ↑" : "Show more ↓";
             };
             panel.Add(showMoreBtn);
@@ -1043,6 +1084,7 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 _importButton.text = btnText;
             }
+            AnimateImportButtonWidth();
         }
 
         private VisualElement BuildChipRow(Color? accent)
@@ -2150,6 +2192,9 @@ namespace YUCP.Importer.Editor.PackageManager
 
             var dependenciesContainer = new VisualElement();
             dependenciesContainer.name = "dependencies-container";
+            dependenciesContainer.style.flexShrink = 0;
+            dependenciesContainer.style.maxHeight = Length.Percent(34f);
+            dependenciesContainer.style.overflow = Overflow.Hidden;
             section.Add(dependenciesContainer);
 
             var licensedSummaryContainer = new VisualElement();
@@ -2202,10 +2247,409 @@ namespace YUCP.Importer.Editor.PackageManager
             _treeScrollWrapper.Add(_treeScrollView);
             section.Add(_treeScrollWrapper);
 
+            _changeReviewSection = new VisualElement();
+            _changeReviewSection.name = "change-review";
+            _changeReviewSection.style.display = DisplayStyle.None;
+            _changeReviewSection.style.flexGrow = 1;
+            _changeReviewSection.style.flexShrink = 1;
+            _changeReviewSection.style.minHeight = 0;
+            section.Add(_changeReviewSection);
+
             ShowSampleTree();
             UpdateConflictModeSection();
 
             return section;
+        }
+
+        bool IPackageChangePlanReviewHost.CanReview =>
+            rootVisualElement != null && _contentsSection != null;
+
+        Task<bool> IPackageChangePlanReviewHost.ReviewAsync(
+            PackageReviewRequest request)
+        {
+            CompletePendingChangeReview(false);
+            _changeReviewRequest = request;
+            _changeReviewPlan = request.Plan;
+            _changeReviewDirtyAssets =
+                request.DirtyAssets ?? Array.Empty<string>();
+            _changeReviewTargetLabel = request.Summary ?? string.Empty;
+            _changeReviewBlocked =
+                request.Plan != null &&
+                (!PackageChangePlanSigner.Verify(request.Plan) ||
+                 _changeReviewDirtyAssets.Count > 0 ||
+                 request.Plan.HasBlockedCollisions);
+            _changeReviewCompletion = new TaskCompletionSource<bool>();
+
+            SetImportButtonProgress(null);
+            RenderChangeReview();
+            _detailsExpanded = true;
+            UpdateInstallerLayout();
+            UpdateImportButtonEnabled();
+            Focus();
+            return _changeReviewCompletion.Task;
+        }
+
+        private bool ChangeReviewPending => _changeReviewCompletion != null;
+
+        private void CompletePendingChangeReview(bool approved)
+        {
+            TaskCompletionSource<bool> completion = _changeReviewCompletion;
+            if (completion == null)
+            {
+                return;
+            }
+            _changeReviewCompletion = null;
+            _changeReviewPlan = null;
+            _changeReviewRequest = null;
+            _changeReviewDirtyAssets = Array.Empty<string>();
+            if (_changeReviewSection != null)
+            {
+                _changeReviewSection.Clear();
+                _changeReviewSection.style.display = DisplayStyle.None;
+            }
+            if (_treeScrollWrapper != null)
+            {
+                _treeScrollWrapper.style.display = DisplayStyle.Flex;
+            }
+            if (_conflictModeSection != null)
+            {
+                _conflictModeSection.style.display = DisplayStyle.Flex;
+            }
+            completion.TrySetResult(approved);
+        }
+
+        private void RenderChangeReview()
+        {
+            if (_changeReviewSection == null)
+            {
+                return;
+            }
+            _changeReviewSection.Clear();
+            _changeReviewSection.style.display = DisplayStyle.Flex;
+            if (_treeScrollWrapper != null)
+            {
+                _treeScrollWrapper.style.display = DisplayStyle.None;
+            }
+            if (_conflictModeSection != null)
+            {
+                _conflictModeSection.style.display = DisplayStyle.None;
+            }
+
+            _changeReviewSection.AddToClassList("yucp-review");
+
+            var heading = new Label(
+                string.IsNullOrWhiteSpace(_changeReviewRequest?.Heading)
+                    ? "Exact project changes"
+                    : _changeReviewRequest.Heading);
+            heading.AddToClassList("yucp-review-heading");
+            _changeReviewSection.Add(heading);
+
+            if (!string.IsNullOrWhiteSpace(_changeReviewTargetLabel))
+            {
+                var target = new Label(_changeReviewTargetLabel);
+                target.AddToClassList("yucp-review-summary");
+                _changeReviewSection.Add(target);
+            }
+
+            if (_changeReviewPlan == null)
+            {
+                return;
+            }
+
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.AddToClassList("yucp-review-scroll");
+
+            if (!PackageChangePlanSigner.Verify(_changeReviewPlan))
+            {
+                scroll.Add(BuildChangeReviewNotice(
+                    "The change-plan signature is invalid. Close this review " +
+                    "and start the operation again.",
+                    ChangeReviewSeverity.Blocking));
+            }
+            if (_changeReviewDirtyAssets.Count > 0)
+            {
+                scroll.Add(BuildChangeReviewNotice(
+                    "Save or revert these assets before continuing:\n" +
+                    string.Join("\n", _changeReviewDirtyAssets.Take(12)),
+                    ChangeReviewSeverity.Blocking));
+            }
+            if (_changeReviewPlan.HasBlockedCollisions)
+            {
+                scroll.Add(BuildChangeReviewNotice(
+                    "This package would replace files it does not own. Move " +
+                    "or remove those collisions, then retry.",
+                    ChangeReviewSeverity.Blocking));
+            }
+            int preservedCount = _changeReviewPlan.entries.Count(
+                entry => entry.RequiresPreservedCopy);
+            if (preservedCount > 0)
+            {
+                scroll.Add(BuildChangeReviewNotice(
+                    $"{preservedCount} locally modified file(s) are copied to " +
+                    ".yucp/preserved-changes and Assets/YUCP Preserved Changes " +
+                    "first.",
+                    ChangeReviewSeverity.Caution));
+            }
+
+            foreach ((string kind, string label) in ChangeReviewGroups)
+            {
+                List<PackageChangePlanEntry> entries = _changeReviewPlan.entries
+                    .Where(entry => string.Equals(
+                        entry.changeKind,
+                        kind,
+                        StringComparison.Ordinal))
+                    .ToList();
+                if (entries.Count == 0)
+                {
+                    continue;
+                }
+                var group = new VisualElement();
+                group.AddToClassList("yucp-review-group");
+                var dot = new VisualElement();
+                dot.AddToClassList("yucp-review-group-dot");
+                dot.style.backgroundColor =
+                    new StyleColor(ChangeReviewGroupColor(kind));
+                group.Add(dot);
+                var groupLabel = new Label(label.ToUpperInvariant());
+                groupLabel.AddToClassList("yucp-review-group-label");
+                group.Add(groupLabel);
+                var groupCount = new Label(entries.Count.ToString());
+                groupCount.AddToClassList("yucp-review-group-count");
+                group.Add(groupCount);
+                scroll.Add(group);
+
+                foreach (PackageChangePlanEntry entry in
+                         entries.Take(ChangeReviewPathsPerGroup))
+                {
+                    var row = new Label(entry.normalizedPath);
+                    row.AddToClassList("yucp-review-path");
+                    scroll.Add(row);
+                }
+                if (entries.Count > ChangeReviewPathsPerGroup)
+                {
+                    var more = new Label(
+                        $"and {entries.Count - ChangeReviewPathsPerGroup} more");
+                    more.AddToClassList("yucp-review-more");
+                    scroll.Add(more);
+                }
+            }
+            _changeReviewSection.Add(scroll);
+        }
+
+        private enum ChangeReviewSeverity
+        {
+            Blocking,
+            Caution,
+        }
+
+        private static Color ChangeReviewGroupColor(string kind)
+        {
+            if (string.Equals(kind, PackageChangeKind.Added, StringComparison.Ordinal))
+            {
+                return new Color(0.36f, 0.80f, 0.52f, 0.95f);
+            }
+            if (string.Equals(
+                    kind,
+                    PackageChangeKind.BlockedCollision,
+                    StringComparison.Ordinal))
+            {
+                return new Color(0.89f, 0.29f, 0.33f, 0.95f);
+            }
+            if (string.Equals(kind, PackageChangeKind.Removed, StringComparison.Ordinal) ||
+                string.Equals(
+                    kind,
+                    PackageChangeKind.RemovedWithLocalModifications,
+                    StringComparison.Ordinal))
+            {
+                return new Color(0.91f, 0.69f, 0.27f, 0.95f);
+            }
+            return new Color(0.38f, 0.52f, 1.00f, 0.95f);
+        }
+
+        private void SetImportButtonProgress(float? fraction)
+        {
+            if (_importButton == null)
+            {
+                return;
+            }
+            bool clearing = fraction.HasValue && fraction.Value < 0f;
+            if (_importProgressFill != null &&
+                _importProgressFill.parent != _importButton)
+            {
+                _importProgressFill = null;
+                _importProgressMirror = null;
+                _importProgressMirrorLabel = null;
+            }
+            if (clearing && _importProgressFill == null)
+            {
+                _importButton.RemoveFromClassList("yucp-cta-button--busy");
+                return;
+            }
+            if (_importProgressFill == null)
+            {
+                if (_importButton.Q<Label>() == null)
+                {
+                    string existing = _importButton.text;
+                    _importButton.text = string.Empty;
+                    var label = new Label(existing);
+                    label.pickingMode = PickingMode.Ignore;
+                    _importButton.Add(label);
+                }
+                _importProgressFill = new VisualElement();
+                _importProgressFill.AddToClassList("yucp-cta-progress");
+                _importProgressFill.pickingMode = PickingMode.Ignore;
+
+                _importProgressMirror = new VisualElement();
+                _importProgressMirror.AddToClassList("yucp-cta-progress-mirror");
+                _importProgressMirror.pickingMode = PickingMode.Ignore;
+                _importProgressMirrorLabel = new Label(string.Empty);
+                _importProgressMirrorLabel.pickingMode = PickingMode.Ignore;
+                _importProgressMirror.Add(_importProgressMirrorLabel);
+                _importProgressFill.Add(_importProgressMirror);
+                _importButton.Add(_importProgressFill);
+
+                if (!_importProgressGeometryHooked)
+                {
+                    _importProgressGeometryHooked = true;
+                    _importButton.RegisterCallback<GeometryChangedEvent>(
+                        _ => SyncImportProgressMirror());
+                }
+            }
+            SyncImportProgressMirror();
+
+            if (clearing)
+            {
+                StopImportProgressSweep();
+                _importProgressFill.RemoveFromClassList("yucp-cta-progress--active");
+                _importProgressFill.style.width = Length.Percent(0f);
+                _importButton.RemoveFromClassList("yucp-cta-button--busy");
+                return;
+            }
+
+            _importProgressFill.AddToClassList("yucp-cta-progress--active");
+            _importButton.AddToClassList("yucp-cta-button--busy");
+            if (fraction.HasValue)
+            {
+                StopImportProgressSweep();
+                _importProgressFill.RemoveFromClassList(
+                    "yucp-cta-progress--indeterminate");
+                _importProgressFill.style.left = Length.Percent(0f);
+                _importProgressFill.style.width =
+                    Length.Percent(Mathf.Clamp01(fraction.Value) * 100f);
+                return;
+            }
+            StartImportProgressSweep();
+        }
+
+        private void AnimateImportButtonWidth()
+        {
+            if (_importButton == null)
+            {
+                return;
+            }
+            Label label = _importButton.Q<Label>();
+            string text = label != null ? label.text : _importButton.text;
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+            TextElement measurer = label ?? (TextElement)_importButton;
+            Vector2 size = measurer.MeasureTextSize(
+                text,
+                0f,
+                VisualElement.MeasureMode.Undefined,
+                0f,
+                VisualElement.MeasureMode.Undefined);
+            float horizontalPadding =
+                _importButton.resolvedStyle.paddingLeft +
+                _importButton.resolvedStyle.paddingRight +
+                _importButton.resolvedStyle.borderLeftWidth +
+                _importButton.resolvedStyle.borderRightWidth;
+            if (horizontalPadding <= 0f)
+            {
+                horizontalPadding = 46f;
+            }
+            var icon = _importButton.Q<Image>();
+            if (icon != null)
+            {
+                float iconWidth = icon.resolvedStyle.width;
+                horizontalPadding +=
+                    (iconWidth > 0f ? iconWidth : 16f) +
+                    icon.resolvedStyle.marginRight;
+            }
+            float target = Mathf.Max(size.x + horizontalPadding + 2f, 160f);
+            _importButton.style.width = target;
+            SyncImportProgressMirror();
+        }
+
+        private void SyncImportProgressMirror()
+        {
+            if (_importProgressMirror == null || _importButton == null)
+            {
+                return;
+            }
+            float width = _importButton.resolvedStyle.width;
+            if (width > 0f)
+            {
+                _importProgressMirror.style.width = width;
+            }
+            if (_importProgressMirrorLabel != null)
+            {
+                Label source = _importButton.Q<Label>();
+                _importProgressMirrorLabel.text = source != null
+                    ? source.text
+                    : _importButton.text;
+            }
+        }
+
+        private void StartImportProgressSweep()
+        {
+            if (_importProgressFill == null || _importProgressSweep != null)
+            {
+                return;
+            }
+            _importProgressFill.AddToClassList("yucp-cta-progress--indeterminate");
+            _importProgressSweepOffset = -34f;
+            _importProgressSweep = _importProgressFill.schedule
+                .Execute(() =>
+                {
+                    _importProgressSweepOffset += 34f;
+                    if (_importProgressSweepOffset > 100f)
+                    {
+                        _importProgressSweepOffset = -34f;
+                    }
+                    _importProgressFill.style.left =
+                        Length.Percent(_importProgressSweepOffset);
+                })
+                .Every(900);
+        }
+
+        private void StopImportProgressSweep()
+        {
+            _importProgressSweep?.Pause();
+            _importProgressSweep = null;
+            _importProgressFill?.RemoveFromClassList(
+                "yucp-cta-progress--indeterminate");
+            if (_importProgressFill != null)
+            {
+                _importProgressFill.style.left = Length.Percent(0f);
+            }
+        }
+
+        private static VisualElement BuildChangeReviewNotice(
+            string message,
+            ChangeReviewSeverity severity)
+        {
+            var notice = new VisualElement();
+            notice.AddToClassList("yucp-review-notice");
+            notice.AddToClassList(
+                severity == ChangeReviewSeverity.Blocking
+                    ? "yucp-review-notice--blocking"
+                    : "yucp-review-notice--caution");
+            var label = new Label(message);
+            label.AddToClassList("yucp-review-notice-text");
+            notice.Add(label);
+            return notice;
         }
 
         private void UpdateInstallerLayout()
@@ -2747,6 +3191,34 @@ namespace YUCP.Importer.Editor.PackageManager
             };
         }
 
+        /// <summary>
+        /// The sign-in answer is cached from one status call, so a session that
+        /// expires afterwards still reads as signed in and the operation fails
+        /// on the far side. The broker saying it needs authentication is the
+        /// authoritative answer, so believe it over the cache and put the screen
+        /// back into its signed-out state instead of reporting a dead error.
+        /// </summary>
+        private bool HandleAuthenticationLoss(string errorCode)
+        {
+            if (!string.Equals(
+                    errorCode,
+                    "AUTHENTICATION_REQUIRED",
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+            _isBrokerSignedIn = false;
+            BuildLicenseSection();
+            UpdateImportButtonEnabled();
+            ShowFlowNotice(
+                "Sign in to continue",
+                "This YUCP sign-in is no longer valid. Sign in, then start the " +
+                "package action again.",
+                FlowNoticeTone.Info);
+            _ = RefreshAuthenticationStatusAsync();
+            return true;
+        }
+
         private async Task RefreshAuthenticationStatusAsync()
         {
             if (AuthenticationActionInFlight || !_isAliasBootstrapFlow)
@@ -2906,6 +3378,27 @@ namespace YUCP.Importer.Editor.PackageManager
         private void UpdateImportButtonEnabled()
         {
             if (_importButton == null) return;
+            if (ChangeReviewPending)
+            {
+                SetImportButtonProgress(-1f);
+                _importButton.SetEnabled(!_changeReviewBlocked);
+                _importButton.Clear();
+                _importProgressFill = null;
+                UpdateButtonLabel(
+                    _importButton,
+                    string.IsNullOrWhiteSpace(_changeReviewRequest?.ApproveLabel)
+                        ? "Confirm changes"
+                        : _changeReviewRequest.ApproveLabel);
+                AnimateImportButtonWidth();
+                _importButton.tooltip = _changeReviewBlocked
+                    ? "Resolve the problems listed above, then retry."
+                    : "Apply exactly the changes listed above.";
+                SetVerifyStatusLabel(
+                    _changeReviewBlocked
+                        ? "These changes cannot be applied yet."
+                        : "Review the exact project changes before applying.");
+                return;
+            }
             bool hasUnverifiedLicense = RequiresVerificationBeforeImport();
             bool requiresExternalBootstrap =
                 hasUnverifiedLicense && !_isAliasBootstrapFlow;
@@ -2925,14 +3418,17 @@ namespace YUCP.Importer.Editor.PackageManager
                     "YUCP is preparing and checking this package.";
                 const string statusText =
                     "YUCP is preparing your package...";
-                // Clear any icon content then update via helper to avoid text overlap
                 _importButton.Clear();
+                _importProgressFill = null;
                 UpdateButtonLabel(_importButton, "Preparing...");
+                AnimateImportButtonWidth();
+                SetImportButtonProgress(null);
                 SetVerifyStatusLabel(statusText);
                 return;
             }
 
             SetVerifyStatusLabel(null);
+            SetImportButtonProgress(-1f);
             _importButton.SetEnabled(
                 !requiresExternalBootstrap &&
                 !isCheckingBrokerAuthentication &&
@@ -2954,13 +3450,12 @@ namespace YUCP.Importer.Editor.PackageManager
             if (_verifyStatusLabel == null) return;
             if (string.IsNullOrEmpty(text))
             {
-                _verifyStatusLabel.text = string.Empty;
-                _verifyStatusLabel.style.display = DisplayStyle.None;
+                _verifyStatusLabel.RemoveFromClassList("yucp-verify-status--visible");
             }
             else
             {
                 _verifyStatusLabel.text = text;
-                _verifyStatusLabel.style.display = DisplayStyle.Flex;
+                _verifyStatusLabel.AddToClassList("yucp-verify-status--visible");
             }
         }
 
@@ -2968,7 +3463,6 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             var notice = new VisualElement();
             notice.AddToClassList("yucp-flow-notice");
-            notice.style.display = DisplayStyle.None;
 
             _flowNoticeTitleLabel = new Label();
             _flowNoticeTitleLabel.AddToClassList("yucp-flow-notice-title");
@@ -2977,6 +3471,19 @@ namespace YUCP.Importer.Editor.PackageManager
             _flowNoticeBodyLabel = new Label();
             _flowNoticeBodyLabel.AddToClassList("yucp-flow-notice-body");
             notice.Add(_flowNoticeBodyLabel);
+
+            _flowNoticeLinkLabel = new Label("Contact us in our Discord");
+            _flowNoticeLinkLabel.AddToClassList("yucp-flow-notice-link");
+            _flowNoticeLinkLabel.style.display = DisplayStyle.None;
+            _flowNoticeLinkLabel.RegisterCallback<ClickEvent>(
+                _ => Application.OpenURL(SupportDiscordUrl));
+            _flowNoticeLinkLabel.RegisterCallback<MouseEnterEvent>(
+                _ => _flowNoticeLinkLabel.AddToClassList(
+                    "yucp-flow-notice-link--hover"));
+            _flowNoticeLinkLabel.RegisterCallback<MouseLeaveEvent>(
+                _ => _flowNoticeLinkLabel.RemoveFromClassList(
+                    "yucp-flow-notice-link--hover"));
+            notice.Add(_flowNoticeLinkLabel);
 
             return notice;
         }
@@ -3003,7 +3510,13 @@ namespace YUCP.Importer.Editor.PackageManager
             _flowNoticeBodyLabel.style.display = string.IsNullOrWhiteSpace(_flowNoticeBodyLabel.text)
                 ? DisplayStyle.None
                 : DisplayStyle.Flex;
-            _flowNoticeElement.style.display = DisplayStyle.Flex;
+            if (_flowNoticeLinkLabel != null)
+            {
+                _flowNoticeLinkLabel.style.display = tone == FlowNoticeTone.Error
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
+            }
+            _flowNoticeElement.AddToClassList("yucp-flow-notice--visible");
         }
 
         private void ClearFlowNotice()
@@ -3013,16 +3526,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 return;
             }
 
-            _flowNoticeElement.style.display = DisplayStyle.None;
-            if (_flowNoticeTitleLabel != null)
-            {
-                _flowNoticeTitleLabel.text = string.Empty;
-            }
-
-            if (_flowNoticeBodyLabel != null)
-            {
-                _flowNoticeBodyLabel.text = string.Empty;
-            }
+            _flowNoticeElement.RemoveFromClassList("yucp-flow-notice--visible");
         }
         private VisualElement BuildBuyerFlowNote(string primaryText, string secondaryText = null)
         {
@@ -3161,6 +3665,8 @@ namespace YUCP.Importer.Editor.PackageManager
 
             var container = new VisualElement();
             container.style.marginBottom = 20;
+            container.style.flexShrink = 0;
+            container.style.minHeight = 0;
 
             // Title
             var titleLabel = new Label("Required Packages");
@@ -3252,7 +3758,12 @@ namespace YUCP.Importer.Editor.PackageManager
                 dependenciesList.Add(depItem);
             }
 
-            container.Add(dependenciesList);
+            var dependenciesScroll = new ScrollView(ScrollViewMode.Vertical);
+            dependenciesScroll.style.flexGrow = 0;
+            dependenciesScroll.style.flexShrink = 1;
+            dependenciesScroll.style.minHeight = 0;
+            dependenciesScroll.Add(dependenciesList);
+            container.Add(dependenciesScroll);
 
             return container;
         }
@@ -3464,6 +3975,10 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
                 if (!result.succeeded)
                 {
+                    if (HandleAuthenticationLoss(result.errorCode))
+                    {
+                        return;
+                    }
                     ShowFlowNotice(
                         "Package action could not finish",
                         result.errorMessage,
@@ -3500,7 +4015,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             finally
             {
-                EditorUtility.ClearProgressBar();
+                SetImportButtonProgress(-1f);
                 if (this != null)
                 {
                     _isHostedLifecycleRunning = false;
@@ -3575,6 +4090,10 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
                 if (!result.succeeded)
                 {
+                    if (HandleAuthenticationLoss(result.errorCode))
+                    {
+                        return;
+                    }
                     ShowFlowNotice(
                         "Package recovery could not finish",
                         result.errorMessage,
@@ -3601,7 +4120,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             finally
             {
-                EditorUtility.ClearProgressBar();
+                SetImportButtonProgress(-1f);
                 if (this != null)
                 {
                     _isHostedLifecycleRunning = false;
@@ -3623,10 +4142,8 @@ namespace YUCP.Importer.Editor.PackageManager
                     return;
                 }
                 window.SetVerifyStatusLabel(progress.message);
-                EditorUtility.DisplayProgressBar(
-                    title,
-                    progress.message,
-                    progress.progress);
+                window.SetImportButtonProgress(
+                    progress.progress > 0f ? progress.progress : (float?)null);
                 window.Repaint();
             };
         }
@@ -4317,7 +4834,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 try
                 {
-                    EditorUtility.DisplayProgressBar("YUCP Importer", "Fetching package details…", 0.5f);
+                    SetImportButtonProgress(null);
                     if (!string.IsNullOrWhiteSpace(alias.packageDisplayName))
                     {
                         current.packageName = alias.packageDisplayName;
@@ -4334,7 +4851,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
                 finally
                 {
-                    EditorUtility.ClearProgressBar();
+                    SetImportButtonProgress(-1f);
                 }
             };
         }
@@ -4408,16 +4925,41 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             try
             {
-                ClearFlowNotice();
-
-                if (_isAliasBootstrapFlow &&
-                    _isBrokerSignedIn != true)
+                if (ChangeReviewPending)
                 {
-                    if (!_isBrokerSignedIn.HasValue ||
-                        AuthenticationActionInFlight ||
-                        !await SignInWithBrokerAsync())
+                    if (_changeReviewBlocked)
                     {
                         return;
+                    }
+                    CompletePendingChangeReview(true);
+                    UpdateImportButtonEnabled();
+                    return;
+                }
+                ClearFlowNotice();
+
+                if (_isAliasBootstrapFlow)
+                {
+                    // This answer was cached when the screen opened and the
+                    // session can lapse in between, so confirm it with the
+                    // broker rather than starting work that will be refused.
+                    // The status call also renews a token that is merely stale.
+                    if (_isBrokerSignedIn == true &&
+                        !AuthenticationActionInFlight)
+                    {
+                        await RefreshAuthenticationStatusAsync();
+                        if (this == null)
+                        {
+                            return;
+                        }
+                    }
+                    if (_isBrokerSignedIn != true)
+                    {
+                        if (!_isBrokerSignedIn.HasValue ||
+                            AuthenticationActionInFlight ||
+                            !await SignInWithBrokerAsync())
+                        {
+                            return;
+                        }
                     }
                 }
 
@@ -4565,6 +5107,10 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
                 if (!installResult.succeeded)
                 {
+                    if (HandleAuthenticationLoss(installResult.errorCode))
+                    {
+                        return;
+                    }
                     ShowFlowNotice(
                         "Install Package",
                         installResult.errorMessage,
@@ -4588,7 +5134,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             finally
             {
-                EditorUtility.ClearProgressBar();
+                SetImportButtonProgress(-1f);
                 if (this != null)
                 {
                     _pendingImportAfterVerification = false;
@@ -4601,6 +5147,12 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             try
             {
+                if (ChangeReviewPending)
+                {
+                    CompletePendingChangeReview(false);
+                    UpdateImportButtonEnabled();
+                    return;
+                }
                 if (_currentImportItems == null || _currentImportItems.Length == 0)
                 {
                     Debug.LogWarning("[YUCP PackageManager] No import items, closing window");

@@ -243,11 +243,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         alias.packageDisplayName,
                         preflight.activePolicyVersion,
                         preflight.activeContentDigest);
-                    bool approved = EditorUtility.DisplayDialog(
-                        review.title,
-                        review.message,
-                        review.approveLabel,
-                        review.cancelLabel);
+                    bool approved = await PackageChangePlanReview
+                        .RequestApprovalAsync(
+                            review.title,
+                            review.message,
+                            review.approveLabel,
+                            review.cancelLabel);
                     if (!approved)
                     {
                         PackageLifecycleCheckpointStore.ClearAttemptId(
@@ -275,7 +276,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     currentState?.version,
                     alias.bootstrapIntent);
                 bool approvedChanges =
-                    PackageChangePlanReviewWindow.ShowReview(
+                    await PackageChangePlanReview.RequestChangePlanAsync(
                         changePlan,
                         dirtyAssets,
                         requestedVersion);
@@ -452,7 +453,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     PackageChangePlanBuilder.FindDirtyAffectedAssets(
                         changePlan);
                 bool approvedChanges =
-                    PackageChangePlanReviewWindow.ShowReview(
+                    await PackageChangePlanReview.RequestChangePlanAsync(
                         changePlan,
                         dirtyAssets,
                         operation == "uninstall"
@@ -1713,7 +1714,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "Try again. If the problem continues, contact the creator.";
             }
             return "YUCP could not complete the package installation. " +
-                "Try again. If the problem continues, contact YUCP support.";
+                "Try again if the problem continues.";
         }
 
         private static string GetDiagnosticErrorCode(Exception exception)
