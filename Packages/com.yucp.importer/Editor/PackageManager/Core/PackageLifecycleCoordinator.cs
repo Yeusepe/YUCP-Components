@@ -60,6 +60,36 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             new List<NativePackageBrokerFile>();
         public List<NativePackageBrokerFile> files =
             new List<NativePackageBrokerFile>();
+
+        // Stamped by ReadInstallState, never serialized. The root a manifest
+        // was read against is the only way to check what survived.
+        [JsonIgnore]
+        internal string reconciliationRoot = string.Empty;
+
+        [JsonIgnore]
+        private bool? filesArePresent;
+
+        /// <summary>
+        /// Whether the recorded release is still on disk. releaseRoot says which
+        /// release the project is bound to, which stays true while the files are
+        /// missing; only this says it is installed.
+        /// </summary>
+        [JsonIgnore]
+        internal bool IsMaterialized
+        {
+            get
+            {
+                if (filesArePresent == null)
+                {
+                    filesArePresent =
+                        !string.IsNullOrEmpty(reconciliationRoot) &&
+                        PackageLifecycleCoordinator.RecordedReleaseIsOnDisk(
+                            reconciliationRoot,
+                            this);
+                }
+                return filesArePresent.Value;
+            }
+        }
     }
 
     internal sealed class PackageLifecycleExecutionResult
@@ -215,11 +245,13 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     string.Empty,
                     string.Empty,
                     reportProgress);
-                if (currentReleaseRoot != EmptyReleaseRoot &&
+                bool targetMatchesCurrent =
+                    currentReleaseRoot != EmptyReleaseRoot &&
                     string.Equals(
                         preflight.targetReleaseRoot,
                         currentReleaseRoot,
-                        StringComparison.Ordinal))
+                        StringComparison.Ordinal);
+                if (targetMatchesCurrent && currentState.IsMaterialized)
                 {
                     AliasPackageActivationStateStore.MarkHandled(
                         projectPath,
@@ -298,7 +330,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 }
                 string operation = currentReleaseRoot == EmptyReleaseRoot
                     ? "install"
-                    : "update";
+                    : targetMatchesCurrent
+                        ? "repair"
+                        : "update";
                 Report(
                     reportProgress,
                     "downloading",
@@ -1961,6 +1995,72 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 EmptyReleaseRoot;
         }
 
+        /// <summary>
+        /// The release this project has on disk. Callers asking whether anything
+        /// is installed want this; callers acting on the recorded release, such
+        /// as repair and rollback, want GetCurrentReleaseRoot.
+        /// </summary>
+        internal static string GetMaterializedReleaseRoot(
+            string projectPath,
+            string aliasId)
+        {
+            PackageDeliveryInstallState state = ReadInstallState(
+                projectPath,
+                aliasId,
+                false);
+            return state != null && state.IsMaterialized
+                ? state.releaseRoot
+                : EmptyReleaseRoot;
+        }
+
+        /// <summary>
+        /// The manifest records what a release wrote, not what survived.
+        /// </summary>
+        internal static bool RecordedReleaseIsOnDisk(
+            string projectPath,
+            PackageDeliveryInstallState state)
+        {
+            if (state?.files == null || state.files.Count == 0)
+            {
+                return false;
+            }
+            foreach (NativePackageBrokerFile file in state.files)
+            {
+                if (string.IsNullOrWhiteSpace(file?.normalizedPath))
+                {
+                    return false;
+                }
+                // ponytail: size only, not sha256 — catches deleted and truncated
+                // files without hashing gigabytes. Integrity is the verifier's job.
+                var info = OwnedFileInfo(projectPath, file.normalizedPath);
+                if (!info.Exists)
+                {
+                    string activatedPath =
+                        PackageImportVerifier.ActivatedOwnedPath(
+                            file.normalizedPath);
+                    if (activatedPath == null)
+                    {
+                        return false;
+                    }
+                    info = OwnedFileInfo(projectPath, activatedPath);
+                }
+                if (!info.Exists || info.Length != file.bytes)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static FileInfo OwnedFileInfo(
+            string projectPath,
+            string normalizedPath)
+        {
+            return new FileInfo(Path.Combine(
+                projectPath,
+                normalizedPath.Replace('/', Path.DirectorySeparatorChar)));
+        }
+
         internal static bool HasPriorRelease(
             string projectPath,
             string aliasId)
@@ -2363,6 +2463,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new InvalidDataException(
                     "The package delivery install state is invalid.");
             }
+            state.reconciliationRoot = projectPath;
             return state;
         }
 

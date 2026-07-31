@@ -3345,7 +3345,7 @@
 }
 
 .yucp-cta-button--busy {
-    background-color: rgb(24, 24, 30);
+    background-color: rgba(255, 255, 255, 0.04);
     border-top-color: rgba(255, 255, 255, 0.20);
     border-right-color: rgba(255, 255, 255, 0.20);
     border-bottom-color: rgba(255, 255, 255, 0.20);
@@ -3363,7 +3363,7 @@
 
 .yucp-cta-button--busy:hover {
     scale: 1 1;
-    background-color: rgb(24, 24, 30);
+    background-color: rgba(255, 255, 255, 0.04);
     color: rgb(255, 255, 255);
 }
 

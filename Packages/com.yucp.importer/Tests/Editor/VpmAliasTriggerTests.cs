@@ -752,6 +752,122 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ActivatingADeactivatedAssetDoesNotLookLikeCorruption()
+        {
+            Assert.That(
+                PackageImportVerifier.ActivatedOwnedPath(
+                    "Assets/Song Thing/InAJam.anim.yucp_disabled"),
+                Is.EqualTo("Assets/Song Thing/InAJam.anim"));
+            Assert.That(
+                PackageImportVerifier.ActivatedOwnedPath(
+                    "Assets/Song Thing/InAJam.anim.yucp_disabled.meta"),
+                Is.EqualTo("Assets/Song Thing/InAJam.anim.meta"));
+            Assert.That(
+                PackageImportVerifier.ActivatedOwnedPath(
+                    "Assets/Song Thing/InAJam.anim"),
+                Is.Null);
+            Assert.That(
+                PackageImportVerifier.ActivatedOwnedPath(null),
+                Is.Null);
+
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-activated-presence-" + Guid.NewGuid().ToString("N"));
+            var state = new PackageDeliveryInstallState
+            {
+                aliasId = "com.yucp.songthing",
+                files =
+                {
+                    new NativePackageBrokerFile
+                    {
+                        bytes = 5,
+                        normalizedPath = "Assets/InAJam.anim.yucp_disabled",
+                    },
+                },
+            };
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(projectPath, "Assets"));
+                File.WriteAllText(
+                    Path.Combine(projectPath, "Assets", "InAJam.anim"),
+                    "12345");
+                Assert.That(
+                    PackageLifecycleCoordinator.RecordedReleaseIsOnDisk(
+                        projectPath,
+                        state),
+                    Is.True,
+                    "An owned file the resolver activated is still installed.");
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void ARecordedReleaseIsNotInstalledOnceItsFilesAreGone()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-release-presence-" + Guid.NewGuid().ToString("N"));
+            string owned = Path.Combine(projectPath, "Assets", "Druffle.prefab");
+            var state = new PackageDeliveryInstallState
+            {
+                aliasId = "com.lunararray.druffle",
+                files =
+                {
+                    new NativePackageBrokerFile
+                    {
+                        bytes = 5,
+                        normalizedPath = "Assets/Druffle.prefab",
+                    },
+                },
+            };
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(owned));
+                File.WriteAllText(owned, "12345");
+                Assert.That(
+                    PackageLifecycleCoordinator.RecordedReleaseIsOnDisk(
+                        projectPath,
+                        state),
+                    Is.True);
+
+                File.WriteAllText(owned, "1234");
+                Assert.That(
+                    PackageLifecycleCoordinator.RecordedReleaseIsOnDisk(
+                        projectPath,
+                        state),
+                    Is.False,
+                    "A truncated owned file must not read as installed.");
+
+                File.Delete(owned);
+                Assert.That(
+                    PackageLifecycleCoordinator.RecordedReleaseIsOnDisk(
+                        projectPath,
+                        state),
+                    Is.False,
+                    "A deleted owned file must not read as installed.");
+
+                Assert.That(
+                    PackageLifecycleCoordinator.RecordedReleaseIsOnDisk(
+                        projectPath,
+                        new PackageDeliveryInstallState()),
+                    Is.False);
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
         public void InterceptedUnityPackageCompletesWithoutAPackagesFolder()
         {
             const string packageJson = "{\"name\":\"com.lunararray.druffle\"," +

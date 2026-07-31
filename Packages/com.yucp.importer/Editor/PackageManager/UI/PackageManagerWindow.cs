@@ -4052,7 +4052,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
             string projectPath = Path.GetFullPath(
                 Path.Combine(Application.dataPath, ".."));
-            return PackageLifecycleCoordinator.GetCurrentReleaseRoot(
+            return PackageLifecycleCoordinator.GetMaterializedReleaseRoot(
                     projectPath,
                     alias.aliasId) !=
                 PackageLifecycleCoordinator.EmptyReleaseRoot;

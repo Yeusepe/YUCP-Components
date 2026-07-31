@@ -440,6 +440,71 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ADeletedReleaseStaysBoundButStopsReadingAsInstalled()
+        {
+            const string alias = "com.yucp.songthing";
+            string releaseRoot = new string('a', 64);
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-materialized-" + Guid.NewGuid().ToString("N"));
+            string statePath = Path.Combine(
+                projectPath,
+                PackageLifecycleCoordinator.InstallStatePath(alias)
+                    .Replace('/', Path.DirectorySeparatorChar));
+            string owned = Path.Combine(
+                projectPath,
+                "Assets",
+                "Song Thing",
+                "InAJam.anim");
+            string state =
+                "{\"schemaVersion\":5," +
+                "\"activeContentDigest\":\"" + new string('b', 64) + "\"," +
+                "\"activePolicyVersion\":\"policy-1\"," +
+                "\"aliasId\":\"" + alias + "\"," +
+                "\"releaseRoot\":\"" + releaseRoot + "\"," +
+                "\"versionId\":\"version-1\"," +
+                "\"previousFiles\":[]," +
+                "\"files\":[{\"bytes\":5," +
+                "\"normalizedPath\":\"Assets/Song Thing/InAJam.anim\"," +
+                "\"sha256\":\"" + new string('c', 64) + "\"}]}";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(statePath));
+                File.WriteAllText(statePath, state);
+
+                Assert.That(
+                    PackageLifecycleCoordinator.GetCurrentReleaseRoot(
+                        projectPath,
+                        alias),
+                    Is.EqualTo(releaseRoot),
+                    "The project stays bound to the release so repair and " +
+                    "rollback still have something to act on.");
+                Assert.That(
+                    PackageLifecycleCoordinator.GetMaterializedReleaseRoot(
+                        projectPath,
+                        alias),
+                    Is.EqualTo(PackageLifecycleCoordinator.EmptyReleaseRoot),
+                    "A release whose files are gone is not installed.");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(owned));
+                File.WriteAllText(owned, "12345");
+
+                Assert.That(
+                    PackageLifecycleCoordinator.GetMaterializedReleaseRoot(
+                        projectPath,
+                        alias),
+                    Is.EqualTo(releaseRoot));
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
         public void InstallStatePathStaysBoundedForLongAliases()
         {
             string alias = "alias-" + new string('a', 100);

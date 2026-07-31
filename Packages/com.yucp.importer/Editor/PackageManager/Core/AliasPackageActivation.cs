@@ -378,7 +378,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 return true;
             }
             string currentReleaseRoot =
-                PackageLifecycleCoordinator.GetCurrentReleaseRoot(
+                PackageLifecycleCoordinator.GetMaterializedReleaseRoot(
                     projectPath,
                     activation.Alias.aliasId);
             bool activationHandled =

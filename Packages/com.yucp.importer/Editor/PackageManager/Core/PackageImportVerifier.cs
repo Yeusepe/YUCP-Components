@@ -13,6 +13,39 @@ namespace YUCP.Importer.Editor.PackageManager.Core
     internal static class PackageImportVerifier
     {
         private const int UnityWindowsMaximumPathCharacters = 260;
+        private const string DeactivatedSuffix = ".yucp_disabled";
+        private const string MetaSuffix = ".meta";
+
+        /// <summary>
+        /// Deactivated assets are renamed to their real extension by the package
+        /// guardian's resolver on import, so an owned file recorded at its
+        /// deactivated path is equally valid at its activated one. Null when the
+        /// path was not deactivated to begin with.
+        /// </summary>
+        internal static string ActivatedOwnedPath(string normalizedPath)
+        {
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return null;
+            }
+            if (normalizedPath.EndsWith(
+                    DeactivatedSuffix + MetaSuffix,
+                    StringComparison.Ordinal))
+            {
+                return normalizedPath.Remove(
+                    normalizedPath.Length -
+                        DeactivatedSuffix.Length -
+                        MetaSuffix.Length,
+                    DeactivatedSuffix.Length);
+            }
+            return normalizedPath.EndsWith(
+                    DeactivatedSuffix,
+                    StringComparison.Ordinal)
+                ? normalizedPath.Substring(
+                    0,
+                    normalizedPath.Length - DeactivatedSuffix.Length)
+                : null;
+        }
 
         internal static void ValidateUnityPathCompatibility(
             string projectPath,
@@ -49,9 +82,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             foreach (NativePackageBrokerFile file in
                 files ?? Array.Empty<NativePackageBrokerFile>())
             {
-                string diskPath = ResolveOwnedFile(
-                    projectRoot,
-                    file.normalizedPath);
+                string ownedPath = file.normalizedPath;
+                string diskPath = ResolveOwnedFile(projectRoot, ownedPath);
+                if (!File.Exists(diskPath))
+                {
+                    string activatedPath = ActivatedOwnedPath(ownedPath);
+                    if (activatedPath != null)
+                    {
+                        ownedPath = activatedPath;
+                        diskPath = ResolveOwnedFile(projectRoot, ownedPath);
+                    }
+                }
                 var info = new FileInfo(diskPath);
                 if (!info.Exists ||
                     info.Length != file.bytes ||
@@ -64,15 +105,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         "Unity import changed the owned package file: " +
                         file.normalizedPath);
                 }
-                if (IsImportableAsset(file.normalizedPath) &&
+                if (IsImportableAsset(ownedPath) &&
                     string.IsNullOrWhiteSpace(
                         AssetDatabase.AssetPathToGUID(
-                            file.normalizedPath,
+                            ownedPath,
                             AssetPathToGUIDOptions.OnlyExistingAssets)))
                 {
                     throw new InvalidDataException(
                         "Unity did not register the owned package asset: " +
-                        file.normalizedPath);
+                        ownedPath);
                 }
             }
         }
@@ -97,24 +138,32 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             foreach (VerifiedStagingFile file in
                 removedFiles ?? Array.Empty<VerifiedStagingFile>())
             {
-                string diskPath = ResolveOwnedFile(
-                    projectRoot,
-                    file.normalizedPath);
-                if (File.Exists(diskPath))
+                foreach (string ownedPath in new[]
                 {
-                    throw new InvalidDataException(
-                        "Unity retained the removed package file: " +
-                        file.normalizedPath);
-                }
-                if (IsImportableAsset(file.normalizedPath) &&
-                    !string.IsNullOrWhiteSpace(
-                        AssetDatabase.AssetPathToGUID(
-                            file.normalizedPath,
-                            AssetPathToGUIDOptions.OnlyExistingAssets)))
+                    file.normalizedPath,
+                    ActivatedOwnedPath(file.normalizedPath),
+                })
                 {
-                    throw new InvalidDataException(
-                        "Unity retained the removed package asset: " +
-                        file.normalizedPath);
+                    if (ownedPath == null)
+                    {
+                        continue;
+                    }
+                    if (File.Exists(ResolveOwnedFile(projectRoot, ownedPath)))
+                    {
+                        throw new InvalidDataException(
+                            "Unity retained the removed package file: " +
+                            ownedPath);
+                    }
+                    if (IsImportableAsset(ownedPath) &&
+                        !string.IsNullOrWhiteSpace(
+                            AssetDatabase.AssetPathToGUID(
+                                ownedPath,
+                                AssetPathToGUIDOptions.OnlyExistingAssets)))
+                    {
+                        throw new InvalidDataException(
+                            "Unity retained the removed package asset: " +
+                            ownedPath);
+                    }
                 }
             }
             // Modified owned files are removed from their package paths too.

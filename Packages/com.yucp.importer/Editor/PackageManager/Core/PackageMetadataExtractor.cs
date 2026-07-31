@@ -377,14 +377,12 @@ namespace YUCP.Importer.Editor.PackageManager
             System.Array importItems,
             string destinationPath)
         {
-            object item = FindItemByDestinationPath(
-                importItems,
-                path => string.Equals(
-                    path,
-                    destinationPath,
-                    StringComparison.OrdinalIgnoreCase));
+            object item = FindMediaImportItem(importItems, destinationPath);
             if (item == null)
             {
+                Debug.LogWarning(
+                    "[YUCP PackageManager] No import item carries the alias " +
+                    "presentation media '" + destinationPath + "'.");
                 return null;
             }
 
@@ -405,6 +403,56 @@ namespace YUCP.Importer.Editor.PackageManager
             return File.Exists(alternatePath)
                 ? File.ReadAllBytes(alternatePath)
                 : null;
+        }
+
+        /// <summary>
+        /// Alias media ships under "Documentation~", which Unity cannot import
+        /// to, so destinationAssetPath is not reliably filled in for it.
+        /// exportedAssetPath always carries the authored path, so match either.
+        /// </summary>
+        private static object FindMediaImportItem(
+            System.Array importItems,
+            string destinationPath)
+        {
+            if (importItems == null || string.IsNullOrEmpty(destinationPath))
+            {
+                return null;
+            }
+
+            string tail = "/" + destinationPath.Replace('\\', '/');
+            object suffixMatch = null;
+            foreach (var item in importItems)
+            {
+                if (item == null) continue;
+
+                foreach (FieldInfo field in new[]
+                {
+                    _destinationAssetPathField,
+                    _exportedAssetPathField,
+                })
+                {
+                    string path = GetFieldValue<string>(item, field)
+                        ?.Replace('\\', '/');
+                    if (string.IsNullOrEmpty(path))
+                    {
+                        continue;
+                    }
+                    if (string.Equals(
+                            path,
+                            destinationPath,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return item;
+                    }
+                    if (suffixMatch == null &&
+                        path.EndsWith(tail, StringComparison.OrdinalIgnoreCase))
+                    {
+                        suffixMatch = item;
+                    }
+                }
+            }
+
+            return suffixMatch;
         }
 
         private static string ResolveTexturePath(string relativePath, System.Array importItems)
