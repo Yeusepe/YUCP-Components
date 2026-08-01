@@ -24,8 +24,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         {
             List<KeyValuePair<string, string>> requirements =
                 PlanRequirements(dependencies);
-            if (string.IsNullOrWhiteSpace(projectPath) || requirements.Count == 0)
+            if (string.IsNullOrWhiteSpace(projectPath))
             {
+                return;
+            }
+            if (requirements.Count == 0)
+            {
+                Debug.Log(
+                    "[YUCP PackageManager] This release declares no VPM requirements.");
                 return;
             }
             RegisterRepositories(repositories);

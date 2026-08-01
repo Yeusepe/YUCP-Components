@@ -1,7 +1,7 @@
 {
   "name": "com.yucp.importer",
   "displayName": "YUCP Package Importer",
-  "version": "0.1.86",
+  "version": "0.1.87",
   "unity": "2022.3",
   "description": "Installs licensed YUCP products and supports update, repair, and removal.",
   "dependencies": {
