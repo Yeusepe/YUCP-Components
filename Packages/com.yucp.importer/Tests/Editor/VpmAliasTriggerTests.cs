@@ -752,6 +752,52 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ABootstrapDescriptorFindsTheMediaTheUnitypackageWrote()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-bootstrap-media-" + Guid.NewGuid().ToString("N"));
+            var alias = new AliasPackageContract
+            {
+                aliasId = "com.yucp.songthing",
+                packageName = "com.yucp.songthing",
+                packageVersion = "2.0.0",
+            };
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+
+                Assert.That(
+                    AliasPackageActivation.ResolveBootstrapMediaRoot(projectPath, alias),
+                    Is.Null,
+                    "Nothing on disk means there is no media to read.");
+
+                string packageRoot = Path.Combine(
+                    projectPath,
+                    "Packages",
+                    "com.yucp.songthing");
+                Directory.CreateDirectory(packageRoot);
+
+                Assert.That(
+                    AliasPackageActivation.ResolveBootstrapMediaRoot(projectPath, alias),
+                    Is.EqualTo(packageRoot));
+
+                alias.packageName = "../escape";
+                Assert.That(
+                    AliasPackageActivation.ResolveBootstrapMediaRoot(projectPath, alias),
+                    Is.Null,
+                    "A traversing package name must not resolve to a root.");
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
         public void ActivatingADeactivatedAssetDoesNotLookLikeCorruption()
         {
             Assert.That(

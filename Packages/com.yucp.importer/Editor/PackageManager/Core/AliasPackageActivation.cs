@@ -246,6 +246,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             string projectPath = Path.GetFullPath(
                 Path.Combine(Application.dataPath, ".."));
+
+            string mediaPackageRoot = ResolveBootstrapMediaRoot(
+                projectPath,
+                activation.Alias);
+            if (mediaPackageRoot != null)
+            {
+                activation.SetMediaPackageRoot(mediaPackageRoot);
+            }
+
             if (AliasPackageActivationStateStore.IsHandled(
                     projectPath,
                     activation.Alias))
@@ -258,6 +267,29 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 activation.Alias,
                 descriptorJson);
             Schedule(activation);
+        }
+
+        /// <summary>
+        /// A bootstrap descriptor carries the media manifest but not the bytes.
+        /// The Unitypackage already wrote those under the bootstrap's package
+        /// folder, so the activation has to be pointed at it: with no root the
+        /// loader has nothing to read and the installer opens with no
+        /// presentation at all. Returns null when there is nothing to read.
+        /// </summary>
+        internal static string ResolveBootstrapMediaRoot(
+            string projectPath,
+            AliasPackageContract alias)
+        {
+            if (string.IsNullOrWhiteSpace(projectPath) ||
+                string.IsNullOrWhiteSpace(alias?.packageName) ||
+                alias.packageName.Contains("/") ||
+                alias.packageName.Contains("\\") ||
+                alias.packageName.Contains(".."))
+            {
+                return null;
+            }
+            string root = Path.Combine(projectPath, "Packages", alias.packageName);
+            return Directory.Exists(root) ? root : null;
         }
 
         private static void ResumePendingUnityPackageActivations()
@@ -553,6 +585,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             {
                 try
                 {
+                    // Descriptor-built activations defer their media, so load it
+                    // here the way the manual entry point does.
+                    activation.EnsureMediaLoaded();
                     PackageManagerWindow.ShowAliasBootstrap(
                         activation.TransferMetadataOwnership());
                 }
