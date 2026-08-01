@@ -250,15 +250,28 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     string.Empty,
                     reportProgress);
                 // An intent that carries no digest is not old, it is stripped:
-                // every issued bootstrap binds its requirements, so anything
-                // short of Trusted is refused rather than waved through.
-                if (alias.bootstrapIntent != null &&
-                    BootstrapIntentVerifier.Verify(
-                        alias.aliasId,
-                        alias.bootstrapIntent,
-                        preflight.vpmDependencies,
-                        preflight.vpmRepositories) !=
-                    BootstrapIntentVerifier.Verdict.Trusted)
+                // every issued bootstrap binds its requirements. A bootstrap
+                // that tracks the latest release is the one case where the
+                // requirements may legitimately have moved on since it was
+                // issued, so only that drift is allowed through.
+                BootstrapIntentVerifier.Verdict verdict =
+                    alias.bootstrapIntent == null
+                        ? BootstrapIntentVerifier.Verdict.Trusted
+                        : BootstrapIntentVerifier.Verify(
+                            alias.aliasId,
+                            alias.bootstrapIntent,
+                            preflight.vpmDependencies,
+                            preflight.vpmRepositories);
+                if (verdict == BootstrapIntentVerifier.Verdict.RequirementsChanged &&
+                    BootstrapIntentVerifier.TracksLatestRelease(alias.bootstrapIntent))
+                {
+                    Debug.Log(
+                        "[YUCP PackageManager] This release needs different packages " +
+                        "than when the bootstrap was downloaded. Installing what it " +
+                        "needs now.");
+                    verdict = BootstrapIntentVerifier.Verdict.Trusted;
+                }
+                if (verdict != BootstrapIntentVerifier.Verdict.Trusted)
                 {
                     PackageLifecycleCheckpointStore.ClearAttemptId(
                         projectPath,

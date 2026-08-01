@@ -18,6 +18,24 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             Trusted,
             Unsigned,
             Tampered,
+
+            /// <summary>
+            /// The bootstrap is genuine but the release no longer needs what it
+            /// was issued against. Only a bootstrap pinned to one release can
+            /// treat this as tampering; one that tracks the latest release is
+            /// expected to drift.
+            /// </summary>
+            RequirementsChanged,
+        }
+
+        /// <summary>
+        /// A bootstrap that follows the latest release, rather than one pinned
+        /// version. Anything else, including a blank or unknown mode, is
+        /// treated as pinned so an edited mode cannot wave a mismatch through.
+        /// </summary>
+        internal static bool TracksLatestRelease(BootstrapIntentContract intent)
+        {
+            return string.Equals(intent?.mode?.Trim(), "latest", StringComparison.Ordinal);
         }
 
         internal static string Base64UrlToBase64(string value)
@@ -85,7 +103,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         /// Trusted only when the signature verifies against the pinned key and
         /// the requirements the descriptor carries are the ones that were
         /// signed. An intent without a digest predates the binding and is
-        /// reported as unsigned rather than trusted.
+        /// reported as unsigned rather than trusted. A genuine bootstrap whose
+        /// release has since changed what it needs reports RequirementsChanged,
+        /// which is tampering only for a pinned bootstrap.
         /// </summary>
         internal static Verdict Verify(
             string aliasId,
@@ -144,7 +164,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 intent.requirementsDigest.Trim().ToLowerInvariant(),
                 StringComparison.Ordinal)
                 ? Verdict.Trusted
-                : Verdict.Tampered;
+                : Verdict.RequirementsChanged;
         }
 
         private static void AppendOptional(StringBuilder builder, string name, string value)

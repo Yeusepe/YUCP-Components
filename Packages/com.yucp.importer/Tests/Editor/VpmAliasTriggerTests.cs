@@ -887,6 +887,63 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void OnlyABootstrapTrackingTheLatestReleaseMayDrift()
+        {
+            Assert.That(
+                BootstrapIntentVerifier.TracksLatestRelease(
+                    new BootstrapIntentContract { mode = " latest " }),
+                Is.True);
+            // Anything short of an exact "latest" is pinned, so an edited mode
+            // cannot turn a mismatch into an accepted install.
+            Assert.That(
+                BootstrapIntentVerifier.TracksLatestRelease(
+                    new BootstrapIntentContract { mode = "specific" }),
+                Is.False);
+            Assert.That(
+                BootstrapIntentVerifier.TracksLatestRelease(
+                    new BootstrapIntentContract { mode = "LATEST" }),
+                Is.False);
+            Assert.That(
+                BootstrapIntentVerifier.TracksLatestRelease(
+                    new BootstrapIntentContract { mode = string.Empty }),
+                Is.False);
+            Assert.That(BootstrapIntentVerifier.TracksLatestRelease(null), Is.False);
+        }
+
+        [Test]
+        public void RequirementsThatMovedOnAreNeverReportedAsTrusted()
+        {
+            var dependencies = new Dictionary<string, string>
+            {
+                ["com.vrcfury.vrcfury"] = ">=0.0.0",
+            };
+            var repositories = new Dictionary<string, string>
+            {
+                ["VRCFury Repo"] = "https://vcc.vrcfury.com/",
+            };
+            var intent = new BootstrapIntentContract
+            {
+                mode = "latest",
+                keyId = BootstrapIntentVerifier.SigningKeyId,
+                signature = new string('A', 86) + "==",
+                requirementsDigest = BootstrapIntentVerifier.RequirementsDigest(
+                    dependencies,
+                    repositories),
+            };
+            dependencies["com.new.requirement"] = ">=1.0.0";
+
+            // The drift allowance is the caller's policy, never the verifier's:
+            // a forged signature has to keep failing in latest mode too.
+            Assert.That(
+                BootstrapIntentVerifier.Verify(
+                    "com.lunararray.druffle",
+                    intent,
+                    dependencies,
+                    repositories),
+                Is.Not.EqualTo(BootstrapIntentVerifier.Verdict.Trusted));
+        }
+
+        [Test]
         public void TheImportScreenShowsWhatTheReleasePullsIn()
         {
             // Computed by the TypeScript yucpBootstrapRequirementsPayload, so a
