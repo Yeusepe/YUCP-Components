@@ -73,6 +73,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         public string targetReleaseRoot = string.Empty;
         public string traceId = string.Empty;
         public string versionId = string.Empty;
+        public Dictionary<string, string> vpmDependencies =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, string> vpmRepositories =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
     [Serializable]
@@ -500,14 +504,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new NativePackageBrokerException(
                     "BROKER_TIMEOUT",
                     string.Empty,
-                    "YUCP authentication did not respond in time.");
+                    "Sign-in took too long. Try again.");
             }
             catch (TimeoutException)
             {
                 throw new NativePackageBrokerException(
                     "BROKER_TIMEOUT",
                     string.Empty,
-                    "YUCP authentication did not respond in time.");
+                    "Sign-in took too long. Try again.");
             }
             catch (Exception exception) when (
                 exception is IOException ||
@@ -516,7 +520,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 throw new NativePackageBrokerException(
                     "BROKER_UNAVAILABLE",
                     string.Empty,
-                    "Start YUCP secure package delivery, then try again.");
+                    "Sign in again, then try again.");
             }
         }
 
@@ -896,7 +900,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     result.errorCode,
                     string.Empty,
                     string.IsNullOrWhiteSpace(result.errorMessage)
-                        ? "YUCP authentication could not finish."
+                        ? "We couldn’t finish signing you in."
                         : result.errorMessage);
             }
             return result;
@@ -950,7 +954,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 case "preparing":
                     return "Preparing your package";
                 case "signing-in":
-                    return "Opening secure sign-in";
+                    return "Opening sign-in";
                 case "verifying-access":
                     return "Checking your package access";
                 case "personalizing":
@@ -1022,7 +1026,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 !IsValidTraceparent(request.traceparent))
             {
                 throw new InvalidDataException(
-                    "The package delivery request is invalid.");
+                    "The installation request is invalid.");
             }
 
             if (!string.IsNullOrEmpty(request.targetReleaseRoot) &&
@@ -1084,7 +1088,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     string.IsNullOrWhiteSpace(file.normalizedPath)))
             {
                 throw new InvalidDataException(
-                    "The package delivery result is invalid.");
+                    "The installation result is invalid.");
             }
 
             if (result.status == "succeeded" &&
@@ -1104,7 +1108,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         result.activePolicyVersion)))
             {
                 throw new InvalidDataException(
-                    "The successful package delivery result is incomplete.");
+                    "The completed installation result is incomplete.");
             }
 
             if (result.status == "failed" &&
@@ -1112,7 +1116,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     string.IsNullOrWhiteSpace(result.errorCode)))
             {
                 throw new InvalidDataException(
-                    "The failed package delivery result is incomplete.");
+                    "The failed installation result is incomplete.");
             }
         }
 
@@ -1141,7 +1145,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     progress.completedBytes > progress.totalBytes)
             {
                 throw new InvalidDataException(
-                    "The package delivery progress is invalid.");
+                    "The installation progress is invalid.");
             }
 
             GetFriendlyProgressMessage(
