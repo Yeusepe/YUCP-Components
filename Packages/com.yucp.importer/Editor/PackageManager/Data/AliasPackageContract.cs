@@ -4,6 +4,13 @@ using System.Collections.Generic;
 namespace YUCP.Importer.Editor.PackageManager
 {
     [Serializable]
+    public class AliasPackageRequirement
+    {
+        public string name = "";
+        public string range = "";
+    }
+
+    [Serializable]
     public class AliasPackageContract
     {
         public string kind = "";
@@ -17,6 +24,12 @@ namespace YUCP.Importer.Editor.PackageManager
         public string channel = "";
         public AliasPackageMediaSet media = new AliasPackageMediaSet();
         public BootstrapIntentContract bootstrapIntent;
+        // What the release pulls in, for the import screen only. Lists, not a
+        // dictionary, so the set survives a domain reload with the window.
+        public List<AliasPackageRequirement> releaseVpmDependencies =
+            new List<AliasPackageRequirement>();
+        public List<AliasPackageRequirement> releaseVpmRepositories =
+            new List<AliasPackageRequirement>();
         public string rawContractJson = "";
         // Never read from package.json: ParseAliasPackageContract fills this
         // contract field by field. Serialized to survive domain reloads.
@@ -37,9 +50,55 @@ namespace YUCP.Importer.Editor.PackageManager
                 channel = channel ?? string.Empty,
                 media = media?.Clone() ?? new AliasPackageMediaSet(),
                 bootstrapIntent = bootstrapIntent?.Clone(),
+                releaseVpmDependencies = CloneRequirements(releaseVpmDependencies),
+                releaseVpmRepositories = CloneRequirements(releaseVpmRepositories),
                 rawContractJson = rawContractJson ?? string.Empty,
                 directUnityPackageBootstrap = directUnityPackageBootstrap,
             };
+        }
+
+        internal static Dictionary<string, string> ToMap(
+            List<AliasPackageRequirement> requirements)
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (requirements == null)
+            {
+                return map;
+            }
+            foreach (AliasPackageRequirement requirement in requirements)
+            {
+                string name = requirement?.name?.Trim();
+                string range = requirement?.range?.Trim();
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(range))
+                {
+                    continue;
+                }
+                map[name] = range;
+            }
+            return map;
+        }
+
+        private static List<AliasPackageRequirement> CloneRequirements(
+            List<AliasPackageRequirement> requirements)
+        {
+            var clone = new List<AliasPackageRequirement>();
+            if (requirements == null)
+            {
+                return clone;
+            }
+            foreach (AliasPackageRequirement requirement in requirements)
+            {
+                if (requirement == null)
+                {
+                    continue;
+                }
+                clone.Add(new AliasPackageRequirement
+                {
+                    name = requirement.name ?? string.Empty,
+                    range = requirement.range ?? string.Empty,
+                });
+            }
+            return clone;
         }
     }
 

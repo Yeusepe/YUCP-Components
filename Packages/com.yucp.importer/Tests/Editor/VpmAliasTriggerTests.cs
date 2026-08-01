@@ -887,6 +887,89 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void TheImportScreenShowsWhatTheReleasePullsIn()
+        {
+            // Computed by the TypeScript yucpBootstrapRequirementsPayload, so a
+            // drift between the two canonical forms fails here.
+            const string signedDigest =
+                "40589629179c87b554253bf8ef2734daaf436d297fc3016c8378865de08b7172";
+            AliasPackageContract alias = ReleaseRequirementAlias(signedDigest);
+
+            Dictionary<string, string> shown =
+                PackageMetadataExtractor.ReleaseRequirementsForDisplay(alias);
+
+            Assert.That(shown, Is.Not.Null);
+            CollectionAssert.AreEquivalent(
+                new[] { "com.vrcfury.vrcfury", "adjerry91.vrcft.templates" },
+                shown.Keys.ToArray(),
+                "The screen must list the release's packages, not the bootstrap's.");
+        }
+
+        [Test]
+        public void AnEditedRequirementListIsNeverShown()
+        {
+            const string signedDigest =
+                "40589629179c87b554253bf8ef2734daaf436d297fc3016c8378865de08b7172";
+            AliasPackageContract tampered = ReleaseRequirementAlias(signedDigest);
+            tampered.releaseVpmDependencies.Add(new AliasPackageRequirement
+            {
+                name = "com.attacker.payload",
+                range = ">=0.0.0",
+            });
+            Assert.That(
+                PackageMetadataExtractor.ReleaseRequirementsForDisplay(tampered),
+                Is.Null,
+                "A list that does not hash to the signed digest must not be shown.");
+
+            AliasPackageContract unsigned = ReleaseRequirementAlias(signedDigest);
+            unsigned.bootstrapIntent.requirementsDigest = string.Empty;
+            Assert.That(
+                PackageMetadataExtractor.ReleaseRequirementsForDisplay(unsigned),
+                Is.Null,
+                "Nothing vouches for a list with no digest behind it.");
+
+            AliasPackageContract empty = ReleaseRequirementAlias(signedDigest);
+            empty.releaseVpmDependencies.Clear();
+            Assert.That(
+                PackageMetadataExtractor.ReleaseRequirementsForDisplay(empty),
+                Is.Null,
+                "A bootstrap that advertises nothing falls back to the manifest.");
+        }
+
+        private static AliasPackageContract ReleaseRequirementAlias(string digest)
+        {
+            return new AliasPackageContract
+            {
+                aliasId = "com.lunararray.druffle",
+                bootstrapIntent = new BootstrapIntentContract
+                {
+                    requirementsDigest = digest,
+                },
+                releaseVpmDependencies = new List<AliasPackageRequirement>
+                {
+                    new AliasPackageRequirement
+                    {
+                        name = "com.vrcfury.vrcfury",
+                        range = ">=0.0.0",
+                    },
+                    new AliasPackageRequirement
+                    {
+                        name = "adjerry91.vrcft.templates",
+                        range = ">=0.0.0",
+                    },
+                },
+                releaseVpmRepositories = new List<AliasPackageRequirement>
+                {
+                    new AliasPackageRequirement
+                    {
+                        name = "VRCFury Repo",
+                        range = "https://vcc.vrcfury.com/",
+                    },
+                },
+            };
+        }
+
+        [Test]
         public void APackageListingIsOnlyTrustedOverHttps()
         {
             Assert.That(

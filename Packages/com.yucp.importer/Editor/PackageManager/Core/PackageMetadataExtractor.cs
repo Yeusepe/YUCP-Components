@@ -891,6 +891,14 @@ namespace YUCP.Importer.Editor.PackageManager
                     (yucp["packageMetadata"] as JObject)?.ToString(Formatting.None);
                 result.aliasPackage = ParseAliasPackageContract(packageJson, yucp);
             }
+            Dictionary<string, string> released =
+                ReleaseRequirementsForDisplay(result.aliasPackage);
+            if (released != null)
+            {
+                // The bootstrap's own vpmDependencies is just the importer. What
+                // the buyer is consenting to is what the release pulls in.
+                result.dependencies = released;
+            }
             return result;
         }
 
@@ -1661,6 +1669,43 @@ namespace YUCP.Importer.Editor.PackageManager
             return dependencies;
         }
 
+        /// <summary>
+        /// The release requirements a bootstrap advertises, but only when they
+        /// hash to the digest its signed intent carries. A doctored list would
+        /// otherwise let a repacked bootstrap claim it installs something else.
+        /// Returns null when there is nothing trustworthy to show.
+        /// </summary>
+        internal static Dictionary<string, string> ReleaseRequirementsForDisplay(
+            AliasPackageContract alias)
+        {
+            if (alias == null)
+            {
+                return null;
+            }
+            Dictionary<string, string> dependencies =
+                AliasPackageContract.ToMap(alias.releaseVpmDependencies);
+            if (dependencies.Count == 0)
+            {
+                return null;
+            }
+            string digest = alias.bootstrapIntent?.requirementsDigest?.Trim();
+            if (string.IsNullOrEmpty(digest))
+            {
+                return null;
+            }
+            string observed = BootstrapIntentVerifier.RequirementsDigest(
+                dependencies,
+                AliasPackageContract.ToMap(alias.releaseVpmRepositories));
+            return string.Equals(
+                observed,
+                digest.ToLowerInvariant(),
+                StringComparison.Ordinal)
+                ? new Dictionary<string, string>(
+                    dependencies,
+                    StringComparer.OrdinalIgnoreCase)
+                : null;
+        }
+
         private static AliasPackageContract ParseAliasPackageContract(JObject packageJson, JObject yucp)
         {
             if (yucp == null)
@@ -1692,10 +1737,28 @@ namespace YUCP.Importer.Editor.PackageManager
                 channel = GetString(yucp, "channel") ?? string.Empty,
                 media = ParseAliasPackageMedia(yucp["media"]),
                 bootstrapIntent = ParseBootstrapIntent(yucp["bootstrapIntent"]),
+                releaseVpmDependencies =
+                    ParseRequirementList(yucp["releaseVpmDependencies"]),
+                releaseVpmRepositories =
+                    ParseRequirementList(yucp["releaseVpmRepositories"]),
                 rawContractJson = yucp.ToString(Formatting.None),
             };
 
             return string.IsNullOrWhiteSpace(contract.aliasId) ? null : contract;
+        }
+
+        private static List<AliasPackageRequirement> ParseRequirementList(JToken token)
+        {
+            var requirements = new List<AliasPackageRequirement>();
+            foreach (KeyValuePair<string, string> entry in ParseDependencyMap(token))
+            {
+                requirements.Add(new AliasPackageRequirement
+                {
+                    name = entry.Key,
+                    range = entry.Value,
+                });
+            }
+            return requirements;
         }
 
         private static BootstrapIntentContract ParseBootstrapIntent(
