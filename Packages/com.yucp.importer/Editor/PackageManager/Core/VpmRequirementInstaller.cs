@@ -4,6 +4,7 @@ using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEngine;
 using VRC.PackageManagement.Core;
+using VRC.PackageManagement.Core.Types;
 using VRC.PackageManagement.Core.Types.Packages;
 
 namespace YUCP.Importer.Editor.PackageManager.Core
@@ -21,82 +22,96 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             IReadOnlyDictionary<string, string> dependencies,
             IReadOnlyDictionary<string, string> repositories)
         {
-            if (string.IsNullOrWhiteSpace(projectPath) ||
-                dependencies == null ||
-                dependencies.Count == 0)
+            List<KeyValuePair<string, string>> requirements =
+                PlanRequirements(dependencies);
+            if (string.IsNullOrWhiteSpace(projectPath) || requirements.Count == 0)
             {
                 return;
             }
             RegisterRepositories(repositories);
-            VPMProjectManifest manifest;
+            UnityProject project;
+            Dictionary<string, string> present;
             try
             {
-                manifest = VPMProjectManifest.Load(projectPath);
+                project = new UnityProject(projectPath);
+                if (!project.valid)
+                {
+                    LogRequirementFailure(
+                        new InvalidOperationException(
+                            "this folder is not a Unity project"));
+                    return;
+                }
+                present = new Dictionary<string, string>(
+                    project.GetInstalledVersions() ??
+                        new Dictionary<string, string>(),
+                    StringComparer.Ordinal);
             }
             catch (Exception exception)
             {
                 LogRequirementFailure(exception);
                 return;
             }
-            if (manifest == null)
+            var installed = new List<string>();
+            var unavailable = new List<string>();
+            foreach (KeyValuePair<string, string> requirement in requirements)
             {
-                LogRequirementFailure(
-                    new InvalidOperationException(
-                        "this project has no VPM manifest"));
-                return;
-            }
-            if (manifest.dependencies == null)
-            {
-                manifest.dependencies =
-                    new Dictionary<string, VPMProjectManifest
-                        .VPMPackageInfoMinimal>(StringComparer.Ordinal);
-            }
-            var declared = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (KeyValuePair<string, VPMProjectManifest.VPMPackageInfoMinimal>
-                         entry in manifest.dependencies)
-            {
-                declared[entry.Key] = entry.Value?.version;
-            }
-            List<KeyValuePair<string, string>> requested =
-                PlanRequirements(declared, dependencies);
-            foreach (KeyValuePair<string, string> requirement in requested)
-            {
-                manifest.dependencies[requirement.Key] =
-                    new VPMProjectManifest.VPMPackageInfoMinimal
+                // A buyer who already has the package keeps their version:
+                // pulling VRCFury forward mid-import breaks more than it fixes.
+                if (present.ContainsKey(requirement.Key))
+                {
+                    continue;
+                }
+                try
+                {
+                    IVRCPackage match = Repos.GetPackageWithVersionMatch(
+                        requirement.Key,
+                        requirement.Value);
+                    if (match == null ||
+                        !project.AddVPMPackage(match.Id, match.Version, Repos.GetAll))
                     {
-                        version = requirement.Value,
-                    };
+                        unavailable.Add(requirement.Key + "@" + requirement.Value);
+                        continue;
+                    }
+                    installed.Add(match.Id + "@" + match.Version);
+                    foreach (KeyValuePair<string, string> entry in
+                        project.GetInstalledVersions() ??
+                            new Dictionary<string, string>())
+                    {
+                        present[entry.Key] = entry.Value;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    unavailable.Add(
+                        requirement.Key + "@" + requirement.Value +
+                        " (" + exception.Message + ")");
+                }
             }
-            try
+            if (installed.Count > 0)
             {
-                if (requested.Count > 0)
-                {
-                    manifest.Save();
-                }
-                if (!VPMProjectManifest.ResolveIsNeeded(projectPath))
-                {
-                    return;
-                }
-                VPMProjectManifest.Resolve(projectPath);
                 Client.Resolve();
                 AssetDatabase.Refresh();
                 Debug.Log(
-                    "[YUCP PackageManager] Installed " +
-                    dependencies.Count +
-                    " release requirement(s).");
+                    "[YUCP PackageManager] Installed " + installed.Count +
+                    " release requirement(s): " + string.Join(", ", installed.ToArray()));
             }
-            catch (Exception exception)
+            else if (unavailable.Count == 0)
             {
-                LogRequirementFailure(exception);
+                Debug.Log(
+                    "[YUCP PackageManager] All " + requirements.Count +
+                    " release requirement(s) were already installed.");
+            }
+            if (unavailable.Count > 0)
+            {
+                Debug.LogWarning(
+                    "[YUCP PackageManager] Could not install " + unavailable.Count +
+                    " release requirement(s): " + string.Join(", ", unavailable.ToArray()) +
+                    ". Add them from the Creator Companion to finish setting up " +
+                    "this package.");
             }
         }
 
-        /// <summary>
-        /// The requirements whose manifest entry has to change. A buyer who
-        /// already declares the same range keeps their locked version.
-        /// </summary>
         internal static List<KeyValuePair<string, string>> PlanRequirements(
-            IReadOnlyDictionary<string, string> declared,
             IReadOnlyDictionary<string, string> requirements)
         {
             var planned = new List<KeyValuePair<string, string>>();
@@ -109,12 +124,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string id = requirement.Key?.Trim();
                 string range = requirement.Value?.Trim();
                 if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(range))
-                {
-                    continue;
-                }
-                if (declared != null &&
-                    declared.TryGetValue(id, out string existing) &&
-                    string.Equals(existing, range, StringComparison.Ordinal))
                 {
                     continue;
                 }

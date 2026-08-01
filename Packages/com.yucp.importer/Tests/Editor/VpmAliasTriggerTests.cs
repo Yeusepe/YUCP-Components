@@ -863,35 +863,27 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void AReleasesRequirementsAreWrittenOnlyWhenTheyChange()
+        public void AReleasesRequirementsDropTheEntriesNothingCanBeDoneWith()
         {
-            var declared = new Dictionary<string, string>
-            {
-                ["com.vrcfury.vrcfury"] = ">=0.0.0",
-                ["adjerry91.vrcft.templates"] = ">=1.0.0",
-            };
             List<KeyValuePair<string, string>> planned =
                 VpmRequirementInstaller.PlanRequirements(
-                    declared,
                     new Dictionary<string, string>
                     {
-                        ["com.vrcfury.vrcfury"] = ">=0.0.0",
-                        ["adjerry91.vrcft.templates"] = ">=2.0.0",
+                        ["com.vrcfury.vrcfury"] = " >=0.0.0 ",
+                        ["  adjerry91.vrcft.templates  "] = ">=2.0.0",
                         ["  "] = ">=0.0.0",
                         ["com.creator.kit"] = "   ",
-                        ["com.creator.tools"] = ">=0.3.0",
+                        ["com.creator.tools"] = null,
                     });
 
             CollectionAssert.AreEquivalent(
-                new[] { "adjerry91.vrcft.templates", "com.creator.tools" },
+                new[] { "com.vrcfury.vrcfury", "adjerry91.vrcft.templates" },
                 planned.Select(entry => entry.Key).ToArray(),
-                "An unchanged range must leave the buyer's locked version alone.");
+                "A blank id or range cannot be resolved against any listing.");
             Assert.That(
-                planned.Single(entry => entry.Key == "adjerry91.vrcft.templates").Value,
-                Is.EqualTo(">=2.0.0"));
-            Assert.That(
-                VpmRequirementInstaller.PlanRequirements(null, null),
-                Is.Empty);
+                planned.Single(entry => entry.Key == "com.vrcfury.vrcfury").Value,
+                Is.EqualTo(">=0.0.0"));
+            Assert.That(VpmRequirementInstaller.PlanRequirements(null), Is.Empty);
         }
 
         [Test]
