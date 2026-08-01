@@ -261,6 +261,7 @@ namespace YUCP.Importer.Editor.PackageManager
         private bool AuthenticationActionInFlight =>
             _authenticationOperation != BrokerAuthenticationOperation.None;
         private bool _authenticationRefreshScheduled;
+        private Task _authenticationRefreshTask;
         // Gallery carousel state
         private int _selectedGalleryIndex = -1;
         private Texture2D _originalBannerTexture;
@@ -3364,7 +3365,8 @@ namespace YUCP.Importer.Editor.PackageManager
                 _authenticationRefreshScheduled = false;
                 if (this != null)
                 {
-                    await RefreshAuthenticationStatusAsync();
+                    _authenticationRefreshTask = RefreshAuthenticationStatusAsync();
+                    await _authenticationRefreshTask;
                 }
             };
         }
@@ -3447,6 +3449,29 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private async Task<bool> SignInWithBrokerAsync()
         {
+            // A background status refresh holds the same flag, and on a first run
+            // it also pays for the native runtime bootstrap. Discarding the click
+            // for it made the button do nothing until the refresh happened to
+            // finish, so wait for it instead and then sign in.
+            if (_authenticationOperation == BrokerAuthenticationOperation.Refresh)
+            {
+                Task pendingRefresh = _authenticationRefreshTask;
+                if (pendingRefresh != null)
+                {
+                    try
+                    {
+                        await pendingRefresh;
+                    }
+                    catch (Exception)
+                    {
+                        // A failed refresh must not stop the buyer signing in.
+                    }
+                }
+                if (this == null)
+                {
+                    return false;
+                }
+            }
             if (AuthenticationActionInFlight)
             {
                 return false;
@@ -3461,10 +3486,20 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (this != null)
                 {
                     _isBrokerSignedIn = result.signedIn;
-                    ShowFlowNotice(
-                        "Signed in",
-                        "Your Creator Identity is ready. You can install this product now.",
-                        FlowNoticeTone.Success);
+                    if (result.signedIn)
+                    {
+                        ShowFlowNotice(
+                            "Signed in",
+                            "Your Creator Identity is ready. You can install this product now.",
+                            FlowNoticeTone.Success);
+                    }
+                    else
+                    {
+                        ShowFlowNotice(
+                            "Not signed in",
+                            "Sign-in did not complete. Try again and finish in the browser window.",
+                            FlowNoticeTone.Info);
+                    }
                 }
                 return result.signedIn;
             }
