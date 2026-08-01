@@ -3748,6 +3748,34 @@ namespace YUCP.Importer.Editor.PackageManager
             return block;
         }
 
+        private string BuildDependenciesSummary()
+        {
+            int community = _currentMetadata?.dependencies?.Keys.Count(
+                packageId => !AliasPackageDiscovery.IsOfficialDependencySource(packageId)) ?? 0;
+            if (community == 0)
+            {
+                return "The following packages will be automatically installed:";
+            }
+            return community == 1
+                ? "One of these comes from a community source and is not installed for you:"
+                : $"{community} of these come from community sources and are not installed for you:";
+        }
+
+        private VisualElement CreateDependencySourceBadge(string packageId)
+        {
+            bool official = AliasPackageDiscovery.IsOfficialDependencySource(packageId);
+            var badge = new VisualElement();
+            badge.AddToClassList("yucp-chip");
+            badge.AddToClassList(official ? "yucp-source-official" : "yucp-source-community");
+            badge.style.marginBottom = 0;
+            badge.style.marginRight = 10;
+            badge.tooltip = official
+                ? "Installed automatically from a source YUCP verifies."
+                : "Add this repository to VRChat Creator Companion, then install it there.";
+            badge.Add(new Label(official ? "Official" : "Community"));
+            return badge;
+        }
+
         private void RefreshDependenciesSection()
         {
             var dependenciesContainer = _contentsSection.Q<VisualElement>("dependencies-container");
@@ -3816,7 +3844,7 @@ namespace YUCP.Importer.Editor.PackageManager
             container.Add(titleLabel);
 
             // Info text
-            var infoText = new Label("The following packages will be automatically installed:");
+            var infoText = new Label(BuildDependenciesSummary());
             infoText.style.fontSize = 11;
             infoText.style.color = new Color(0.7f, 0.7f, 0.7f);
             infoText.style.marginBottom = 10;
@@ -3888,6 +3916,8 @@ namespace YUCP.Importer.Editor.PackageManager
                 nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
                 nameLabel.style.flexGrow = 1;
                 depItem.Add(nameLabel);
+
+                depItem.Add(CreateDependencySourceBadge(dependency.Key));
 
                 // Version
                 var versionLabel = new Label($"v{dependency.Value}");

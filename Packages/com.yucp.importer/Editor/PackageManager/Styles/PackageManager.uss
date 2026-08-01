@@ -2700,6 +2700,30 @@
     color: rgba(218, 218, 224, 0.80);
 }
 
+.yucp-source-official {
+    background-color: rgba(126, 200, 255, 0.10);
+    border-top-color: rgba(126, 200, 255, 0.28);
+    border-right-color: rgba(126, 200, 255, 0.28);
+    border-bottom-color: rgba(126, 200, 255, 0.28);
+    border-left-color: rgba(126, 200, 255, 0.28);
+}
+
+.yucp-source-official Label {
+    color: rgba(198, 226, 255, 0.92);
+}
+
+.yucp-source-community {
+    background-color: rgba(255, 198, 122, 0.10);
+    border-top-color: rgba(255, 198, 122, 0.30);
+    border-right-color: rgba(255, 198, 122, 0.30);
+    border-bottom-color: rgba(255, 198, 122, 0.30);
+    border-left-color: rgba(255, 198, 122, 0.30);
+}
+
+.yucp-source-community Label {
+    color: rgba(255, 221, 176, 0.94);
+}
+
 .yucp-chip-category {
     background-color: rgba(255, 255, 255, 0.04);
     border-top-color: rgba(255, 255, 255, 0.08);

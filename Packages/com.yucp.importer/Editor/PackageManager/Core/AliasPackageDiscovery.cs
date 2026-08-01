@@ -120,6 +120,25 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             }
         }
 
+        /// <summary>
+        /// Whether the direct VPM installer will fetch a dependency on its own.
+        /// It only trusts the sources on its own allowlist, so anything else is
+        /// listed but skipped, and the buyer has to add that repository first.
+        /// Mirrors the installer's trusted publishers; widening one without the
+        /// other makes the installer promise something it will not do.
+        /// </summary>
+        internal static bool IsOfficialDependencySource(string packageId)
+        {
+            string id = packageId?.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(id))
+            {
+                return false;
+            }
+            return id.StartsWith("com.vrchat.", StringComparison.Ordinal) ||
+                id.StartsWith("com.vrcfury.", StringComparison.Ordinal) ||
+                id.StartsWith("com.yucp.", StringComparison.Ordinal);
+        }
+
         internal static bool IsServerAuthorized(AliasPackageContract alias)
         {
             return alias != null &&

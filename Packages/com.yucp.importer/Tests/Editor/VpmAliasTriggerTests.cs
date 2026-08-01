@@ -752,6 +752,36 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ADependencyIsOfficialOnlyWhenTheInstallerWillFetchIt()
+        {
+            // The installer allowlists VRChat and VRCFury; YUCP ships its own.
+            Assert.That(
+                AliasPackageDiscovery.IsOfficialDependencySource("com.vrchat.avatars"),
+                Is.True);
+            Assert.That(
+                AliasPackageDiscovery.IsOfficialDependencySource("com.vrcfury.vrcfury"),
+                Is.True);
+            Assert.That(
+                AliasPackageDiscovery.IsOfficialDependencySource("com.yucp.components"),
+                Is.True);
+
+            // Druffle's community sources: listed, but skipped as untrusted.
+            Assert.That(
+                AliasPackageDiscovery.IsOfficialDependencySource("adjerry91.vrcft.templates"),
+                Is.False);
+            Assert.That(
+                AliasPackageDiscovery.IsOfficialDependencySource("gogoloco"),
+                Is.False);
+            Assert.That(
+                AliasPackageDiscovery.IsOfficialDependencySource(
+                    "vrchat.blackstartx.gesture-manager"),
+                Is.False,
+                "A name that merely starts with vrchat is not the VRChat repository.");
+            Assert.That(AliasPackageDiscovery.IsOfficialDependencySource(null), Is.False);
+            Assert.That(AliasPackageDiscovery.IsOfficialDependencySource("  "), Is.False);
+        }
+
+        [Test]
         public void ABootstrapDescriptorFindsTheMediaTheUnitypackageWrote()
         {
             string projectPath = Path.Combine(
