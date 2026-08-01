@@ -4421,6 +4421,12 @@ namespace YUCP.Importer.Editor.PackageManager
             _isProjectSettingsStep = isProjectSettingsStep;
             _detailsExpanded = false;
             _preferOverwriteExisting = true;
+
+            // The interceptor reuses this window instance and both metadata fields
+            // are serialized, so the previous package's alias contract outlives it.
+            // Installing reads the alias off whatever is here, which is how a plain
+            // package ends up asking the delivery service to authorize an install.
+            SetMetadata(null);
             RefreshLicensedAssetDescriptors();
 
             Debug.Log($"[YUCP PackageManager] InitializeForImport: packagePath='{packagePath}', stepItems={GetImportItemCount(importItems)}, allItems={GetImportItemCount(_allImportItems)}, packageIconPath='{packageIconPath}', isProjectSettingsStep={isProjectSettingsStep}");

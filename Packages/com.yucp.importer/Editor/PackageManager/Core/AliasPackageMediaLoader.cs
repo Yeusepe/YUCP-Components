@@ -64,11 +64,11 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             var productLinks = new List<ProductLink>();
             try
             {
-                icon = Load(
+                icon = TryLoad(
                     alias.media.icon,
                     "icon",
                     readContent);
-                banner = Load(
+                banner = TryLoad(
                     alias.media.banner,
                     "banner",
                     readContent);
@@ -76,10 +76,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     alias.media.gallery ??
                     new List<AliasPackageMediaDescriptor>())
                 {
-                    gallery.Add(Load(
+                    Texture2D image = TryLoad(
                         descriptor,
                         "gallery",
-                        readContent));
+                        readContent);
+                    if (image != null)
+                    {
+                        gallery.Add(image);
+                    }
                 }
                 foreach (AliasPackageMediaDescriptor descriptor in
                     alias.media.productLinks ??
@@ -89,7 +93,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         descriptor.url,
                         descriptor.label)
                     {
-                        customIcon = Load(
+                        customIcon = TryLoad(
                             descriptor,
                             "product-link",
                             readContent),
@@ -115,6 +119,33 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     PackageMetadataMediaOwnership.Release(link?.customIcon);
                 }
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// One unreadable image must not erase the whole storefront presentation.
+        /// Each descriptor is still digest-bound; a descriptor that fails is
+        /// dropped by name so the reason survives in the Unity log.
+        /// </summary>
+        private static Texture2D TryLoad(
+            AliasPackageMediaDescriptor descriptor,
+            string expectedKind,
+            Func<AliasPackageMediaDescriptor, byte[]> readContent)
+        {
+            try
+            {
+                return Load(descriptor, expectedKind, readContent);
+            }
+            catch (Exception exception) when (
+                exception is InvalidDataException ||
+                exception is IOException ||
+                exception is UnauthorizedAccessException)
+            {
+                Debug.LogWarning(
+                    "[YUCP PackageManager] Skipped alias " + expectedKind +
+                    " media '" + (descriptor?.localPath ?? "<none>") + "': " +
+                    exception.Message);
+                return null;
             }
         }
 
