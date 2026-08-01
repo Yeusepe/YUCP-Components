@@ -765,6 +765,103 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void RequirementsPayloadMatchesTheServerCanonicalForm()
+        {
+            byte[] payload = BootstrapIntentVerifier.RequirementsPayload(
+                new Dictionary<string, string>
+                {
+                    ["com.vrcfury.vrcfury"] = ">=0.0.0",
+                    ["adjerry91.vrcft.templates"] = ">=0.0.0",
+                },
+                new Dictionary<string, string>
+                {
+                    ["VRCFury Repo"] = "https://vcc.vrcfury.com/",
+                });
+
+            Assert.That(
+                System.Text.Encoding.UTF8.GetString(payload),
+                Is.EqualTo(
+                    "{\"purpose\":\"yucp-bootstrap-requirements-v1\"," +
+                    "\"vpmDependencies\":{\"adjerry91.vrcft.templates\":\">=0.0.0\"," +
+                    "\"com.vrcfury.vrcfury\":\">=0.0.0\"}," +
+                    "\"vpmRepositories\":{\"VRCFury Repo\":\"https://vcc.vrcfury.com/\"}}"),
+                "Drift from the server's canonical form fails every install closed.");
+        }
+
+        [Test]
+        public void AnUnsignedBootstrapIsNotTreatedAsTampered()
+        {
+            var intent = new BootstrapIntentContract
+            {
+                schemaVersion = 1,
+                intentId = "00000000-0000-4000-8000-000000000903",
+                mode = "latest",
+                issuedAt = 1775000000,
+                keyId = BootstrapIntentVerifier.SigningKeyId,
+                editionId = "standard",
+                signature = "AAAA",
+            };
+
+            Assert.That(
+                BootstrapIntentVerifier.Verify(
+                    "com.lunararray.druffle",
+                    intent,
+                    new Dictionary<string, string>(),
+                    null),
+                Is.EqualTo(BootstrapIntentVerifier.Verdict.Unsigned),
+                "Bootstraps issued before the binding must keep working.");
+        }
+
+        [Test]
+        public void AForgedSignatureIsRejected()
+        {
+            var intent = new BootstrapIntentContract
+            {
+                schemaVersion = 1,
+                intentId = "00000000-0000-4000-8000-000000000904",
+                mode = "latest",
+                issuedAt = 1775000000,
+                keyId = BootstrapIntentVerifier.SigningKeyId,
+                editionId = "standard",
+                requirementsDigest = new string('a', 64),
+                signature = new string('A', 86),
+            };
+
+            Assert.That(
+                BootstrapIntentVerifier.Verify(
+                    "com.lunararray.druffle",
+                    intent,
+                    new Dictionary<string, string> { ["com.vrcfury.vrcfury"] = ">=0.0.0" },
+                    null),
+                Is.EqualTo(BootstrapIntentVerifier.Verdict.Tampered));
+        }
+
+        [Test]
+        public void AnUnknownSigningKeyIsRejected()
+        {
+            var intent = new BootstrapIntentContract
+            {
+                schemaVersion = 1,
+                intentId = "00000000-0000-4000-8000-000000000905",
+                mode = "latest",
+                issuedAt = 1775000000,
+                keyId = "attacker-key-2026",
+                editionId = "standard",
+                requirementsDigest = new string('a', 64),
+                signature = new string('A', 86),
+            };
+
+            Assert.That(
+                BootstrapIntentVerifier.Verify(
+                    "com.lunararray.druffle",
+                    intent,
+                    new Dictionary<string, string>(),
+                    null),
+                Is.EqualTo(BootstrapIntentVerifier.Verdict.Tampered),
+                "Only the pinned YUCP install key may vouch for requirements.");
+        }
+
+        [Test]
         public void AReleasesRequirementsReachTheDirectVpmInstaller()
         {
             string projectPath = Path.Combine(
@@ -806,7 +903,7 @@ namespace YUCP.Importer.Editor.Tests
                 Assert.That(descriptor, Is.Not.Null);
                 // The installer only scans Packages/yucp.installed-packages.
                 Assert.That(
-                    descriptor.Replace('\', '/'),
+                    descriptor.Replace(Path.DirectorySeparatorChar, '/'),
                     Does.Contain("Packages/yucp.installed-packages/Druffle-Avatar/_temp/"));
                 Assert.That(Path.GetFileName(descriptor), Does.StartWith("YUCP_TempInstall_"));
 

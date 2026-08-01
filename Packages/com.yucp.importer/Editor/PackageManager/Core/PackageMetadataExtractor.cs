@@ -1721,6 +1721,8 @@ namespace YUCP.Importer.Editor.PackageManager
                 version = GetString(intent, "version") ?? string.Empty,
                 versionId = GetString(intent, "versionId") ?? string.Empty,
                 releaseRoot = GetString(intent, "releaseRoot") ?? string.Empty,
+                requirementsDigest =
+                    GetString(intent, "requirementsDigest") ?? string.Empty,
                 signature = GetString(intent, "signature") ?? string.Empty,
                 rawIntentJson = intent.ToString(Formatting.None),
             };

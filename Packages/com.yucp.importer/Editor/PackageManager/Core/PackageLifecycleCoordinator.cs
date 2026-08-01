@@ -249,6 +249,29 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     string.Empty,
                     string.Empty,
                     reportProgress);
+                if (BootstrapIntentVerifier.Verify(
+                        alias.aliasId,
+                        alias.bootstrapIntent,
+                        preflight.vpmDependencies,
+                        preflight.vpmRepositories) ==
+                    BootstrapIntentVerifier.Verdict.Tampered)
+                {
+                    PackageLifecycleCheckpointStore.ClearAttemptId(
+                        projectPath,
+                        attemptKey);
+                    LogInstallDiagnostic(
+                        "BOOTSTRAP_TAMPERED",
+                        preflight.traceId,
+                        new InvalidDataException(
+                            "The bootstrap's signed requirements do not match the release."));
+                    return new PackageLifecycleInstallResult
+                    {
+                        errorCode = "BOOTSTRAP_TAMPERED",
+                        errorMessage =
+                            "This bootstrap was changed after YUCP issued it, so nothing " +
+                            "was installed. Download it again from your purchase.",
+                    };
+                }
                 bool targetMatchesCurrent =
                     currentReleaseRoot != EmptyReleaseRoot &&
                     string.Equals(

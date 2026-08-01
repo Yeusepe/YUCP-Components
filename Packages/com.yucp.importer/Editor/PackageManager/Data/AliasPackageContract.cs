@@ -55,6 +55,7 @@ namespace YUCP.Importer.Editor.PackageManager
         public string version = "";
         public string versionId = "";
         public string releaseRoot = "";
+        public string requirementsDigest = "";
         public string signature = "";
         public string rawIntentJson = "";
 
@@ -71,6 +72,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 version = version ?? string.Empty,
                 versionId = versionId ?? string.Empty,
                 releaseRoot = releaseRoot ?? string.Empty,
+                requirementsDigest = requirementsDigest ?? string.Empty,
                 signature = signature ?? string.Empty,
                 rawIntentJson = rawIntentJson ?? string.Empty,
             };
