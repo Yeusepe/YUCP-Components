@@ -121,11 +121,9 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         }
 
         /// <summary>
-        /// Whether the direct VPM installer will fetch a dependency on its own.
-        /// It only trusts the sources on its own allowlist, so anything else is
-        /// listed but skipped, and the buyer has to add that repository first.
-        /// Mirrors the installer's trusted publishers; widening one without the
-        /// other makes the installer promise something it will not do.
+        /// Whether a required package comes from VRChat, VRCFury or YUCP rather
+        /// than from a community creator. The installer fetches both; this only
+        /// tells a buyer who stands behind each one.
         /// </summary>
         internal static bool IsOfficialDependencySource(string packageId)
         {

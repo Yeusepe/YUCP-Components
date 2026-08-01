@@ -752,9 +752,9 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void ADependencyIsOfficialOnlyWhenTheInstallerWillFetchIt()
+        public void ADependencyIsOfficialOnlyWhenAVerifiedPublisherShipsIt()
         {
-            // The installer allowlists VRChat and VRCFury; YUCP ships its own.
+            // First-party and platform publishers.
             Assert.That(
                 AliasPackageDiscovery.IsOfficialDependencySource("com.vrchat.avatars"),
                 Is.True);
@@ -765,7 +765,7 @@ namespace YUCP.Importer.Editor.Tests
                 AliasPackageDiscovery.IsOfficialDependencySource("com.yucp.components"),
                 Is.True);
 
-            // Druffle's community sources: listed, but skipped as untrusted.
+            // Druffle's community sources: installed too, just not first-party.
             Assert.That(
                 AliasPackageDiscovery.IsOfficialDependencySource("adjerry91.vrcft.templates"),
                 Is.False);

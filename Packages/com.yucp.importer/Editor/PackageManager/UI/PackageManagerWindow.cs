@@ -3752,13 +3752,10 @@ namespace YUCP.Importer.Editor.PackageManager
         {
             int community = _currentMetadata?.dependencies?.Keys.Count(
                 packageId => !AliasPackageDiscovery.IsOfficialDependencySource(packageId)) ?? 0;
-            if (community == 0)
-            {
-                return "The following packages will be automatically installed:";
-            }
-            return community == 1
-                ? "One of these comes from a community source and is not installed for you:"
-                : $"{community} of these come from community sources and are not installed for you:";
+            return community == 0
+                ? "The following packages will be automatically installed:"
+                : "The following packages will be automatically installed. " +
+                    "Community sources are published by their own creators:";
         }
 
         private VisualElement CreateDependencySourceBadge(string packageId)
@@ -3770,8 +3767,9 @@ namespace YUCP.Importer.Editor.PackageManager
             badge.style.marginBottom = 0;
             badge.style.marginRight = 10;
             badge.tooltip = official
-                ? "Installed automatically from a source YUCP verifies."
-                : "Add this repository to VRChat Creator Companion, then install it there.";
+                ? "Published by VRChat, VRCFury, or YUCP."
+                : "Published by a community creator. Installed the same way, from " +
+                    "the repository this package names.";
             badge.Add(new Label(official ? "Official" : "Community"));
             return badge;
         }
