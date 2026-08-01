@@ -2323,9 +2323,9 @@ namespace YUCP.Importer.Editor.PackageManager
 
             var dependenciesContainer = new VisualElement();
             dependenciesContainer.name = "dependencies-container";
-            dependenciesContainer.style.flexShrink = 0;
+            dependenciesContainer.style.flexShrink = 1;
+            dependenciesContainer.style.minHeight = 0;
             dependenciesContainer.style.maxHeight = Length.Percent(34f);
-            dependenciesContainer.style.overflow = Overflow.Hidden;
             section.Add(dependenciesContainer);
 
             var licensedSummaryContainer = new VisualElement();
@@ -2423,6 +2423,26 @@ namespace YUCP.Importer.Editor.PackageManager
 
         private bool ChangeReviewPending => _changeReviewCompletion != null;
 
+        /// <summary>
+        /// The review owns the whole details pane while it is up. These blocks
+        /// live above the tree in normal browsing, so leaving them visible draws
+        /// them behind the review instead of alongside it.
+        /// </summary>
+        private void SetSummaryBlocksVisible(bool visible)
+        {
+            DisplayStyle display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+            var dependencies = _contentsSection?.Q<VisualElement>("dependencies-container");
+            if (dependencies != null)
+            {
+                dependencies.style.display = display;
+            }
+            var licensed = _contentsSection?.Q<VisualElement>("licensed-summary-container");
+            if (licensed != null)
+            {
+                licensed.style.display = display;
+            }
+        }
+
         private void CompletePendingChangeReview(bool approved)
         {
             TaskCompletionSource<bool> completion = _changeReviewCompletion;
@@ -2447,6 +2467,7 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 _conflictModeSection.style.display = DisplayStyle.Flex;
             }
+            SetSummaryBlocksVisible(true);
             if (approved)
             {
                 _detailsExpanded = false;
@@ -2473,6 +2494,7 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 _conflictModeSection.style.display = DisplayStyle.None;
             }
+            SetSummaryBlocksVisible(false);
 
             _changeReviewSection.AddToClassList("yucp-review");
 
@@ -2497,6 +2519,12 @@ namespace YUCP.Importer.Editor.PackageManager
 
             var scroll = new ScrollView(ScrollViewMode.Vertical);
             scroll.AddToClassList("yucp-review-scroll");
+
+            VisualElement requiredPackages = CreateDependenciesSection();
+            if (requiredPackages != null)
+            {
+                scroll.Add(requiredPackages);
+            }
 
             if (!PackageChangePlanSigner.Verify(_changeReviewPlan))
             {
@@ -3758,6 +3786,24 @@ namespace YUCP.Importer.Editor.PackageManager
                     "Community sources are published by their own creators:";
         }
 
+        /// <summary>
+        /// Requirements are ranges, not versions. "v>=0.0.0" reads as a typo, so
+        /// say what the range means: any build satisfies it, so it takes latest.
+        /// </summary>
+        internal static string FormatDependencyVersion(string requirement)
+        {
+            string range = requirement?.Trim() ?? string.Empty;
+            if (range.Length == 0 || range == "*" || range == ">=0.0.0")
+            {
+                return "latest";
+            }
+            return range.StartsWith(">=", StringComparison.Ordinal) ||
+                range.StartsWith("^", StringComparison.Ordinal) ||
+                range.StartsWith("~", StringComparison.Ordinal)
+                ? range
+                : "v" + range;
+        }
+
         private VisualElement CreateDependencySourceBadge(string packageId)
         {
             bool official = AliasPackageDiscovery.IsOfficialDependencySource(packageId);
@@ -3858,6 +3904,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 var depItem = new VisualElement();
                 depItem.style.flexDirection = FlexDirection.Row;
                 depItem.style.alignItems = Align.Center;
+                depItem.style.flexShrink = 0;
                 depItem.style.paddingLeft = 12;
                 depItem.style.paddingRight = 12;
                 depItem.style.paddingTop = 8;
@@ -3918,7 +3965,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 depItem.Add(CreateDependencySourceBadge(dependency.Key));
 
                 // Version
-                var versionLabel = new Label($"v{dependency.Value}");
+                var versionLabel = new Label(FormatDependencyVersion(dependency.Value));
                 versionLabel.style.fontSize = 11;
                 versionLabel.style.color = new Color(0.84f, 0.84f, 0.84f);
                 depItem.Add(versionLabel);
@@ -3927,7 +3974,7 @@ namespace YUCP.Importer.Editor.PackageManager
             }
 
             var dependenciesScroll = new ScrollView(ScrollViewMode.Vertical);
-            dependenciesScroll.style.flexGrow = 0;
+            dependenciesScroll.style.flexGrow = 1;
             dependenciesScroll.style.flexShrink = 1;
             dependenciesScroll.style.minHeight = 0;
             dependenciesScroll.Add(dependenciesList);

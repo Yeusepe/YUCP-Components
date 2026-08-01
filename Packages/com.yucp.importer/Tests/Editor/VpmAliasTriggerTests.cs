@@ -752,6 +752,19 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void ARequirementRangeReadsAsARangeNotAVersion()
+        {
+            Assert.That(PackageManagerWindow.FormatDependencyVersion(">=0.0.0"), Is.EqualTo("latest"));
+            Assert.That(PackageManagerWindow.FormatDependencyVersion("*"), Is.EqualTo("latest"));
+            Assert.That(PackageManagerWindow.FormatDependencyVersion(""), Is.EqualTo("latest"));
+            Assert.That(
+                PackageManagerWindow.FormatDependencyVersion(">=1.1258.0"),
+                Is.EqualTo(">=1.1258.0"),
+                "A range must not be prefixed with v.");
+            Assert.That(PackageManagerWindow.FormatDependencyVersion("1.2.3"), Is.EqualTo("v1.2.3"));
+        }
+
+        [Test]
         public void ADependencyIsOfficialOnlyWhenAVerifiedPublisherShipsIt()
         {
             // First-party and platform publishers.
