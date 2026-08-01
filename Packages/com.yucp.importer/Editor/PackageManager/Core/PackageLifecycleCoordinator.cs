@@ -1461,10 +1461,15 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     projectPath,
                     checkpoint,
                     inspection);
-                checkpoint.phase = "rolled-back";
-                PackageLifecycleCheckpointStore.Write(
+                // VerifyRestoredState above proved the project is back to its prior
+                // state, so this run is over and nothing is left to resume. Retiring
+                // the checkpoint is what stops it reappearing: ValidateBinding accepts
+                // "rolled-back", so a persisted one is re-read on the next editor start
+                // and fed straight back into this method, which can only reproduce the
+                // same failure the buyer already saw.
+                PackageLifecycleCheckpointStore.Delete(
                     projectPath,
-                    checkpoint);
+                    checkpoint.runId);
                 throw new InvalidDataException(
                     string.IsNullOrWhiteSpace(checkpoint.errorMessage)
                         ? "Unity rejected the package. The prior project was restored."
@@ -1531,10 +1536,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     projectPath,
                     checkpoint,
                     inspection);
-                checkpoint.phase = "rolled-back";
-                PackageLifecycleCheckpointStore.Write(
+                // Restoration is verified, so the run is finished and unresumable.
+                // See the sibling rollback above: a surviving checkpoint is replayed
+                // on the next editor start and only reproduces this same failure.
+                PackageLifecycleCheckpointStore.Delete(
                     projectPath,
-                    checkpoint);
+                    checkpoint.runId);
                 throw new InvalidDataException(
                     checkpoint.errorMessage,
                     importException);
@@ -1856,6 +1863,17 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 (exception as NativePackageBrokerException)
                     ?.InnerException
                 as NativePackageRuntimeBootstrapException;
+            // The bootstrap fields only ever populate for a broker failure. Every
+            // other route here -- notably the rollback rethrow, whose message names
+            // what Unity actually rejected -- reported an empty errorCode, an empty
+            // traceId and two empty strings, which is unactionable from a bug report.
+            // failureType and detail carry that reason without changing the shape
+            // consumers already parse.
+            Exception cause = exception;
+            while (cause?.InnerException != null)
+            {
+                cause = cause.InnerException;
+            }
             Debug.LogError(JsonConvert.SerializeObject(new
             {
                 eventName = "package_install_failed",
@@ -1865,6 +1883,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     bootstrap?.ErrorCode ?? string.Empty,
                 bootstrapDetail =
                     bootstrap?.Message ?? string.Empty,
+                failureType =
+                    exception?.GetType().Name ?? string.Empty,
+                detail =
+                    cause?.Message?.Trim() ?? string.Empty,
             }));
         }
 
