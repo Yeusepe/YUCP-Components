@@ -789,7 +789,7 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void AnUnsignedBootstrapIsNotTreatedAsTampered()
+        public void AStrippedDigestNeverVerifies()
         {
             var intent = new BootstrapIntentContract
             {
@@ -809,7 +809,8 @@ namespace YUCP.Importer.Editor.Tests
                     new Dictionary<string, string>(),
                     null),
                 Is.EqualTo(BootstrapIntentVerifier.Verdict.Unsigned),
-                "Bootstraps issued before the binding must keep working.");
+                "Removing the digest must not produce a Trusted verdict; the " +
+                "install path refuses anything that is not Trusted.");
         }
 
         [Test]

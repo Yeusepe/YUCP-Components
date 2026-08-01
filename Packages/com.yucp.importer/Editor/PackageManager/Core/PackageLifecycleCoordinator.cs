@@ -249,12 +249,16 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     string.Empty,
                     string.Empty,
                     reportProgress);
-                if (BootstrapIntentVerifier.Verify(
+                // An intent that carries no digest is not old, it is stripped:
+                // every issued bootstrap binds its requirements, so anything
+                // short of Trusted is refused rather than waved through.
+                if (alias.bootstrapIntent != null &&
+                    BootstrapIntentVerifier.Verify(
                         alias.aliasId,
                         alias.bootstrapIntent,
                         preflight.vpmDependencies,
-                        preflight.vpmRepositories) ==
-                    BootstrapIntentVerifier.Verdict.Tampered)
+                        preflight.vpmRepositories) !=
+                    BootstrapIntentVerifier.Verdict.Trusted)
                 {
                     PackageLifecycleCheckpointStore.ClearAttemptId(
                         projectPath,
