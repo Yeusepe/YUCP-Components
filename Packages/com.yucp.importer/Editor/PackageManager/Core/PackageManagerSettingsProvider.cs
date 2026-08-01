@@ -56,7 +56,7 @@ namespace YUCP.Importer.Editor.PackageManager
 
             var description = new Label(
                 "Controls importer interception and package signature " +
-                "trust. The YUCP desktop service manages account access.");
+                "trust. The YUCP desktop service manages Creator Account access.");
             description.style.whiteSpace = WhiteSpace.Normal;
             description.style.marginBottom = 10;
             rootElement.Add(description);
@@ -229,7 +229,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 ? "The server did not publish a pinned signing root."
                 : result.error;
             YucpEditorDialog.DisplayDialog(
-                "Could not validate server",
+                "We couldn’t validate the server",
                 failure,
                 "OK");
             return false;

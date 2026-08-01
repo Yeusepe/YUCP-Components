@@ -58,7 +58,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             catch (Exception exception)
             {
                 throw new InvalidOperationException(
-                    "Unity could not initialize this project's package identity.",
+                    "Unity couldn’t set up this project for installation.",
                     exception);
             }
         }

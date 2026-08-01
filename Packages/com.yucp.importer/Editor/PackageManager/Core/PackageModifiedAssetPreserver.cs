@@ -125,7 +125,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                                 destination))
                         {
                             throw new IOException(
-                                "Unity could not create the preserved asset " +
+                                "Unity couldn’t create a copy of the existing file " +
                                 $"copy for '{sourceAssetPath}'.");
                         }
                         PackagePreservedCopy copy = copies.FirstOrDefault(

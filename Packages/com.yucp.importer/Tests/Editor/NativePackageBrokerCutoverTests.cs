@@ -183,8 +183,8 @@ namespace YUCP.Importer.Tests.Editor
                     "Core",
                     "NativePackageBrokerClient.cs"));
 
-            Assert.That(windowSource, Does.Contain("Sign in with YUCP"));
-            Assert.That(windowSource, Does.Contain("Signed in with YUCP"));
+            Assert.That(windowSource, Does.Contain("Sign in"));
+            Assert.That(windowSource, Does.Contain("Creator Account connected"));
             Assert.That(windowSource, Does.Contain("Sign out"));
             Assert.That(
                 windowSource,
@@ -297,7 +297,7 @@ namespace YUCP.Importer.Tests.Editor
                     "signing-in",
                     0,
                     0),
-                Is.EqualTo("Opening secure sign-in"));
+                Is.EqualTo("Opening sign-in"));
             Assert.That(
                 NativePackageBrokerClient.GetFriendlyProgressMessage(
                     "verifying-access",
@@ -404,7 +404,7 @@ namespace YUCP.Importer.Tests.Editor
                     },
                     "JAMMR",
                     false).message,
-                Is.EqualTo("Opening secure sign-in..."));
+                Is.EqualTo("Opening sign-in..."));
             Assert.That(
                 PackageLifecycleCoordinator.BuildBrokerProgress(
                     new NativePackageBrokerProgress
@@ -691,7 +691,7 @@ namespace YUCP.Importer.Tests.Editor
                 Assert.That(userProgress, Has.Count.EqualTo(1));
                 Assert.That(
                     userProgress[0].message,
-                    Does.Contain("package delivery"));
+                    Does.Contain("installation"));
                 Assert.That(
                     userProgress[0].message,
                     Does.Not.Contain("TUF"));

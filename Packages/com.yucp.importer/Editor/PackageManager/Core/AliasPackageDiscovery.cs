@@ -56,7 +56,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     PackageMetadataExtractor.ParsePackageJsonImportDataStrict(packageJson);
                 if (importData == null)
                 {
-                    error = "package.json could not be parsed.";
+                    error = "This package file couldn’t be read.";
                     return false;
                 }
 

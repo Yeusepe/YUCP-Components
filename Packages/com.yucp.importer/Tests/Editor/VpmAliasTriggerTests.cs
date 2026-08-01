@@ -765,6 +765,90 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
+        public void AReleasesRequirementsReachTheDirectVpmInstaller()
+        {
+            string projectPath = Path.Combine(
+                Path.GetTempPath(),
+                "yucp-release-handoff-" + Guid.NewGuid().ToString("N"));
+            var alias = new AliasPackageContract
+            {
+                aliasId = "com.lunararray.druffle",
+                packageName = "com.lunararray.druffle",
+                packageDisplayName = "Druffle Avatar",
+                packageVersion = "1.0.0",
+            };
+            try
+            {
+                Directory.CreateDirectory(projectPath);
+
+                Assert.That(
+                    ReleaseDependencyHandoff.Write(
+                        projectPath,
+                        alias,
+                        new Dictionary<string, string>(),
+                        null),
+                    Is.Null,
+                    "A release that needs nothing must not leave a descriptor behind.");
+
+                string descriptor = ReleaseDependencyHandoff.Write(
+                    projectPath,
+                    alias,
+                    new Dictionary<string, string>
+                    {
+                        ["adjerry91.vrcft.templates"] = ">=0.0.0",
+                        ["com.vrcfury.vrcfury"] = ">=0.0.0",
+                    },
+                    new Dictionary<string, string>
+                    {
+                        ["VRCFury Repo"] = "https://vcc.vrcfury.com/",
+                    });
+
+                Assert.That(descriptor, Is.Not.Null);
+                // The installer only scans Packages/yucp.installed-packages.
+                Assert.That(
+                    descriptor.Replace('\', '/'),
+                    Does.Contain("Packages/yucp.installed-packages/Druffle-Avatar/_temp/"));
+                Assert.That(Path.GetFileName(descriptor), Does.StartWith("YUCP_TempInstall_"));
+
+                string body = File.ReadAllText(descriptor);
+                Assert.That(body, Does.Contain("adjerry91.vrcft.templates"));
+                Assert.That(body, Does.Contain("vcc.vrcfury.com"));
+                Assert.That(body, Does.Contain("com.lunararray.druffle"));
+            }
+            finally
+            {
+                if (Directory.Exists(projectPath))
+                {
+                    Directory.Delete(projectPath, true);
+                }
+            }
+        }
+
+        [Test]
+        public void AWorkspaceNameNeverEscapesTheInstalledPackagesFolder()
+        {
+            Assert.That(
+                ReleaseDependencyHandoff.ResolveWorkspaceName("Druffle Avatar", "fallback"),
+                Is.EqualTo("Druffle-Avatar"));
+            Assert.That(
+                ReleaseDependencyHandoff.ResolveWorkspaceName("../../etc", "fallback"),
+                Is.EqualTo("etc"));
+            Assert.That(
+                ReleaseDependencyHandoff.ResolveWorkspaceName("  ", "com.creator.kit"),
+                Is.EqualTo("com.creator.kit"));
+            Assert.That(
+                ReleaseDependencyHandoff.ResolveWorkspaceName(null, null),
+                Is.EqualTo("YUCP-Bootstrap"));
+            Assert.That(
+                ReleaseDependencyHandoff.ResolveWorkspaceName("..", "fallback"),
+                Is.EqualTo("YUCP-Bootstrap"),
+                "A name that is only traversal must not become the folder.");
+            Assert.That(
+                ReleaseDependencyHandoff.ResolveWorkspaceName("../..", "fallback"),
+                Is.EqualTo("YUCP-Bootstrap"));
+        }
+
+        [Test]
         public void ADependencyIsOfficialOnlyWhenAVerifiedPublisherShipsIt()
         {
             // First-party and platform publishers.
@@ -1267,7 +1351,7 @@ namespace YUCP.Importer.Editor.Tests
                 var button = (Button)buttonField.GetValue(window);
                 Assert.That(
                     window.PrimaryActionLabel,
-                    Is.EqualTo("Sign in with YUCP"));
+                    Is.EqualTo("Sign in"));
                 Assert.That(button.enabledSelf, Is.True);
                 Assert.That(
                     button.Q<Image>(className: "yucp-cta-icon"),

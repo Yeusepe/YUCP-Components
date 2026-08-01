@@ -106,6 +106,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
         internal string targetReleaseRoot = string.Empty;
         internal string traceId = string.Empty;
         internal string versionId = string.Empty;
+        internal Dictionary<string, string> vpmDependencies =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        internal Dictionary<string, string> vpmRepositories =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
     internal static class PackageLifecycleCoordinator
@@ -201,7 +205,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     !PendingOperationMatches(pendingOperation, "update"))
                 {
                     throw new InvalidOperationException(
-                        "Another package action must finish before installation can start.");
+                        "Another installation is still in progress. Wait for it to finish before starting a new one.");
                 }
                 if (pendingOperation != null)
                 {
@@ -337,7 +341,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     reportProgress,
                     "downloading",
                     alias.packageDisplayName);
-                await ExecuteAsync(
+                PackageLifecycleExecutionResult installed = await ExecuteAsync(
                     alias,
                     operation,
                     lifecycleRunId,
@@ -355,6 +359,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     reportProgress,
                     "finishing",
                     alias.packageDisplayName);
+                HandOffReleaseDependencies(projectPath, alias, installed);
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
                 PackageLifecycleCheckpointStore.ClearAttemptId(
                     projectPath,
@@ -406,7 +411,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     operation != "uninstall")
                 {
                     throw new InvalidOperationException(
-                        "The package management action is unsupported.");
+                        "This installation option is not available.");
                 }
                 projectPath = CurrentProjectPath();
                 string pendingOperation = GetPendingOperation(
@@ -418,7 +423,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         operation))
                 {
                     throw new InvalidOperationException(
-                        "Another package action must finish before this action can start.");
+                        "Another installation is still in progress. Wait for it to finish before starting a new one.");
                 }
                 if (pendingOperation != null)
                 {
@@ -512,7 +517,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                                 ? "Save or revert the affected Unity assets, then retry."
                                 : changePlan.HasBlockedCollisions
                                     ? "Resolve the unowned file collisions, then retry."
-                                    : "Package action was canceled.",
+                                    : "Installation was canceled.",
                     };
                 }
                 Report(
@@ -948,7 +953,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     broker.errorCode,
                     broker.traceId,
                     string.IsNullOrWhiteSpace(broker.errorMessage)
-                        ? "The package action could not finish."
+                        ? "We couldn’t finish installing."
                         : broker.errorMessage);
             }
             Report(
@@ -1086,7 +1091,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string.IsNullOrWhiteSpace(broker.stagingTree))
             {
                 throw new InvalidDataException(
-                    "The verified package delivery result is incomplete.");
+                    "The verified installation result is incomplete.");
             }
             string stagingRoot =
                 ProjectTransactionJournal.RequireSafeStagingRoot(
@@ -1228,7 +1233,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 request.traceparent);
             reportUserProgress?.Invoke(
                 Progress(
-                    "Preparing secure package delivery...",
+                    "Preparing your installation...",
                     preflight ? 0.21f : 0.41f));
             using (var bootstrapCancellation =
                 CancellationTokenSource.CreateLinkedTokenSource(
@@ -1247,7 +1252,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     throw new NativePackageBrokerException(
                         "BROKER_BOOTSTRAP_TIMEOUT",
                         traceId,
-                        "Secure package delivery setup timed out.");
+                        "Unity setup took too long.");
                 }
                 catch (OperationCanceledException)
                 {
@@ -1258,7 +1263,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     throw new NativePackageBrokerException(
                         "BROKER_BOOTSTRAP_FAILED",
                         traceId,
-                        "Secure package delivery setup failed.",
+                        "We couldn’t finish Unity setup.",
                         failure);
                 }
             }
@@ -1591,7 +1596,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     case "preparing":
                         return Progress($"Getting {name} ready...", 0.22f);
                     case "signing-in":
-                        return Progress("Opening secure sign-in...", 0.24f);
+                        return Progress("Opening sign-in...", 0.24f);
                     case "verifying-access":
                         return Progress("Confirming your purchase...", 0.26f);
                     case "downloading":
@@ -1622,7 +1627,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 case "preparing":
                     return Progress($"Getting {name} ready...", 0.22f);
                 case "signing-in":
-                    return Progress("Opening secure sign-in...", 0.24f);
+                    return Progress("Opening sign-in...", 0.24f);
                 case "verifying-access":
                     return Progress("Confirming your purchase...", 0.26f);
                 case "downloading":
@@ -1766,8 +1771,8 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     "BROKER_UNAVAILABLE",
                     StringComparison.Ordinal))
             {
-                return "YUCP could not reach the package delivery service. " +
-                    "Start YUCP, then try again.";
+                return "We couldn’t reach the install service. " +
+                    "Sign in again, then try again.";
             }
             if (exception?.Message?.IndexOf(
                     "no earlier package version",
@@ -1778,10 +1783,10 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (exception is InvalidDataException ||
                 exception is CryptographicException)
             {
-                return "YUCP could not verify this package. " +
+                return "We couldn’t verify this product. " +
                     "Try again. If the problem continues, contact the creator.";
             }
-            return "YUCP could not complete the package installation. " +
+            return "We couldn’t install this product. " +
                 "Try again if the problem continues.";
         }
 
@@ -2075,6 +2080,41 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 state.previousFiles.Count > 0;
         }
 
+        private static void HandOffReleaseDependencies(
+            string projectPath,
+            AliasPackageContract alias,
+            PackageLifecycleExecutionResult installed)
+        {
+            if (installed?.vpmDependencies == null ||
+                installed.vpmDependencies.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                string descriptor = ReleaseDependencyHandoff.Write(
+                    projectPath,
+                    alias,
+                    installed.vpmDependencies,
+                    installed.vpmRepositories);
+                if (descriptor != null)
+                {
+                    Debug.Log(
+                        "[YUCP PackageManager] Handed " +
+                        installed.vpmDependencies.Count +
+                        " release requirement(s) to the direct VPM installer.");
+                }
+            }
+            catch (Exception exception)
+            {
+                // The package itself is installed; a failed hand-off costs the
+                // buyer its dependencies, not the release.
+                Debug.LogWarning(
+                    "[YUCP PackageManager] Could not hand the release " +
+                    "requirements to the installer: " + exception.Message);
+            }
+        }
+
         internal static string BuildRequestedTargetLabel(
             string currentVersion,
             BootstrapIntentContract intent)
@@ -2320,6 +2360,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 targetReleaseRoot = targetReleaseRoot,
                 traceId = broker.traceId,
                 versionId = broker.versionId,
+                vpmDependencies =
+                    broker.vpmDependencies ??
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                vpmRepositories =
+                    broker.vpmRepositories ??
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             };
         }
 
@@ -2435,7 +2481,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 if (required)
                 {
                     throw new FileNotFoundException(
-                        "The package delivery install state does not exist.",
+                        "The saved installation state is missing.",
                         statePath);
                 }
                 return null;
@@ -2461,7 +2507,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     string.IsNullOrWhiteSpace(file.normalizedPath)))
             {
                 throw new InvalidDataException(
-                    "The package delivery install state is invalid.");
+                    "The saved installation state is invalid.");
             }
             state.reconciliationRoot = projectPath;
             return state;

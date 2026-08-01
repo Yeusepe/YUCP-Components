@@ -62,7 +62,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 string.IsNullOrWhiteSpace(package.resolvedPath))
             {
                 throw new InvalidDataException(
-                    "The package runtime bootstrap is unavailable.");
+                    "Unity setup is unavailable.");
             }
             string localApplicationData = Environment.GetFolderPath(
                 Environment.SpecialFolder.LocalApplicationData);
@@ -145,7 +145,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 trust == null)
             {
                 throw new InvalidDataException(
-                    "The package runtime bootstrap configuration is invalid.");
+                    "Unity setup configuration is invalid.");
             }
 
             string exactPackageRoot = Path.GetFullPath(packageRoot);
@@ -246,14 +246,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     if (!process.Start())
                     {
                         throw new InvalidOperationException(
-                            "Secure package delivery setup could not start.");
+                            "We couldn’t start Unity setup.");
                     }
                 }
                 catch (Exception failure)
                     when (!(failure is InvalidOperationException))
                 {
                     throw new InvalidOperationException(
-                        "Secure package delivery setup could not start.",
+                        "We couldn’t start Unity setup.",
                         failure);
                 }
 
@@ -279,12 +279,12 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 if (!exited)
                 {
                     throw new TimeoutException(
-                        "Secure package delivery setup timed out.");
+                        "Unity setup took too long.");
                 }
                 if (output.Result.exceeded || error.Result.exceeded)
                 {
                     throw new InvalidDataException(
-                        "The package runtime bootstrap result is too large.");
+                        "Unity setup returned too much data.");
                 }
 
                 NativePackageRuntimeResult result =
@@ -536,7 +536,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     result.message.Length > 4096)
                 {
                     throw new InvalidDataException(
-                        "The package runtime bootstrap failure is invalid.");
+                    "Unity setup failed unexpectedly.");
                 }
                 throw new NativePackageRuntimeBootstrapException(
                     result.errorCode,
@@ -563,7 +563,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                         StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
-                    "Secure package delivery setup failed.");
+                    "We couldn’t finish Unity setup.");
             }
         }
 
@@ -572,7 +572,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
             if (string.IsNullOrWhiteSpace(json))
             {
                 throw new InvalidDataException(
-                    "The package runtime bootstrap returned no result.");
+                    "Unity setup returned no result.");
             }
             using (var text = new StringReader(json))
             using (var reader = new JsonTextReader(text))
@@ -589,7 +589,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 if (result == null || reader.Read())
                 {
                     throw new InvalidDataException(
-                        "The package runtime bootstrap result is invalid.");
+                    "Unity setup returned an invalid result.");
                 }
                 return result;
             }

@@ -1041,11 +1041,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 }
                 if (!_isBrokerSignedIn.Value)
                 {
-                    return "Sign in with YUCP";
+                    return "Sign in";
                 }
                 if (!IsCurrentAliasInstalled())
                 {
-                    return "Verify and Import";
+                    return "Verify and Install";
                 }
                 return HasUnhandledVersionedBootstrap()
                     ? "Review version change"
@@ -1078,8 +1078,8 @@ namespace YUCP.Importer.Editor.PackageManager
 
             string btnText = GetPrimaryImportButtonText();
             bool showBagIcon =
-                btnText == "Sign in with YUCP" ||
-                btnText == "Verify and Import" ||
+                btnText == "Sign in" ||
+                btnText == "Verify and Install" ||
                 btnText == "Verify and Unlock";
 
             // Clear any previous content
@@ -1453,22 +1453,22 @@ namespace YUCP.Importer.Editor.PackageManager
 
             if (hasAssemblies.HasValue)
             {
-                chips.Add(hasAssemblies.Value ? "Contains DLLs" : "No DLLs");
+                chips.Add(hasAssemblies.Value ? "Includes DLLs" : "No DLLs");
             }
 
             if (_currentMetadata?.dependencies != null && _currentMetadata.dependencies.Count > 0)
             {
-                chips.Add("Dependencies Required");
+                chips.Add("Needs dependencies");
             }
 
             if (_currentMetadata?.licensePackages != null && _currentMetadata.licensePackages.Count > 0)
             {
-                chips.Add("Protected Assets");
+                chips.Add("Licensed Assets");
             }
 
             if (_isPackageSigned && _verificationResult?.valid == true)
             {
-                chips.Add("Verified Package");
+                chips.Add("Publisher Verified");
             }
 
             return chips;
@@ -2013,12 +2013,12 @@ namespace YUCP.Importer.Editor.PackageManager
 
                 // Build a friendly, easy-to-read tooltip
                 var sb = new System.Text.StringBuilder();
-                sb.AppendLine("✦ Signed Package");
+                sb.AppendLine("✦ Publisher check passed");
                 sb.AppendLine();
-                sb.AppendLine("This package has been digitally signed by its publisher.");
+                sb.AppendLine("The publisher signed this product.");
                 sb.AppendLine(
-                    "YUCP has confirmed who made it. Nothing");
-                sb.AppendLine("has been changed since it was published.");
+                    "The signature identifies the publisher and shows that the product");
+                sb.AppendLine("has not changed since it was published.");
                 sb.AppendLine();
 
                 if (!string.IsNullOrEmpty(_verificationResult.publisherId))
@@ -2027,12 +2027,12 @@ namespace YUCP.Importer.Editor.PackageManager
                     sb.AppendLine();
                 }
 
-                sb.AppendLine("What was checked:");
-                sb.AppendLine("  • The publisher's identity certificate is valid and trusted");
-                sb.AppendLine("  • The package contents haven't been altered");
-                sb.AppendLine("  • The digital signature matches the publisher's certificate");
+                sb.AppendLine("Checks completed:");
+                sb.AppendLine("  • The publisher certificate matches the signature");
+                sb.AppendLine("  • The package contents match what was signed");
+                sb.AppendLine("  • The signature data is complete");
                 sb.AppendLine();
-                sb.Append("You can import this package with confidence.");
+                sb.Append("You can install this product.");
 
                 string tooltipText = sb.ToString();
 
@@ -2058,25 +2058,25 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 // Signed but verification failed — warn the user clearly
                 var sb = new System.Text.StringBuilder();
-                sb.AppendLine("⚠ Signature Verification Failed");
+                sb.AppendLine("⚠ We couldn’t complete the publisher check");
                 sb.AppendLine();
-                sb.AppendLine("This package claims to be signed, but the signature");
-                sb.AppendLine("could not be verified. This may mean:");
+                sb.AppendLine("This product includes a publisher signature, but the check");
+                sb.AppendLine("The check didn’t finish. Possible reasons:");
                 sb.AppendLine();
-                sb.AppendLine("  • The package was modified after signing");
-                sb.AppendLine("  • The publisher's certificate is invalid or expired");
-                sb.AppendLine("  • The signature data is corrupted");
+                sb.AppendLine("  • The package changed after it was signed");
+                sb.AppendLine("  • The publisher certificate is expired or does not match");
+                sb.AppendLine("  • The signature data is damaged");
                 sb.AppendLine();
 
                 if (_verificationResult.errors != null && _verificationResult.errors.Count > 0)
                 {
-                    sb.AppendLine("Details:");
+                    sb.AppendLine("More information:");
                     foreach (var error in _verificationResult.errors)
                         sb.AppendLine($"  • {error}");
                     sb.AppendLine();
                 }
 
-                sb.Append("Do not import unless you trust the source directly.");
+                sb.Append("Import only if you recognize and trust the source.");
 
                 string tooltipText = sb.ToString();
 
@@ -2125,7 +2125,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 var warningContainer = new VisualElement();
                 warningContainer.AddToClassList("lgate-warning");
 
-                var statusText = new Label("Package Not Verified");
+                var statusText = new Label("We couldn’t complete the publisher check");
                 statusText.AddToClassList("lgate-warning-title");
                 warningContainer.Add(statusText);
 
@@ -2137,7 +2137,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     warningContainer.Add(errorText);
                 }
 
-                var noteText = new Label("You can still import this package, but it may be unsafe.");
+                var noteText = new Label("You can still install it. Continue only if you recognize the source.");
                 noteText.AddToClassList("lgate-warning-body");
                 warningContainer.Add(noteText);
 
@@ -3306,23 +3306,23 @@ namespace YUCP.Importer.Editor.PackageManager
             {
                 var checkingTitle = new Label(
                     AuthenticationActionInFlight
-                        ? "Updating YUCP sign-in..."
-                        : "Checking YUCP sign-in...");
+                        ? "Updating Creator Account..."
+                        : "Checking Creator Account...");
                 checkingTitle.AddToClassList("lgate-req-name");
                 block.Add(checkingTitle);
                 block.Add(BuildBuyerFlowNote(
-                    "Checking the Windows-protected account saved for secure package delivery."));
+                    "Checking the Creator Account saved on this computer."));
                 return block;
             }
 
             if (_isBrokerSignedIn.Value)
             {
-                var signedInTitle = new Label("Signed in with YUCP");
+                var signedInTitle = new Label("Creator Account connected");
                 signedInTitle.AddToClassList("lgate-req-name");
                 block.Add(signedInTitle);
                 block.Add(BuildBuyerFlowNote(
-                    "Your saved account is verified and ready for this package.",
-                    "You can also revoke YUCP Package Broker access from Authorized applications on the YUCP website."));
+                    "This Creator Account can install this package.",
+                    "Manage Package Broker access in your Creator Account settings."));
                 var signOutButton = new Button(OnBrokerSignOutClicked)
                 {
                     text = "Sign out",
@@ -3334,15 +3334,15 @@ namespace YUCP.Importer.Editor.PackageManager
                 return block;
             }
 
-            var signedOutTitle = new Label("Sign in to continue");
+            var signedOutTitle = new Label("Sign in to install");
             signedOutTitle.AddToClassList("lgate-req-name");
             block.Add(signedOutTitle);
             block.Add(BuildBuyerFlowNote(
-                "Sign in with the YUCP account that owns this product.",
-                "Your browser opens only when Windows does not already have a valid saved YUCP session."));
+                "Sign in with the Creator Account that owns this product.",
+                "We’ll use the account saved on this computer when available."));
             var signInButton = new Button(OnBrokerSignInClicked)
             {
-                text = "Sign in with YUCP",
+                text = "Sign in",
             };
             signInButton.AddToClassList("lgate-solid-btn");
             signInButton.SetEnabled(!AuthenticationActionInFlight);
@@ -3390,8 +3390,7 @@ namespace YUCP.Importer.Editor.PackageManager
             UpdateImportButtonEnabled();
             ShowFlowNotice(
                 "Sign in to continue",
-                "This YUCP sign-in is no longer valid. Sign in, then start the " +
-                "package action again.",
+                "Your Creator Account session has expired. Sign in again, then retry the installation.",
                 FlowNoticeTone.Info);
             _ = RefreshAuthenticationStatusAsync();
             return true;
@@ -3426,7 +3425,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     _isBrokerSignedIn = false;
                     ShowFlowNotice(
                         "Sign-in status unavailable",
-                        "Sign in with YUCP to reconnect secure package delivery.",
+                        "Sign in with your Creator Account to continue installing this product.",
                         FlowNoticeTone.Info);
                 }
             }
@@ -3464,7 +3463,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     _isBrokerSignedIn = result.signedIn;
                     ShowFlowNotice(
                         "Signed in",
-                        "Your YUCP account is ready for secure package delivery.",
+                        "Your Creator Identity is ready. You can install this product now.",
                         FlowNoticeTone.Success);
                 }
                 return result.signedIn;
@@ -3479,7 +3478,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     _isBrokerSignedIn = false;
                     ShowFlowNotice(
                         "Sign-in failed",
-                        "Could not finish YUCP sign-in. Try again.",
+                        "We couldn’t finish signing you in. Try again.",
                         FlowNoticeTone.Error);
                 }
                 return false;
@@ -3512,7 +3511,7 @@ namespace YUCP.Importer.Editor.PackageManager
                     _isBrokerSignedIn = false;
                     ShowFlowNotice(
                         "Signed out",
-                        "The saved YUCP package session was removed from Windows.",
+                        "Your Creator Account is signed out on this computer.",
                         FlowNoticeTone.Success);
                 }
             }
@@ -3525,7 +3524,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 {
                     ShowFlowNotice(
                         "Sign-out failed",
-                        "Could not finish signing out. Try again.",
+                        "We couldn’t finish signing you out. Try again.",
                         FlowNoticeTone.Error);
                 }
             }
@@ -3581,9 +3580,9 @@ namespace YUCP.Importer.Editor.PackageManager
                 _importButton.SetEnabled(true);
                 _importButton.pickingMode = PickingMode.Ignore;
                 _importButton.tooltip =
-                    "YUCP is preparing and checking this package.";
+                    "Preparing and checking your package.";
                 const string statusText =
-                    "YUCP is preparing your package...";
+                    "Preparing your package...";
                 _importButton.Clear();
                 _importProgressFill = null;
                 UpdateButtonLabel(_importButton, "Preparing...");
@@ -3604,11 +3603,11 @@ namespace YUCP.Importer.Editor.PackageManager
             _importButton.tooltip = requiresExternalBootstrap
                 ? "Install this product through its Creator Companion bootstrap."
                 : isCheckingBrokerAuthentication
-                    ? "Checking the Windows-protected YUCP account."
+                    ? "Checking your Creator Account..."
                 : requiresExplicitBootstrap
                     ? "Install an exact version through VCC or import a new bootstrap."
                 : _isAliasBootstrapFlow && _isBrokerSignedIn == false
-                    ? "Sign in with YUCP to continue."
+                    ? "Sign in to continue."
                 : string.Empty;
             RefreshPrimaryImportButton();
         }
@@ -4191,7 +4190,7 @@ namespace YUCP.Importer.Editor.PackageManager
                             metadata.aliasPackage,
                             operation,
                             CreateLifecycleProgressReporter(
-                                "Managing Package"));
+                                "Updating installation"));
                 if (this == null)
                 {
                     return;
@@ -4203,7 +4202,7 @@ namespace YUCP.Importer.Editor.PackageManager
                         return;
                     }
                     ShowFlowNotice(
-                        "Package action could not finish",
+                        "We couldn’t finish installing",
                         result.errorMessage,
                         FlowNoticeTone.Error);
                     return;
@@ -4229,11 +4228,11 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (this != null)
                 {
                     ShowFlowNotice(
-                        "Package action could not finish",
-                        "Try the action again. Contact support if the problem continues.",
+                        "We couldn’t finish installing",
+                        "Try installing again. Contact support if the problem continues.",
                         FlowNoticeTone.Error);
                     SetVerifyStatusLabel(
-                        "The package action could not finish.");
+                        "We couldn’t finish installing.");
                 }
             }
             finally
@@ -4293,7 +4292,7 @@ namespace YUCP.Importer.Editor.PackageManager
             SetHostedLifecycleControlsEnabled(false);
             _importButton?.SetEnabled(false);
             SetVerifyStatusLabel(
-                "Finishing the interrupted package installation...");
+                "Finishing your installation...");
             try
             {
                 PackageLifecycleInstallResult result =
@@ -4316,7 +4315,7 @@ namespace YUCP.Importer.Editor.PackageManager
                         return;
                     }
                     ShowFlowNotice(
-                        "Package recovery could not finish",
+                        "We couldn’t finish installing",
                         result.errorMessage,
                         FlowNoticeTone.Error);
                     return;
@@ -4334,7 +4333,7 @@ namespace YUCP.Importer.Editor.PackageManager
                 if (this != null)
                 {
                     ShowFlowNotice(
-                        "Package recovery could not finish",
+                        "We couldn’t finish installing",
                         "Try again. Contact support if the problem continues.",
                         FlowNoticeTone.Error);
                 }

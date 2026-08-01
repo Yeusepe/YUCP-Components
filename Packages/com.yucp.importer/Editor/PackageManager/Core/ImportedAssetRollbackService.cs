@@ -59,7 +59,7 @@ namespace YUCP.Importer.Editor.PackageManager.Core
 
             if (failures.Count > 0)
             {
-                error = "Could not roll back some imported assets:\n - " + string.Join("\n - ", failures);
+                error = "We couldn’t undo some imported files:\n - " + string.Join("\n - ", failures);
                 return false;
             }
 
