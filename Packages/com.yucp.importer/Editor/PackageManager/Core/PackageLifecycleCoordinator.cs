@@ -386,11 +386,14 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                     reportProgress,
                     "finishing",
                     alias.packageDisplayName);
-                HandOffReleaseDependencies(projectPath, alias, installed);
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
                 PackageLifecycleCheckpointStore.ClearAttemptId(
                     projectPath,
                     attemptKey);
+                VpmRequirementInstaller.Install(
+                    projectPath,
+                    preflight.vpmDependencies,
+                    preflight.vpmRepositories);
                 return new PackageLifecycleInstallResult
                 {
                     succeeded = true,
@@ -2105,41 +2108,6 @@ namespace YUCP.Importer.Editor.PackageManager.Core
                 IsSha256(state.previousReleaseRoot) &&
                 state.previousFiles != null &&
                 state.previousFiles.Count > 0;
-        }
-
-        private static void HandOffReleaseDependencies(
-            string projectPath,
-            AliasPackageContract alias,
-            PackageLifecycleExecutionResult installed)
-        {
-            if (installed?.vpmDependencies == null ||
-                installed.vpmDependencies.Count == 0)
-            {
-                return;
-            }
-            try
-            {
-                string descriptor = ReleaseDependencyHandoff.Write(
-                    projectPath,
-                    alias,
-                    installed.vpmDependencies,
-                    installed.vpmRepositories);
-                if (descriptor != null)
-                {
-                    Debug.Log(
-                        "[YUCP PackageManager] Handed " +
-                        installed.vpmDependencies.Count +
-                        " release requirement(s) to the direct VPM installer.");
-                }
-            }
-            catch (Exception exception)
-            {
-                // The package itself is installed; a failed hand-off costs the
-                // buyer its dependencies, not the release.
-                Debug.LogWarning(
-                    "[YUCP PackageManager] Could not hand the release " +
-                    "requirements to the installer: " + exception.Message);
-            }
         }
 
         internal static string BuildRequestedTargetLabel(

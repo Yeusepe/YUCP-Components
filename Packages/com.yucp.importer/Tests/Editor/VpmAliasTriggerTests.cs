@@ -863,87 +863,59 @@ namespace YUCP.Importer.Editor.Tests
         }
 
         [Test]
-        public void AReleasesRequirementsReachTheDirectVpmInstaller()
+        public void AReleasesRequirementsAreWrittenOnlyWhenTheyChange()
         {
-            string projectPath = Path.Combine(
-                Path.GetTempPath(),
-                "yucp-release-handoff-" + Guid.NewGuid().ToString("N"));
-            var alias = new AliasPackageContract
+            var declared = new Dictionary<string, string>
             {
-                aliasId = "com.lunararray.druffle",
-                packageName = "com.lunararray.druffle",
-                packageDisplayName = "Druffle Avatar",
-                packageVersion = "1.0.0",
+                ["com.vrcfury.vrcfury"] = ">=0.0.0",
+                ["adjerry91.vrcft.templates"] = ">=1.0.0",
             };
-            try
-            {
-                Directory.CreateDirectory(projectPath);
-
-                Assert.That(
-                    ReleaseDependencyHandoff.Write(
-                        projectPath,
-                        alias,
-                        new Dictionary<string, string>(),
-                        null),
-                    Is.Null,
-                    "A release that needs nothing must not leave a descriptor behind.");
-
-                string descriptor = ReleaseDependencyHandoff.Write(
-                    projectPath,
-                    alias,
+            List<KeyValuePair<string, string>> planned =
+                VpmRequirementInstaller.PlanRequirements(
+                    declared,
                     new Dictionary<string, string>
                     {
-                        ["adjerry91.vrcft.templates"] = ">=0.0.0",
                         ["com.vrcfury.vrcfury"] = ">=0.0.0",
-                    },
-                    new Dictionary<string, string>
-                    {
-                        ["VRCFury Repo"] = "https://vcc.vrcfury.com/",
+                        ["adjerry91.vrcft.templates"] = ">=2.0.0",
+                        ["  "] = ">=0.0.0",
+                        ["com.creator.kit"] = "   ",
+                        ["com.creator.tools"] = ">=0.3.0",
                     });
 
-                Assert.That(descriptor, Is.Not.Null);
-                // The installer only scans Packages/yucp.installed-packages.
-                Assert.That(
-                    descriptor.Replace(Path.DirectorySeparatorChar, '/'),
-                    Does.Contain("Packages/yucp.installed-packages/Druffle-Avatar/_temp/"));
-                Assert.That(Path.GetFileName(descriptor), Does.StartWith("YUCP_TempInstall_"));
-
-                string body = File.ReadAllText(descriptor);
-                Assert.That(body, Does.Contain("adjerry91.vrcft.templates"));
-                Assert.That(body, Does.Contain("vcc.vrcfury.com"));
-                Assert.That(body, Does.Contain("com.lunararray.druffle"));
-            }
-            finally
-            {
-                if (Directory.Exists(projectPath))
-                {
-                    Directory.Delete(projectPath, true);
-                }
-            }
+            CollectionAssert.AreEquivalent(
+                new[] { "adjerry91.vrcft.templates", "com.creator.tools" },
+                planned.Select(entry => entry.Key).ToArray(),
+                "An unchanged range must leave the buyer's locked version alone.");
+            Assert.That(
+                planned.Single(entry => entry.Key == "adjerry91.vrcft.templates").Value,
+                Is.EqualTo(">=2.0.0"));
+            Assert.That(
+                VpmRequirementInstaller.PlanRequirements(null, null),
+                Is.Empty);
         }
 
         [Test]
-        public void AWorkspaceNameNeverEscapesTheInstalledPackagesFolder()
+        public void APackageListingIsOnlyTrustedOverHttps()
         {
             Assert.That(
-                ReleaseDependencyHandoff.ResolveWorkspaceName("Druffle Avatar", "fallback"),
-                Is.EqualTo("Druffle-Avatar"));
+                VpmRequirementInstaller.IsSupportedListing(
+                    " https://vcc.vrcfury.com/index.json ",
+                    out Uri listing),
+                Is.True);
+            Assert.That(listing.Host, Is.EqualTo("vcc.vrcfury.com"));
             Assert.That(
-                ReleaseDependencyHandoff.ResolveWorkspaceName("../../etc", "fallback"),
-                Is.EqualTo("etc"));
+                VpmRequirementInstaller.IsSupportedListing(
+                    "http://vcc.vrcfury.com/index.json",
+                    out _),
+                Is.False,
+                "A plaintext listing could be swapped in transit.");
             Assert.That(
-                ReleaseDependencyHandoff.ResolveWorkspaceName("  ", "com.creator.kit"),
-                Is.EqualTo("com.creator.kit"));
+                VpmRequirementInstaller.IsSupportedListing("file:///C:/repo.json", out _),
+                Is.False);
             Assert.That(
-                ReleaseDependencyHandoff.ResolveWorkspaceName(null, null),
-                Is.EqualTo("YUCP-Bootstrap"));
-            Assert.That(
-                ReleaseDependencyHandoff.ResolveWorkspaceName("..", "fallback"),
-                Is.EqualTo("YUCP-Bootstrap"),
-                "A name that is only traversal must not become the folder.");
-            Assert.That(
-                ReleaseDependencyHandoff.ResolveWorkspaceName("../..", "fallback"),
-                Is.EqualTo("YUCP-Bootstrap"));
+                VpmRequirementInstaller.IsSupportedListing("not a url", out _),
+                Is.False);
+            Assert.That(VpmRequirementInstaller.IsSupportedListing(null, out _), Is.False);
         }
 
         [Test]
