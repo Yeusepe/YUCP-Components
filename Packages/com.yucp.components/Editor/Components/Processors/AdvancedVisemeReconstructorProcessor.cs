@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -257,16 +256,10 @@ namespace YUCP.Components.Editor
                 if (renderer != null && !HasUniqueAnimatorRendererBinding(
                         avatarRoot, renderer, out var rendererBindingError))
                     return Fail(component, rendererBindingError);
-                var useSharedParameterCompressor =
-                    component.createTuningMenu &&
-                    avatarRoot.GetComponentsInChildren<ParameterCompressorData>(true)
-                        .Length == 1;
                 var hash = StableHash(
                     component, profile, sourceMesh, rendererPath,
                     catalog.DependencyFingerprint,
-                    blendShapeLinkCatalog.DependencyFingerprint,
-                    trackingEnabled,
-                    useSharedParameterCompressor);
+                    blendShapeLinkCatalog.DependencyFingerprint);
                 // Keep primary calibration identities stable when a creator adds,
                 // removes, or retargets a BlendShape Link. Linked geometry still
                 // participates in the full build hash/folder, but it must not
@@ -274,9 +267,7 @@ namespace YUCP.Components.Editor
                 var primaryHash = StableHash(
                     component, profile, sourceMesh, rendererPath,
                     catalog.DependencyFingerprint,
-                    string.Empty,
-                    trackingEnabled,
-                    useSharedParameterCompressor);
+                    string.Empty);
                 var finalFolder =
                     $"{GeneratedRoot}/{Sanitize(avatarRoot.name)}_{hash.Substring(0, 12)}";
                 var folder = transaction.StageGeneratedFolder(finalFolder);
@@ -422,7 +413,6 @@ namespace YUCP.Components.Editor
                     externalPoses = externalPoses,
                     targetMesh = sourceMesh,
                     trackingEnabled = trackingEnabled,
-                    useSharedParameterCompressor = useSharedParameterCompressor,
                     existingExpressionParameters = new HashSet<string>(existing.Keys, StringComparer.Ordinal)
                 };
                 if (!ValidateTuningParameters(request, existing, out var tuningError))
@@ -476,11 +466,10 @@ namespace YUCP.Components.Editor
                     : ", direct-pose fallback";
                 var trackingText = trackingResolution != null ? $", {trackingResolution.Summary}" : string.Empty;
                 var tuningText = built.tuningParameters.Count > 0
-                    ? useSharedParameterCompressor
-                        ? $", {built.tuningParameters.Count} saved sliders registered " +
-                          "with the shared Parameter Compressor"
-                        : $", {built.tuningParameters.Count} saved sliders shared through " +
+                    ? component.tuningSyncMode == AdvancedVisemeTuningSyncMode.CompactSynced
+                        ? $", {built.tuningParameters.Count} saved sliders shared through " +
                           $"{built.tuningSyncBits} compact synced bits"
+                        : $", {built.tuningParameters.Count} saved local sliders (0 synced bits)"
                     : string.Empty;
                 component.SetBuildSummary($"Built {built.globalParameters.Distinct().Count()} reusable outputs, +{trackingBits + built.tuningSyncBits} synced bits{tuningText}{trackingText}{calibrationText}{linkedRendererSummary.Text}");
                 EditorUtility.SetDirty(component);
@@ -1324,22 +1313,10 @@ namespace YUCP.Components.Editor
                             $"{parameter.valueType}. Change its type or use another parameter prefix.";
                     return false;
                 }
-                if (!Mathf.Approximately(
-                        parameter.defaultValue,
-                        AdvancedVisemeTuning.SliderDefault))
-                {
-                    error = $"Existing tuning parameter '{name}' defaults to " +
-                            $"{parameter.defaultValue:0.###}. All Advanced Viseme sliders " +
-                            "use 0.5 as the exact current-profile midpoint; change its " +
-                            "default to 0.5 or use another parameter prefix.";
-                    return false;
-                }
-                if (parameter.networkSynced &&
-                    !request.useSharedParameterCompressor)
+                if (parameter.networkSynced)
                 {
                     error = $"Existing tuning parameter '{name}' is synced. Tuning sliders are " +
-                            "transported through YUCP's compact shared carrier, so the source Float " +
-                            "must remain unsynced. Make it unsynced or use another parameter prefix.";
+                            "local-only by design; make it unsynced or use another parameter prefix.";
                     return false;
                 }
                 if (parameter.saved != request.component.saveTuningValues)
@@ -1351,13 +1328,10 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            if (generatedControls.Count == 0)
+            if (request.component.tuningSyncMode !=
+                    AdvancedVisemeTuningSyncMode.CompactSynced ||
+                generatedControls.Count == 0)
                 return true;
-
-            // The generic compressor runs against the final merged assets. AVR
-            // must expose its saved tuning values as ordinary synchronized
-            // candidates here instead of reserving its private carrier budget.
-            if (request.useSharedParameterCompressor) return true;
 
             var dataParameter = AdvancedVisemeTuning.CompactSyncDataParameter(
                 request.component.NormalizedPrefix);
@@ -2018,9 +1992,7 @@ namespace YUCP.Components.Editor
             Mesh mesh,
             string rendererPath,
             string trackingDependencies,
-            string blendShapeLinkDependencies,
-            bool trackingEnabled,
-            bool useSharedParameterCompressor)
+            string blendShapeLinkDependencies)
         {
             var meshPath = mesh != null ? AssetDatabase.GetAssetPath(mesh) : string.Empty;
             var dependency = mesh == null
@@ -2032,8 +2004,7 @@ namespace YUCP.Components.Editor
             var coarticulationDependency = component.reconstructionMode ==
                                            AdvancedVisemeReconstructionMode.BetaCoarticulation
                 ? AdvancedVisemeCoarticulationModel.ModelVersion + ":" +
-                  AdvancedVisemeCoarticulationModel.ContentSha256 + ":reconstruction:" +
-                  AdvancedVisemeCoarticulationModel.ReconstructionVersion + ":tongue:" +
+                  AdvancedVisemeCoarticulationModel.ContentSha256 + ":tongue:" +
                   AdvancedVisemeVisibleTongueResidual.ModelVersion + ":" +
                   AdvancedVisemeVisibleTongueResidual.BalancedContentSha256 + ":" +
                   AdvancedVisemeVisibleTongueResidual.QualityContentSha256 + ":phone:" +
@@ -2047,26 +2018,8 @@ namespace YUCP.Components.Editor
                                    component.tuningMenuPath + ":" +
                                    component.saveTuningValues + ":" +
                                    component.tuningSyncMode + ":" +
-                                   component.tuningMenuSections + ":shared:" +
-                                   useSharedParameterCompressor;
-            var haloDependency = AdvancedVisemeAnimatorBuilder
-                .ShouldUseOculusHalo(trackingEnabled)
-                ? "static-interruptible:" +
-                  AdvancedVisemeOculusHalo.ModelVersion + ":" +
-                  AdvancedVisemeOculusHalo.ContentSha256 + ":" +
-                  AdvancedVisemeOculusHalo.TableSha256 + ":topK:" +
-                  AdvancedVisemeOculusHalo.TopK + ":dynamics:" +
-                  AdvancedVisemeOculusDynamics.ModelVersion + ":" +
-                  AdvancedVisemeOculusDynamics.ContentSha256 + ":" +
-                  AdvancedVisemeOculusDynamics.ModelSha256 + ":" +
-                  AdvancedVisemeOculusDynamics.TrajectoryDurationSeconds.ToString(
-                      "R", CultureInfo.InvariantCulture) + ":" +
-                  AdvancedVisemeOculusDynamics.TrajectoryCoreDurationSeconds.ToString(
-                      "R", CultureInfo.InvariantCulture) + ":" +
-                  AdvancedVisemeOculusDynamics.TargetCrossfadeSeconds.ToString(
-                      "R", CultureInfo.InvariantCulture)
-                : "disabled";
-            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|trackingEnabled:{trackingEnabled}|halo:{haloDependency}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|optimizer:{AdvancedVisemeAnimatorGraphOptimizer.Version}|{component.existingTrackingPrefix}";
+                                   component.tuningMenuSections;
+            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|{component.existingTrackingPrefix}";
             return Hash128.Compute(settings).ToString();
         }
 

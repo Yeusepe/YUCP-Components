@@ -7,10 +7,9 @@ on:
       - main
     paths:
       - Packages/com.yucp.components/package.json
-      - Packages/com.yucp.importer/package.json
 
 env:
-  packageNames: com.yucp.components com.yucp.importer
+  packageNames: com.yucp.components
 
 permissions:
   contents: read

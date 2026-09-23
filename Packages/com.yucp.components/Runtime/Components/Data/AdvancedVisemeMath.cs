@@ -13,21 +13,7 @@ namespace YUCP.Components
         public const float SpeechHistoryHoldFull = 0.55f;
         public const float SpeechPresenceAttackSeconds = 0.009f;
         public const float SpeechPresenceReleaseSeconds = 0.055f;
-        // The learned target now supplies the onset motion. Keep optional style
-        // lead deliberately bounded: a large fast-stage share re-exposes the
-        // categorical step that the duration model is intended to remove.
-        public const float MaximumSpeechLivelinessLead = 0.20f;
-        // The observer remains exact. This tiny output dead-zone turns only its
-        // numerically negligible tails into exact zero so Direct BlendTrees can
-        // skip dormant children. The affine upper branch preserves both 0 and 1.
-        // Direct BlendTrees keep every positive child live. Values below this
-        // bound are visually negligible observer tails, but leaving them as
-        // denormally small weights keeps large Beta/fusion subgraphs sampling.
-        // The 3e-4 bound is certified over 15-144 FPS: public pose/viseme RMS
-        // stays below 1.5e-4, maximum below 0.0016, and velocity RMS below
-        // 0.0013 while removing roughly 110 live clip evaluations per avatar
-        // frame in the reference speech/tracking trace.
-        public const float SimplexCullingEpsilon = 0.0003f;
+        public const float MaximumSpeechLivelinessLead = 0.85f;
 
         /// <summary>
         /// State for the causal, one-pole speech-history observer. History is
@@ -47,24 +33,6 @@ namespace YUCP.Components
             if (!IsFinite(deltaTime) || deltaTime <= 0f) return 0f;
             if (!IsFinite(responseSeconds) || responseSeconds <= 0f) return 1f;
             return Mathf.Clamp01(1f - Mathf.Exp(-deltaTime / responseSeconds));
-        }
-
-        /// <summary>
-        /// Applies a continuous nonnegative soft dead-zone without feeding the
-        /// approximation back into the simplex observer. Values at or below the
-        /// threshold become exactly zero; the remaining interval is rescaled so
-        /// a unit endpoint remains exactly one.
-        /// </summary>
-        public static float SparsifySimplexCoordinate(
-            float value,
-            float epsilon = SimplexCullingEpsilon)
-        {
-            value = Sanitize01(value);
-            epsilon = IsFinite(epsilon)
-                ? Mathf.Clamp(epsilon, 0f, 0.1f)
-                : SimplexCullingEpsilon;
-            if (value <= epsilon) return 0f;
-            return Mathf.Clamp01((value - epsilon) / (1f - epsilon));
         }
 
         public static void StepSimplex(
@@ -95,7 +63,7 @@ namespace YUCP.Components
         /// Converts the centered Silence Stability control to the release time
         /// constant used by the history observer. The default control value of
         /// 0.5 uses the configured response and the upper half extends it up to
-        /// 4x. The lower half changes hold authority, not the history trajectory;
+        /// 2x. The lower half changes hold authority, not the history trajectory;
         /// its zero endpoint is still an exact observer bypass.
         /// </summary>
         public static float SpeechHistoryReleaseSeconds(
@@ -106,7 +74,7 @@ namespace YUCP.Components
                 ? Mathf.Max(0f, configuredReleaseSeconds)
                 : 0f;
             var extension = Mathf.Clamp01(2f * Sanitize01(silenceStability) - 1f);
-            return configuredReleaseSeconds * (1f + 3f * extension);
+            return configuredReleaseSeconds * (1f + extension);
         }
 
         /// <summary>
@@ -124,7 +92,7 @@ namespace YUCP.Components
                 : 0f;
             var extension = Mathf.Clamp01(2f * Sanitize01(silenceStability) - 1f);
             var configuredAlpha = Alpha(deltaTime, configuredReleaseSeconds);
-            var extendedAlpha = Alpha(deltaTime, 4f * configuredReleaseSeconds);
+            var extendedAlpha = Alpha(deltaTime, 2f * configuredReleaseSeconds);
             return Mathf.Lerp(configuredAlpha, extendedAlpha, extension);
         }
 
@@ -285,22 +253,6 @@ namespace YUCP.Components
             return Mathf.Lerp(
                 slow, fast,
                 SpeechLivelinessLead(speechLiveliness, trackingBlend));
-        }
-
-        /// <summary>
-        /// Numerical reference for the generated Exaggeration graph. The gain
-        /// may amplify a quiet speech envelope, but it cannot leave the authored
-        /// zero-to-one pose domain.
-        /// </summary>
-        public static float ExaggeratedSpeechGain(
-            float speechGain,
-            float exaggeration)
-        {
-            speechGain = IsFinite(speechGain) ? Mathf.Clamp01(speechGain) : 0f;
-            exaggeration = IsFinite(exaggeration)
-                ? Mathf.Clamp(exaggeration, 0f, 2f)
-                : 0f;
-            return Mathf.Clamp01(speechGain * exaggeration);
         }
 
         /// <summary>

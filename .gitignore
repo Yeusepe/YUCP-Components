@@ -35,9 +35,8 @@ desktop.ini
 Packages/com.yucp.components/wiki.meta
 .antigravitycli/
 
-# Importer tests live dev-only (Assets/YUCP_ImporterDevTests); keep out of open source
-Packages/com.yucp.importer/Editor/Tests/
-Packages/com.yucp.importer/Editor/Tests.meta
+# Local private package; keep the Unity and Python suites out of the public repository
+/Packages/com.yucp.private/
 /.claude
 /.codex
 /.uloop
@@ -45,3 +44,4 @@ Packages/com.yucp.importer/Editor/Tests.meta
 /TestResults
 **/__pycache__/
 *.pyc
+/Tools

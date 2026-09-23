@@ -59,9 +59,17 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         {
             summary = string.Empty;
 
+            bool tampered;
             LatchState state;
-            if (!TryLoad(out state))
+            if (!TryLoad(out state, out tampered))
+            {
+                if (tampered)
+                {
+                    summary = "state_tamper";
+                    return true;
+                }
                 return false;
+            }
 
             if (state == null || state.e == null || state.e.Count == 0)
                 return false;
@@ -79,9 +87,17 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             if (string.IsNullOrWhiteSpace(key))
                 return false;
 
+            bool tampered;
             LatchState state;
-            if (!TryLoad(out state))
+            if (!TryLoad(out state, out tampered))
+            {
+                if (tampered)
+                {
+                    reason = "state_tamper";
+                    return true;
+                }
                 return false;
+            }
 
             if (state == null || state.e == null)
                 return false;
@@ -102,22 +118,28 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
 
         private static LatchState LoadOrDefault()
         {
+            bool tampered;
             LatchState state;
-            return TryLoad(out state) && state != null ? state : new LatchState();
+            if (TryLoad(out state, out tampered) && state != null)
+                return state;
+            if (tampered)
+            {
+                var forced = new LatchState();
+                forced.e.Add(new LatchEntry
+                {
+                    k = "pg_state",
+                    r = "tamper",
+                    t = DateTime.UtcNow.ToString("O")
+                });
+                return forced;
+            }
+            return new LatchState();
         }
 
-        /// <summary>
-        /// Loads the latch state, treating corrupt or hash-mismatched state as
-        /// absent: warn, delete the file, report unlocked.
-        ///
-        /// Failing closed on corruption protected nothing, because an absent file
-        /// already reads as unlocked: anyone wanting past a lock could simply
-        /// delete latch.dat. All it did was hard-lock imports and builds for
-        /// legitimate users whose state file got corrupted.
-        /// </summary>
-        private static bool TryLoad(out LatchState state)
+        private static bool TryLoad(out LatchState state, out bool tampered)
         {
             state = null;
+            tampered = false;
 
             try
             {
@@ -129,15 +151,14 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                 state = JsonUtility.FromJson<LatchState>(raw);
                 if (state == null)
                 {
-                    DiscardUnreadableState("unparseable content");
+                    tampered = true;
                     return false;
                 }
 
                 var expected = ComputeHash(state.e);
                 if (!string.Equals(expected, state.h ?? string.Empty, StringComparison.Ordinal))
                 {
-                    state = null;
-                    DiscardUnreadableState("state hash mismatch");
+                    tampered = true;
                     return false;
                 }
 
@@ -147,22 +168,9 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
             }
             catch
             {
-                state = null;
-                DiscardUnreadableState("read failure");
+                tampered = true;
                 return false;
             }
-        }
-
-        private static void DiscardUnreadableState(string why)
-        {
-            Debug.LogWarning($"[Package Guardian] Protection latch state was unreadable ({why}); resetting it.");
-            try
-            {
-                var path = GetPath();
-                if (File.Exists(path))
-                    File.Delete(path);
-            }
-            catch { }
         }
 
         private static void Save(LatchState state)

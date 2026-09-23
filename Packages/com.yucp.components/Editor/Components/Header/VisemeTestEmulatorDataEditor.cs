@@ -21,7 +21,6 @@ namespace YUCP.Components.Editor
         private SerializedProperty inputProp;
         private SerializedProperty microphoneProp;
         private SerializedProperty backendProp;
-        private SerializedProperty automaticGainProp;
         private SerializedProperty gainProp;
         private SerializedProperty gateProp;
         private SerializedProperty manualVisemeProp;
@@ -35,8 +34,6 @@ namespace YUCP.Components.Editor
         private VisualElement manualContainer;
         private VisualElement validation;
         private Button previewButton;
-        private Button recordButton;
-        private Label recordLabel;
         private ProgressBar voiceMeter;
         private Label liveLabel;
         private int previousInput;
@@ -49,7 +46,6 @@ namespace YUCP.Components.Editor
             inputProp = serializedObject.FindProperty("input");
             microphoneProp = serializedObject.FindProperty("microphoneDevice");
             backendProp = serializedObject.FindProperty("analysisBackend");
-            automaticGainProp = serializedObject.FindProperty("automaticGain");
             gainProp = serializedObject.FindProperty("microphoneGain");
             gateProp = serializedObject.FindProperty("noiseGate");
             manualVisemeProp = serializedObject.FindProperty("manualViseme");
@@ -81,7 +77,6 @@ namespace YUCP.Components.Editor
             microphoneContainer.Add(microphonePickerRoot);
             BuildMicrophonePicker();
             microphoneContainer.Add(YUCPUIToolkitHelper.CreateField(backendProp, "Classifier"));
-            microphoneContainer.Add(YUCPUIToolkitHelper.CreateField(automaticGainProp, "Automatic Gain"));
             source.Add(microphoneContainer);
             root.Add(sourceCard);
 
@@ -99,22 +94,6 @@ namespace YUCP.Components.Editor
             voiceMeter = new ProgressBar { title = "Voice", lowValue = 0f, highValue = 1f, value = 0f };
             voiceMeter.style.marginTop = 4;
             preview.Add(voiceMeter);
-
-            // Recording captures the exact Oculus teacher weights this session
-            // already computes together with whatever reconstruction each
-            // avatar publishes, so the two are directly comparable offline.
-            recordButton = YUCPUIToolkitHelper.CreateButton(
-                "Record Comparison", ToggleRecording,
-                YUCPUIToolkitHelper.ButtonVariant.Secondary);
-            recordButton.style.height = 26;
-            recordButton.style.marginTop = 6;
-            preview.Add(recordButton);
-
-            recordLabel = new Label(string.Empty);
-            recordLabel.style.marginTop = 3;
-            recordLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
-            recordLabel.style.whiteSpace = WhiteSpace.Normal;
-            preview.Add(recordLabel);
 
             manualContainer = BuildManualControls();
             preview.Add(manualContainer);
@@ -216,20 +195,6 @@ namespace YUCP.Components.Editor
             return container;
         }
 
-        private void ToggleRecording()
-        {
-            if (VisemeTestRecorder.IsRecording)
-            {
-                var path = VisemeTestRecorder.Stop();
-                if (!string.IsNullOrEmpty(path))
-                    Debug.Log("[YUCP Viseme Test] recorded comparison -> " + path);
-            }
-            else
-            {
-                VisemeTestRecorder.Start(data);
-            }
-        }
-
         private void TogglePreview()
         {
             if (VisemeTestPreviewSession.IsRunning(data))
@@ -253,9 +218,9 @@ namespace YUCP.Components.Editor
             manualContainer.style.display = microphoneMode ? DisplayStyle.None : DisplayStyle.Flex;
 
             validation.Clear();
-            if (!VisemeTestPreviewSession.TryResolveDescriptors(
+            if (!VisemeTestPreviewSession.TryResolveDescriptor(
                     data,
-                    out var descriptors,
+                    out var descriptor,
                     out var targetSource,
                     out var targetError))
             {
@@ -267,23 +232,17 @@ namespace YUCP.Components.Editor
             {
                 if (targetSource != VisemeTestPreviewSession.DescriptorTargetSource.Parent)
                 {
-                    var targetNames = string.Join(", ", descriptors.Select(descriptor => $"'{descriptor.name}'"));
-                    var targetDescription = targetSource == VisemeTestPreviewSession.DescriptorTargetSource.GestureManager
-                        ? $"{descriptors.Length} Gesture Manager avatar target{(descriptors.Length == 1 ? string.Empty : "s")}"
+                    var sourceLabel = targetSource == VisemeTestPreviewSession.DescriptorTargetSource.GestureManager
+                        ? "Gesture Manager"
                         : "the only active avatar in this scene";
                     validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                        $"Automatically targeting {targetNames} from {targetDescription}.",
+                        $"Automatically targeting '{descriptor.name}' from {sourceLabel}.",
                         YUCPUIToolkitHelper.MessageType.Info));
                 }
 
-                foreach (var descriptor in descriptors)
-                {
-                    var message = ValidateDescriptor(descriptor);
-                    if (!string.IsNullOrEmpty(message))
-                        validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                            descriptors.Length > 1 ? $"{descriptor.name}: {message}" : message,
-                            YUCPUIToolkitHelper.MessageType.Warning));
-                }
+                var message = ValidateDescriptor(descriptor);
+                if (!string.IsNullOrEmpty(message))
+                    validation.Add(YUCPUIToolkitHelper.CreateHelpBox(message, YUCPUIToolkitHelper.MessageType.Warning));
             }
 
             if (microphoneMode && backendProp.enumValueIndex != (int)VisemeTestAnalysisBackend.BuiltIn)
@@ -306,23 +265,6 @@ namespace YUCP.Components.Editor
 
             var running = VisemeTestPreviewSession.IsRunning(data);
             previewButton.text = running ? "Stop & Restore" : "Start Preview";
-            if (recordButton != null)
-            {
-                recordButton.SetEnabled(running || VisemeTestRecorder.IsRecording);
-                recordButton.text = VisemeTestRecorder.IsRecording
-                    ? "Stop Recording"
-                    : "Record Comparison";
-                if (VisemeTestRecorder.IsRecording)
-                    recordLabel.text =
-                        $"recording {VisemeTestRecorder.DurationSeconds:F1}s  " +
-                        $"({VisemeTestRecorder.FrameCount} frames)\n" +
-                        VisemeTestRecorder.SubjectSummary;
-                else if (!string.IsNullOrEmpty(VisemeTestRecorder.LastWritePath))
-                    recordLabel.text = "Saved " +
-                        System.IO.Path.GetFileName(VisemeTestRecorder.LastWritePath);
-                else
-                    recordLabel.text = string.Empty;
-            }
             var state = VisemeTestPreviewSession.GetState(data);
             if (state == null)
             {
@@ -340,7 +282,7 @@ namespace YUCP.Components.Editor
                     ? "Listening · input is very quiet"
                     : $"{VisemeTestMath.VisemeNames[state.currentViseme]}  ·  {state.engineName}";
                 voiceMeter.value = state.currentVoice;
-                voiceMeter.title = data.automaticGain && state.automaticInputGain > 1.25f
+                voiceMeter.title = state.automaticInputGain > 1.25f
                     ? $"Voice {state.currentVoice:0.00} · auto boost {state.automaticInputGain:0.0}×"
                     : $"Voice {state.currentVoice:0.00}";
             }

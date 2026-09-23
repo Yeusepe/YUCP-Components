@@ -4,29 +4,6 @@ All notable changes to YUCP Components will be documented in this file.
 
 ## [Unreleased]
 
-### Changed
-- Every Advanced Viseme avatar-menu slider now starts at `50%`, where it reproduces the profile's current authored behavior exactly. Centered piecewise response maps give `0%` and `100%` deliberately separated physical endpoints instead of exposing already-maxed gains. The Simple page uses plain-language `Exaggeration`, `Snappiness`, `Soft Speech`, `Reaction Speed`, `Smooth Pauses`, `Clear Consonants`, `Follow My Face`, and `Tongue Motion` controls. Exaggeration can double low-volume speech gain toward the full authored viseme but saturates at that pose, so it becomes visibly dramatic without overdriving blendshapes. All generated tuning controls always use the compact remote transport (or the shared Parameter Compressor); legacy Local Only assets migrate automatically.
-- Advanced Viseme's no-tracker decoder now feeds its corpus-fitted, duration-conditioned target into a persistent frame-rate-correct observer selected by `Snappiness`. Immediate state selection prevents restartable Animator transitions from freezing under continuous hard-viseme changes; the centered response blends a calm two-pole estimate, a responsive one-pole estimate, and the crisp learned target while preserving a nonnegative unit simplex. Linear articulation rows use the same temporal epoch. The hard index still cannot recover Oculus's hidden 15 weights; active face-tracking authority and source meshes are unchanged.
-- Viseme Test Emulator analysis samples now expose an immutable, sample-timestamped copy of Oculus LipSync's continuous 15-weight output for editor-side teacher capture. Native sub-unit onset/release mass is preserved without normalization, malformed frames are marked non-exact, quiet native tails are collected only inside the requesting source's reference-counted lossless scope, and no microphone audio or avatar runtime data is stored.
-- Beta Coarticulation now leads only from the slow reconstructed simplex toward its continuous fast observer. The generated Animator no longer pushes its fast viseme or group-articulation stages toward VRChat's raw one-hot winner, removing the label-edge pose step while preserving the existing publication epoch, silence hold, exact endpoints, face-tracking authority, and source meshes.
-- Advanced Viseme's graph optimizer now interns congruent private parameters: an Alpern-Wegman-Zadeck partition refinement over complete write-site multisets (layer, state, full BlendTree context, curve keys, defaults) merges private AAPs that provably carry identical values on every frame, rewrites their readers, and lets liveness collect the duplicates. Direct children are treated as an unordered sum while threshold and normalized-Direct contexts keep their full sibling geometry, so no evaluation epoch moves. On the profiling baseline this removes 13 parameters and 60 curves (shared frame-rate alpha vectors, duplicated support magnitudes, duplicated signed splits); a 170,000-frame randomized causal replay across five frame rates reports exactly zero difference on every public parameter and physical output, and same-session interleaved captures measured a small consistent `Animator.ProcessGraph` win under a speech-pattern load.
-- Advanced Viseme's generated Animator now performs epoch-preserving closed-world liveness and a topology-proven neutral-zero reduction after graph lowering. Private AAP curves outside the observable cone are removed, and redundant zero bindings are omitted only in the nonnegative Beta-retention observer while every BlendTree child, threshold, and feedback stage remains intact. The representative Beta fixture drops 52 private parameters and 451 of 4,958 Animator curves while retaining mixed-frame-rate replay parity; meshes remain untouched.
-- Approximate Beta-retention models now have a build-time acceptance certificate covering active-binding savings, Animator staging, steady endpoints, mandatory phonetic constraints, held-out trajectory error, and a universal simplex coefficient bound. The exact commuted model remains the fallback and current default.
-
-## [0.3.43] - 2026-07-16
-
-### Added
-- Parameter Compressor, an avatar-wide generic replacement transport for persistent VRChat Bool, Int, and Float settings. It inspects the final VRCFury-merged menu and FX controller, protects momentary and sensor-driven inputs, and reduces selected parameters to a delay-insensitive constant-weight Bool bus with exact framing, late-join replay, and atomic snapshot-block commits.
-- A mixed enumerative codec and deterministic radix planner. Six Bool wires form 20 weight-three symbols; reserving one for synchronization leaves radix 19, so all 26 native 255-level Advanced Viseme settings fit in three payload digits per focused record without separate parameter-index bits.
-- Simple and Advanced YUCP inspector modes, reusable compression profiles, per-parameter inclusion, update priority, precision, numeric range, atomic group metadata, reserved-space planning, and build summaries.
-- EditMode proofs for constant-weight alphabets, torn-wire transitions, frame resynchronization, exact VRChat Float quantization, deterministic planning, and the six-wire `26 x 255` capacity result.
-- An Automatic Gain switch for the Viseme Test Emulator, allowing creators to preserve the microphone's original level while keeping automatic boost as the default.
-
-### Changed
-- Advanced Viseme Reconstructor detects the generic Parameter Compressor and registers its saved avatar-menu settings with the shared final-asset planner instead of generating the private 13-bit tuning transport. Without the generic component, existing Compact Synced and Local Only behavior is unchanged.
-- Parameter compression now runs immediately before VRCFury's compressor against cloned final assets. Successful YUCP plans make VRCFury naturally no-op; source controllers, expression assets, menus, prefabs, and meshes remain untouched.
-- Advanced Viseme's generated Animator now uses exact projected observers, output-liveness pruning, sparse articulation lanes, shared constant folding, and canonical piecewise-linear maps. A full reference-avatar A/B reduced the enabled `ProcessGraph` plus `ProcessAnimations` markers by 1.8852 ms; the remaining conservative AVR-only delta measured 0.5633 ms. Source meshes and authored blendshapes are never rewritten.
-
 ## [0.3.42] - 2026-07-15
 
 ### Changed
@@ -235,3 +212,4 @@ If you were using a standalone Guardian package:
 - Optional Git interoperability for hybrid workflows
 - Binary diff visualization for images/textures
 - Merge conflict resolution UI
+

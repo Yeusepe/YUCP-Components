@@ -40,14 +40,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
                     return;
                 }
                 
-                // pg_verify is no longer written, but a machine that ran an older
-                // build may still carry it on disk. Importing must never block on
-                // it, so clear it and continue instead of aborting initialization.
                 if (ProtectionLatchService.HasKey("pg_verify", out var verifyReason))
-                {
-                    Debug.LogWarning($"[Import Protection] Clearing stale verification lock: {verifyReason}");
-                    ProtectionLatchService.Clear("pg_verify");
-                }
+                    throw new InvalidOperationException($"Package verification lock active: {verifyReason}");
 
                 if (CircuitBreakerService.IsCircuitBroken())
                 {
@@ -251,14 +245,8 @@ namespace YUCP.Components.PackageGuardian.Editor.Services
         /// </summary>
         public static void HandleDisabledFileConflicts()
         {
-            // Throwing here used to leave imported files stuck in their
-            // .yucp_disabled state — the import "succeeded" but the package was
-            // unusable. Stale locks from older builds warn and clear instead.
             if (ProtectionLatchService.HasKey("pg_verify", out var verifyReason))
-            {
-                Debug.LogWarning($"[Import Protection] Clearing stale verification lock: {verifyReason}");
-                ProtectionLatchService.Clear("pg_verify");
-            }
+                throw new InvalidOperationException($"Package verification lock active: {verifyReason}");
 
             bool recoveryMode = CircuitBreakerService.IsCircuitBroken();
 

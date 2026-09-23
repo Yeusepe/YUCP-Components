@@ -53,6 +53,9 @@ foreach ($packageName in $secondary.packages.Keys) {
     }
 }
 
+# Keep the retired importer out of cached or merged listings.
+$primary.packages.Remove('com.yucp.importer')
+
 $primary.name = $ListingName
 $primary.id = $ListingId
 $primary.url = $ListingUrl

@@ -15,8 +15,6 @@ namespace YUCP.Components.Editor.Tests
 {
     public sealed class AdvancedVisemeReconstructorTests
     {
-        public static string GeneratedBetaGraphProfileCopyPath;
-
         [Test]
         public void ObserverRemainsASimplexAcrossFrameRatesAndInterruptions()
         {
@@ -32,69 +30,6 @@ namespace YUCP.Components.Editor.Tests
                     AssertSimplex(fast);
                     AssertSimplex(slow);
                 }
-            }
-        }
-
-        [Test]
-        public void MapBatchActiveBindingGuardRejectsConstantLaneExpansion()
-        {
-            Assert.That(
-                AdvancedVisemeAnimatorBuilder.MapBatchPreservesActiveBindingBound(
-                    new[] { 7, 7 }, 12, 2),
-                Is.True,
-                "Two ordinary maps retain the same four-active-binding bound.");
-            Assert.That(
-                AdvancedVisemeAnimatorBuilder.MapBatchPreservesActiveBindingBound(
-                    new[] { 1, 7 }, 7, 2),
-                Is.False,
-                "A one-point constant map must not expand from one to two active bindings.");
-            Assert.That(
-                AdvancedVisemeAnimatorBuilder.MapBatchPreservesActiveBindingBound(
-                    new[] { 1, 1 }, 1, 2),
-                Is.True,
-                "Constant maps sharing one knot retain one active binding per output.");
-        }
-
-        [Test]
-        public void SimplexEmissionSparsifierIsContinuousBoundedAndEndpointExact()
-        {
-            var epsilon = AdvancedVisemeMath.SimplexCullingEpsilon;
-            Assert.That(AdvancedVisemeMath.SparsifySimplexCoordinate(0f), Is.Zero);
-            Assert.That(AdvancedVisemeMath.SparsifySimplexCoordinate(epsilon), Is.Zero);
-            Assert.That(AdvancedVisemeMath.SparsifySimplexCoordinate(1f), Is.EqualTo(1f));
-
-            var previous = 0f;
-            for (var sample = 0; sample <= 100000; sample++)
-            {
-                var value = sample / 100000f;
-                var sparse = AdvancedVisemeMath.SparsifySimplexCoordinate(value);
-                Assert.That(sparse, Is.GreaterThanOrEqualTo(previous));
-                Assert.That(sparse, Is.InRange(0f, 1f));
-                Assert.That(Mathf.Abs(sparse - value),
-                    Is.LessThanOrEqualTo(epsilon / (1f - epsilon) + 1e-7f));
-                previous = sparse;
-            }
-        }
-
-        [Test]
-        public void SimplexEmissionSparsifierHasACertifiedRandomVectorError()
-        {
-            var random = new System.Random(7319);
-            var epsilon = AdvancedVisemeMath.SimplexCullingEpsilon;
-            var coordinateBound = epsilon / (1f - epsilon) + 1e-7f;
-            for (var trial = 0; trial < 10000; trial++)
-            {
-                var values = Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
-                    .Select(_ => (float)random.NextDouble()).ToArray();
-                var sum = values.Sum();
-                for (var i = 0; i < values.Length; i++) values[i] /= sum;
-
-                var sparse = values.Select(value =>
-                    AdvancedVisemeMath.SparsifySimplexCoordinate(value)).ToArray();
-                Assert.That(sparse.Sum(), Is.InRange(0f, 1.000001f));
-                for (var i = 0; i < values.Length; i++)
-                    Assert.That(Mathf.Abs(sparse[i] - values[i]),
-                        Is.LessThanOrEqualTo(coordinateBound));
             }
         }
 
@@ -731,90 +666,6 @@ namespace YUCP.Components.Editor.Tests
                     }
                     Assert.That(contracted, Is.EqualTo(expected).Within(2e-5f),
                         $"Contracted {kind}/{output} tensor changed the fitted model.");
-                }
-            }
-        }
-
-        [Test]
-        public void CollapsedUnitFeatureKernelAndRankOneNasalUpdateMatchTheFullModel()
-        {
-            var random = new System.Random(0x554E4954);
-            foreach (AdvancedVisemeVisibleTongueModelKind kind in Enum.GetValues(
-                         typeof(AdvancedVisemeVisibleTongueModelKind)))
-            for (var iteration = 0; iteration < 400; iteration++)
-            {
-                var weights = new float[VisemeReconstructionProfile.VisemeCount];
-                var weightSum = 0f;
-                for (var viseme = 0; viseme < weights.Length; viseme++)
-                {
-                    weights[viseme] = (float)random.NextDouble();
-                    weightSum += weights[viseme];
-                }
-                for (var viseme = 0; viseme < weights.Length; viseme++)
-                    weights[viseme] /= weightSum;
-
-                AdvancedVisemeMath.ConditionMergedNasalPair(
-                    weights[1], weights[8],
-                    (float)random.NextDouble(), (float)random.NextDouble(),
-                    out var conditionedPp, out var conditionedNn);
-                var delta = conditionedPp - weights[1];
-                var conditioned = (float[])weights.Clone();
-                conditioned[1] = conditionedPp;
-                conditioned[8] = conditionedNn;
-
-                var featureCount = AdvancedVisemeVisibleTongueResidual.FeatureCount(kind);
-                var features = Enumerable.Range(0, featureCount)
-                    .Select(feature =>
-                    {
-                        var bound = AdvancedVisemeVisibleTongueResidual
-                            .FeatureSafeBound(kind, feature);
-                        return Mathf.Lerp(-bound, bound, (float)random.NextDouble());
-                    })
-                    .ToArray();
-                var featureUnits = features.Select((feature, index) =>
-                        0.5f + 0.5f * feature /
-                        Mathf.Max(
-                            1e-6f,
-                            AdvancedVisemeVisibleTongueResidual
-                                .FeatureSafeBound(kind, index)))
-                    .ToArray();
-                var expected = new float[AdvancedVisemeVisibleTongueResidual.OutputCount];
-                AdvancedVisemeVisibleTongueResidual.PredictUnclamped(
-                    kind, conditioned, features, expected);
-
-                var reliability = 0f;
-                for (var viseme = 0; viseme < weights.Length; viseme++)
-                    reliability += weights[viseme] *
-                                   AdvancedVisemeVisibleTongueResidual.Reliability(
-                                       kind, viseme);
-                reliability += delta *
-                    (AdvancedVisemeVisibleTongueResidual.Reliability(kind, 1) -
-                     AdvancedVisemeVisibleTongueResidual.Reliability(kind, 8));
-
-                foreach (AdvancedVisemeVisibleTongueOutput output in Enum.GetValues(
-                             typeof(AdvancedVisemeVisibleTongueOutput)))
-                {
-                    float Conditional(int viseme)
-                    {
-                        var value = AdvancedVisemeAnimatorBuilder.CollapsedTongueUnitBias(
-                            kind, viseme, output);
-                        for (var feature = 0; feature < featureCount; feature++)
-                            value += featureUnits[feature] *
-                                     AdvancedVisemeAnimatorBuilder
-                                         .CollapsedTongueUnitFeatureCoefficient(
-                                             kind, viseme, feature, output);
-                        return value;
-                    }
-
-                    var kernel = 0f;
-                    for (var viseme = 0; viseme < weights.Length; viseme++)
-                        kernel += weights[viseme] * Conditional(viseme);
-                    kernel += delta * (Conditional(1) - Conditional(8));
-                    var actual = reliability * kernel;
-                    Assert.That(actual,
-                        Is.EqualTo(expected[(int)output]).Within(3e-5f),
-                        $"Collapsed {kind}/{output} unit-feature kernel changed " +
-                        "the fitted model or its PP-to-nn correction.");
                 }
             }
         }
@@ -1636,15 +1487,6 @@ namespace YUCP.Components.Editor.Tests
                     name.EndsWith("/TrackingSlowPart", StringComparison.Ordinal) ||
                     name.EndsWith("/TrackingFastPart", StringComparison.Ordinal)), Is.False,
                     "Convex fusion must not materialize scalar product temporaries.");
-                Assert.That(parameters.Any(name => name.Contains(
-                    "/VisibleSpeechWeight", StringComparison.Ordinal)), Is.False,
-                    "Outputs Only must not build mesh-ownership suppression weights.");
-                Assert.That(parameters.Any(name => name.EndsWith(
-                    "/Contribution", StringComparison.Ordinal)), Is.False,
-                    "Outputs Only must not multiply a tracking pose that no output consumes.");
-                Assert.That(parameters.Any(name => name.EndsWith(
-                    "/InverseGain", StringComparison.Ordinal)), Is.False,
-                    "External calibrated-ray inverses must remain demand driven.");
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(controllerPath)
                     .OfType<BlendTree>().ToArray();
@@ -1763,7 +1605,7 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void BetaArticulatorContractionCommutesWithContinuousObserverLead()
+        public void BetaArticulatorContractionCommutesWithVisemeInterpolation()
         {
             var random = new System.Random(0x425443);
             const int articulatorCount = 7;
@@ -1772,41 +1614,14 @@ namespace YUCP.Components.Editor.Tests
                 var raw = RandomSimplex();
                 var fast = RandomSimplex();
                 var slow = RandomSimplex();
-                var lead = Mathf.Lerp(0.2f, 1f, (float)random.NextDouble());
+                var lead = (float)random.NextDouble();
                 var matrix = new float[articulatorCount, VisemeReconstructionProfile.VisemeCount];
                 for (var articulator = 0; articulator < articulatorCount; articulator++)
                 for (var viseme = 0; viseme < VisemeReconstructionProfile.VisemeCount; viseme++)
                     matrix[articulator, viseme] = (float)(random.NextDouble() * 2d - 1d);
 
-                AssertFastStage(fast, raw, lead);
+                AssertStage(fast, raw, lead);
                 AssertStage(slow, fast, lead);
-
-                void AssertFastStage(float[] values, float[] rawTarget, float amount)
-                {
-                    var detectedLegacyShortcut = false;
-                    for (var articulator = 0; articulator < articulatorCount; articulator++)
-                    {
-                        var projectedFast = 0f;
-                        var projectedRaw = 0f;
-                        for (var viseme = 0;
-                             viseme < VisemeReconstructionProfile.VisemeCount;
-                             viseme++)
-                        {
-                            projectedFast += matrix[articulator, viseme] * values[viseme];
-                            projectedRaw += matrix[articulator, viseme] * rawTarget[viseme];
-                        }
-                        var correctedFast = projectedFast;
-                        var legacyRawAdvanced = Mathf.LerpUnclamped(
-                            projectedFast, projectedRaw, amount);
-                        Assert.That(correctedFast,
-                            Is.EqualTo(projectedFast).Within(1e-7f));
-                        detectedLegacyShortcut |= Mathf.Abs(
-                            legacyRawAdvanced - correctedFast) > 1e-4f;
-                    }
-                    Assert.That(detectedLegacyShortcut, Is.True,
-                        "The randomized fixture must distinguish direct observer-fast " +
-                        "projection from the removed raw-advanced projection.");
-                }
 
                 void AssertStage(float[] from, float[] to, float amount)
                 {
@@ -1847,48 +1662,6 @@ namespace YUCP.Components.Editor.Tests
         }
 
         [Test]
-        public void BetaProjectionOnlySelectsDomainSafeProfitableRows()
-        {
-            float[] WithNonzero(int count, float value = 0.5f)
-            {
-                var coefficients = new float[VisemeReconstructionProfile.VisemeCount];
-                for (var index = 0; index < count; index++) coefficients[index] = value;
-                return coefficients;
-            }
-
-            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
-                AdvancedVisemeArticulator.JawOpen, WithNonzero(5)), Is.False);
-            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
-                AdvancedVisemeArticulator.JawOpen, WithNonzero(6)), Is.True);
-            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
-                AdvancedVisemeArticulator.TongueY, WithNonzero(6)), Is.False);
-            var signedDense = WithNonzero(7, -0.5f);
-            signedDense[1] = 0.5f;
-            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
-                AdvancedVisemeArticulator.TongueY, signedDense), Is.True);
-            var encodedSigned = AdvancedVisemeAnimatorBuilder.EncodeBetaProjectionRow(
-                AdvancedVisemeArticulator.TongueY, signedDense,
-                out var signedOffset, out var signedScale);
-            Assert.That(encodedSigned.All(value => value >= 0f && value <= 1f), Is.True);
-            for (var index = 0; index < signedDense.Length; index++)
-                Assert.That(signedOffset + signedScale * encodedSigned[index],
-                    Is.EqualTo(signedDense[index]).Within(1e-7f));
-
-            var negativeUnsigned = WithNonzero(6);
-            negativeUnsigned[0] = -0.1f;
-            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
-                AdvancedVisemeArticulator.JawOpen, negativeUnsigned), Is.False);
-            var outOfRangeSigned = WithNonzero(7);
-            outOfRangeSigned[0] = 2.01f;
-            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
-                AdvancedVisemeArticulator.TongueY, outOfRangeSigned), Is.False);
-            var nonFinite = WithNonzero(7);
-            nonFinite[0] = float.NaN;
-            Assert.That(AdvancedVisemeAnimatorBuilder.ShouldProjectBetaArticulationRow(
-                AdvancedVisemeArticulator.TongueY, nonFinite), Is.False);
-        }
-
-        [Test]
         public void GeneratedBetaGraphUsesContinuousContextAndDenoisedTongueInference()
         {
             var root = new GameObject("Generated Beta Graph Test");
@@ -1896,13 +1669,6 @@ namespace YUCP.Components.Editor.Tests
             var folderName = "__YUCP_AVR_GraphTest_" + Guid.NewGuid().ToString("N");
             var folder = "Assets/" + folderName;
             AssetDatabase.CreateFolder("Assets", folderName);
-            // This test asserts the lowering's structure (per-decay alphas,
-            // retention rows). Congruence interning may legitimately share
-            // identical values across subsystems and is verified separately.
-            var previousSkipCongruence = AdvancedVisemeAnimatorGraphOptimizer
-                .SkipCongruenceInterningForStructureTests;
-            AdvancedVisemeAnimatorGraphOptimizer
-                .SkipCongruenceInterningForStructureTests = true;
             try
             {
                 var component = root.AddComponent<AdvancedVisemeReconstructorData>();
@@ -1940,77 +1706,11 @@ namespace YUCP.Components.Editor.Tests
 
                 var trees = AssetDatabase.LoadAllAssetsAtPath(folder + "/AdvancedViseme.controller")
                     .OfType<BlendTree>().ToArray();
-                var generatedClips = AssetDatabase.LoadAllAssetsAtPath(
-                        folder + "/AdvancedViseme.controller")
-                    .OfType<AnimationClip>().ToArray();
-                Debug.Log(
-                    $"AVR sparse fixture inventory: trees={trees.Length}, " +
-                    $"clips={generatedClips.Length}, curves=" +
-                    $"{generatedClips.Sum(clip => AnimationUtility.GetCurveBindings(clip).Length)}");
-                if (!string.IsNullOrEmpty(GeneratedBetaGraphProfileCopyPath))
-                {
-                    AssetDatabase.DeleteAsset(GeneratedBetaGraphProfileCopyPath);
-                    Assert.That(AssetDatabase.CopyAsset(
-                        folder + "/AdvancedViseme.controller",
-                        GeneratedBetaGraphProfileCopyPath), Is.True);
-                    AssetDatabase.ImportAsset(GeneratedBetaGraphProfileCopyPath);
-                }
-                Assert.That(result.optimizerReport, Is.Not.Null);
-                Assert.That(result.optimizerReport.internalParametersAfter,
-                    Is.EqualTo(result.optimizerReport.internalParametersBefore -
-                               result.optimizerReport.removedInternalParameters));
-                Assert.That(result.optimizerReport.animatorCurvesAfter,
-                    Is.EqualTo(result.optimizerReport.animatorCurvesBefore -
-                               result.optimizerReport.removedAnimatorCurves));
-                Assert.That(result.optimizerReport.removedNeutralZeroCurves,
-                    Is.GreaterThanOrEqualTo(240),
-                    "The exact lowerer should remove the remaining proven " +
-                    "neutral-zero binders after constructive baseline hoisting.");
-                Assert.That(generatedClips.Any(clip => clip.name ==
-                    "Projected destination safety zero"), Is.False,
-                    "A weighted destination row must reuse its enclosing vector binder.");
                 var parameterNames = result.controller.parameters.Select(parameter => parameter.name).ToArray();
-                Assert.That(parameterNames.Count(name => name.EndsWith(
-                        "/PhoneObservationFast", StringComparison.Ordinal)),
-                    Is.EqualTo(VisemeReconstructionProfile.VisemeCount),
-                    "Face-conditioned inference keeps one trained private observation " +
-                    "simplex, separate from the visible continuous-fast simplex.");
-                Assert.That(parameterNames.Count(name => name.EndsWith(
-                        "/ProductAccumulator", StringComparison.Ordinal)),
-                    Is.EqualTo(2),
-                    "The visible-tongue bilinear stage should publish one fused accumulator per output.");
-                Assert.That(parameterNames.Any(name => name.Contains(
-                        "/TongueInference/Model/TongueOut/Product/", StringComparison.Ordinal) ||
-                    name.Contains(
-                        "/TongueInference/Model/TongueY/Product/", StringComparison.Ordinal)),
-                    Is.False,
-                    "The fused tongue graph must not rematerialize eight scalar product AAPs.");
-                foreach (var direct in trees.Where(tree =>
-                             tree.blendType == BlendTreeType.Direct))
-                {
-                    var serializedTree = new SerializedObject(direct);
-                    var normalized = serializedTree.FindProperty("m_NormalizedBlendValues");
-                    if (normalized != null)
-                        Assert.That(normalized.boolValue, Is.False,
-                            $"Direct BlendTree '{direct.name}' must not normalize mathematical weights.");
-                }
                 Assert.That(parameterNames.Count(name => name.Contains(
                     "/BetaCoarticulation/Context/", StringComparison.Ordinal)),
-                    Is.EqualTo(2),
-                    "Only one alpha per learned decay should survive context projection.");
-                Assert.That(parameterNames.Count(name => name.Contains(
-                    "/BetaCoarticulation/RetentionTarget/", StringComparison.Ordinal)),
-                    Is.EqualTo(AdvancedVisemeTransitionRetention.GroupCount *
-                        VisemeReconstructionProfile.VisemeCount),
-                    "Every learned retention row must remain available to the observer.");
-                Assert.That(parameterNames.Count(name => name.Contains(
-                    "/BetaCoarticulation/RetentionState/", StringComparison.Ordinal)),
-                    Is.EqualTo(AdvancedVisemeTransitionRetention.GroupCount *
-                        VisemeReconstructionProfile.VisemeCount),
-                    "The EMA must run directly in the learned matrix row space.");
-                Assert.That(trees.Any(tree => tree.name.StartsWith(
-                    "Corpus context projection", StringComparison.Ordinal)), Is.False,
-                    "The dense c^T R contraction must not return.");
+                    Is.GreaterThanOrEqualTo(VisemeReconstructionProfile.VisemeCount),
+                    "Every previous viseme must remain available to the continuous context projection.");
                 Assert.That(trees.Any(tree => tree.name.StartsWith(
                     "Previous context ->", StringComparison.Ordinal)), Is.False,
                     "The old 15x15 nested table expansion must not return.");
@@ -2045,15 +1745,15 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(tongueBodyFast.Length, Is.EqualTo(2));
                 Assert.That(tongueBodySlow.Length, Is.EqualTo(2),
                     "Consumer-driven projection must not publish unobserved tongue coordinates.");
-                Assert.That(trees.Length, Is.LessThan(850),
+                Assert.That(trees.Length, Is.LessThan(750),
                     "The generated graph must stay vector-lowered instead of returning to scalar expansion.");
                 var curveBindingCount = AssetDatabase
                     .LoadAllAssetsAtPath(folder + "/AdvancedViseme.controller")
                     .OfType<AnimationClip>()
                     .Sum(clip => AnimationUtility.GetCurveBindings(clip).Length);
-                Assert.That(curveBindingCount, Is.LessThan(6000),
+                Assert.That(curveBindingCount, Is.LessThan(5500),
                     "The generated math graph must not republish zero or dead AAP curves.");
-                Assert.That(parameterNames.Length, Is.LessThan(1200),
+                Assert.That(parameterNames.Length, Is.LessThan(1150),
                     "Internal parameter growth is a proxy for additional frame-staged math.");
                 Assert.That(parameterNames.Any(name => name.Contains(
                     "/FallbackCommonSpeechSlow", StringComparison.Ordinal) ||
@@ -2119,18 +1819,9 @@ namespace YUCP.Components.Editor.Tests
                     .Select(child => child.motion as AnimationClip)
                     .Select(clip => clip == null ? 0 : AnimationUtility.GetCurveBindings(clip).Length)
                     .ToArray();
-                var alphaBindingUnion = alphaVectors[0].children
-                    .Select(child => child.motion as AnimationClip)
-                    .Where(clip => clip != null)
-                    .SelectMany(AnimationUtility.GetCurveBindings)
-                    .Select(binding => binding.propertyName)
-                    .Distinct(StringComparer.Ordinal)
-                    .Count();
-                Assert.That(alphaBindingUnion, Is.GreaterThan(5),
-                    "The shared lookup must still publish every response-time alpha.");
-                Assert.That(alphaBindingCounts.Sum(),
-                    Is.LessThanOrEqualTo(alphaBindingUnion * alphaBindingCounts.Length),
-                    "The alpha lookup must not duplicate a parameter binding within a knot.");
+                Assert.That(alphaBindingCounts.Min(), Is.GreaterThan(5),
+                    "Each shared alpha knot must carry the complete response vector.");
+                Assert.That(alphaBindingCounts.Distinct().Count(), Is.EqualTo(1));
                 Assert.That(result.globalParameters, Does.Contain(
                     component.NormalizedPrefix + "/Speech/Hypothesis/M"));
                 Assert.That(result.globalParameters, Does.Contain(
@@ -2152,8 +1843,8 @@ namespace YUCP.Components.Editor.Tests
                     .Select(index => component.NormalizedPrefix +
                         $"/_Internal/Viseme/{index}/VisibleSpeechWeight")
                     .ToArray();
-                Assert.That(visibleWeightNames.Any(parameterNames.Contains), Is.False,
-                    "Outputs Only must not build mesh-ownership suppression weights.");
+                Assert.That(visibleWeightNames.All(parameterNames.Contains), Is.True,
+                    "Mixed-support visible rows must all have one phase-aligned output stage.");
 
                 var runtimeRoot = new GameObject("Generated Beta Graph Runtime Test");
                 try
@@ -2165,48 +1856,12 @@ namespace YUCP.Components.Editor.Tests
                     animator.Update(0f);
 
                     var internalPrefix = component.NormalizedPrefix + "/_Internal";
-                    var projectedRows = Enum.GetValues(typeof(AdvancedVisemeArticulator))
-                        .Cast<AdvancedVisemeArticulator>()
-                        .Select(articulator => new
-                        {
-                            articulator,
-                            coefficients = Enumerable.Range(
-                                    0, VisemeReconstructionProfile.VisemeCount)
-                                .Select(viseme => profile.visemePoses[viseme]
-                                    .Get(articulator) *
-                                    profile.GetVisemeArticulationMultiplier(
-                                        viseme, articulator))
-                                .ToArray()
-                        })
-                        .Where(row => AdvancedVisemeAnimatorBuilder
-                            .ShouldProjectBetaArticulationRow(
-                                row.articulator, row.coefficients))
-                        .Select(row =>
-                        {
-                            var encoded = AdvancedVisemeAnimatorBuilder
-                                .EncodeBetaProjectionRow(
-                                    row.articulator, row.coefficients,
-                                    out var offset, out var scale);
-                            return new
-                            {
-                                row.articulator,
-                                row.coefficients,
-                                encoded,
-                                offset,
-                                scale
-                            };
-                        })
+                    var renderedWeightNames = Enumerable.Range(
+                            0, VisemeReconstructionProfile.VisemeCount)
+                        .Select(index => internalPrefix +
+                            $"/Viseme/{index}/RenderedSpeechWeight")
                         .ToArray();
-                    Assert.That(projectedRows, Is.Not.Empty,
-                        "The fixture must exercise the exact articulation-observer projection.");
-                    var projectedVisemeStages = new[] { "Raw", "Fast", "Slow" };
-                    var silenceStabilityName = parameterNames.Single(name =>
-                        name.EndsWith("/Tuning/SilenceStability",
-                            StringComparison.Ordinal));
-                    Assert.That(projectedRows.All(row => projectedVisemeStages.All(stage =>
-                            parameterNames.Contains(internalPrefix +
-                                $"/BetaCoarticulation/Projected/{row.articulator}/{stage}"))),
-                        Is.True);
+                    var jawGainName = internalPrefix + "/Tracking/JawOpen/BaseGain";
                     var candidateName = internalPrefix +
                         "/PhonePosterior/Residual/CandidateMass";
                     var shareName = internalPrefix +
@@ -2223,6 +1878,9 @@ namespace YUCP.Components.Editor.Tests
                             name.StartsWith("YUCP/TestFaceTracking/", StringComparison.Ordinal))
                         .ToArray();
                     var frames = new List<(
+                        float[] rendered,
+                        float[] visible,
+                        float jawGain,
                         float candidate,
                         float share,
                         float confidence,
@@ -2242,35 +1900,11 @@ namespace YUCP.Components.Editor.Tests
                         float[] share,
                         float confidence,
                         float[] delta)>();
-                    var projectedFrames = new List<(
-                        int viseme,
-                        float history,
-                        float stability,
-                        float[] raw,
-                        float[] fast,
-                        float[] slow,
-                        float[] lead,
-                        float[] corpusFast,
-                        float[] corpusSlow)>();
-                    var commonFrames = new List<(
-                        int viseme,
-                        float history,
-                        float stability,
-                        float meanLead,
-                        float renderLead,
-                        float[] raw,
-                        float[] sparseFast,
-                        float[] sparseSlow,
-                        float[] visibleFast,
-                        float[] phoneObservationFast,
-                        float[] commonSlow,
-                        float[] rendered)>();
                     for (var frame = 0; frame < 96; frame++)
                     {
-                        var decodedViseme = frame % 11 < 2
+                        animator.SetInteger("Viseme", frame % 11 < 2
                             ? 0
-                            : 1 + (frame * 7 + frame / 9) % 14;
-                        animator.SetInteger("Viseme", decodedViseme);
+                            : 1 + (frame * 7 + frame / 9) % 14);
                         animator.SetFloat("Voice", 0.2f +
                             0.75f * Mathf.Abs(Mathf.Sin(frame * 0.17f)));
                         animator.SetFloat("IsLocal", 1f);
@@ -2286,25 +1920,10 @@ namespace YUCP.Components.Editor.Tests
                         }
                         animator.Update(frame % 3 == 0 ? 1f / 15f :
                             frame % 3 == 1 ? 1f / 60f : 1f / 144f);
-                        foreach (var row in projectedRows)
-                        foreach (var stage in projectedVisemeStages)
-                        {
-                            var expectedProjection = 0f;
-                            for (var viseme = 0;
-                                 viseme < VisemeReconstructionProfile.VisemeCount;
-                                 viseme++)
-                            {
-                                expectedProjection += row.encoded[viseme] *
-                                    animator.GetFloat(internalPrefix +
-                                        $"/Viseme/{viseme}/{stage}");
-                            }
-                            var actualProjection = animator.GetFloat(internalPrefix +
-                                $"/BetaCoarticulation/Projected/{row.articulator}/{stage}");
-                            Assert.That(actualProjection,
-                                Is.EqualTo(expectedProjection).Within(2e-5f),
-                                $"Projected {row.articulator}/{stage} diverged at frame {frame}.");
-                        }
                         frames.Add((
+                            renderedWeightNames.Select(animator.GetFloat).ToArray(),
+                            visibleWeightNames.Select(animator.GetFloat).ToArray(),
+                            animator.GetFloat(jawGainName),
                             animator.GetFloat(candidateName),
                             animator.GetFloat(shareName),
                             animator.GetFloat(confidenceName),
@@ -2325,82 +1944,25 @@ namespace YUCP.Components.Editor.Tests
                             nasalChannels.Select(channel => animator.GetFloat(
                                 $"{internalPrefix}/PhonePosterior/{channel.group}" +
                                 $"/{channel.stage}/Delta")).ToArray()));
-                        projectedFrames.Add((
-                            decodedViseme,
-                            animator.GetFloat(internalPrefix +
-                                "/Speech/Hangover/History"),
-                            animator.GetFloat(silenceStabilityName),
-                            projectedRows.Select(row => animator.GetFloat(
-                                    internalPrefix +
-                                    $"/BetaCoarticulation/Projected/{row.articulator}/Raw"))
-                                .ToArray(),
-                            projectedRows.Select(row => animator.GetFloat(
-                                    internalPrefix +
-                                    $"/BetaCoarticulation/Projected/{row.articulator}/Fast"))
-                                .ToArray(),
-                            projectedRows.Select(row => animator.GetFloat(
-                                    internalPrefix +
-                                    $"/BetaCoarticulation/Projected/{row.articulator}/Slow"))
-                                .ToArray(),
-                            projectedRows.Select(row => animator.GetFloat(
-                                    internalPrefix + "/BetaCoarticulation/Lead/" +
-                                    AdvancedVisemeCoarticulationModel.GroupFor(
-                                        row.articulator)))
-                                .ToArray(),
-                            projectedRows.Select(row => animator.GetFloat(
-                                    internalPrefix +
-                                    $"/Articulation/{row.articulator}/CorpusFast"))
-                                .ToArray(),
-                            projectedRows.Select(row => animator.GetFloat(
-                                    internalPrefix +
-                                    $"/Articulation/{row.articulator}/CorpusSlow"))
-                                .ToArray()));
-                        commonFrames.Add((
-                            decodedViseme,
-                            animator.GetFloat(internalPrefix +
-                                "/Speech/Hangover/History"),
-                            animator.GetFloat(silenceStabilityName),
-                            animator.GetFloat(internalPrefix +
-                                "/BetaCoarticulation/Lead/Mean"),
-                            animator.GetFloat(internalPrefix +
-                                "/Speech/RenderLead"),
-                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
-                                .Select(viseme => animator.GetFloat(internalPrefix +
-                                    $"/Viseme/{viseme}/Raw")).ToArray(),
-                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
-                                .Select(viseme => animator.GetFloat(internalPrefix +
-                                    $"/Viseme/{viseme}/SparseFast")).ToArray(),
-                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
-                                .Select(viseme => animator.GetFloat(internalPrefix +
-                                    $"/Viseme/{viseme}/SparseSlow")).ToArray(),
-                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
-                                .Select(viseme => animator.GetFloat(internalPrefix +
-                                    $"/BetaCoarticulation/Mean/Viseme/{viseme}/Fast"))
-                                .ToArray(),
-                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
-                                .Select(viseme => animator.GetFloat(internalPrefix +
-                                    $"/BetaCoarticulation/Mean/Viseme/{viseme}" +
-                                    "/PhoneObservationFast")).ToArray(),
-                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
-                                .Select(viseme => animator.GetFloat(internalPrefix +
-                                    $"/BetaCoarticulation/Mean/Viseme/{viseme}/Slow"))
-                                .ToArray(),
-                            Enumerable.Range(0, VisemeReconstructionProfile.VisemeCount)
-                                .Select(viseme => animator.GetFloat(
-                                    AdvancedVisemeParameterContract.Viseme(
-                                        component.NormalizedPrefix, viseme))).ToArray()));
                     }
 
-                    var privateObservationDiffersFromVisible = false;
-                    var maximumPrivateVisibleDifference = 0f;
-                    var maximumMeanLead = 0f;
-                    var maximumRawFastDifference = 0f;
-                    var maximumRawStep = 0f;
-                    var maximumSparseFastStep = 0f;
                     for (var frame = 4; frame < frames.Count; frame++)
                     {
                         var sampled = frames[frame - 1];
                         var actual = frames[frame];
+                        for (var viseme = 0;
+                             viseme < VisemeReconstructionProfile.VisemeCount;
+                             viseme++)
+                        {
+                            var supported = Mathf.Abs(profile.visemePoses[viseme]
+                                .Get(AdvancedVisemeArticulator.JawOpen)) >= 1e-6f;
+                            var expected = sampled.rendered[viseme] *
+                                (supported ? 1f - sampled.jawGain : 1f);
+                            Assert.That(actual.visible[viseme],
+                                Is.EqualTo(expected).Within(2e-5f),
+                                $"Visible viseme {viseme} mixed Animator frames at {frame}.");
+                        }
+
                         var expectedM = sampled.confidence * sampled.share *
                             sampled.candidate;
                         var expectedN = sampled.confidence * (1f - sampled.share) *
@@ -2440,152 +2002,9 @@ namespace YUCP.Components.Editor.Tests
                             Assert.That(actualNasal.delta[channel],
                                 Is.LessThanOrEqualTo(
                                     sampledNasal.confidence * sampledNasal.nn[channel] +
-                                2e-5f));
-                        }
-
-                        var sampledProjected = projectedFrames[frame - 1];
-                        var actualProjected = projectedFrames[frame];
-                        for (var row = 0; row < projectedRows.Length; row++)
-                        {
-                            var releaseFast = projectedRows[row].offset +
-                                projectedRows[row].scale * sampledProjected.fast[row];
-                            var expectedFast = releaseFast;
-                            // Viseme/Index is decoded by the preceding Animator
-                            // layer, so this Math-layer selector intentionally
-                            // observes the previous frame's decoded index.
-                            if (sampledProjected.viseme == 0)
-                            {
-                                var historyBlend = Mathf.InverseLerp(
-                                    AdvancedVisemeMath.SpeechHistoryHoldStart,
-                                    AdvancedVisemeMath.SpeechHistoryHoldFull,
-                                    sampledProjected.history);
-                                var heldFast = Mathf.LerpUnclamped(
-                                    releaseFast,
-                                    sampledProjected.corpusFast[row],
-                                    historyBlend);
-                                var holdStrength = Mathf.Clamp01(
-                                    sampledProjected.stability / 0.5f);
-                                expectedFast = Mathf.LerpUnclamped(
-                                    releaseFast, heldFast, holdStrength);
-                            }
-                            var expectedSlow = projectedRows[row].offset +
-                                projectedRows[row].scale * Mathf.LerpUnclamped(
-                                    sampledProjected.slow[row],
-                                    sampledProjected.fast[row],
-                                    sampledProjected.lead[row]);
-                            Assert.That(actualProjected.corpusFast[row],
-                                Is.EqualTo(expectedFast).Within(3e-5f),
-                                $"Projected {projectedRows[row].articulator} fast output " +
-                                $"changed Animator stage at frame {frame}. " +
-                                $"viseme={actualProjected.viseme}, previousViseme=" +
-                                $"{sampledProjected.viseme}, history={sampledProjected.history}, " +
-                                $"stability={sampledProjected.stability}, release={releaseFast}, " +
-                                $"previous={sampledProjected.corpusFast[row]}");
-                            Assert.That(actualProjected.corpusSlow[row],
-                                Is.EqualTo(expectedSlow).Within(3e-5f),
-                                $"Projected {projectedRows[row].articulator} slow output " +
-                                $"changed Animator stage at frame {frame}.");
-                        }
-
-                        var sampledCommon = commonFrames[frame - 1];
-                        var actualCommon = commonFrames[frame];
-                        for (var viseme = 0;
-                             viseme < VisemeReconstructionProfile.VisemeCount;
-                             viseme++)
-                        {
-                            var visibleRelease = sampledCommon.sparseFast[viseme];
-                            var expectedVisibleFast = visibleRelease;
-                            var phoneRelease = Mathf.LerpUnclamped(
-                                sampledCommon.sparseFast[viseme],
-                                sampledCommon.raw[viseme],
-                                sampledCommon.meanLead);
-                            var expectedPhoneObservation = phoneRelease;
-                            if (sampledCommon.viseme == 0)
-                            {
-                                var historyBlend = Mathf.InverseLerp(
-                                    AdvancedVisemeMath.SpeechHistoryHoldStart,
-                                    AdvancedVisemeMath.SpeechHistoryHoldFull,
-                                    sampledCommon.history);
-                                var holdStrength = Mathf.Clamp01(
-                                    sampledCommon.stability / 0.5f);
-                                expectedVisibleFast = Mathf.LerpUnclamped(
-                                    visibleRelease,
-                                    Mathf.LerpUnclamped(
-                                        visibleRelease,
-                                        sampledCommon.visibleFast[viseme],
-                                        historyBlend),
-                                    holdStrength);
-                                expectedPhoneObservation = Mathf.LerpUnclamped(
-                                    phoneRelease,
-                                    Mathf.LerpUnclamped(
-                                        phoneRelease,
-                                        sampledCommon.phoneObservationFast[viseme],
-                                        historyBlend),
-                                    holdStrength);
-                            }
-                            var expectedCommonSlow =
-                                sampledCommon.sparseSlow[viseme];
-                            var expectedRendered = Mathf.LerpUnclamped(
-                                sampledCommon.commonSlow[viseme],
-                                sampledCommon.visibleFast[viseme],
-                                sampledCommon.renderLead);
-                            Assert.That(actualCommon.visibleFast[viseme],
-                                Is.EqualTo(expectedVisibleFast).Within(3e-5f),
-                                $"Visible Beta fast lane used a raw endpoint at frame " +
-                                $"{frame}, viseme {viseme}.");
-                            Assert.That(actualCommon.phoneObservationFast[viseme],
-                                Is.EqualTo(expectedPhoneObservation).Within(3e-5f),
-                                $"Private phone observation lost training parity at " +
-                                $"frame {frame}, viseme {viseme}.");
-                            Assert.That(actualCommon.commonSlow[viseme],
-                                Is.EqualTo(expectedCommonSlow).Within(3e-5f));
-                            Assert.That(actualCommon.rendered[viseme],
-                                Is.EqualTo(expectedRendered).Within(3e-5f),
-                                $"Public viseme rendering consumed the private phone " +
-                                $"observation at frame {frame}, viseme {viseme}.");
-                            var privateVisibleDifference = Mathf.Abs(
-                                sampledCommon.phoneObservationFast[viseme] -
-                                sampledCommon.visibleFast[viseme]);
-                            maximumPrivateVisibleDifference = Mathf.Max(
-                                maximumPrivateVisibleDifference,
-                                privateVisibleDifference);
-                            maximumMeanLead = Mathf.Max(
-                                maximumMeanLead,
-                                Mathf.Abs(sampledCommon.meanLead));
-                            maximumRawFastDifference = Mathf.Max(
-                                maximumRawFastDifference,
-                                Mathf.Abs(sampledCommon.raw[viseme] -
-                                          sampledCommon.sparseFast[viseme]));
-                            maximumRawStep = Mathf.Max(
-                                maximumRawStep,
-                                Mathf.Abs(actualCommon.raw[viseme] -
-                                          sampledCommon.raw[viseme]));
-                            maximumSparseFastStep = Mathf.Max(
-                                maximumSparseFastStep,
-                                Mathf.Abs(actualCommon.sparseFast[viseme] -
-                                          sampledCommon.sparseFast[viseme]));
-                            privateObservationDiffersFromVisible |=
-                                privateVisibleDifference > 1e-4f;
+                                    2e-5f));
                         }
                     }
-                    var allRawParametersPresent = Enumerable.Range(
-                            0, VisemeReconstructionProfile.VisemeCount)
-                        .All(viseme => parameterNames.Contains(
-                            internalPrefix + $"/Viseme/{viseme}/Raw"));
-                    var allSparseFastParametersPresent = Enumerable.Range(
-                            0, VisemeReconstructionProfile.VisemeCount)
-                        .All(viseme => parameterNames.Contains(
-                            internalPrefix + $"/Viseme/{viseme}/SparseFast"));
-                    Assert.That(privateObservationDiffersFromVisible, Is.True,
-                        "The runtime trace must distinguish the visible and private " +
-                        "fast simplexes or it cannot detect accidental routing. " +
-                        $"maxPrivateVisible={maximumPrivateVisibleDifference:R}, " +
-                        $"maxMeanLead={maximumMeanLead:R}, " +
-                        $"maxRawFast={maximumRawFastDifference:R}, " +
-                        $"maxRawStep={maximumRawStep:R}, " +
-                        $"maxSparseFastStep={maximumSparseFastStep:R}, " +
-                        $"rawPresent={allRawParametersPresent}, " +
-                        $"sparseFastPresent={allSparseFastParametersPresent}.");
                 }
                 finally
                 {
@@ -2594,123 +2013,9 @@ namespace YUCP.Components.Editor.Tests
             }
             finally
             {
-                AdvancedVisemeAnimatorGraphOptimizer
-                    .SkipCongruenceInterningForStructureTests =
-                    previousSkipCongruence;
                 AssetDatabase.DeleteAsset(folder);
                 UnityEngine.Object.DestroyImmediate(profile);
                 UnityEngine.Object.DestroyImmediate(root);
-            }
-        }
-
-        [Test]
-        public void BlendTreeMissingAnimatorBindingsContributeNeutralZero()
-        {
-            var folderName = "__YUCP_AVR_ZeroWeight_" + Guid.NewGuid().ToString("N");
-            var folder = "Assets/" + folderName;
-            AssetDatabase.CreateFolder("Assets", folderName);
-            var runtimeRoot = new GameObject("Direct Zero Weight Runtime");
-            try
-            {
-                var controller = AnimatorController.CreateAnimatorControllerAtPath(
-                    folder + "/ZeroWeight.controller");
-                controller.AddParameter("Weight", AnimatorControllerParameterType.Float);
-                controller.AddParameter("Output", AnimatorControllerParameterType.Float);
-                controller.AddParameter("Branch", AnimatorControllerParameterType.Float);
-                controller.AddParameter("BranchOutput", AnimatorControllerParameterType.Float);
-                var clip = new AnimationClip { name = "One" };
-                AnimationUtility.SetEditorCurve(clip,
-                    EditorCurveBinding.FloatCurve("", typeof(Animator), "Output"),
-                    AnimationCurve.Constant(0f, 0f, 1f));
-                AssetDatabase.AddObjectToAsset(clip, controller);
-                var tree = new BlendTree
-                {
-                    name = "Unnormalized Direct",
-                    blendType = BlendTreeType.Direct,
-                    useAutomaticThresholds = false,
-                    children = new[]
-                    {
-                        new ChildMotion
-                        {
-                            motion = clip,
-                            directBlendParameter = "Weight",
-                            timeScale = 1f
-                        }
-                    }
-                };
-                AssetDatabase.AddObjectToAsset(tree, controller);
-                var serialized = new SerializedObject(tree);
-                serialized.FindProperty("m_NormalizedBlendValues").boolValue = false;
-                serialized.ApplyModifiedPropertiesWithoutUndo();
-                var state = controller.layers[0].stateMachine.AddState("Direct");
-                state.motion = tree;
-                controller.layers[0].stateMachine.defaultState = state;
-
-                controller.AddLayer("Missing Branch Binding");
-                var branchLayer = controller.layers[1];
-                branchLayer.defaultWeight = 1f;
-                var branchOne = new AnimationClip { name = "Branch One" };
-                AnimationUtility.SetEditorCurve(branchOne,
-                    EditorCurveBinding.FloatCurve("", typeof(Animator), "BranchOutput"),
-                    AnimationCurve.Constant(0f, 0f, 1f));
-                var branchEmpty = new AnimationClip { name = "Branch Empty" };
-                AssetDatabase.AddObjectToAsset(branchOne, controller);
-                AssetDatabase.AddObjectToAsset(branchEmpty, controller);
-                var branchTree = new BlendTree
-                {
-                    name = "Missing branch binding",
-                    blendType = BlendTreeType.Simple1D,
-                    blendParameter = "Branch",
-                    useAutomaticThresholds = false,
-                    children = new[]
-                    {
-                        new ChildMotion { motion = branchOne, threshold = 0f, timeScale = 1f },
-                        new ChildMotion { motion = branchEmpty, threshold = 1f, timeScale = 1f }
-                    }
-                };
-                AssetDatabase.AddObjectToAsset(branchTree, controller);
-                var branchState = branchLayer.stateMachine.AddState("Branch");
-                branchState.motion = branchTree;
-                branchLayer.stateMachine.defaultState = branchState;
-                var layers = controller.layers;
-                layers[1] = branchLayer;
-                controller.layers = layers;
-                AssetDatabase.SaveAssets();
-
-                var animator = runtimeRoot.AddComponent<Animator>();
-                animator.runtimeAnimatorController = controller;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-                animator.Rebind();
-                animator.Update(0f);
-                var initial = animator.GetFloat("Output");
-                animator.SetFloat("Weight", 1f);
-                animator.Update(1f / 60f);
-                var weighted = animator.GetFloat("Output");
-                animator.SetFloat("Weight", 0f);
-                animator.Update(1f / 60f);
-                var zero = animator.GetFloat("Output");
-                animator.SetFloat("Weight", 0.25f);
-                animator.Update(1f / 60f);
-                var quarter = animator.GetFloat("Output");
-                animator.SetFloat("Branch", 0f);
-                animator.Update(1f / 60f);
-                var branchBound = animator.GetFloat("BranchOutput");
-                animator.SetFloat("Branch", 1f);
-                animator.Update(1f / 60f);
-                var branchMissing = animator.GetFloat("BranchOutput");
-                Assert.That(initial, Is.EqualTo(0f).Within(1e-6f));
-                Assert.That(weighted, Is.EqualTo(1f).Within(1e-6f));
-                Assert.That(zero, Is.EqualTo(0f).Within(1e-6f),
-                    "A zero-weight Direct child must contribute the property's neutral value.");
-                Assert.That(quarter, Is.EqualTo(0.25f).Within(1e-6f));
-                Assert.That(branchBound, Is.EqualTo(1f).Within(1e-6f));
-                Assert.That(branchMissing, Is.EqualTo(0f).Within(1e-6f),
-                    "An unbound Simple1D branch must contribute the property's neutral value.");
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(runtimeRoot);
-                AssetDatabase.DeleteAsset(folder);
             }
         }
 
@@ -3490,8 +2795,7 @@ namespace YUCP.Components.Editor.Tests
                 component.GetInstanceID());
             var previousMode = SessionState.GetInt(modeKey, 0);
             SessionState.SetInt(modeKey, 0);
-            var editor = (AdvancedVisemeReconstructorDataEditor)
-                UnityEditor.Editor.CreateEditor(component);
+            var editor = UnityEditor.Editor.CreateEditor(component);
             try
             {
                 var root = editor.CreateInspectorGUI();
@@ -3675,65 +2979,9 @@ namespace YUCP.Components.Editor.Tests
             Assert.That(AdvancedVisemeReconstructorDataEditor
                 .ReactionSpeedFromSeconds(0.006f), Is.EqualTo(1f).Within(1e-6f));
             Assert.That(AdvancedVisemeReconstructorDataEditor
-                .ReactionSpeedFromSeconds(0.017f), Is.EqualTo(0.5f).Within(1e-6f));
-            Assert.That(AdvancedVisemeReconstructorDataEditor
                 .PauseStabilityFromSeconds(0.04f), Is.Zero.Within(1e-6f));
             Assert.That(AdvancedVisemeReconstructorDataEditor
                 .PauseStabilityFromSeconds(0.4f), Is.EqualTo(1f).Within(1e-6f));
-            Assert.That(AdvancedVisemeReconstructorDataEditor
-                .PauseStabilityFromSeconds(0.16f), Is.EqualTo(0.5f).Within(1e-6f));
-
-            Assert.That(AdvancedVisemeReconstructorDataEditor
-                .CenteredLinearToSlider(1f, 0f, 1f, 2f),
-                Is.EqualTo(0.5f).Within(1e-6f));
-            Assert.That(AdvancedVisemeReconstructorDataEditor
-                .SliderToCenteredLinear(0f, 0f, 1f, 2f), Is.Zero);
-            Assert.That(AdvancedVisemeReconstructorDataEditor
-                .SliderToCenteredLinear(0.5f, 0f, 1f, 2f), Is.EqualTo(1f));
-            Assert.That(AdvancedVisemeReconstructorDataEditor
-                .SliderToCenteredLinear(1f, 0f, 1f, 2f), Is.EqualTo(2f));
-        }
-
-        [Test]
-        public void SimpleInspectorDisplaysEveryCurrentDefaultAtFiftyPercent()
-        {
-            var gameObject = new GameObject("Advanced Viseme Centered Simple UI Test");
-            var component = gameObject.AddComponent<AdvancedVisemeReconstructorData>();
-            var profile = VisemeReconstructionProfile.CreateDefaultRuntimeProfile();
-            component.profile = profile;
-            var modeKey = AdvancedVisemeReconstructorDataEditor.InspectorModeSessionKey(
-                component.GetInstanceID());
-            var previousMode = SessionState.GetInt(modeKey, 0);
-            SessionState.SetInt(modeKey, 0);
-            var editor = UnityEditor.Editor.CreateEditor(component);
-            try
-            {
-                var root = editor.CreateInspectorGUI();
-                foreach (var name in new[]
-                         {
-                             "simple-speech-movement",
-                             "simple-speech-liveliness",
-                             "simple-quiet-speech",
-                             "simple-reaction-speed",
-                             "simple-pause-stability",
-                             "simple-pronunciation-help",
-                             "simple-face-tracking-priority",
-                             "simple-tongue-motion"
-                         })
-                {
-                    var slider = UQueryExtensions.Q<Slider>(root, name);
-                    Assert.That(slider, Is.Not.Null, name);
-                    Assert.That(slider.value, Is.EqualTo(0.5f).Within(1e-6f),
-                        name + " must show the current profile at 50%." );
-                }
-            }
-            finally
-            {
-                SessionState.SetInt(modeKey, previousMode);
-                UnityEngine.Object.DestroyImmediate(editor);
-                UnityEngine.Object.DestroyImmediate(profile);
-                UnityEngine.Object.DestroyImmediate(gameObject);
-            }
         }
 
         [Test]
@@ -3747,8 +2995,7 @@ namespace YUCP.Components.Editor.Tests
                 component.GetInstanceID());
             var previousMode = SessionState.GetInt(modeKey, 0);
             SessionState.SetInt(modeKey, 0);
-            var editor = (AdvancedVisemeReconstructorDataEditor)
-                UnityEditor.Editor.CreateEditor(component);
+            var editor = UnityEditor.Editor.CreateEditor(component);
             try
             {
                 var untouchedBilabialAssist = profile.bilabialAssistStrength;
@@ -3764,28 +3011,14 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(liveliness.enabledSelf, Is.True);
                 Assert.That(response.enabledSelf, Is.True);
                 Assert.That(stability.enabledSelf, Is.True);
-                Assert.That(movement.value, Is.EqualTo(0.5f).Within(1e-6f));
-                Assert.That(liveliness.value, Is.EqualTo(0.5f).Within(1e-6f));
-                Assert.That(response.value, Is.EqualTo(0.5f).Within(1e-6f));
-                Assert.That(stability.value, Is.EqualTo(0.5f).Within(1e-6f));
 
-                Assert.That(editor.ApplySimpleProfileValue(
-                    "speechMotionStrength", 0.37f,
-                    value => AdvancedVisemeReconstructorDataEditor
-                        .SliderToCenteredLinear(value, 0f, 1f, 2f)), Is.True);
-                Assert.That(editor.ApplySimpleProfileValue(
-                    "speechLiveliness", 0.82f,
-                    value => AdvancedVisemeReconstructorDataEditor
-                        .SliderToCenteredLinear(value, -1f, 0f, 1f)), Is.True);
-                Assert.That(editor.ApplySimpleProfileValue(
-                    "visemeResponseSeconds", 1f,
-                    AdvancedVisemeReconstructorDataEditor.SecondsFromReactionSpeed), Is.True);
-                Assert.That(editor.ApplySimpleProfileValue(
-                    "speechHangoverSeconds", 0f,
-                    AdvancedVisemeReconstructorDataEditor.SecondsFromPauseStability), Is.True);
+                movement.value = 0.37f;
+                liveliness.value = 0.82f;
+                response.value = 1f;
+                stability.value = 0f;
 
-                Assert.That(profile.speechMotionStrength, Is.EqualTo(0.74f).Within(1e-6f));
-                Assert.That(profile.speechLiveliness, Is.EqualTo(0.64f).Within(1e-6f));
+                Assert.That(profile.speechMotionStrength, Is.EqualTo(0.37f).Within(1e-6f));
+                Assert.That(profile.speechLiveliness, Is.EqualTo(0.82f).Within(1e-6f));
                 Assert.That(profile.visemeResponseSeconds, Is.EqualTo(0.006f).Within(1e-6f));
                 Assert.That(profile.speechHangoverSeconds, Is.EqualTo(0.04f).Within(1e-6f));
                 Assert.That(profile.bilabialAssistStrength,
@@ -3810,8 +3043,7 @@ namespace YUCP.Components.Editor.Tests
                 component.GetInstanceID());
             var previousMode = SessionState.GetInt(modeKey, 0);
             SessionState.SetInt(modeKey, 0);
-            var editor = (AdvancedVisemeReconstructorDataEditor)
-                UnityEditor.Editor.CreateEditor(component);
+            var editor = UnityEditor.Editor.CreateEditor(component);
             string createdPath = null;
             try
             {
@@ -3820,20 +3052,17 @@ namespace YUCP.Components.Editor.Tests
                 var liveliness = UQueryExtensions.Q<Slider>(root, "simple-speech-liveliness");
                 Assert.That(liveliness.enabledSelf, Is.True);
 
-                Assert.That(editor.ApplySimpleProfileValue(
-                    "speechLiveliness", 0.82f,
-                    value => AdvancedVisemeReconstructorDataEditor
-                        .SliderToCenteredLinear(value, -1f, 0f, 1f)), Is.True);
+                liveliness.value = 0.82f;
 
                 Assert.That(component.profile, Is.Not.Null);
                 createdPath = AssetDatabase.GetAssetPath(component.profile);
                 Assert.That(createdPath, Does.StartWith("Assets/YUCP/AdvancedVisemeProfiles/"));
                 Assert.That(component.profile.speechLiveliness,
-                    Is.EqualTo(0.64f).Within(1e-6f));
+                    Is.EqualTo(0.82f).Within(1e-6f));
                 Assert.That(component.profile.speechMotionStrength,
                     Is.EqualTo(1f).Within(1e-6f));
                 Assert.That(component.profile.visemeResponseSeconds,
-                    Is.EqualTo(0.017f).Within(1e-6f),
+                    Is.EqualTo(0.024f).Within(1e-6f),
                     "Copy-on-edit must preserve every unrelated recommended default.");
             }
             finally
@@ -4019,9 +3248,7 @@ namespace YUCP.Components.Editor.Tests
                         null,
                         "Face",
                         "tracking",
-                        "links",
-                        false,
-                        false
+                        "links"
                     });
                 }
 
@@ -4129,9 +3356,7 @@ namespace YUCP.Components.Editor.Tests
                         mesh,
                         "Face",
                         "tracking",
-                        "links",
-                        false,
-                        false
+                        "links"
                     });
                 }
 

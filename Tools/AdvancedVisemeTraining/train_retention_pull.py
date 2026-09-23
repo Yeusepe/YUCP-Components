@@ -195,11 +195,6 @@ namespace YUCP.Components
             return PreviousRowValues[Index(winner, channel)];
         }}
 
-        public static float CurrentRow(int winner, int channel)
-        {{
-            return CurrentRowValues[Index(winner, channel)];
-        }}
-
         /// <summary>
         /// The (current, age)-only part of the pull, folded into decoder
         /// trajectory curves at build time: correction = Decay(age) * this,

@@ -99,8 +99,8 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.nuget.mono-cecil": {
-      "version": "1.11.4",
-      "depth": 2,
+      "version": "1.11.6",
+      "depth": 1,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
@@ -255,24 +255,22 @@
       "source": "embedded",
       "dependencies": {}
     },
-    "com.yucp.importer": {
-      "version": "file:com.yucp.importer",
+    "com.yucp.private": {
+      "version": "file:com.yucp.private",
       "depth": 0,
       "source": "embedded",
-      "dependencies": {
-        "com.unity.nuget.newtonsoft-json": "3.2.1"
-      }
+      "dependencies": {}
     },
     "io.github.hatayama.uloopmcp": {
       "version": "https://github.com/hatayama/unity-cli-loop.git?path=/Packages/src",
       "depth": 0,
       "source": "git",
       "dependencies": {
-        "com.unity.modules.physics": "1.0.0",
         "com.unity.ugui": "1.0.0",
-        "com.unity.nuget.newtonsoft-json": "3.2.1"
+        "com.unity.nuget.newtonsoft-json": "3.2.1",
+        "com.unity.nuget.mono-cecil": "1.11.6"
       },
-      "hash": "b4db8944ae168d330eb871b94f281db99a5a3e98"
+      "hash": "2b49ef1ad1d6d2aee0bcc4a820cc2912ea2e788d"
     },
     "lyuma.av3emulator": {
       "version": "file:lyuma.av3emulator",
