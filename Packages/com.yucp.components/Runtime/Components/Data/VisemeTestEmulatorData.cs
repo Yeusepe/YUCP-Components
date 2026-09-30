@@ -30,6 +30,9 @@ namespace YUCP.Components
         [Tooltip("Auto uses the Oculus LipSync Unity plugin when installed, then falls back to YUCP's local analyzer.")]
         public VisemeTestAnalysisBackend analysisBackend = VisemeTestAnalysisBackend.Auto;
 
+        [Tooltip("Automatically boosts quiet speech before analysis. Disable this to leave low-level input at its original volume.")]
+        public bool automaticGain = true;
+
         [Range(0.1f, 5f)]
         [Tooltip("Input gain applied before analysis.")]
         public float microphoneGain = 1f;
@@ -46,7 +49,7 @@ namespace YUCP.Components
         [Tooltip("Voice value used while Manual input is selected.")]
         public float manualVoice = 1f;
 
-        [Tooltip("Write Viseme and Voice into Gesture Manager when it is active.")]
+        [Tooltip("Write Viseme and Voice into every targeted Gesture Manager when it is active.")]
         public bool driveGestureManager = true;
 
         [Tooltip("Also write the built-in Viseme and Voice parameters on the avatar Animator.")]

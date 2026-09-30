@@ -19,6 +19,10 @@ namespace YUCP.Components
     {
         public const int VisemeCount = 15;
 
+
+
+        public const int ReconstructionVersion = 2;
+
         private sealed class EmbeddedCorpusSource : IAdvancedVisemeCoarticulationSource
         {
             public int Version => AdvancedVisemeTransitionRetention.ModelVersion;
@@ -122,23 +126,6 @@ namespace YUCP.Components
             return Mathf.Clamp01((1f - Mathf.Clamp01(retention)) * Mathf.Clamp01(strength));
         }
 
-        public static float MeanTransitionLead(
-            IReadOnlyList<float> previousWeights,
-            int currentViseme,
-            float strength = 1f)
-        {
-            ValidateWeights(previousWeights);
-            if ((uint)currentViseme >= VisemeCount) throw new ArgumentOutOfRangeException(nameof(currentViseme));
-
-            var retention = 0f;
-            for (var previous = 0; previous < VisemeCount; previous++)
-            {
-                retention += Mathf.Max(0f, previousWeights[previous]) *
-                             MeanRetention(previous, currentViseme);
-            }
-            return Mathf.Clamp01((1f - Mathf.Clamp01(retention)) * Mathf.Clamp01(strength));
-        }
-
         public static void ReconstructWeights(
             IReadOnlyList<float> slow,
             IReadOnlyList<float> fast,
@@ -152,6 +139,9 @@ namespace YUCP.Components
             if (output == null) throw new ArgumentNullException(nameof(output));
             if (output.Length != VisemeCount)
                 throw new ArgumentException("Coarticulation weights require exactly 15 output channels.", nameof(output));
+
+
+
 
             var lead = TransitionLead(group, slow, currentViseme, strength);
             for (var i = 0; i < VisemeCount; i++) output[i] = Mathf.Lerp(slow[i], fast[i], lead);
