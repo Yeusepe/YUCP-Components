@@ -170,11 +170,11 @@ namespace YUCP.Components
     [Serializable]
     public sealed class VisemePhraseCompiledModel
     {
-        // Schema 8 keeps distinct raw-winner probation clocks and removes
-        // uncalibrated runtime timing grace. Schema 7 made the categorical
-        // observer's proven minimum residence part of the matcher contract;
-        // schema 6 calibrated phrase-wide timing corridors; schema 5 added
-        // bounded one-confusion paths. Enrolled takes may never be pruned.
+
+
+
+
+
         public const int CurrentModelSchemaVersion = 8;
 
         public int modelSchemaVersion = CurrentModelSchemaVersion;
@@ -234,15 +234,6 @@ namespace YUCP.Components
                     return enrollment;
             }
             return null;
-        }
-
-        public VisemePhraseEnrollment FindEnrollmentForPrompt(
-            string phraseId,
-            string prompt)
-        {
-            return FindEnrollment(
-                phraseId,
-                AdvancedVisemeParameterContract.PromptFingerprint(prompt));
         }
 
         public VisemePhraseCompiledModel FindCompiledModel(

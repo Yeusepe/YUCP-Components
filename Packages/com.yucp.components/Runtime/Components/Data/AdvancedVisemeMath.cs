@@ -13,7 +13,21 @@ namespace YUCP.Components
         public const float SpeechHistoryHoldFull = 0.55f;
         public const float SpeechPresenceAttackSeconds = 0.009f;
         public const float SpeechPresenceReleaseSeconds = 0.055f;
-        public const float MaximumSpeechLivelinessLead = 0.85f;
+
+
+
+        public const float MaximumSpeechLivelinessLead = 0.20f;
+
+
+
+
+
+
+
+
+
+
+        public const float SimplexCullingEpsilon = 0.0003f;
 
         /// <summary>
         /// State for the causal, one-pole speech-history observer. History is
@@ -33,6 +47,24 @@ namespace YUCP.Components
             if (!IsFinite(deltaTime) || deltaTime <= 0f) return 0f;
             if (!IsFinite(responseSeconds) || responseSeconds <= 0f) return 1f;
             return Mathf.Clamp01(1f - Mathf.Exp(-deltaTime / responseSeconds));
+        }
+
+        /// <summary>
+        /// Applies a continuous nonnegative soft dead-zone without feeding the
+        /// approximation back into the simplex observer. Values at or below the
+        /// threshold become exactly zero; the remaining interval is rescaled so
+        /// a unit endpoint remains exactly one.
+        /// </summary>
+        public static float SparsifySimplexCoordinate(
+            float value,
+            float epsilon = SimplexCullingEpsilon)
+        {
+            value = Sanitize01(value);
+            epsilon = IsFinite(epsilon)
+                ? Mathf.Clamp(epsilon, 0f, 0.1f)
+                : SimplexCullingEpsilon;
+            if (value <= epsilon) return 0f;
+            return Mathf.Clamp01((value - epsilon) / (1f - epsilon));
         }
 
         public static void StepSimplex(
@@ -63,7 +95,7 @@ namespace YUCP.Components
         /// Converts the centered Silence Stability control to the release time
         /// constant used by the history observer. The default control value of
         /// 0.5 uses the configured response and the upper half extends it up to
-        /// 2x. The lower half changes hold authority, not the history trajectory;
+        /// 4x. The lower half changes hold authority, not the history trajectory;
         /// its zero endpoint is still an exact observer bypass.
         /// </summary>
         public static float SpeechHistoryReleaseSeconds(
@@ -74,7 +106,7 @@ namespace YUCP.Components
                 ? Mathf.Max(0f, configuredReleaseSeconds)
                 : 0f;
             var extension = Mathf.Clamp01(2f * Sanitize01(silenceStability) - 1f);
-            return configuredReleaseSeconds * (1f + extension);
+            return configuredReleaseSeconds * (1f + 3f * extension);
         }
 
         /// <summary>
@@ -92,7 +124,7 @@ namespace YUCP.Components
                 : 0f;
             var extension = Mathf.Clamp01(2f * Sanitize01(silenceStability) - 1f);
             var configuredAlpha = Alpha(deltaTime, configuredReleaseSeconds);
-            var extendedAlpha = Alpha(deltaTime, 2f * configuredReleaseSeconds);
+            var extendedAlpha = Alpha(deltaTime, 4f * configuredReleaseSeconds);
             return Mathf.Lerp(configuredAlpha, extendedAlpha, extension);
         }
 
@@ -141,7 +173,7 @@ namespace YUCP.Components
             var hardPhone = observedViseme != 0;
             // BlendTree selectors sample h_k while the history Motion writes
             // h_(k+1). Compute this frame's authority first so the reference and
-            // generated Animator share the same causal ordering.
+
             var holdWeight = SpeechHistoryHoldWeight(
                 state.History, observedViseme, silenceStability);
             var presenceAttack = Alpha(deltaTime, SpeechPresenceAttackSeconds);
@@ -151,9 +183,9 @@ namespace YUCP.Components
             }
             else
             {
-                // The generated nested tree blends an inactive release Motion
-                // with an active attack Motion. Reproduce that composition
-                // exactly instead of approximating it as smoothing toward w.
+
+
+
                 var presenceRelease = Alpha(
                     deltaTime, SpeechPresenceReleaseSeconds);
                 var inactivePresence = state.Presence * (1f - presenceRelease);
@@ -253,6 +285,22 @@ namespace YUCP.Components
             return Mathf.Lerp(
                 slow, fast,
                 SpeechLivelinessLead(speechLiveliness, trackingBlend));
+        }
+
+        /// <summary>
+        /// Numerical reference for the generated Exaggeration graph. The gain
+        /// may amplify a quiet speech envelope, but it cannot leave the authored
+        /// zero-to-one pose domain.
+        /// </summary>
+        public static float ExaggeratedSpeechGain(
+            float speechGain,
+            float exaggeration)
+        {
+            speechGain = IsFinite(speechGain) ? Mathf.Clamp01(speechGain) : 0f;
+            exaggeration = IsFinite(exaggeration)
+                ? Mathf.Clamp(exaggeration, 0f, 2f)
+                : 0f;
+            return Mathf.Clamp01(speechGain * exaggeration);
         }
 
         /// <summary>
@@ -359,9 +407,9 @@ namespace YUCP.Components
             }
             else
             {
-                // C1-continuous soft maximum. Unlike blending toward the floor
-                // by a violation-dependent weight, its derivative never becomes
-                // negative near the boundary.
+
+
+
                 var shifted = difference + width;
                 projected = floor + shifted * shifted / (4f * width);
             }
@@ -390,7 +438,7 @@ namespace YUCP.Components
             }
             else
             {
-                // Symmetric C1-continuous soft minimum.
+
                 var shifted = width - difference;
                 projected = ceiling - shifted * shifted / (4f * width);
             }
@@ -553,9 +601,9 @@ namespace YUCP.Components
             lipClose = Sanitize01(lipClose);
             tongueContact = Sanitize01(tongueContact);
             mConfidence = Sanitize01(ppWeight) * energy * Mathf.Lerp(0.6f, 1f, lipClose);
-            // Oculus nn represents n/l. Those phones constrain the tongue, not
-            // the lips, so observed closure must not veto otherwise valid nn
-            // evidence (for example a deliberately closed-mouth /n/).
+
+
+
             nConfidence = Sanitize01(nnWeight) * energy * Mathf.Lerp(0.6f, 1f, tongueContact);
         }
 
@@ -584,8 +632,8 @@ namespace YUCP.Components
             conditionedPp = Mathf.Lerp(ppWeight, modelPp, confidence);
             conditionedNn = candidateMass - conditionedPp;
 
-            // Guard Animator-facing callers against malformed non-simplex input
-            // without perturbing the valid simplex path above.
+
+
             if (!IsFinite(conditionedPp) || !IsFinite(conditionedNn))
             {
                 conditionedPp = ppWeight;
@@ -677,7 +725,7 @@ namespace YUCP.Components
                 }).ToArray();
             }
 
-            var bits = 2; // LipTrackingActive and the manual enable toggle.
+            var bits = 2;
             foreach (var articulator in articulators)
             {
                 bits += TrackingMagnitudeBits(articulator, encoding);
