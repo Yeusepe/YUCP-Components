@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -83,10 +84,10 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            // Resolve the creator-authored avatar once, before any AVR component
-            // adds a staged controller or parameter asset. Otherwise a second
-            // Outputs Only component could discover the first component's random
-            // staging path and receive a non-deterministic hash/input source.
+
+
+
+
             var sourceTrackingCatalog =
                 AdvancedVisemeTrackingCatalog.Scan(avatarRoot, descriptor);
             var sourceBlendShapeLinkCatalog =
@@ -204,11 +205,11 @@ namespace YUCP.Components.Editor
                     }
                     else
                     {
-                        // Auto may legitimately find no face-tracking installation,
-                        // in which case speech-only fallback is safe. It must not,
-                        // however, silently take lower-face ownership after finding
-                        // an ambiguous or malformed installation: the generated
-                        // Override layer would then hide the working template.
+
+
+
+
+
                         if (ownsMouth && !string.IsNullOrEmpty(resolutionError))
                             return Fail(component, resolutionError);
                         effectiveTrackingInputs = AdvancedVisemeTrackingInputs.Disabled;
@@ -256,18 +257,26 @@ namespace YUCP.Components.Editor
                 if (renderer != null && !HasUniqueAnimatorRendererBinding(
                         avatarRoot, renderer, out var rendererBindingError))
                     return Fail(component, rendererBindingError);
+                var useSharedParameterCompressor =
+                    component.createTuningMenu &&
+                    avatarRoot.GetComponentsInChildren<ParameterCompressorData>(true)
+                        .Length == 1;
                 var hash = StableHash(
                     component, profile, sourceMesh, rendererPath,
                     catalog.DependencyFingerprint,
-                    blendShapeLinkCatalog.DependencyFingerprint);
-                // Keep primary calibration identities stable when a creator adds,
-                // removes, or retargets a BlendShape Link. Linked geometry still
-                // participates in the full build hash/folder, but it must not
-                // rename curves on the authoritative face renderer.
+                    blendShapeLinkCatalog.DependencyFingerprint,
+                    trackingEnabled,
+                    useSharedParameterCompressor);
+
+
+
+
                 var primaryHash = StableHash(
                     component, profile, sourceMesh, rendererPath,
                     catalog.DependencyFingerprint,
-                    string.Empty);
+                    string.Empty,
+                    trackingEnabled,
+                    useSharedParameterCompressor);
                 var finalFolder =
                     $"{GeneratedRoot}/{Sanitize(avatarRoot.name)}_{hash.Substring(0, 12)}";
                 var folder = transaction.StageGeneratedFolder(finalFolder);
@@ -413,6 +422,7 @@ namespace YUCP.Components.Editor
                     externalPoses = externalPoses,
                     targetMesh = sourceMesh,
                     trackingEnabled = trackingEnabled,
+                    useSharedParameterCompressor = useSharedParameterCompressor,
                     existingExpressionParameters = new HashSet<string>(existing.Keys, StringComparer.Ordinal)
                 };
                 if (!ValidateTuningParameters(request, existing, out var tuningError))
@@ -466,10 +476,11 @@ namespace YUCP.Components.Editor
                     : ", direct-pose fallback";
                 var trackingText = trackingResolution != null ? $", {trackingResolution.Summary}" : string.Empty;
                 var tuningText = built.tuningParameters.Count > 0
-                    ? component.tuningSyncMode == AdvancedVisemeTuningSyncMode.CompactSynced
-                        ? $", {built.tuningParameters.Count} saved sliders shared through " +
+                    ? useSharedParameterCompressor
+                        ? $", {built.tuningParameters.Count} saved sliders registered " +
+                          "with the shared Parameter Compressor"
+                        : $", {built.tuningParameters.Count} saved sliders shared through " +
                           $"{built.tuningSyncBits} compact synced bits"
-                        : $", {built.tuningParameters.Count} saved local sliders (0 synced bits)"
                     : string.Empty;
                 component.SetBuildSummary($"Built {built.globalParameters.Distinct().Count()} reusable outputs, +{trackingBits + built.tuningSyncBits} synced bits{tuningText}{trackingText}{calibrationText}{linkedRendererSummary.Text}");
                 EditorUtility.SetDirty(component);
@@ -511,7 +522,7 @@ namespace YUCP.Components.Editor
                 if (reuseExisting)
                 {
                     if (resolvedNames == null || !resolvedNames.TryGetValue(articulator, out var resolvedName))
-                        continue; // Missing external channels fall back to reconstructed speech.
+                        continue;
                     if (!catalog.HasAnimatorFloat(resolvedName))
                     {
                         error = $"Existing tracking source '{resolvedName}' must be a Float Animator parameter.";
@@ -775,11 +786,11 @@ namespace YUCP.Components.Editor
                         }
                     }
 
-                    // Unsigned articulation-only links remain entirely native to
-                    // VRCFury. Signed coordinates are different: VRCFury's copied
-                    // positive shape is clamped at zero for a negative value, so a
-                    // mapped signed basis still needs a target-local -U carrier even
-                    // when the target has no authored Oculus visemes.
+
+
+
+
+
                     if (!RequiresLinkedRendererCalibration(
                             hasMappedViseme, targetBasis))
                     {
@@ -882,12 +893,12 @@ namespace YUCP.Components.Editor
             if (catalog == null || primaryRenderer == null || primarySourceMesh == null)
                 return plans;
 
-            // Discover the complete reachable graph so direct links can be
-            // calibrated and indirect authored-viseme chains can fail closed.
-            // Installed VRCFury applies each feature once, so treating graph
-            // reachability as order-independent runtime propagation would be
-            // incorrect. The fixed-point queue is used only for provenance and is
-            // cycle-safe because every renderer has a finite name relation.
+
+
+
+
+
+
             var outgoing = catalog.Targets
                 .Where(target => target?.baseRenderer != null &&
                                  target.linkedRenderer != null)
@@ -964,9 +975,9 @@ namespace YUCP.Components.Editor
                                     "). Only identity articulation self-links are inert; " +
                                     "move renamed mappings to a separate renderer.");
 
-                            // Articulation-only self-links do not need an AVR overlay. Leave
-                            // their native VRCFury behavior alone without making unrelated
-                            // direct links inherit a false cycle diagnostic.
+
+
+
                             continue;
                         }
                         AddUnsafeLinkReason(
@@ -1313,10 +1324,22 @@ namespace YUCP.Components.Editor
                             $"{parameter.valueType}. Change its type or use another parameter prefix.";
                     return false;
                 }
-                if (parameter.networkSynced)
+                if (!Mathf.Approximately(
+                        parameter.defaultValue,
+                        AdvancedVisemeTuning.SliderDefault))
+                {
+                    error = $"Existing tuning parameter '{name}' defaults to " +
+                            $"{parameter.defaultValue:0.###}. All Advanced Viseme sliders " +
+                            "use 0.5 as the exact current-profile midpoint; change its " +
+                            "default to 0.5 or use another parameter prefix.";
+                    return false;
+                }
+                if (parameter.networkSynced &&
+                    !request.useSharedParameterCompressor)
                 {
                     error = $"Existing tuning parameter '{name}' is synced. Tuning sliders are " +
-                            "local-only by design; make it unsynced or use another parameter prefix.";
+                            "transported through YUCP's compact shared carrier, so the source Float " +
+                            "must remain unsynced. Make it unsynced or use another parameter prefix.";
                     return false;
                 }
                 if (parameter.saved != request.component.saveTuningValues)
@@ -1328,10 +1351,13 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            if (request.component.tuningSyncMode !=
-                    AdvancedVisemeTuningSyncMode.CompactSynced ||
-                generatedControls.Count == 0)
+            if (generatedControls.Count == 0)
                 return true;
+
+
+
+
+            if (request.useSharedParameterCompressor) return true;
 
             var dataParameter = AdvancedVisemeTuning.CompactSyncDataParameter(
                 request.component.NormalizedPrefix);
@@ -1738,16 +1764,16 @@ namespace YUCP.Components.Editor
                 if (completed) return;
                 foreach (var stage in generatedFolders) Promote(stage);
                 AssetDatabase.SaveAssets();
-                // Refresh while every previous final folder still exists as a
-                // backup. If this fails, Dispose can restore all folders and
-                // avatar mutations in one pass.
+
+
+
                 AssetDatabase.Refresh();
                 completed = true;
 
-                // Backup cleanup happens after the commit boundary and is
-                // deliberately best-effort. A cleanup failure cannot invalidate
-                // the already-saved new build or trigger an impossible rollback
-                // after another backup was deleted.
+
+
+
+
                 foreach (var stage in generatedFolders)
                 {
                     if (!stage.backupMoved) continue;
@@ -1783,9 +1809,9 @@ namespace YUCP.Components.Editor
                 }
                 catch (Exception exception)
                 {
-                    // Asset cleanup may fail because Unity is refreshing or an
-                    // external process locked a file. Avatar-object restoration
-                    // must still run, so never let this escape Dispose.
+
+
+
                     Debug.LogError(
                         $"[YUCP Advanced Viseme] Generated asset rollback failed: " +
                         exception.Message, avatarRoot);
@@ -1992,7 +2018,9 @@ namespace YUCP.Components.Editor
             Mesh mesh,
             string rendererPath,
             string trackingDependencies,
-            string blendShapeLinkDependencies)
+            string blendShapeLinkDependencies,
+            bool trackingEnabled,
+            bool useSharedParameterCompressor)
         {
             var meshPath = mesh != null ? AssetDatabase.GetAssetPath(mesh) : string.Empty;
             var dependency = mesh == null
@@ -2004,7 +2032,8 @@ namespace YUCP.Components.Editor
             var coarticulationDependency = component.reconstructionMode ==
                                            AdvancedVisemeReconstructionMode.BetaCoarticulation
                 ? AdvancedVisemeCoarticulationModel.ModelVersion + ":" +
-                  AdvancedVisemeCoarticulationModel.ContentSha256 + ":tongue:" +
+                  AdvancedVisemeCoarticulationModel.ContentSha256 + ":reconstruction:" +
+                  AdvancedVisemeCoarticulationModel.ReconstructionVersion + ":tongue:" +
                   AdvancedVisemeVisibleTongueResidual.ModelVersion + ":" +
                   AdvancedVisemeVisibleTongueResidual.BalancedContentSha256 + ":" +
                   AdvancedVisemeVisibleTongueResidual.QualityContentSha256 + ":phone:" +
@@ -2018,8 +2047,26 @@ namespace YUCP.Components.Editor
                                    component.tuningMenuPath + ":" +
                                    component.saveTuningValues + ":" +
                                    component.tuningSyncMode + ":" +
-                                   component.tuningMenuSections;
-            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|{component.existingTrackingPrefix}";
+                                   component.tuningMenuSections + ":shared:" +
+                                   useSharedParameterCompressor;
+            var haloDependency = AdvancedVisemeAnimatorBuilder
+                .ShouldUseOculusHalo(trackingEnabled)
+                ? "static-interruptible:" +
+                  AdvancedVisemeOculusHalo.ModelVersion + ":" +
+                  AdvancedVisemeOculusHalo.ContentSha256 + ":" +
+                  AdvancedVisemeOculusHalo.TableSha256 + ":topK:" +
+                  AdvancedVisemeOculusHalo.TopK + ":dynamics:" +
+                  AdvancedVisemeOculusDynamics.ModelVersion + ":" +
+                  AdvancedVisemeOculusDynamics.ContentSha256 + ":" +
+                  AdvancedVisemeOculusDynamics.ModelSha256 + ":" +
+                  AdvancedVisemeOculusDynamics.TrajectoryDurationSeconds.ToString(
+                      "R", CultureInfo.InvariantCulture) + ":" +
+                  AdvancedVisemeOculusDynamics.TrajectoryCoreDurationSeconds.ToString(
+                      "R", CultureInfo.InvariantCulture) + ":" +
+                  AdvancedVisemeOculusDynamics.TargetCrossfadeSeconds.ToString(
+                      "R", CultureInfo.InvariantCulture)
+                : "disabled";
+            var settings = $"{rendererPath}|{dependency}|{trackingDependencies}|{blendShapeLinkDependencies}|{profileJson}|{component.NormalizedPrefix}|{component.mouthOwnership}|{component.reconstructionMode}|{coarticulationDependency}|{component.trackingInputs}|trackingEnabled:{trackingEnabled}|halo:{haloDependency}|{component.trackingEncoding}|{component.fusionMode}|{toggleDependency}|{tuningDependency}|optimizer:{AdvancedVisemeAnimatorGraphOptimizer.Version}|{component.existingTrackingPrefix}";
             return Hash128.Compute(settings).ToString();
         }
 
@@ -2030,21 +2077,21 @@ namespace YUCP.Components.Editor
             clone.hideFlags = HideFlags.HideAndDontSave;
             try
             {
-                // These fields are editor diagnostics/migration bookkeeping, not
-                // rendering inputs. Normalizing them prevents build 1 from
-                // changing build 2's content address after calibration writes its
-                // error report back to a reusable profile.
+
+
+
+
                 clone.SetDiagnostics(0f, 0f);
                 var defaultsVersion = typeof(VisemeReconstructionProfile).GetField(
                     "defaultsVersion",
                     BindingFlags.Instance | BindingFlags.NonPublic);
                 defaultsVersion?.SetValue(clone, 0);
 
-                // EditorJsonUtility serializes Unity object references using
-                // session identity. Strip those references from the structural
-                // JSON and append semantic GUID/local-id/dependency hashes in a
-                // stable field order instead. In-place clip edits now regenerate
-                // outputs, while an editor reload does not rename them.
+
+
+
+
+
                 var animationDependencies = new List<string>();
                 for (var index = 0; index < clone.visemePoses.Length; index++)
                 {
@@ -2090,9 +2137,9 @@ namespace YUCP.Components.Editor
                 return $"{value.GetType().FullName}:{guid}:{localId}:{dependency}";
             }
 
-            // Unsaved profile clips have no cross-session identity. Their
-            // serialized content is still deterministic for the current build
-            // and changes whenever the creator edits the in-memory clip.
+
+
+
             return value.GetType().FullName + ":memory:" +
                    Hash128.Compute(EditorJsonUtility.ToJson(value));
         }
