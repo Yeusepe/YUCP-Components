@@ -18,8 +18,8 @@ namespace YUCP.Components.Editor.Tests
             for (var i = 0; i < 36; i++)
                 AppendSynthetic(immediate, i, frameSamples, sampleRate);
 
-            // Simulate editor ticks delivering 1, 8, 3 and then 24 queued analyzer
-            // blocks. The recorder sees every block and timestamps by sample clock.
+
+
             var cursor = 0;
             foreach (var chunk in new[] { 1, 8, 3, 24 })
             {
@@ -110,6 +110,41 @@ namespace YUCP.Components.Editor.Tests
                 Assert.That(
                     VisemeTestPreviewSession.MicrophoneBufferSeconds(emulator),
                     Is.EqualTo(VisemeTestPreviewSession.PreviewMicrophoneBufferSeconds));
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void NestedLosslessScopesRemainActiveUntilTheLastOwnerDisposes()
+        {
+            var root = new GameObject("Nested Lossless Capture Test");
+            try
+            {
+                var emulator = root.AddComponent<VisemeTestEmulatorData>();
+                var first = VisemeTestPreviewSession.BeginLosslessAnalysis(emulator);
+                var second = VisemeTestPreviewSession.BeginLosslessAnalysis(emulator);
+                try
+                {
+                    Assert.That(VisemeTestPreviewSession.MicrophoneBufferSeconds(
+                        emulator), Is.EqualTo(
+                        VisemeTestPreviewSession.LosslessMicrophoneBufferSeconds));
+                    first.Dispose();
+                    Assert.That(VisemeTestPreviewSession.MicrophoneBufferSeconds(
+                        emulator), Is.EqualTo(
+                        VisemeTestPreviewSession.LosslessMicrophoneBufferSeconds));
+                    second.Dispose();
+                    Assert.That(VisemeTestPreviewSession.MicrophoneBufferSeconds(
+                        emulator), Is.EqualTo(
+                        VisemeTestPreviewSession.PreviewMicrophoneBufferSeconds));
+                }
+                finally
+                {
+                    first.Dispose();
+                    second.Dispose();
+                }
             }
             finally
             {

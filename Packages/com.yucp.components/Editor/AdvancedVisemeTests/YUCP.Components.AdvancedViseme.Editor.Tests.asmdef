@@ -1,5 +1,5 @@
 {
-    "name": "com.yucp.components.AdvancedViseme.Editor.Tests",
+    "name": "com.yucp.components.Editor.Tests.AdvancedViseme",
     "rootNamespace": "YUCP.Components.Editor.Tests",
     "references": [
         "com.yucp.components.Runtime",
