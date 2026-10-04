@@ -19,9 +19,9 @@ namespace YUCP.Components.Editor.VisemePhrase
         internal const int MaximumCompiledStates = 32;
         internal const int MaximumGeneratedTimingSegments = 128;
         internal const int MaximumStatesPerVariant = 12;
-        // Bump whenever generated Animator semantics change. Content-addressed
-        // folders may outlive a package update, so the parameter contract alone
-        // is not a sufficient cache key for controller topology/timing changes.
+
+
+
         internal const int ControllerGeneratorSchemaVersion = 10;
         internal const float InitialNetworkSuppressionSeconds = 1.25f;
         internal const float DefaultPulseSeconds = 0.25f;
@@ -73,10 +73,10 @@ namespace YUCP.Components.Editor.VisemePhrase
         internal float leadingPauseSeconds;
         internal float trailingPauseSeconds;
         internal float runtimeAcceptanceCost = 1f;
-        // Natural and pause-bounded phrases consume the same raw viseme stream.
-        // Boundary mode is session state, not a second matcher: splitting it here
-        // makes two transitions eligible for the same observation and turns the
-        // result into Animator transition-order roulette.
+
+
+
+
         internal string MatcherClassKey => sourcePrefix ?? string.Empty;
         internal readonly List<VisemePhraseBuildVariant> variants =
             new List<VisemePhraseBuildVariant>();
@@ -111,11 +111,6 @@ namespace YUCP.Components.Editor.VisemePhrase
             return output.ToString();
         }
 
-        internal string TraceSetFingerprint() => string.Join("||", variants
-            .Select(item => item.CanonicalTrace())
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(item => item, StringComparer.Ordinal));
-
         private static void Append(StringBuilder output, string value)
         {
             value = value ?? string.Empty;
@@ -126,23 +121,23 @@ namespace YUCP.Components.Editor.VisemePhrase
     internal sealed class VisemePhraseBuildVariant
     {
         internal string id;
-        // Context-derived paths are optional language bridges. The avatar-wide
-        // budget fitter may remove them, but never a directly enrolled path.
+
+
         internal bool inferredContextPath;
-        // Generic one-confusion paths are lower-priority than profile/context
-        // paths and are therefore the first optional paths removed by the
-        // avatar-wide state fitter.
+
+
+
         internal bool inferredConfusionPath;
-        // A synthesized timing midpoint is optional even when it belongs to a
-        // creator-recorded identity path. It must never make an otherwise valid
-        // avatar exceed the shared timed-state budget.
+
+
+
         internal bool inferredTimingProfile;
         internal int canonicalStateCount;
         internal float minimumTotalSeconds;
         internal float maximumTotalSeconds = float.MaxValue;
-        // Cost paid before observing any retained state (currently the one
-        // compiler-approved skipped state). Runtime rectangles have already
-        // selected the skip; the Animator must not invent alternate paths.
+
+
+
         internal float runtimeBaseCost;
         internal float runtimePathCost;
         internal readonly List<VisemePhraseBuildState> states =
@@ -190,18 +185,6 @@ namespace YUCP.Components.Editor.VisemePhrase
                    confidence.ToString("R", CultureInfo.InvariantCulture) +
                    (allowSkip ? "?" : "!") + "$" +
                    skipPenalty.ToString("R", CultureInfo.InvariantCulture) + "$" + emissions;
-        }
-
-        internal string TransitionSignature()
-        {
-            var canonicalAliases = aliases
-                .Distinct()
-                .OrderBy(alias => alias)
-                .Select(alias => alias.ToString(CultureInfo.InvariantCulture));
-            return string.Join(",", canonicalAliases) + "@" +
-                   minimumSeconds.ToString("R", CultureInfo.InvariantCulture) + ".." +
-                   maximumSeconds.ToString("R", CultureInfo.InvariantCulture) +
-                   (allowSkip ? "?" : "!");
         }
 
         internal string TokenIdentity()
@@ -433,10 +416,10 @@ namespace YUCP.Components.Editor.VisemePhrase
                             ? state.emissionLikelihoods[alias]
                             : 0f);
                     var concrete = Clone(state);
-                    // Preserve the concrete observation history. Equal-cost
-                    // aliases are not merged because longest-suffix recovery
-                    // must distinguish (for example) {1} from the observed 4
-                    // inside an otherwise equal-likelihood {1,4} tier.
+
+
+
+
                     concrete.aliases = new[] { alias };
                     concrete.allowSkip = false;
                     path.Add(concrete);
@@ -445,9 +428,9 @@ namespace YUCP.Components.Editor.VisemePhrase
                 }
             }
 
-            // The compiler emits one safe timing rectangle per learned path,
-            // including its selected optional skip. Start with that fixed cost
-            // and only expand emission-likelihood tiers here.
+
+
+
             Expand(0, Math.Max(0f, source.runtimeBaseCost));
             if (overflow)
             {
@@ -462,10 +445,10 @@ namespace YUCP.Components.Editor.VisemePhrase
                 .OrderBy(variant => variant.CanonicalFingerprint(), StringComparer.Ordinal)
                 .ToList();
             if (variants.Count > 0) return true;
-            // Generic confusion arcs are speculative, unlike enrollment and
-            // creator-trained context paths. A later personalized calibration
-            // is allowed to make one unreachable; treat that as a pruned arc,
-            // not as a corrupt phrase model.
+
+
+
+
             if (source.inferredConfusionPath) return true;
             error = $"Phrase '{phrase.prompt}' has no alias/skip path within its calibrated " +
                     "runtime acceptance budget. Recompile or re-record the enrollment.";
@@ -620,11 +603,11 @@ namespace YUCP.Components.Editor.VisemePhrase
     /// </summary>
     internal static class VisemePhraseTimedSubsetPlanner
     {
-        // A label reaches this planner only after the stabilizer has already
-        // observed one uninterrupted 30 ms categorical run. That proof fully
-        // satisfies a learned minimum no greater than 30 ms. It is not an
-        // arithmetic credit against longer minima: subtracting it from every
-        // state would widen an N-phone path by N*30 ms beyond calibration.
+
+
+
+
+
         internal const float CommittedRunEvidenceSeconds = 0.03f;
 
         internal sealed class Graph
@@ -854,19 +837,6 @@ namespace YUCP.Components.Editor.VisemePhrase
             return TimingSegments(node, candidateIds)
                 .Where(segment => segment.candidateIds.Length > 0)
                 .ToArray();
-        }
-
-        internal static IReadOnlyList<TimingBucket> AcceptanceBuckets(
-            VisemePhraseGlobalTrie.Node node,
-            IEnumerable<int> candidateIds,
-            int phraseIndex,
-            VisemePhraseGlobalTrie.Node root)
-        {
-            var accepting = candidateIds.Where(id =>
-                    node.acceptingCandidateIds.Contains(id) &&
-                    CandidatePhrase(root, id) == phraseIndex)
-                .ToArray();
-            return TimingBuckets(node, accepting);
         }
 
         internal static int CandidatePhrase(

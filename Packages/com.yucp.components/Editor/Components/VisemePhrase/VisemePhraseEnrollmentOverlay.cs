@@ -149,7 +149,7 @@ namespace YUCP.Components.Editor.VisemePhrase
             }
 
             // Keep the prefab author's order. Select the first phrase needing help
-            // without rearranging the list the avatar creator sees.
+
             var preferred = contexts.FirstOrDefault(candidate =>
                 StatusFor(candidate).HasBlockingIssues) ?? contexts.FirstOrDefault();
             return ShowOverlay(
@@ -216,8 +216,8 @@ namespace YUCP.Components.Editor.VisemePhrase
             if (preferredIndex < 0 && requestedAvatarRoot != null)
                 preferredIndex = drafts.FindIndex(candidate => candidate.AvatarRoot == requestedAvatarRoot);
 
-            // Opening enrollment also refreshes completed raw takes when recognition
-            // settings changed. No valid recording is thrown away.
+
+
             if (savePromptsOnOpen)
             {
                 foreach (var candidate in drafts.Where(candidate =>
@@ -319,9 +319,9 @@ namespace YUCP.Components.Editor.VisemePhrase
                 return;
             }
 
-            // A diagnosed take error is not a separate review step. Route to it
-            // immediately so the microphone can auto-arm without a redundant
-            // "Fix take" click.
+
+
+
             if (flow.Step == VisemePhraseEnrollmentStep.Review &&
                 TryGetBlockingTakeIndex(flow.CurrentStatus, out var blockingTake))
             {
@@ -578,9 +578,9 @@ namespace YUCP.Components.Editor.VisemePhrase
             parent.Add(statusHost);
             RebuildReviewStatus();
 
-            // A recorded safety sample can itself be the reason an otherwise
-            // complete phrase cannot compile. Keep its remove/retake controls
-            // visible instead of sending the creator into an unrelated take.
+
+
+
             if (ready || Draft.NegativeSample != null)
                 BuildOptionalSafetySample(parent);
         }
@@ -1104,10 +1104,10 @@ namespace YUCP.Components.Editor.VisemePhrase
             if (flow == null || flow.RecordingLocked) return;
             if (flow.CurrentStatus.IsReady)
             {
-                // The review-level action means a fresh four-example
-                // enrollment. Keep the saved recordings in place until each
-                // replacement succeeds, while the numbered slots remain the
-                // precise single-take retake controls.
+
+
+
+
                 rerecordAllRequested = true;
                 RouteToConcreteRetake(0);
                 transientMessage = "We’ll record all four examples again.";
@@ -1212,8 +1212,8 @@ namespace YUCP.Components.Editor.VisemePhrase
                 if (capture.EndpointReason ==
                     VisemePhraseSpeechEndpointReason.WaitingTimeout)
                 {
-                    // Keep the hands-free session armed without saving a fake
-                    // silent take or growing an unbounded pre-speech buffer.
+
+
                     capture.BeginTake();
                     return;
                 }
@@ -1428,9 +1428,9 @@ namespace YUCP.Components.Editor.VisemePhrase
                     }
                     else
                     {
-                        // A phrase-level compiler issue is not evidence that the
-                        // last take was wrong. Keep the truthful review instead
-                        // of trapping the creator in arbitrary automatic retakes.
+
+
+
                         transientMessage = string.Empty;
                     }
                     BuildUi();
@@ -1447,9 +1447,9 @@ namespace YUCP.Components.Editor.VisemePhrase
                 return;
             }
 
-            // Route only when validation identified a concrete take. A global
-            // compiler issue belongs on the review page and must not blame the
-            // most recently recorded example by default.
+
+
+
             if (TryGetBlockingTakeIndex(flow.CurrentStatus, out var diagnosedTake))
             {
                 RouteToConcreteRetake(diagnosedTake);
@@ -1880,14 +1880,6 @@ namespace YUCP.Components.Editor.VisemePhrase
             for (var i = 0; i < VisemePhraseEnrollmentStatus.RequiredTakeCount; i++)
                 if (!IsTakeReady(GetTake(candidate, i))) return false;
             return true;
-        }
-
-        private static int CountReadyTakes(IVisemePhraseEnrollmentDraft candidate)
-        {
-            var ready = 0;
-            for (var i = 0; i < VisemePhraseEnrollmentStatus.RequiredTakeCount; i++)
-                if (IsTakeReady(GetTake(candidate, i))) ready++;
-            return ready;
         }
 
         private static int FindNextTakeNeedingWork(

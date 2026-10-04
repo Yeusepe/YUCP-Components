@@ -16,10 +16,10 @@ namespace YUCP.Components.Editor.VisemePhrase
     {
         private const float PausedCommandLeadingSilenceSeconds = 0.18f;
         private const float PausedCommandTrailingSilenceSeconds = 0.22f;
-        // Enrollment timestamps audio blocks; the Animator observes the same
-        // categorical winner only after the 30 ms run filter. Widen the baked
-        // corridor by exactly that observer uncertainty instead of pretending
-        // render-frame boundaries are sample exact.
+
+
+
+
         internal const float RuntimeObservationUncertaintySeconds =
             VisemePhraseRuntimeLanguage.RuntimeObservationUncertaintySeconds;
 
@@ -300,17 +300,17 @@ namespace YUCP.Components.Editor.VisemePhrase
                             };
                             var runtimeBudget = phrase.runtimeAcceptanceCost *
                                 Math.Max(1, variant.canonicalStateCount);
-                            // A generic confusion arc is optional. Personalized
-                            // negative calibration may tighten the budget after
-                            // it was proposed; silently omit that arc instead of
-                            // allowing it to make an enrolled model unbuildable.
+
+
+
+
                             if (variant.inferredConfusionPath &&
                                 variant.runtimeBaseCost > runtimeBudget + 0.000001f)
                                 continue;
-                            // Observation uncertainty belongs to the phrase
-                            // boundary, not independently to every phone. Split
-                            // one fixed 30 ms allowance across retained states so
-                            // the Cartesian timing rectangle cannot grow once per state.
+
+
+
+
                             var perStateObservationUncertainty =
                                 rectangle.includesRuntimeObservationUncertainty
                                     ? 0f
@@ -342,8 +342,8 @@ namespace YUCP.Components.Editor.VisemePhrase
                                     confidence = Mathf.Clamp01(sourceVariant.cohesion > 0f
                                         ? sourceVariant.cohesion
                                         : 1f),
-                                    // The rectangle has already made the one exact skip
-                                    // decision validated by the compiler.
+
+
                                     allowSkip = false,
                                     emissionLikelihoods = NormalizeEmissions(sourceState),
                                     skipPenalty = 0f
@@ -360,8 +360,8 @@ namespace YUCP.Components.Editor.VisemePhrase
                         return false;
                     }
 
-                    // Equivalent trained takes are useful to the compiler but do
-                    // not need duplicate runtime paths.
+
+
                     var distinctVariants = phrase.variants
                         .GroupBy(item => item.CanonicalRuntimePathFingerprint(),
                             StringComparer.Ordinal)
@@ -372,11 +372,11 @@ namespace YUCP.Components.Editor.VisemePhrase
                             .ThenBy(item => SourceVariantPriority(item.id))
                             .ThenBy(item => item.CanonicalFingerprint(), StringComparer.Ordinal)
                             .First())
-                        // Compiler ids preserve support ranking: enrolled paths
-                        // precede optional inferences, and lower inferred ids are
-                        // the stronger profile/splice bridges. Keep that order so
-                        // the state-budget fitter removes the weakest bridge,
-                        // rather than whichever content hash happens to sort last.
+
+
+
+
+
                         .OrderBy(item => item.inferredContextPath)
                         .ThenBy(item => item.inferredConfusionPath)
                         .ThenBy(item => item.inferredTimingProfile)
@@ -461,10 +461,10 @@ namespace YUCP.Components.Editor.VisemePhrase
                 string.Equals(previous.contentFingerprint,
                     rebuilt.contentFingerprint, StringComparison.Ordinal))
                 return;
-            // The model is a deterministic cache derived solely from the
-            // creator's existing traces and settings. Refreshing it during
-            // preflight requires no microphone, no wizard, and never changes
-            // a recorded frame.
+
+
+
+
             enrollment.compiledModel = rebuilt;
             EditorUtility.SetDirty(profile);
             if (!string.IsNullOrEmpty(AssetDatabase.GetAssetPath(profile)))
@@ -866,25 +866,6 @@ namespace YUCP.Components.Editor.VisemePhrase
             error = $"Expression parameter '{parameterName}' must remain an unsaved, " +
                     $"unsynced {expectedType} local output.";
             return false;
-        }
-
-        private static IEnumerable<AnimatorController> EnumerateAnimatorControllers(
-            VRCAvatarDescriptor descriptor)
-        {
-            var seen = new HashSet<AnimatorController>();
-            foreach (var layer in (descriptor.baseAnimationLayers ??
-                                   Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>())
-                         .Concat(descriptor.specialAnimationLayers ??
-                                 Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>()))
-            {
-                if (!(layer.animatorController is AnimatorController controller) ||
-                    !seen.Add(controller)) continue;
-                yield return controller;
-            }
-            var animatorController = descriptor.GetComponent<Animator>()?.runtimeAnimatorController
-                as AnimatorController;
-            if (animatorController != null && seen.Add(animatorController))
-                yield return animatorController;
         }
 
         private static float FiniteOr(float value, float fallback) =>
