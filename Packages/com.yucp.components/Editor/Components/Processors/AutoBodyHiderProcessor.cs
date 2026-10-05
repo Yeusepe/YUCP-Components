@@ -37,10 +37,10 @@ namespace YUCP.Components.Editor
         public bool OnPreprocessAvatar(GameObject avatarRoot)
         {
             var dataList = avatarRoot.GetComponentsInChildren<AutoBodyHiderData>(true);
-            
-            // Group components by body mesh and application mode
+
+
             Dictionary<SkinnedMeshRenderer, BodyMeshProcessing> bodyMeshes = new Dictionary<SkinnedMeshRenderer, BodyMeshProcessing>();
-            
+
             foreach (var data in dataList)
             {
                 if (data.debugMode)
@@ -48,7 +48,7 @@ namespace YUCP.Components.Editor
                     Debug.Log($"[AutoBodyHiderProcessor] Processing '{data.name}'", data);
                 }
 
-                // Validate required references
+
                 if (!ValidateData(data))
                 {
                     continue;
@@ -56,7 +56,7 @@ namespace YUCP.Components.Editor
 
                 try
                 {
-                    // Get or create body mesh processing group
+
                     if (!bodyMeshes.ContainsKey(data.targetBodyMesh))
                     {
                         bodyMeshes[data.targetBodyMesh] = new BodyMeshProcessing
@@ -65,10 +65,10 @@ namespace YUCP.Components.Editor
                             originalMesh = data.targetBodyMesh.sharedMesh
                         };
                     }
-                    
+
                     var group = bodyMeshes[data.targetBodyMesh];
                     ApplicationMode mode = DetermineApplicationMode(data);
-                    
+
                     if (mode == ApplicationMode.UVDiscard)
                     {
                         group.uvComponents.Add(data);
@@ -84,8 +84,8 @@ namespace YUCP.Components.Editor
                     Debug.LogException(ex);
                 }
             }
-            
-            // Process each body mesh group
+
+
             foreach (var group in bodyMeshes.Values)
             {
                 ProcessBodyMeshGroup(group);
@@ -108,7 +108,7 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            // Validate detection method requirements
+
             if (data.detectionMethod != DetectionMethod.Manual)
             {
                 bool hasValidClothingMesh = false;
@@ -123,7 +123,7 @@ namespace YUCP.Components.Editor
                         }
                     }
                 }
-                
+
                 if (!hasValidClothingMesh)
                 {
                     Debug.LogError("[AutoBodyHiderProcessor] Automatic detection requires at least one valid clothing mesh reference.", data);
@@ -139,32 +139,32 @@ namespace YUCP.Components.Editor
 
             return true;
         }
-        
+
         private void ProcessBodyMeshGroup(BodyMeshProcessing group)
         {
-            // Process UV components (can be combined)
+
             if (group.uvComponents.Count > 0)
             {
                 ProcessUVGroup(group);
             }
-            
-            // Process deletion components sequentially
+
+
             if (group.deletionComponents.Count > 0)
             {
                 ProcessDeletionGroup(group);
             }
         }
-        
+
         private void ProcessUVGroup(BodyMeshProcessing group)
         {
             Debug.Log($"[AutoBodyHiderProcessor] Processing {group.uvComponents.Count} UV discard components for '{group.bodyMesh.name}'");
-            
-            // Check if any pieces were skipped due to tile limit
+
+
             int skippedCount = 0;
             foreach (var data in group.uvComponents)
             {
-                // Check if this data has a valid tile assigned (row and column are 0-3)
-                if (data.uvDiscardRow < 0 || data.uvDiscardRow > 3 || 
+
+                if (data.uvDiscardRow < 0 || data.uvDiscardRow > 3 ||
                     data.uvDiscardColumn < 0 || data.uvDiscardColumn > 3)
                 {
                     skippedCount++;
@@ -172,48 +172,48 @@ namespace YUCP.Components.Editor
                     data.SetBuildStats(0, "Skipped (Tile Limit)");
                 }
             }
-            
-            // Filter out skipped components
+
+
             List<AutoBodyHiderData> validComponents = new List<AutoBodyHiderData>();
             foreach (var data in group.uvComponents)
             {
-                if (data.uvDiscardRow >= 0 && data.uvDiscardRow <= 3 && 
+                if (data.uvDiscardRow >= 0 && data.uvDiscardRow <= 3 &&
                     data.uvDiscardColumn >= 0 && data.uvDiscardColumn <= 3)
                 {
                     validComponents.Add(data);
                 }
             }
-            
+
             if (validComponents.Count == 0)
             {
                 Debug.LogWarning($"[AutoBodyHiderProcessor] No valid UV components to process for '{group.bodyMesh.name}'");
                 return;
             }
-            
+
             Debug.Log($"[AutoBodyHiderProcessor] Processing {validComponents.Count} valid UV components (skipped {skippedCount})");
-            
+
             Mesh originalMesh = group.originalMesh;
             Vector3[] vertices = originalMesh.vertices;
-            
-            // Determine if progress window should be shown
+
+
             YUCPProgressWindow progressWindow = null;
-            bool showProgress = validComponents.Count > 1 || 
+            bool showProgress = validComponents.Count > 1 ||
                                (validComponents.Count > 0 && ShouldShowProgress(validComponents[0], vertices.Length));
-            
+
             if (showProgress)
             {
                 progressWindow = YUCPProgressWindow.Create();
                 progressWindow.Progress(0, $"Processing {validComponents.Count} clothing pieces...");
             }
-            
+
             try
             {
-                int totalSteps = validComponents.Count + 2; // Detection per piece + merge + configure
+                int totalSteps = validComponents.Count + 2;
                 int currentStep = 0;
-                
-                // Detect hidden vertices for each clothing piece (unsorted initially)
+
+
                 Dictionary<AutoBodyHiderData, int> coverageMap = new Dictionary<AutoBodyHiderData, int>();
-                
+
                 foreach (var data in validComponents)
                 {
                     if (progressWindow != null)
@@ -221,35 +221,35 @@ namespace YUCP.Components.Editor
                         float progress = (float)currentStep / totalSteps;
                         progressWindow.Progress(progress, $"Detecting hidden vertices for '{data.name}'...");
                     }
-                    
+
                     bool[] hiddenVertices = DetectHiddenVerticesForData(data, originalMesh);
-                    
+
                     if (hiddenVertices != null)
                     {
-                        // Apply symmetry and safety margin
+
                         int hiddenCount = 0;
                         foreach (bool h in hiddenVertices) if (h) hiddenCount++;
-                        
+
                         hiddenVertices = ApplyPostProcessing(data, vertices, hiddenVertices, ref hiddenCount);
-                        
+
                         group.hiddenVerticesMap[data] = hiddenVertices;
                         coverageMap[data] = hiddenCount;
                         data.SetBuildStats(hiddenCount, "UV Discard (Multi)");
                     }
-                    
+
                     currentStep++;
                 }
-                
-                // Check if any component has tile usage enabled
+
+
                 bool anyOptimizationEnabled = validComponents.Any(c => c.optimizeTileUsage);
-                
+
                 if (anyOptimizationEnabled)
                 {
-                    // Sort by coverage (descending) - process largest first
+
                     validComponents = validComponents
                         .OrderByDescending(c => coverageMap.ContainsKey(c) ? coverageMap[c] : 0)
                         .ToList();
-                    
+
                     Debug.Log($"[AutoBodyHiderProcessor] Optimization enabled - sorted {validComponents.Count} pieces by coverage:");
                     foreach (var data in validComponents)
                     {
@@ -257,8 +257,8 @@ namespace YUCP.Components.Editor
                         Debug.Log($"  • '{data.name}': {coverage} vertices");
                     }
                 }
-                
-                // Detect ACTUAL overlaps now that we have hidden vertex data
+
+
                 if (validComponents.Count >= 2)
                 {
                     if (progressWindow != null)
@@ -267,43 +267,43 @@ namespace YUCP.Components.Editor
                     }
                     DetectAndAssignActualOverlaps(group);
                 }
-                
-                // Merge all UV modifications into one mesh
+
+
                 if (progressWindow != null)
                 {
                     float progress = (float)currentStep / totalSteps;
                     progressWindow.Progress(progress, "Merging UV discards into body mesh...");
                 }
-                
+
                 Mesh modifiedMesh = MergeUVDiscards(group);
                 group.bodyMesh.sharedMesh = modifiedMesh;
                 currentStep++;
-                
-                // Configure materials with all needed UV tiles
+
+
                 if (progressWindow != null)
                 {
                     float progress = (float)currentStep / totalSteps;
                     progressWindow.Progress(progress, "Configuring material UV tiles...");
                 }
-                
+
                 ConfigureMaterialsForMultipleUV(group);
                 currentStep++;
-                
-                // Create toggles or integrate with existing toggles for each valid clothing piece
+
+
                 if (progressWindow != null)
                 {
                     progressWindow.Progress(1.0f, "Creating toggles...");
                 }
-                
+
                 foreach (var data in validComponents)
                 {
-                    // Handle both creating new toggles and using existing toggles
+
                     if (data.createToggle || data.useExistingToggle)
                     {
                         CreateUVToggleForComponent(data, group);
                     }
                 }
-                
+
                 if (progressWindow != null)
                 {
                     progressWindow.Progress(1.0f, "UV discard processing complete!");
@@ -317,18 +317,18 @@ namespace YUCP.Components.Editor
                 }
             }
         }
-        
+
         private void ProcessDeletionGroup(BodyMeshProcessing group)
         {
             Debug.Log($"[AutoBodyHiderProcessor] Processing {group.deletionComponents.Count} mesh deletion components for '{group.bodyMesh.name}'");
-            
-            // Mesh deletion applied sequentially
+
+
             Mesh currentMesh = group.bodyMesh.sharedMesh;
-            
+
             foreach (var data in group.deletionComponents)
             {
                 ProcessBodyHider(data);
-                // Processor modifies the mesh, continue to next component
+
             }
         }
 
@@ -336,22 +336,22 @@ namespace YUCP.Components.Editor
         {
             Mesh bodyMesh = data.targetBodyMesh.sharedMesh;
             Vector3[] vertices = bodyMesh.vertices;
-            
-            // Get first clothing mesh for cache compatibility (hash generation uses all meshes)
+
+
             var clothingMeshes = data.GetClothingMeshes();
             Mesh clothingMesh = (clothingMeshes != null && clothingMeshes.Length > 0) ? clothingMeshes[0].sharedMesh : null;
-            
+
             YUCPProgressWindow progressWindow = null;
             if (ShouldShowProgress(data, vertices.Length))
             {
                 progressWindow = YUCPProgressWindow.Create();
             }
-            
+
             try
             {
                 bool[] hiddenVertices;
                 int hiddenCount;
-                
+
                 if (DetectionCache.TryGetCachedResult(data, bodyMesh, clothingMesh, out hiddenVertices, out hiddenCount))
                 {
                     if (data.debugMode)
@@ -383,7 +383,7 @@ namespace YUCP.Components.Editor
                     var startTime = System.Diagnostics.Stopwatch.StartNew();
                     hiddenVertices = VertexDetection.DetectHiddenVertices(data, vertices, normals, uv0, progressWindow);
                     startTime.Stop();
-                    
+
                     if (progressWindow != null)
                     {
                         progressWindow.Progress(1.0f, "Detection complete!");
@@ -399,10 +399,10 @@ namespace YUCP.Components.Editor
                     {
                         Debug.Log($"[AutoBodyHiderProcessor] Detected {hiddenCount} hidden vertices ({(hiddenCount * 100f / vertices.Length):F1}%) in {startTime.ElapsedMilliseconds}ms");
                     }
-                    
+
                     DetectionCache.CacheResult(data, bodyMesh, clothingMesh, hiddenVertices, hiddenCount);
                 }
-                
+
                 ProcessHiddenVertices(data, bodyMesh, vertices, hiddenVertices, hiddenCount);
             }
             finally
@@ -413,7 +413,7 @@ namespace YUCP.Components.Editor
                 }
             }
         }
-        
+
         private void ProcessHiddenVertices(AutoBodyHiderData data, Mesh bodyMesh, Vector3[] vertices, bool[] hiddenVertices, int hiddenCount)
         {
             if (hiddenCount == 0)
@@ -427,8 +427,8 @@ namespace YUCP.Components.Editor
 
             if (data.mirrorSymmetry)
             {
-                hiddenVertices = ApplySymmetryMirror(hiddenVertices, vertices);
-                
+                hiddenVertices = VertexDetection.ApplySymmetryMirror(hiddenVertices, vertices);
+
                 int countAfterMirror = 0;
                 foreach (bool hidden in hiddenVertices)
                 {
@@ -437,17 +437,17 @@ namespace YUCP.Components.Editor
                 Debug.Log($"[AutoBodyHider DEBUG] After symmetry mirror: {countAfterMirror} hidden vertices", data);
                 hiddenCount = countAfterMirror;
             }
-            
+
             if (data.safetyMargin > 0.0001f)
             {
-                hiddenVertices = ApplySafetyMargin(hiddenVertices, vertices, data);
-                
+                hiddenVertices = VertexDetection.ApplySafetyMargin(hiddenVertices, vertices, data);
+
                 hiddenCount = 0;
                 foreach (bool hidden in hiddenVertices)
                 {
                     if (hidden) hiddenCount++;
                 }
-                
+
                 Debug.Log($"[AutoBodyHider DEBUG] After safety margin: {hiddenCount} hidden vertices", data);
             }
 
@@ -466,18 +466,18 @@ namespace YUCP.Components.Editor
         private ApplicationMode DetermineApplicationMode(AutoBodyHiderData data)
         {
             Material[] materials = data.targetBodyMesh.sharedMaterials;
-            
-            // If user specified target materials, check those first
+
+
             if (data.targetMaterials != null && data.targetMaterials.Length > 0)
             {
                 var validTargetMaterials = data.targetMaterials.Where(m => m != null).ToArray();
                 if (validTargetMaterials.Length > 0)
                 {
                     Debug.Log($"[AutoBodyHiderProcessor] Using {validTargetMaterials.Length} user-specified target material(s)");
-                    
+
                     if (data.applicationMode == ApplicationMode.UVDiscard)
                     {
-                        // Check if any target material is compatible
+
                         bool hasCompatible = validTargetMaterials.Any(m => UVManipulator.IsPoiyomiWithUVSupport(m));
                         if (hasCompatible)
                         {
@@ -495,7 +495,7 @@ namespace YUCP.Components.Editor
                     }
                     else
                     {
-                        // Auto-detect on specified materials
+
                         bool hasCompatible = validTargetMaterials.Any(m => UVManipulator.IsPoiyomiWithUVSupport(m));
                         if (hasCompatible)
                         {
@@ -507,8 +507,8 @@ namespace YUCP.Components.Editor
                     }
                 }
             }
-            
-            // Log all materials on the body mesh for debugging
+
+
             Debug.Log($"[AutoBodyHiderProcessor] Body mesh '{data.targetBodyMesh.name}' has {materials.Length} materials:");
             for (int i = 0; i < materials.Length; i++)
             {
@@ -521,11 +521,11 @@ namespace YUCP.Components.Editor
                     Debug.Log($"[AutoBodyHiderProcessor]   [{i}] NULL or missing shader");
                 }
             }
-            
-            // Check if user forced a specific mode
+
+
             if (data.applicationMode == ApplicationMode.UVDiscard)
             {
-                // User specifically requested UV mode - validate it's possible
+
                 bool hasCompatibleShader = false;
                 foreach (var material in materials)
                 {
@@ -535,21 +535,21 @@ namespace YUCP.Components.Editor
                         break;
                     }
                 }
-                
+
                 if (!hasCompatibleShader)
                 {
                     Debug.LogError($"[AutoBodyHiderProcessor] UV Discard mode selected but body mesh '{data.targetBodyMesh.name}' has no compatible shader (Poiyomi/FastFur). Falling back to Mesh Deletion.", data);
                     return ApplicationMode.MeshDeletion;
                 }
-                
+
                 return ApplicationMode.UVDiscard;
             }
             else if (data.applicationMode == ApplicationMode.MeshDeletion)
             {
                 return ApplicationMode.MeshDeletion;
             }
-            
-            // Auto-detect mode
+
+
             foreach (var material in materials)
             {
                 if (UVManipulator.IsPoiyomiWithUVSupport(material))
@@ -567,34 +567,34 @@ namespace YUCP.Components.Editor
         private void ApplyUVDiscardMode(AutoBodyHiderData data, Mesh originalMesh, bool[] hiddenVertices, int hiddenCount)
         {
             Mesh modifiedMesh = UVManipulator.ApplyUVDiscard(originalMesh, hiddenVertices, data);
-            
+
             data.targetBodyMesh.sharedMesh = modifiedMesh;
-            
+
             Material[] materials = data.targetBodyMesh.sharedMaterials;
             List<Material> configuredMaterials = new List<Material>();
             HashSet<int> affectedMaterialIndices = GetAffectedMaterialIndices(originalMesh, new[] { hiddenVertices });
             bool hasExplicitTargetMaterials = data.targetMaterials != null && data.targetMaterials.Any(m => m != null);
-            
-            // If user specified target materials, configure those
+
+
             if (hasExplicitTargetMaterials)
             {
                 var validTargetMaterials = data.targetMaterials.Where(m => m != null).ToArray();
-                
+
                 foreach (var targetMaterial in validTargetMaterials)
                 {
-                    // Find the material in the renderer materials by reference or asset path.
+
                     for (int i = 0; i < materials.Length; i++)
                     {
                         bool isMatchingMaterial = IsSameMaterialAsset(materials[i], targetMaterial);
-                        
+
                         if (isMatchingMaterial && affectedMaterialIndices.Contains(i) && UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                         {
                             Material materialCopy = CreateUploadMaterialCopy(materials[i], $"{data.name}_{i}", data);
                             ThryMaterialOptimizerBridge.UnlockIfNeeded(new[] { materialCopy }, data);
-                            
-                            // Configure for toggle if creating toggle OR using existing toggle
+
+
                             bool shouldConfigureForToggle = data.createToggle || data.useExistingToggle;
-                            
+
                             if (!shouldConfigureForToggle)
                             {
                                 UVManipulator.ConfigurePoiyomiMaterial(materialCopy, data, originalMesh);
@@ -603,13 +603,13 @@ namespace YUCP.Components.Editor
                             {
                                 ConfigurePoiyomiForToggle(materialCopy, data, originalMesh);
                             }
-                            
+
                             materials[i] = materialCopy;
                             configuredMaterials.Add(materialCopy);
                         }
                     }
                 }
-                
+
                 if (configuredMaterials.Count == 0)
                 {
                     Debug.LogError($"[AutoBodyHiderProcessor] None of the {validTargetMaterials.Length} target material(s) matched an affected compatible material slot. UV discard material setup was skipped to avoid rewriting unrelated materials.", data);
@@ -619,8 +619,8 @@ namespace YUCP.Components.Editor
                     Debug.Log($"[AutoBodyHiderProcessor] Configured {configuredMaterials.Count} target material(s) for UV discard.", data);
                 }
             }
-            
-            // If no target materials specified or none found, auto-detect all compatible materials
+
+
             if (!hasExplicitTargetMaterials && configuredMaterials.Count == 0)
             {
                 for (int materialIndex = 0; materialIndex < materials.Length; materialIndex++)
@@ -635,10 +635,10 @@ namespace YUCP.Components.Editor
                     {
                         Material materialCopy = CreateUploadMaterialCopy(material, $"{data.name}_{materialIndex}", data);
                         ThryMaterialOptimizerBridge.UnlockIfNeeded(new[] { materialCopy }, data);
-                        
-                        // Configure for toggle if creating toggle OR using existing toggle
+
+
                         bool shouldConfigureForToggle = data.createToggle || data.useExistingToggle;
-                        
+
                         if (!shouldConfigureForToggle)
                         {
                             UVManipulator.ConfigurePoiyomiMaterial(materialCopy, data, originalMesh);
@@ -647,31 +647,31 @@ namespace YUCP.Components.Editor
                         {
                             ConfigurePoiyomiForToggle(materialCopy, data, originalMesh);
                         }
-                        
+
                         materials[materialIndex] = materialCopy;
-                        
+
                         configuredMaterials.Add(materialCopy);
                     }
                 }
-                
+
                 if (configuredMaterials.Count > 0)
                 {
                     Debug.Log($"[AutoBodyHiderProcessor] Auto-detected and configured {configuredMaterials.Count} compatible material(s) for UV discard.", data);
                 }
             }
-            
+
             ThryMaterialOptimizerBridge.SyncAndLock(configuredMaterials, data);
             data.targetBodyMesh.sharedMaterials = materials;
-            
-            // Create toggle or integrate with existing VRCFury toggle
-            // Use the first configured material for toggle integration
+
+
+
             Material materialForToggle = configuredMaterials.Count > 0 ? configuredMaterials[0] : null;
-            
+
             if (materialForToggle != null)
             {
                 Component toggleToUse = null;
-                
-                // Check if user selected a specific toggle
+
+
                 if (data.useExistingToggle && data.selectedToggle != null)
                 {
                     toggleToUse = data.selectedToggle;
@@ -679,8 +679,8 @@ namespace YUCP.Components.Editor
                 }
                 else if (data.useExistingToggle)
                 {
-                    // Auto-detect first VRCFury toggle from GameObject or children
-                    toggleToUse = FindVRCFuryToggleInHierarchy(data.gameObject);
+
+                    toggleToUse = VRCFuryHelper.FindToggles(data.gameObject).FirstOrDefault();
                     if (toggleToUse != null)
                     {
                         Debug.Log($"[AutoBodyHiderProcessor] Auto-detected toggle: {toggleToUse.name} on {GetGameObjectPath(toggleToUse.gameObject, data.gameObject)}", data);
@@ -688,32 +688,32 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    // Find VRCFury component on this GameObject
+
                     var components = data.gameObject.GetComponents<Component>();
                     foreach (var comp in components)
                     {
-                        if (comp != null && comp.GetType().Name == "VRCFury")
+                        if (VRCFuryHelper.GetToggleModel(comp) != null)
                         {
                             toggleToUse = comp;
                             break;
                         }
                     }
                 }
-                
+
                 if (data.createToggle && toggleToUse == null)
                 {
-                    // Create our own toggle
+
                     CreateUVToggle(data, materialForToggle);
                 }
                 else if (toggleToUse != null)
                 {
-                    // Integrate with existing VRCFury toggle
+
                     IntegrateWithVRCFuryToggle(data, materialForToggle, toggleToUse);
                 }
             }
-            
+
             data.SetBuildStats(hiddenCount, "UV Discard");
-            
+
             if (data.debugMode)
             {
                 Debug.Log($"[AutoBodyHiderProcessor] Applied UV discard mode. Hidden {hiddenCount} vertices.", data);
@@ -723,90 +723,16 @@ namespace YUCP.Components.Editor
         private void ApplyMeshDeletionMode(AutoBodyHiderData data, Mesh originalMesh, bool[] hiddenVertices, int hiddenCount)
         {
             Mesh modifiedMesh = MeshDeleter.DeleteHiddenVertices(originalMesh, hiddenVertices);
-            
+
             data.targetBodyMesh.sharedMesh = modifiedMesh;
-            
+
             data.SetBuildStats(hiddenCount, "Mesh Deletion");
-            
+
             if (data.debugMode)
             {
                 Debug.Log($"[AutoBodyHiderProcessor] Applied mesh deletion mode. Removed {hiddenCount} vertices.", data);
                 Debug.Log($"[AutoBodyHiderProcessor] New mesh has {modifiedMesh.vertexCount} vertices (was {originalMesh.vertexCount})");
             }
-        }
-
-        private bool[] ApplySymmetryMirror(bool[] hiddenVertices, Vector3[] vertices)
-        {
-            bool[] result = new bool[hiddenVertices.Length];
-            System.Array.Copy(hiddenVertices, result, hiddenVertices.Length);
-            
-            for (int i = 0; i < hiddenVertices.Length; i++)
-            {
-                if (hiddenVertices[i])
-                {
-                    Vector3 targetPos = new Vector3(-vertices[i].x, vertices[i].y, vertices[i].z);
-                    
-                    float minDistance = float.MaxValue;
-                    int closestIndex = -1;
-                    
-                    for (int j = 0; j < vertices.Length; j++)
-                    {
-                        float dist = Vector3.Distance(vertices[j], targetPos);
-                        if (dist < minDistance && dist < 0.001f)
-                        {
-                            minDistance = dist;
-                            closestIndex = j;
-                        }
-                    }
-                    
-                    if (closestIndex >= 0)
-                    {
-                        result[closestIndex] = true;
-                    }
-                }
-            }
-            
-            return result;
-        }
-
-        private bool[] ApplySafetyMargin(bool[] hiddenVertices, Vector3[] vertices, AutoBodyHiderData data)
-        {
-            bool[] shrunk = new bool[hiddenVertices.Length];
-            System.Array.Copy(hiddenVertices, shrunk, hiddenVertices.Length);
-            
-            Vector3[] worldVertices = new Vector3[vertices.Length];
-            for (int i = 0; i < vertices.Length; i++)
-            {
-                worldVertices[i] = data.targetBodyMesh.transform.TransformPoint(vertices[i]);
-            }
-
-            for (int i = 0; i < vertices.Length; i++)
-            {
-                if (hiddenVertices[i])
-                {
-                    bool isNearEdge = false;
-                    
-                    for (int j = 0; j < vertices.Length; j++)
-                    {
-                        if (!hiddenVertices[j])
-                        {
-                            float dist = Vector3.Distance(worldVertices[i], worldVertices[j]);
-                            if (dist < data.safetyMargin)
-                            {
-                                isNearEdge = true;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (isNearEdge)
-                    {
-                        shrunk[i] = false;
-                    }
-                }
-            }
-            
-            return shrunk;
         }
 
         private bool ShouldShowProgress(AutoBodyHiderData data, int vertexCount)
@@ -927,8 +853,8 @@ namespace YUCP.Components.Editor
         private void ConfigurePoiyomiForToggle(Material material, AutoBodyHiderData data, Mesh mesh = null)
         {
             string shaderNameLower = material.shader.name.ToLower();
-            
-            // Enable shader keywords and feature toggles FIRST (especially for FastFur)
+
+
             if (shaderNameLower.Contains("poiyomi"))
             {
                 material.EnableKeyword("POI_UDIMDISCARD");
@@ -939,36 +865,36 @@ namespace YUCP.Components.Editor
             }
             else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("wffs"))
             {
-                // FastFur: Check and enable "Install UV Discard Module" toggle FIRST
+
                 if (material.HasProperty("_WFFS_FEATURES_UVDISCARD"))
                 {
-                    // Check if module is already installed
+
                     float currentValue = material.GetFloat("_WFFS_FEATURES_UVDISCARD");
                     Debug.Log($"[AutoBodyHiderProcessor] FastFur material '{material.name}' - _WFFS_FEATURES_UVDISCARD current value: {currentValue}");
-                    
+
                     if (currentValue < 0.5f)
                     {
-                        // Install the module by setting the property to 1
-                        // Try both SetFloat and SetInt in case Unity stores it differently
+
+
                         material.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
                         if (material.HasProperty("_WFFS_FEATURES_UVDISCARD"))
                         {
                             try { material.SetInt("_WFFS_FEATURES_UVDISCARD", 1); } catch { }
                         }
-                        
-                        // Also explicitly enable the keyword
+
+
                         material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
-                        
-                        // Force update the material
+
+
                         UnityEditor.EditorUtility.SetDirty(material);
-                        material.name = material.name; // Force Unity to recognize changes
-                        
+                        material.name = material.name;
+
                         float newValue = material.GetFloat("_WFFS_FEATURES_UVDISCARD");
                         Debug.Log($"[AutoBodyHiderProcessor] Installed UV Discard module on FastFur material '{material.name}' (was {currentValue}, now {newValue}, keyword enabled: {material.IsKeywordEnabled("WFFS_FEATURES_UVDISCARD")})");
                     }
                     else
                     {
-                        // Module already installed, just ensure keyword is enabled
+
                         material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
                         Debug.Log($"[AutoBodyHiderProcessor] FastFur material '{material.name}' - UV Discard module already installed, ensuring keyword is enabled");
                     }
@@ -977,17 +903,17 @@ namespace YUCP.Components.Editor
                 {
                     Debug.LogWarning($"[AutoBodyHiderProcessor] Material '{material.name}' missing '_WFFS_FEATURES_UVDISCARD' property. This shader may not support UV Discard.");
                 }
-                
-                // Enable UDIM discard option (this property becomes available after module is installed)
+
+
                 if (material.HasProperty("_EnableUDIMDiscardOptions"))
                 {
-                    // Try both SetFloat and SetInt since it's a ToggleUI (Int) but FastFur uses GetFloat
+
                     material.SetFloat("_EnableUDIMDiscardOptions", 1f);
                     try { material.SetInt("_EnableUDIMDiscardOptions", 1); } catch { }
-                    
+
                     UnityEditor.EditorUtility.SetDirty(material);
-                    material.name = material.name; // Force Unity to recognize changes
-                    
+                    material.name = material.name;
+
                     float enabledValue = material.GetFloat("_EnableUDIMDiscardOptions");
                     Debug.Log($"[AutoBodyHiderProcessor] Enabled UV Discard on FastFur material '{material.name}' - _EnableUDIMDiscardOptions value: {enabledValue}");
                 }
@@ -996,13 +922,13 @@ namespace YUCP.Components.Editor
                     Debug.LogWarning($"[AutoBodyHiderProcessor] Material '{material.name}' missing '_EnableUDIMDiscardOptions' property after installing module. Module may not be properly installed.");
                 }
             }
-            
+
             if (material.HasProperty("_UDIMDiscardMode"))
             {
                 material.SetFloat("_UDIMDiscardMode", 0f);
             }
-            
-            // Use effective UV channel (auto-detect if enabled)
+
+
             if (mesh == null && data.targetBodyMesh != null)
             {
                 mesh = data.targetBodyMesh.sharedMesh;
@@ -1016,17 +942,17 @@ namespace YUCP.Components.Editor
             {
                 material.SetFloat("_UDIMDiscardUVChannel", uvChannel);
             }
-            
+
             string tilePropertyName = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
             if (material.HasProperty(tilePropertyName))
             {
-                // Animation plays when toggle parameter is TRUE (ON state)
-                // Material base is used when toggle parameter is FALSE (OFF state)
-                // Base value represents the OFF state
-                float baseValue = 0f; // discard OFF (body visible)
+
+
+
+                float baseValue = 0f;
                 material.SetFloat(tilePropertyName, baseValue);
                 material.SetOverrideTag(tilePropertyName + "Animated", "1");
-                
+
                 string shaderName = UVManipulator.GetShaderDisplayName(material);
                 Debug.Log($"[AutoBodyHider] Configured {shaderName} for toggle: {tilePropertyName} = {baseValue} (OFF state), Animated tag set", data);
             }
@@ -1040,106 +966,43 @@ namespace YUCP.Components.Editor
         {
             try
             {
-                Debug.Log($"[AutoBodyHider] Integrating with existing VRCFury Toggle on '{data.gameObject.name}'", data);
-                
-                // Get the content field via reflection
-                var contentField = vrcFuryComponent.GetType().GetField("content", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (contentField == null)
-                {
-                    Debug.LogWarning($"[AutoBodyHider] Could not find 'content' field on VRCFury component", data);
-                    return;
-                }
-                
-                var content = contentField.GetValue(vrcFuryComponent);
-                if (content != null && content.GetType().Name == "Toggle")
-                {
-                    // Create the UV animation
-                    AnimationClip toggleAnimation = CreateUVToggleAnimation(data, poiyomiMaterial);
-                    
-                    if (toggleAnimation != null)
-                    {
-                        // Get the state field
-                        var stateField = content.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (stateField == null)
-                        {
-                            Debug.LogWarning($"[AutoBodyHider] Could not find 'state' field on Toggle", data);
-                            return;
-                        }
-                        
-                        var state = stateField.GetValue(content);
-                        var actionsField = state.GetType().GetField("actions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (actionsField == null)
-                        {
-                            Debug.LogWarning($"[AutoBodyHider] Could not find 'actions' field on State", data);
-                            return;
-                        }
-                        
-                        var actionsList = actionsField.GetValue(state) as System.Collections.IList;
-                        if (actionsList == null)
-                        {
-                            Debug.LogWarning($"[AutoBodyHider] Actions list is null", data);
-                            return;
-                        }
-                        
-                        // Create AnimationClipAction via reflection (it's internal)
-                        var animActionType = System.Type.GetType("VF.Model.StateAction.AnimationClipAction, VRCFury");
-                        if (animActionType == null)
-                        {
-                            Debug.LogWarning($"[AutoBodyHider] Could not find AnimationClipAction type", data);
-                            return;
-                        }
-                        
-                        var animAction = System.Activator.CreateInstance(animActionType);
-                        
-                        // Set the motion field
-                        var motionField = animActionType.GetField("motion", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (motionField != null)
-                        {
-                            motionField.SetValue(animAction, toggleAnimation);
-                        }
-                        
-                        actionsList.Add(animAction);
-                        
-                        Debug.Log($"[AutoBodyHider] Added UV discard animation to existing VRCFury Toggle", data);
-                        EditorUtility.SetDirty(vrcFuryComponent);
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning($"[AutoBodyHider] VRCFury component content is not a Toggle type, cannot integrate", data);
-                }
+                AnimationClip animation = CreateUVToggleAnimation(data, poiyomiMaterial);
+                if (animation == null) return;
+                VRCFuryHelper.AddAnimationToToggle(vrcFuryComponent, animation);
+                Debug.Log("[AutoBodyHider] Added UV discard animation to existing VRCFury Toggle", data);
             }
-            catch (System.Exception ex)
+            catch (System.Exception e)
             {
-                Debug.LogError($"[AutoBodyHider] Error integrating with VRCFury Toggle: {ex.Message}", data);
-                Debug.LogException(ex);
+                Debug.LogError($"[AutoBodyHider] Error integrating with VRCFury Toggle: {e.Message}", data);
+                Debug.LogException(e);
             }
         }
-        
+
+
         private void CreateUVToggle(AutoBodyHiderData data, Material poiyomiMaterial)
         {
             try
             {
-                // For ObjectToggle mode, disable the clothing object by default
-                // Toggle ON will enable it + apply discard
-                // Toggle OFF will disable it (no discard needed)
+
+
+
                 if (data.toggleType == ToggleType.ObjectToggle && !data.toggleDefaultOn)
                 {
                     data.gameObject.SetActive(false);
                 }
-                
-                var toggle = FuryComponents.CreateToggle(data.gameObject);                
-                
+
+                var toggle = FuryComponents.CreateToggle(data.gameObject);
+
                 bool hasMenuPath = !string.IsNullOrEmpty(data.toggleMenuPath);
                 bool hasCustomParam = !string.IsNullOrEmpty(data.toggleParameterName);
-                
+
                 if (hasMenuPath)
                 {
                     toggle.SetMenuPath(data.toggleMenuPath);
                 }
                 else if (data.toggleSynced && hasCustomParam)
                 {
-                    // Parameter only mode: disable menu item creation
+
                     var toggleType = toggle.GetType();
                     var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     var toggleModel = cField.GetValue(toggle);
@@ -1156,40 +1019,40 @@ namespace YUCP.Components.Editor
 
                 if (data.toggleDefaultOn)
                     toggle.SetDefaultOn();
-                    
+
                 if (data.toggleSlider)
                     toggle.SetSlider();
-                    
+
                 if (data.toggleExclusiveOffState)
                     toggle.SetExclusiveOffState();
 
-                // Set global parameter if synced (with or without custom name)
+
                 if (data.toggleSynced)
                 {
                     if (hasCustomParam)
                         toggle.SetGlobalParameter(data.toggleParameterName);
                     else
-                        toggle.SetGlobalParameter(""); // VRCFury auto-generates synced parameter name
+                        toggle.SetGlobalParameter("");
                 }
-                
-                // Apply advanced toggle options via reflection
+
+
                 if (data.toggleHoldButton || data.toggleEnableExclusiveTag || data.toggleEnableIcon)
                 {
                     var toggleType = toggle.GetType();
                     var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     var toggleModel = cField.GetValue(toggle);
-                    
+
                     if (data.toggleHoldButton)
                     {
                         var holdButtonField = toggleModel.GetType().GetField("holdButton", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                         if (holdButtonField != null) holdButtonField.SetValue(toggleModel, true);
                     }
-                    
+
                     if (data.toggleEnableExclusiveTag && !string.IsNullOrEmpty(data.toggleExclusiveTag))
                     {
                         toggle.AddExclusiveTag(data.toggleExclusiveTag);
                     }
-                    
+
                     if (data.toggleEnableIcon && data.toggleIcon != null)
                     {
                         var enableIconField = toggleModel.GetType().GetField("enableIcon", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
@@ -1197,7 +1060,7 @@ namespace YUCP.Components.Editor
                         if (enableIconField != null && iconField != null)
                         {
                             enableIconField.SetValue(toggleModel, true);
-                            // Use reflection to create GuidTexture2d instance via implicit operator
+
                             var guidTexture2dType = iconField.FieldType;
                             var implicitOp = guidTexture2dType.GetMethod("op_Implicit", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static, null, new Type[] { typeof(Texture2D) }, null);
                             if (implicitOp != null)
@@ -1218,33 +1081,7 @@ namespace YUCP.Components.Editor
 
                 if (toggleAnimation != null)
                 {
-                    // Use reflection to set the motion field directly
-                    // Runtime-created clips work with VRCFury
                     actions.AddAnimationClip(toggleAnimation);
-                    
-                    // Now use reflection to access the last added action and set its motion field
-                    var toggleType = toggle.GetType();
-                    var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    var toggleModel = cField.GetValue(toggle);
-                    var stateField = toggleModel.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    var state = stateField.GetValue(toggleModel);
-                    var actionsField = state.GetType().GetField("actions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    var actionsList = actionsField.GetValue(state) as System.Collections.IList;
-                    
-                    if (actionsList != null && actionsList.Count > 0)
-                    {
-                        var lastAction = actionsList[actionsList.Count - 1];
-                        var motionField = lastAction.GetType().GetField("motion", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (motionField != null)
-                        {
-                            motionField.SetValue(lastAction, toggleAnimation);
-                            Debug.Log($"[AutoBodyHider] Animation added with motion field set via reflection", data);
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"[AutoBodyHider] Could not find motion field, animation may not work", data);
-                        }
-                    }
                 }
                 else
                 {
@@ -1263,7 +1100,7 @@ namespace YUCP.Components.Editor
             AnimationClip clip = new AnimationClip();
             clip.name = $"UV_Discard_Toggle_{data.gameObject.name}";
 
-            string rendererPath = GetRelativePath(data.targetBodyMesh.transform, data.transform.root);
+            string rendererPath = AnimationUtility.CalculateTransformPath(data.targetBodyMesh.transform, data.transform.root);
 
             Material[] materials = data.targetBodyMesh.sharedMaterials;
             int materialIndex = -1;
@@ -1282,26 +1119,26 @@ namespace YUCP.Components.Editor
                 return null;
             }
 
-            // Animation plays when toggle parameter is TRUE (ON state)
-            // Set to 1 = discard ON (body hidden)
+
+
             float animValue = 1f;
-            
+
             AnimationCurve discardCurve = new AnimationCurve();
             discardCurve.AddKey(0f, animValue);
             discardCurve.AddKey(1f/60f, animValue);
-            
-            // Get coordination data to find overlap tiles this clothing is involved in
+
+
             List<string> tilesToAnimate = new List<string>();
-            
-            // 1. Add this clothing's individual tile
+
+
             string individualTile = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
             tilesToAnimate.Add(individualTile);
-            
-            // 2. Add any overlap tiles this clothing is involved in
-            var coordGroup = AutoBodyHiderCoordinator.CoordinatedGroups.ContainsKey(data.targetBodyMesh) 
-                           ? AutoBodyHiderCoordinator.CoordinatedGroups[data.targetBodyMesh] 
+
+
+            var coordGroup = AutoBodyHiderCoordinator.CoordinatedGroups.ContainsKey(data.targetBodyMesh)
+                           ? AutoBodyHiderCoordinator.CoordinatedGroups[data.targetBodyMesh]
                            : null;
-            
+
             if (coordGroup != null)
             {
                 foreach (var overlap in coordGroup.overlapRegions)
@@ -1315,8 +1152,8 @@ namespace YUCP.Components.Editor
                     }
                 }
             }
-            
-            // Create animation curves for all tiles this toggle controls
+
+
             foreach (var tilePropertyName in tilesToAnimate)
             {
                 if (!poiyomiMaterial.HasProperty(tilePropertyName))
@@ -1324,7 +1161,7 @@ namespace YUCP.Components.Editor
                     Debug.LogWarning($"[AutoBodyHiderProcessor] Material doesn't have '{tilePropertyName}' property", data);
                     continue;
                 }
-                
+
                 string propertyPath = $"material.{tilePropertyName}";
 
                 EditorCurveBinding binding = EditorCurveBinding.FloatCurve(
@@ -1337,7 +1174,7 @@ namespace YUCP.Components.Editor
                 Debug.Log($"[AutoBodyHider] Added animation curve for tile '{tilePropertyName}'", data);
             }
 
-            // Optionally save clip to file for debugging
+
             if (data.debugSaveAnimation)
             {
                 string debugPath = $"Assets/Generated/YUCP_UV_Toggle_{data.gameObject.name}.anim";
@@ -1345,7 +1182,7 @@ namespace YUCP.Components.Editor
                 AssetDatabase.SaveAssets();
                 Debug.Log($"[AutoBodyHider] Animation saved to: {debugPath}", data);
             }
-            
+
             Debug.Log($"[AutoBodyHider] === Animation Clip Details ===", data);
             Debug.Log($"[AutoBodyHider] Clip name: {clip.name}", data);
             Debug.Log($"[AutoBodyHider] Renderer path: '{rendererPath}'", data);
@@ -1353,49 +1190,33 @@ namespace YUCP.Components.Editor
             Debug.Log($"[AutoBodyHider] Animating {tilesToAnimate.Count} tiles (individual + overlaps)", data);
             Debug.Log($"[AutoBodyHider] Animation value: {animValue} (discard ON)", data);
             Debug.Log($"[AutoBodyHider] Total bindings: {AnimationUtility.GetCurveBindings(clip).Length}", data);
-            
+
             foreach (var b in AnimationUtility.GetCurveBindings(clip))
             {
                 var curve = AnimationUtility.GetEditorCurve(clip, b);
                 Debug.Log($"[AutoBodyHider]   Binding: path='{b.path}' | type={b.type.Name} | property='{b.propertyName}' | value={curve.keys[0].value}", data);
             }
-            
+
             Debug.Log($"[AutoBodyHider] Clip being added to toggle on GameObject: {data.gameObject.name}", data);
             Debug.Log($"[AutoBodyHider] ==============================", data);
 
             return clip;
         }
 
-        private string GetRelativePath(Transform target, Transform root)
-        {
-            if (target == root)
-                return "";
 
-            List<string> path = new List<string>();
-            Transform current = target;
 
-            while (current != null && current != root)
-            {
-                path.Insert(0, current.name);
-                current = current.parent;
-            }
 
-            return string.Join("/", path);
-        }
-        
-        // ==== NEW METHODS FOR MULTI-CLOTHING UV SUPPORT ====
-        
         private bool[] DetectHiddenVerticesForData(AutoBodyHiderData data, Mesh bodyMesh)
         {
             Vector3[] vertices = bodyMesh.vertices;
-            
-            // Get first clothing mesh for cache compatibility (hash generation uses all meshes)
+
+
             var clothingMeshes = data.GetClothingMeshes();
             Mesh clothingMesh = (clothingMeshes != null && clothingMeshes.Length > 0) ? clothingMeshes[0].sharedMesh : null;
-            
+
             bool[] hiddenVertices;
             int hiddenCount;
-            
+
             if (DetectionCache.TryGetCachedResult(data, bodyMesh, clothingMesh, out hiddenVertices, out hiddenCount))
             {
                 if (data.debugMode)
@@ -1404,98 +1225,98 @@ namespace YUCP.Components.Editor
                 }
                 return hiddenVertices;
             }
-            
+
             Vector3[] normals = bodyMesh.normals;
             List<Vector2> uv0List = new List<Vector2>();
             bodyMesh.GetUVs(0, uv0List);
             Vector2[] uv0 = uv0List.ToArray();
-            
+
             if (data.debugMode)
             {
                 Debug.Log($"[AutoBodyHiderProcessor] Detecting hidden vertices for '{data.name}' ({vertices.Length} vertices)");
             }
-            
+
             hiddenVertices = VertexDetection.DetectHiddenVertices(data, vertices, normals, uv0, null);
-            
+
             hiddenCount = 0;
             foreach (bool hidden in hiddenVertices)
             {
                 if (hidden) hiddenCount++;
             }
-            
+
             if (data.debugMode)
             {
                 Debug.Log($"[AutoBodyHiderProcessor] Detected {hiddenCount} hidden vertices for '{data.name}' ({(hiddenCount * 100f / vertices.Length):F1}%)");
             }
-            
+
             DetectionCache.CacheResult(data, bodyMesh, clothingMesh, hiddenVertices, hiddenCount);
-            
+
             return hiddenVertices;
         }
-        
+
         private bool[] ApplyPostProcessing(AutoBodyHiderData data, Vector3[] vertices, bool[] hiddenVertices, ref int hiddenCount)
         {
             if (data.mirrorSymmetry)
             {
-                hiddenVertices = ApplySymmetryMirror(hiddenVertices, vertices);
-                
+                hiddenVertices = VertexDetection.ApplySymmetryMirror(hiddenVertices, vertices);
+
                 hiddenCount = 0;
                 foreach (bool hidden in hiddenVertices)
                 {
                     if (hidden) hiddenCount++;
                 }
-                
+
                 if (data.debugMode)
                 {
                     Debug.Log($"[AutoBodyHiderProcessor] After symmetry: {hiddenCount} hidden vertices for '{data.name}'");
                 }
             }
-            
+
             if (data.safetyMargin > 0.0001f)
             {
-                hiddenVertices = ApplySafetyMargin(hiddenVertices, vertices, data);
-                
+                hiddenVertices = VertexDetection.ApplySafetyMargin(hiddenVertices, vertices, data);
+
                 hiddenCount = 0;
                 foreach (bool hidden in hiddenVertices)
                 {
                     if (hidden) hiddenCount++;
                 }
-                
+
                 if (data.debugMode)
                 {
                     Debug.Log($"[AutoBodyHiderProcessor] After safety margin: {hiddenCount} hidden vertices for '{data.name}'");
                 }
             }
-            
+
             return hiddenVertices;
         }
-        
+
         private Mesh MergeUVDiscards(BodyMeshProcessing group)
         {
-            // Start with the original mesh
+
             Mesh baseMesh = UnityEngine.Object.Instantiate(group.originalMesh);
             baseMesh.name = group.originalMesh.name + "_MultiUV";
-            
-            // Determine UV channel to use for merged components
-            int targetUVChannel = 1; // Default
+
+
+            int targetUVChannel = 1;
             if (group.uvComponents.Count > 0)
             {
                 targetUVChannel = UVManipulator.GetEffectiveUVChannel(group.uvComponents[0], group.originalMesh);
             }
-            
-            // Get UV0 texture coordinates
+
+
             List<Vector2> uv0List = new List<Vector2>();
             baseMesh.GetUVs(0, uv0List);
             Vector2[] uv0 = uv0List.ToArray();
-            
-            // Get or create target UV channel for discard logic
+
+
             List<Vector2> targetUVChannelList = new List<Vector2>();
             baseMesh.GetUVs(targetUVChannel, targetUVChannelList);
             Vector2[] targetUV;
-            
+
             if (targetUVChannelList.Count == 0 || targetUVChannelList.Count != uv0.Length)
             {
-                // Target channel doesn't exist or has wrong length - create from UV0
+
                 targetUV = new Vector2[uv0.Length];
                 System.Array.Copy(uv0, targetUV, uv0.Length);
             }
@@ -1503,20 +1324,20 @@ namespace YUCP.Components.Editor
             {
                 targetUV = targetUVChannelList.ToArray();
             }
-            
-            // Track which vertices are assigned to which clothing pieces
+
+
             List<AutoBodyHiderData>[] vertexOwners = new List<AutoBodyHiderData>[uv0.Length];
             for (int i = 0; i < vertexOwners.Length; i++)
             {
                 vertexOwners[i] = new List<AutoBodyHiderData>();
             }
-            
-            // First pass: determine which clothing pieces cover each vertex
+
+
             foreach (var kvp in group.hiddenVerticesMap)
             {
                 var data = kvp.Key;
                 var hiddenVertices = kvp.Value;
-                
+
                 for (int i = 0; i < hiddenVertices.Length; i++)
                 {
                     if (hiddenVertices[i])
@@ -1525,23 +1346,23 @@ namespace YUCP.Components.Editor
                     }
                 }
             }
-            
-            // Get overlap data from coordinator
-            var coordGroup = AutoBodyHiderCoordinator.CoordinatedGroups.ContainsKey(group.bodyMesh) 
-                           ? AutoBodyHiderCoordinator.CoordinatedGroups[group.bodyMesh] 
+
+
+            var coordGroup = AutoBodyHiderCoordinator.CoordinatedGroups.ContainsKey(group.bodyMesh)
+                           ? AutoBodyHiderCoordinator.CoordinatedGroups[group.bodyMesh]
                            : null;
-            
-            // Second pass: assign vertices to appropriate tiles (individual or overlap)
+
+
             for (int i = 0; i < targetUV.Length; i++)
             {
                 if (vertexOwners[i].Count == 0)
                 {
-                    // Not covered by any clothing - leave in original space
+
                     continue;
                 }
                 else if (vertexOwners[i].Count == 1)
                 {
-                    // Covered by one clothing piece: use its individual tile
+
                     var data = vertexOwners[i][0];
                     float uOffset = data.uvDiscardColumn;
                     float vOffset = data.uvDiscardRow;
@@ -1549,7 +1370,7 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    // Covered by multiple pieces - find overlap tile
+
                     if (coordGroup != null)
                     {
                         var overlap = FindOverlapRegion(coordGroup, vertexOwners[i]);
@@ -1562,23 +1383,23 @@ namespace YUCP.Components.Editor
                         }
                         else
                         {
-                            // Fallback: use first clothing piece's tile
+
                             var data = vertexOwners[i][0];
                             float uOffset = data.uvDiscardColumn;
                             float vOffset = data.uvDiscardRow;
                             targetUV[i] = new Vector2(targetUV[i].x + uOffset, targetUV[i].y + vOffset);
-                            
+
                             Debug.LogWarning($"[AutoBodyHiderProcessor] No overlap tile found for vertex {i} covered by {vertexOwners[i].Count} pieces. Using first piece's tile.");
                         }
                     }
                 }
             }
-            
-            // Set target UV channel on the mesh
+
+
             List<Vector2> finalUVList = new List<Vector2>(targetUV);
             baseMesh.SetUVs(targetUVChannel, finalUVList);
-            
-            // Log statistics
+
+
             int[] tileCounts = new int[16];
             foreach (var kvp in group.hiddenVerticesMap)
             {
@@ -1586,48 +1407,48 @@ namespace YUCP.Components.Editor
                 int count = kvp.Value.Count(h => h);
                 Debug.Log($"[AutoBodyHiderProcessor] '{data.name}' covers {count} vertices (tile {data.uvDiscardRow},{data.uvDiscardColumn})");
             }
-            
+
             return baseMesh;
         }
-        
+
         /// <summary>
         /// Detect ACTUAL overlaps by comparing hidden vertex arrays
         /// Creates overlap tiles when clothing pieces share vertices
         /// </summary>
         private void DetectAndAssignActualOverlaps(BodyMeshProcessing group)
         {
-            var coordGroup = AutoBodyHiderCoordinator.CoordinatedGroups.ContainsKey(group.bodyMesh) 
-                           ? AutoBodyHiderCoordinator.CoordinatedGroups[group.bodyMesh] 
+            var coordGroup = AutoBodyHiderCoordinator.CoordinatedGroups.ContainsKey(group.bodyMesh)
+                           ? AutoBodyHiderCoordinator.CoordinatedGroups[group.bodyMesh]
                            : null;
-            
+
             if (coordGroup == null)
             {
                 Debug.LogWarning("[AutoBodyHiderProcessor] No coordinator data found for overlap detection");
                 return;
             }
-            
+
             var validPieces = group.hiddenVerticesMap.Keys.ToList();
             int potentialOverlaps = validPieces.Count * (validPieces.Count - 1) / 2;
             int actualOverlaps = 0;
             int optimizationSkips = 0;
-            
-            // Check if tile usage is enabled on any component
+
+
             bool optimizationEnabled = validPieces.Any(p => p.optimizeTileUsage);
-            
+
             Debug.Log($"[AutoBodyHiderProcessor] Analyzing {potentialOverlaps} potential overlaps between {validPieces.Count} clothing pieces (Optimization: {optimizationEnabled})...");
-            
-            // Track which vertices are already "claimed" by larger pieces
+
+
             bool[] claimedVertices = new bool[group.originalMesh.vertexCount];
-            
-            // If tile usage enabled, process pieces in order (largest coverage first)
-            // Mark vertices as "claimed" by pieces with larger coverage
+
+
+
             if (optimizationEnabled)
             {
-                // Pieces are already sorted by coverage in validComponents
+
                 foreach (var data in validPieces)
                 {
                     if (!data.optimizeTileUsage) continue;
-                    
+
                     var hiddenVertices = group.hiddenVerticesMap[data];
                     for (int v = 0; v < Math.Min(hiddenVertices.Length, claimedVertices.Length); v++)
                     {
@@ -1638,22 +1459,22 @@ namespace YUCP.Components.Editor
                     }
                 }
             }
-            
-            // Check all pairwise combinations for actual overlap
+
+
             for (int i = 0; i < validPieces.Count; i++)
             {
                 for (int j = i + 1; j < validPieces.Count; j++)
                 {
                     var piece1 = validPieces[i];
                     var piece2 = validPieces[j];
-                    
+
                     var hidden1 = group.hiddenVerticesMap[piece1];
                     var hidden2 = group.hiddenVerticesMap[piece2];
-                    
-                    // Count shared vertices
+
+
                     int sharedCount = 0;
                     int minLength = Math.Min(hidden1.Length, hidden2.Length);
-                    
+
                     for (int v = 0; v < minLength; v++)
                     {
                         if (hidden1[v] && hidden2[v])
@@ -1661,17 +1482,17 @@ namespace YUCP.Components.Editor
                             sharedCount++;
                         }
                     }
-                    
-                    // OPTIMIZATION: Skip overlap if one piece has no toggle and is fully covered
+
+
                     if (optimizationEnabled && sharedCount > 0)
                     {
-                        // Check if piece2 (smaller) has no toggle and is fully covered by piece1 (larger)
+
                         if (!piece2.createToggle)
                         {
                             int piece2TotalCoverage = hidden2.Count(h => h);
                             float coverageRatio = (float)sharedCount / piece2TotalCoverage;
-                            
-                            // If 95%+ of piece2's coverage overlaps with piece1, skip this overlap tile
+
+
                             if (coverageRatio >= 0.95f)
                             {
                                 Debug.Log($"[AutoBodyHiderProcessor] ⚡ Skipping overlap tile for '{piece1.name}' + '{piece2.name}' " +
@@ -1680,13 +1501,13 @@ namespace YUCP.Components.Editor
                                 continue;
                             }
                         }
-                        
-                        // Same check for piece1 being covered by piece2
+
+
                         if (!piece1.createToggle)
                         {
                             int piece1TotalCoverage = hidden1.Count(h => h);
                             float coverageRatio = (float)sharedCount / piece1TotalCoverage;
-                            
+
                             if (coverageRatio >= 0.95f)
                             {
                                 Debug.Log($"[AutoBodyHiderProcessor] ⚡ Skipping overlap tile for '{piece1.name}' + '{piece2.name}' " +
@@ -1696,11 +1517,11 @@ namespace YUCP.Components.Editor
                             }
                         }
                     }
-                    
-                    // Create overlap tile if there are shared vertices
+
+
                     if (sharedCount > 0)
                     {
-                        // Try to allocate a tile
+
                         while (coordGroup.usedTiles.Contains((coordGroup.nextAvailableRow, coordGroup.nextAvailableCol)))
                         {
                             coordGroup.nextAvailableCol++;
@@ -1716,20 +1537,20 @@ namespace YUCP.Components.Editor
                                 }
                             }
                         }
-                        
+
                         var tile = (coordGroup.nextAvailableRow, coordGroup.nextAvailableCol);
                         coordGroup.usedTiles.Add(tile);
-                        
+
                         var overlap = new AutoBodyHiderCoordinator.OverlapRegion(new List<AutoBodyHiderData> { piece1, piece2 });
                         coordGroup.overlapRegions.Add(overlap);
                         coordGroup.overlapTiles[overlap] = tile;
-                        
+
                         actualOverlaps++;
-                        
+
                         Debug.Log($"[AutoBodyHiderProcessor] ✓ REAL overlap detected: '{piece1.name}' + '{piece2.name}' " +
                                  $"share {sharedCount} vertices → tile ({tile.Item1},{tile.Item2})");
-                        
-                        // Move to next tile
+
+
                         coordGroup.nextAvailableCol++;
                         if (coordGroup.nextAvailableCol >= 4)
                         {
@@ -1743,21 +1564,21 @@ namespace YUCP.Components.Editor
                     }
                 }
             }
-            
+
             Debug.Log($"[AutoBodyHiderProcessor] Overlap detection complete: " +
                      $"{actualOverlaps} real overlaps created, {optimizationSkips} optimized away, " +
                      $"{potentialOverlaps - actualOverlaps - optimizationSkips} naturally skipped (no shared vertices). " +
                      $"Total tiles used: {coordGroup.assignedTiles.Count} individual + {actualOverlaps} overlap = " +
                      $"{coordGroup.assignedTiles.Count + actualOverlaps} tiles");
         }
-        
+
         /// <summary>
         /// Find the overlap region that matches the given set of clothing pieces
         /// </summary>
         private AutoBodyHiderCoordinator.OverlapRegion FindOverlapRegion(AutoBodyHiderCoordinator.BodyMeshGroup group, List<AutoBodyHiderData> clothingPieces)
         {
             var testRegion = new AutoBodyHiderCoordinator.OverlapRegion(clothingPieces);
-            
+
             foreach (var overlap in group.overlapRegions)
             {
                 if (overlap.Equals(testRegion))
@@ -1765,21 +1586,21 @@ namespace YUCP.Components.Editor
                     return overlap;
                 }
             }
-            
+
             return null;
         }
-        
+
         private void ConfigureMaterialsForMultipleUV(BodyMeshProcessing group)
         {
             Material[] materials = group.bodyMesh.sharedMaterials;
             Material poiyomiMaterial = null;
             HashSet<int> affectedMaterialIndices = GetAffectedMaterialIndices(group.originalMesh, group.hiddenVerticesMap.Values);
-            
+
             Debug.Log($"[AutoBodyHiderProcessor] ConfigureMaterialsForMultipleUV - Searching for compatible material on '{group.bodyMesh.name}'");
             Debug.Log($"[AutoBodyHiderProcessor] Body mesh has {materials.Length} materials:");
             Debug.Log($"[AutoBodyHiderProcessor] Hidden vertices affect material slots: {string.Join(", ", affectedMaterialIndices.OrderBy(i => i))}");
-            
-            // Collect all target materials from components
+
+
             List<Material> targetMaterials = new List<Material>();
             foreach (var data in group.uvComponents)
             {
@@ -1794,13 +1615,13 @@ namespace YUCP.Components.Editor
                     }
                 }
             }
-            
+
             if (targetMaterials.Count > 0)
             {
                 Debug.Log($"[AutoBodyHiderProcessor] Using {targetMaterials.Count} target material(s) from components");
             }
-            
-            // Find all compatible materials (Poiyomi or FastFur)
+
+
             List<int> poiyomiMaterialIndices = new List<int>();
             for (int i = 0; i < materials.Length; i++)
             {
@@ -1817,13 +1638,13 @@ namespace YUCP.Components.Editor
                     }
                     continue;
                 }
-                
+
                 bool shouldInclude = false;
                 if (targetMaterials.Count > 0)
                 {
-                    // Use target materials if specified - match by reference or asset path only.
+
                     bool isTargetMaterial = targetMaterials.Any(targetMat => IsSameMaterialAsset(materials[i], targetMat));
-                    
+
                     if (isTargetMaterial && UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                     {
                         shouldInclude = true;
@@ -1831,13 +1652,13 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    // Auto-detect all compatible materials
+
                     if (UVManipulator.IsPoiyomiWithUVSupport(materials[i]))
                     {
                         shouldInclude = true;
                     }
                 }
-                
+
                 if (shouldInclude)
                 {
                     if (poiyomiMaterial == null)
@@ -1849,7 +1670,7 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    // Log why material wasn't included for debugging
+
                     if (targetMaterials.Count > 0)
                     {
                         bool isCompatible = UVManipulator.IsPoiyomiWithUVSupport(materials[i]);
@@ -1857,7 +1678,7 @@ namespace YUCP.Components.Editor
                     }
                 }
             }
-            
+
             if (poiyomiMaterialIndices.Count == 0)
             {
                 Debug.LogError($"[AutoBodyHiderProcessor] No Poiyomi or FastFur material found on body mesh '{group.bodyMesh.name}'. " +
@@ -1865,33 +1686,33 @@ namespace YUCP.Components.Editor
                              $"Please use Mesh Deletion mode instead, or add a compatible shader to the body mesh.");
                 return;
             }
-            
+
             string shaderName = poiyomiMaterial != null ? UVManipulator.GetShaderDisplayName(poiyomiMaterial) : "Poiyomi/FastFur";
             Debug.Log($"[AutoBodyHiderProcessor] Configuring multi-UV on {poiyomiMaterialIndices.Count} material(s)");
             List<Material> configuredMaterials = new List<Material>();
-            
-            // Use effective UV channel (auto-detect if enabled)
-            int uvChannel = 1; // Default to UV1
+
+
+            int uvChannel = 1;
             if (group.uvComponents.Count > 0)
             {
                 uvChannel = UVManipulator.GetEffectiveUVChannel(group.uvComponents[0], group.originalMesh);
             }
-            
-            // Configure all compatible materials
+
+
             foreach (int materialIndex in poiyomiMaterialIndices)
             {
                 Material materialToConfigure = materials[materialIndex];
                 Material materialCopy = CreateUploadMaterialCopy(materialToConfigure, $"MultiUV_{materialIndex}", group.bodyMesh);
                 ThryMaterialOptimizerBridge.UnlockIfNeeded(new[] { materialCopy }, group.bodyMesh);
-                
+
                 string shaderNameLower = materialCopy.shader.name.ToLower();
                 Debug.Log($"[AutoBodyHiderProcessor] Configuring material '{materialCopy.name}' with shader '{materialCopy.shader.name}' (lowercase: '{shaderNameLower}')");
-                
-                // Enable appropriate shader keyword and feature toggle FIRST (especially for FastFur)
+
+
                 if (shaderNameLower.Contains("poiyomi"))
                 {
                     materialCopy.EnableKeyword("POI_UDIMDISCARD");
-                    // Enable UDIM discard system
+
                     if (materialCopy.HasProperty("_EnableUDIMDiscardOptions"))
                     {
                         materialCopy.SetFloat("_EnableUDIMDiscardOptions", 1f);
@@ -1899,36 +1720,36 @@ namespace YUCP.Components.Editor
                 }
                 else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("fast fur") || shaderNameLower.Contains("wffs") || shaderNameLower.Contains("warren"))
                 {
-                    // FastFur: Check and enable "Install UV Discard Module" toggle FIRST
+
                     if (materialCopy.HasProperty("_WFFS_FEATURES_UVDISCARD"))
                     {
-                        // Check if module is already installed
+
                         float currentValue = materialCopy.GetFloat("_WFFS_FEATURES_UVDISCARD");
                         Debug.Log($"[AutoBodyHiderProcessor] FastFur material '{materialCopy.name}' - _WFFS_FEATURES_UVDISCARD current value: {currentValue}");
-                        
+
                         if (currentValue < 0.5f)
                         {
-                            // Install the module by setting the property to 1
-                            // Try both SetFloat and SetInt in case Unity stores it differently
+
+
                             materialCopy.SetFloat("_WFFS_FEATURES_UVDISCARD", 1f);
                             if (materialCopy.HasProperty("_WFFS_FEATURES_UVDISCARD"))
                             {
                                 try { materialCopy.SetInt("_WFFS_FEATURES_UVDISCARD", 1); } catch { }
                             }
-                            
-                            // Also explicitly enable the keyword
+
+
                             materialCopy.EnableKeyword("WFFS_FEATURES_UVDISCARD");
-                            
-                            // Force update the material
+
+
                             UnityEditor.EditorUtility.SetDirty(materialCopy);
-                            materialCopy.name = materialCopy.name; // Force Unity to recognize changes
-                            
+                            materialCopy.name = materialCopy.name;
+
                             float newValue = materialCopy.GetFloat("_WFFS_FEATURES_UVDISCARD");
                             Debug.Log($"[AutoBodyHiderProcessor] Installed UV Discard module on FastFur material '{materialCopy.name}' (was {currentValue}, now {newValue}, keyword enabled: {materialCopy.IsKeywordEnabled("WFFS_FEATURES_UVDISCARD")})");
                         }
                         else
                         {
-                            // Module already installed, just ensure keyword is enabled
+
                             materialCopy.EnableKeyword("WFFS_FEATURES_UVDISCARD");
                             Debug.Log($"[AutoBodyHiderProcessor] FastFur material '{materialCopy.name}' - UV Discard module already installed, ensuring keyword is enabled");
                         }
@@ -1937,17 +1758,17 @@ namespace YUCP.Components.Editor
                     {
                         Debug.LogWarning($"[AutoBodyHiderProcessor] Material '{materialCopy.name}' missing '_WFFS_FEATURES_UVDISCARD' property. This shader may not support UV Discard.");
                     }
-                    
-                    // Enable UDIM discard system (this property becomes available after module is installed)
+
+
                     if (materialCopy.HasProperty("_EnableUDIMDiscardOptions"))
                     {
-                        // Try both SetFloat and SetInt since it's a ToggleUI (Int) but FastFur uses GetFloat
+
                         materialCopy.SetFloat("_EnableUDIMDiscardOptions", 1f);
                         try { materialCopy.SetInt("_EnableUDIMDiscardOptions", 1); } catch { }
-                        
+
                         UnityEditor.EditorUtility.SetDirty(materialCopy);
-                        materialCopy.name = materialCopy.name; // Force Unity to recognize changes
-                        
+                        materialCopy.name = materialCopy.name;
+
                         float enabledValue = materialCopy.GetFloat("_EnableUDIMDiscardOptions");
                         Debug.Log($"[AutoBodyHiderProcessor] Enabled UV Discard on FastFur material '{materialCopy.name}' - _EnableUDIMDiscardOptions value: {enabledValue}");
                     }
@@ -1956,50 +1777,50 @@ namespace YUCP.Components.Editor
                         Debug.LogWarning($"[AutoBodyHiderProcessor] Material '{materialCopy.name}' missing '_EnableUDIMDiscardOptions' property after installing module. Module may not be properly installed.");
                     }
                 }
-                
-                // Set UDIM discard mode and UV channel
+
+
                 if (materialCopy.HasProperty("_UDIMDiscardMode"))
                 {
-                    materialCopy.SetFloat("_UDIMDiscardMode", 0f); // Vertex mode
+                    materialCopy.SetFloat("_UDIMDiscardMode", 0f);
                 }
-                
+
                 if (materialCopy.HasProperty("_UDIMDiscardUV"))
                 {
                     materialCopy.SetFloat("_UDIMDiscardUV", uvChannel);
                 }
                 else if (materialCopy.HasProperty("_UDIMDiscardUVChannel"))
                 {
-                    // Alternative property name
+
                     materialCopy.SetFloat("_UDIMDiscardUVChannel", uvChannel);
                 }
-            
-                // Get overlap data from coordinator
-                var coordGroup = AutoBodyHiderCoordinator.CoordinatedGroups.ContainsKey(group.bodyMesh) 
-                               ? AutoBodyHiderCoordinator.CoordinatedGroups[group.bodyMesh] 
+
+
+                var coordGroup = AutoBodyHiderCoordinator.CoordinatedGroups.ContainsKey(group.bodyMesh)
+                               ? AutoBodyHiderCoordinator.CoordinatedGroups[group.bodyMesh]
                                : null;
-                
-                // Configure tiles for each clothing piece on this material
+
+
                 foreach (var data in group.uvComponents)
                 {
                     string tilePropertyName = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
-                    
+
                     if (materialCopy.HasProperty(tilePropertyName))
                     {
-                        // Check if this component uses a toggle (either creating one or using existing)
+
                         bool hasToggle = data.createToggle || data.useExistingToggle;
-                        
+
                         if (hasToggle)
                         {
-                            // For toggles: base = 0 (OFF), animation sets to 1 (ON)
+
                             materialCopy.SetFloat(tilePropertyName, 0f);
                             materialCopy.SetOverrideTag(tilePropertyName + "Animated", "1");
                         }
                         else
                         {
-                            // For non-toggles: set to ON
+
                             materialCopy.SetFloat(tilePropertyName, 1f);
                         }
-                        
+
                         Debug.Log($"[AutoBodyHiderProcessor] Configured individual tile ({data.uvDiscardRow}, {data.uvDiscardColumn}) for '{data.name}' on material '{materialCopy.name}' (Toggle: {hasToggle})");
                     }
                     else
@@ -2007,8 +1828,8 @@ namespace YUCP.Components.Editor
                         Debug.LogWarning($"[AutoBodyHiderProcessor] Property {tilePropertyName} not found on material '{materialCopy.name}'");
                     }
                 }
-                
-                // Configure overlap tiles
+
+
                 if (coordGroup != null && coordGroup.overlapRegions.Count > 0)
                 {
                     foreach (var overlap in coordGroup.overlapRegions)
@@ -2017,24 +1838,24 @@ namespace YUCP.Components.Editor
                         {
                             var tile = coordGroup.overlapTiles[overlap];
                             string tilePropertyName = $"_UDIMDiscardRow{tile.row}_{tile.col}";
-                            
+
                             if (materialCopy.HasProperty(tilePropertyName))
                             {
-                                // Check if ANY of the involved clothing pieces have toggles (creating or using existing)
+
                                 bool anyHasToggle = overlap.involvedClothing.Any(c => c.createToggle || c.useExistingToggle);
-                                
+
                                 if (anyHasToggle)
                                 {
-                                    // For toggles: base = 0 (OFF), animation sets to 1 (ON)
+
                                     materialCopy.SetFloat(tilePropertyName, 0f);
                                     materialCopy.SetOverrideTag(tilePropertyName + "Animated", "1");
                                 }
                                 else
                                 {
-                                    // For non-toggles: set to ON
+
                                     materialCopy.SetFloat(tilePropertyName, 1f);
                                 }
-                                
+
                                 Debug.Log($"[AutoBodyHiderProcessor] Configured overlap tile ({tile.row}, {tile.col}) for '{overlap.regionName}' on material '{materialCopy.name}' (Toggle: {anyHasToggle})");
                             }
                             else
@@ -2044,24 +1865,24 @@ namespace YUCP.Components.Editor
                         }
                     }
                 }
-                
-                // Replace the material in array
+
+
                 materials[materialIndex] = materialCopy;
                 configuredMaterials.Add(materialCopy);
                 EditorUtility.SetDirty(materialCopy);
             }
-            
+
             ThryMaterialOptimizerBridge.SyncAndLock(configuredMaterials, group.bodyMesh);
-            // Update all materials on the mesh
+
             group.bodyMesh.sharedMaterials = materials;
             EditorUtility.SetDirty(group.bodyMesh);
         }
-        
+
         private void CreateUVToggleForComponent(AutoBodyHiderData data, BodyMeshProcessing group)
         {
             Material[] materials = group.bodyMesh.sharedMaterials;
             Material poiyomiMaterial = null;
-            
+
             foreach (var mat in materials)
             {
                 if (mat.name.Contains("MultiUV") && UVManipulator.IsPoiyomiWithUVSupport(mat))
@@ -2070,14 +1891,14 @@ namespace YUCP.Components.Editor
                     break;
                 }
             }
-            
+
             if (poiyomiMaterial == null)
             {
                 Debug.LogError($"[AutoBodyHiderProcessor] Could not find multi-UV material for toggle on '{data.name}'");
                 return;
             }
-            
-            // Check if using existing toggle
+
+
             Component toggleToUse = null;
             if (data.useExistingToggle && data.selectedToggle != null)
             {
@@ -2085,9 +1906,9 @@ namespace YUCP.Components.Editor
             }
             else if (data.useExistingToggle)
             {
-                toggleToUse = FindVRCFuryToggleInHierarchy(data.gameObject);
+                toggleToUse = VRCFuryHelper.FindToggles(data.gameObject).FirstOrDefault();
             }
-            
+
             if (toggleToUse != null)
             {
                 IntegrateWithVRCFuryToggle(data, poiyomiMaterial, toggleToUse);
@@ -2097,51 +1918,11 @@ namespace YUCP.Components.Editor
                 CreateUVToggle(data, poiyomiMaterial);
             }
         }
-        
-        private Component FindVRCFuryToggleInHierarchy(GameObject root)
-        {
-            // Check root GameObject
-            var rootComponents = root.GetComponents<Component>();
-            foreach (var comp in rootComponents)
-            {
-                if (comp != null && comp.GetType().Name == "VRCFury")
-                {
-                    return comp;
-                }
-            }
-            
-            // Check all children
-            foreach (Transform child in root.transform)
-            {
-                var childComponents = child.GetComponents<Component>();
-                foreach (var comp in childComponents)
-                {
-                    if (comp != null && comp.GetType().Name == "VRCFury")
-                    {
-                        return comp;
-                    }
-                }
-            }
-            
-            return null;
-        }
-        
-        private string GetGameObjectPath(GameObject obj, GameObject root)
-        {
-            if (obj == root)
-                return obj.name;
-            
-            var path = new System.Collections.Generic.List<string>();
-            Transform current = obj.transform;
-            
-            while (current != null && current != root.transform)
-            {
-                path.Insert(0, current.name);
-                current = current.parent;
-            }
-            
-            return string.Join("/", path);
-        }
+
+
+        private string GetGameObjectPath(GameObject obj, GameObject root) =>
+            obj == root ? obj.name : AnimationUtility.CalculateTransformPath(obj.transform, root.transform);
+
     }
 }
 

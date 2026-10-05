@@ -200,7 +200,7 @@ namespace YUCP.Components.Editor
                         });
 
                     VRCFuryHelper.AddControllerToVRCFury(descriptor, controller);
-                    RegisterGlobalParameters(descriptor, paramMap);
+                    VRCFuryHelper.RegisterGlobalParameters(descriptor, paramMap.Values);
                     InstallSystem(descriptor, prefab, settings, rootName, controller);
                 }
 
@@ -324,30 +324,30 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                // Store the world position and rotation before reparenting
+
                 var worldPosition = settings.appliedObject.transform.position;
                 var worldRotation = settings.appliedObject.transform.rotation;
                 var worldScale = settings.appliedObject.transform.lossyScale;
 
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
-                
-                // Reparent to container
+
+
                 settings.appliedObject.transform.parent = container;
-                
-                // Reset object's local transform to identity (0,0,0 position, identity rotation, 1,1,1 scale)
+
+
                 settings.appliedObject.transform.localPosition = Vector3.zero;
                 settings.appliedObject.transform.localRotation = Quaternion.identity;
                 settings.appliedObject.transform.localScale = Vector3.one;
-                
-                // Adjust container's transform to maintain the object's original world position
-                // Calculate what the container's world transform should be so that the object (at local 0,0,0) 
-                // appears at its original world position
+
+
+
+
                 container.position = worldPosition;
                 container.rotation = worldRotation;
-                
-                // Note: Scale is trickier with lossyScale, so we'll preserve the container's existing scale
-                // The object's local scale is now 1,1,1, so it will use the container's scale
-                
+
+
+
+
                 var newPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -358,7 +358,7 @@ namespace YUCP.Components.Editor
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
             }
 
-            // Add global parameters to VRCFury if enabled
+
             if (settings.useGlobalParameters)
             {
                 VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, settings.launchParameterName);
@@ -560,18 +560,18 @@ namespace YUCP.Components.Editor
 
         private static void RenameControllerParameters(AnimatorController controller, GroupKey key)
         {
-            // The Launcher FX controller uses "RigidbodyLauncher/Control" as a bool parameter
+
             if (key.UseGlobalParameters)
             {
-                // Global parameter mode: rename RigidbodyLauncher/Control to the user's launch parameter name
+
                 RenameParameterUsingVRCFury(controller, "RigidbodyLauncher/Control", key.LaunchParameterName);
             }
             else
             {
-                // Gesture mode: Add gesture parameter and modify transitions to use gestures
+
                 var gestureParamName = key.GestureHand == GestureHand.Left ? "GestureLeft" : "GestureRight";
-                
-                // Add the gesture parameter to the controller if it doesn't exist
+
+
                 var parameters = new List<AnimatorControllerParameter>(controller.parameters);
                 if (!parameters.Exists(p => p.name == gestureParamName))
                 {
@@ -584,29 +584,11 @@ namespace YUCP.Components.Editor
                     controller.parameters = parameters.ToArray();
                 }
 
-                // Modify transitions: replace RigidbodyLauncher/Control with gesture-based conditions
+
                 foreach (var layer in controller.layers)
                 {
                     ModifyTransitionsForGestures(layer.stateMachine, gestureParamName, key.LaunchGesture, key.ResetGesture);
                 }
-            }
-        }
-
-        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
-        {
-            if (descriptor == null || paramMap == null)
-            {
-                return;
-            }
-
-            foreach (var param in paramMap.Values.Distinct())
-            {
-                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
-                {
-                    continue;
-                }
-
-                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
             }
         }
 
@@ -707,19 +689,19 @@ namespace YUCP.Components.Editor
                     parameter = condition.parameter
                 };
 
-                // Replace RigidbodyLauncher/Control with gesture-based conditions
+
                 if (condition.parameter == "RigidbodyLauncher/Control")
                 {
                     newCondition.parameter = gestureParamName;
-                    
-                    // The Launcher uses bool conditions: If true (mode 1) -> Fire, If false (mode 2) -> Reset
-                    // We need to convert to gesture thresholds: Equals launchGesture -> Fire, Equals resetGesture -> Reset
-                    if (condition.mode == AnimatorConditionMode.If) // true -> launch gesture
+
+
+
+                    if (condition.mode == AnimatorConditionMode.If)
                     {
                         newCondition.mode = AnimatorConditionMode.Equals;
                         newCondition.threshold = launchGesture;
                     }
-                    else if (condition.mode == AnimatorConditionMode.IfNot) // false -> reset gesture
+                    else if (condition.mode == AnimatorConditionMode.IfNot)
                     {
                         newCondition.mode = AnimatorConditionMode.Equals;
                         newCondition.threshold = resetGesture;

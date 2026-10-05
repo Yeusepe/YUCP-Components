@@ -191,7 +191,7 @@ namespace YUCP.Components.Editor
 
                     ApplyFollowSpeedToController(clonedController, settings.followSpeed);
                     VRCFuryHelper.AddControllerToVRCFury(descriptor, clonedController);
-                    RegisterGlobalParameters(descriptor, paramMap);
+                    VRCFuryHelper.RegisterGlobalParameters(descriptor, paramMap.Values);
                     InstallSystem(descriptor, prefab, settings, rootName, clonedController, paramMap);
                 }
 
@@ -230,10 +230,10 @@ namespace YUCP.Components.Editor
 
         private static void InstallSystem(VRCAvatarDescriptor descriptor, GameObject prefab, FollowerData.Settings settings, string rootName, AnimatorController controller, Dictionary<string, string> paramMap)
         {
-            // Save target's world position and rotation before any changes
+
             Vector3 targetWorldPosition = Vector3.zero;
             Quaternion targetWorldRotation = Quaternion.identity;
-            
+
             if (settings.appliedObject != null)
             {
                 targetWorldPosition = settings.appliedObject.transform.position;
@@ -253,7 +253,7 @@ namespace YUCP.Components.Editor
 
                 if (!targetInsideApplied)
                 {
-                    // Parent to the position target so it follows live movement.
+
                     followerTarget.parent = positionTarget;
                     followerTarget.localPosition = Vector3.zero;
                     followerTarget.localRotation = Quaternion.identity;
@@ -261,7 +261,7 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    // Keep hierarchy stable and remap animation paths to the follower target.
+
                     followerTarget.parent = positionTarget.parent;
                     followerTarget.localPosition = positionTarget.localPosition;
                     followerTarget.localRotation = positionTarget.localRotation;
@@ -309,19 +309,19 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                // Position the container at the target's original world position/rotation
+
                 container.position = targetWorldPosition;
                 container.rotation = targetWorldRotation;
 
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
-                
-                // Reparent to container
+
+
                 settings.appliedObject.transform.parent = container;
-                
-                // Reset target's local transform to 0,0,0 so it appears at the container's position
+
+
                 settings.appliedObject.transform.localPosition = Vector3.zero;
                 settings.appliedObject.transform.localRotation = Quaternion.identity;
-                
+
                 var newPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -332,8 +332,8 @@ namespace YUCP.Components.Editor
                 CustomObjectSyncCreator.RenameClipPaths(allClips, false, oldPath, newPath);
             }
 
-            // Directly modify the constraint's source1 weight for speeds >= 1
-            // This bypasses any animation system issues with VRCFury
+
+
             Debug.Log($"[YUCP Follower] InstallSystem: followSpeed={settings.followSpeed}");
             if (settings.followSpeed >= 1f)
             {
@@ -342,22 +342,22 @@ namespace YUCP.Components.Editor
                 Debug.Log($"[YUCP Follower] Container found: {container != null}");
                 if (container != null)
                 {
-                    // The Follower prefab uses VRCPositionConstraint, not VRCParentConstraint
+
                     var constraint = container.GetComponent<VRC.SDK3.Dynamics.Constraint.Components.VRCPositionConstraint>();
                     Debug.Log($"[YUCP Follower] PositionConstraint found: {constraint != null}, Sources count: {constraint?.Sources.Count ?? 0}");
                     if (constraint != null && constraint.Sources.Count >= 2)
                     {
-                        // Higher weight = faster following
-                        // Scale exponentially for dramatic differences
-                        // speed 1 -> weight 0.01, speed 5 -> weight ~0.5 (capped at 1)
+
+
+
                         float scaledWeight = Mathf.Min(0.01f * Mathf.Pow(settings.followSpeed, 4f), 1f);
-                        
+
                         var source1 = constraint.Sources[1];
                         Debug.Log($"[YUCP Follower] Before: source1.Weight = {source1.Weight}");
                         source1.Weight = scaledWeight;
                         constraint.Sources[1] = source1;
                         Debug.Log($"[YUCP Follower] After: source1.Weight = {constraint.Sources[1].Weight} (set to {scaledWeight})");
-                        
+
                         Debug.Log($"[YUCP Follower] Direct constraint modification: source1.Weight set to {scaledWeight} for speed {settings.followSpeed}");
                     }
                 }
@@ -377,24 +377,6 @@ namespace YUCP.Components.Editor
                     var label = settings.appliedObject != null ? $"Follower Stop ({settings.appliedObject.name})" : "Follower Stop";
                     VRCFuryHelper.AddMenuToggle(menu, label, stopParam);
                 }
-            }
-        }
-
-        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
-        {
-            if (descriptor == null || paramMap == null)
-            {
-                return;
-            }
-
-            foreach (var param in paramMap.Values.Distinct())
-            {
-                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
-                {
-                    continue;
-                }
-
-                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
             }
         }
 
@@ -427,11 +409,11 @@ namespace YUCP.Components.Editor
 
                 var clipName = clip.name;
                 Debug.Log($"[YUCP Follower] Checking clip: '{clipName}'");
-                
+
                 var isSpeedClip = false;
                 foreach (var suffix in speedClipSuffixes)
                 {
-                    // Use Contains instead of EndsWith because cloned clips have "(Clone)" appended
+
                     if (clipName.Contains(suffix))
                     {
                         isSpeedClip = true;
@@ -447,47 +429,47 @@ namespace YUCP.Components.Editor
 
                 Debug.Log($"[YUCP Follower] Processing speed clip: '{clipName}'");
 
-                // Scale the weight curve values - this controls the actual damping behavior
-                // Higher source1.Weight = faster following toward target
+
+
                 var bindings = AnimationUtility.GetCurveBindings(clip);
                 Debug.Log($"[YUCP Follower] Clip '{clipName}' has {bindings.Length} bindings");
                 foreach (var binding in bindings)
                 {
                     Debug.Log($"[YUCP Follower] Binding: propertyName='{binding.propertyName}' path='{binding.path}'");
-                    
-                    // Check for source1.Weight - try both exact match and EndsWith
-                    bool isSource1Weight = binding.propertyName == "Sources.source1.Weight" || 
+
+
+                    bool isSource1Weight = binding.propertyName == "Sources.source1.Weight" ||
                                            binding.propertyName.EndsWith("Sources.source1.Weight", StringComparison.Ordinal) ||
                                            binding.propertyName.Contains("source1.Weight");
-                    
+
                     if (!isSource1Weight)
                     {
                         continue;
                     }
 
-                    
+
                     var curve = AnimationUtility.GetEditorCurve(clip, binding);
                     if (curve != null && curve.keys.Length > 0)
                     {
                         Debug.Log($"[YUCP Follower] Original curve keys: {string.Join(", ", curve.keys.Select(k => k.value))}");
-                        
+
                         var keys = curve.keys;
                         for (int i = 0; i < keys.Length; i++)
                         {
                             var key = keys[i];
-                            // Use power of 4 for weight scaling to create bigger differences
-                            // followSpeed 0.1 -> 0.0001x, followSpeed 5 -> 625x
-                            // This creates much more dramatic weight differences for speed > 1
+
+
+
                             var weightMultiplier = Mathf.Pow(followSpeed, 4f);
                             key.value *= weightMultiplier;
-                            // Clamp to reasonable range (0 to 1)
+
                             key.value = Mathf.Clamp(key.value, 0f, 1f);
                             keys[i] = key;
                         }
                         curve.keys = keys;
-                        
+
                         Debug.Log($"[YUCP Follower] Scaled curve keys (by {followSpeed}^4 = {Mathf.Pow(followSpeed, 4f)}): {string.Join(", ", curve.keys.Select(k => k.value))}");
-                        
+
                         AnimationUtility.SetEditorCurve(clip, binding, curve);
                         EditorUtility.SetDirty(clip);
                         touched = true;
@@ -495,13 +477,13 @@ namespace YUCP.Components.Editor
 
                 }
 
-                // Don't enable looping - the animation should play once to reach final weight.
-                // state.speed controls how long it takes to reach that final weight.
+
+
             }
 
-            // Apply state.speed as the PRIMARY speed control.
-            // AnimatorState properties persist through VRCFury processing,
-            // unlike animation clip modifications which may get overwritten.
+
+
+
             var speedClipSuffixesForState = new[] { "Follower Active" };
             bool stateSpeedModified = false;
             foreach (var layer in controller.layers)
@@ -509,8 +491,8 @@ namespace YUCP.Components.Editor
                 stateSpeedModified |= ApplyFollowSpeedToStateMachine(layer.stateMachine, speedClipSuffixesForState, followSpeed);
             }
 
-            // CRITICAL: Always save the controller after any modifications!
-            // VRCFury loads from the asset file, so changes must be persisted to disk.
+
+
             if (touched || stateSpeedModified)
             {
                 Debug.Log($"[YUCP Follower] Modifications made (curves={touched}, stateSpeed={stateSpeedModified}), saving controller");
@@ -551,7 +533,7 @@ namespace YUCP.Components.Editor
                     var matches = false;
                     foreach (var suffix in clipNameSuffixes)
                     {
-                        // Use Contains instead of EndsWith because cloned clips have "(Clone)" appended
+
                         if (clipName.Contains(suffix))
                         {
                             matches = true;
@@ -561,21 +543,21 @@ namespace YUCP.Components.Editor
 
                     if (matches)
                     {
-                        // Use state.speed for ALL speed values
-                        // VRCFury preserves AnimatorState.speed even though it overwrites animation clips
-                        // - For speed < 1: Slow down the animation (smaller values = slower)
-                        // - For speed >= 1: Speed up the animation (larger values = faster)
+
+
+
+
                         float scaledSpeed;
                         if (followSpeed < 1f)
                         {
-                            // Power of 10 for extreme slowdown at low speeds
+
                             scaledSpeed = Mathf.Pow(followSpeed, 10f);
                             Debug.Log($"[YUCP Follower] SLOW MODE: Setting state '{state.name}' speed to {scaledSpeed} (followSpeed={followSpeed}^10)");
                         }
                         else
                         {
-                            // For speed >= 1, use state.speed directly to speed up the animation
-                            // speed=5 means the animation plays 5x faster
+
+
                             scaledSpeed = followSpeed;
                             Debug.Log($"[YUCP Follower] FAST MODE: Setting state '{state.name}' speed to {scaledSpeed} (followSpeed={followSpeed})");
                         }
@@ -590,7 +572,7 @@ namespace YUCP.Components.Editor
             {
                 modified |= ApplyFollowSpeedToStateMachine(child.stateMachine, clipNameSuffixes, followSpeed);
             }
-            
+
             return modified;
         }
 

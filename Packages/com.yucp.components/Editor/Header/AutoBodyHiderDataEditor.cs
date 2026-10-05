@@ -21,8 +21,8 @@ namespace YUCP.Components.Editor
         private bool isGeneratingPreview = false;
         private float lastCheckedSafetyMargin = -1f;
         private bool lastCheckedMirrorSymmetry = false;
-        
-        // Cache tracking for settings changes
+
+
         private DetectionMethod lastDetectionMethod;
         private float lastProximityThreshold;
         private float lastRaycastDistance;
@@ -32,8 +32,8 @@ namespace YUCP.Components.Editor
         private bool lastSmartRequireBidirectional;
         private Texture2D lastManualMask;
         private float lastManualMaskThreshold;
-        
-        // Track previous values to reduce unnecessary UI updates
+
+
         private Component previousVrcFuryToggle = null;
         private string previousValidationError = null;
         private bool previousCreateToggle = false;
@@ -45,16 +45,16 @@ namespace YUCP.Components.Editor
         private SkinnedMeshRenderer previousTargetBodyMesh = null;
         private Mesh previousDetectedMesh = null;
         private int cachedDetectedUVChannel = 1;
-        private Material[] previousBodyMeshMaterials = null; // Track materials on body mesh
+        private Material[] previousBodyMeshMaterials = null;
 
-        // Foldout states
+
         private bool showSmartDetection = false;
         private bool showAdvancedOptions = false;
 
         private void OnEnable()
         {
             data = (AutoBodyHiderData)target;
-            
+
             lastDetectionMethod = data.detectionMethod;
             lastProximityThreshold = data.proximityThreshold;
             lastRaycastDistance = data.raycastDistance;
@@ -64,8 +64,8 @@ namespace YUCP.Components.Editor
             lastSmartRequireBidirectional = data.smartRequireBidirectional;
             lastManualMask = data.manualMask;
             lastManualMaskThreshold = data.manualMaskThreshold;
-            
-            // Initialize toggle section state
+
+
             previousCreateToggle = data.createToggle;
             previousUseExistingToggle = data.useExistingToggle;
             previousSelectedToggle = data.selectedToggle;
@@ -77,58 +77,58 @@ namespace YUCP.Components.Editor
         public override VisualElement CreateInspectorGUI()
         {
             serializedObject.Update();
-            
+
             var root = new VisualElement();
             YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Auto Body Hider"));
-            
+
             var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(AutoBodyHiderData));
             if (betaWarning != null) root.Add(betaWarning);
-            
+
             var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(AutoBodyHiderData));
             if (supportBanner != null) root.Add(supportBanner);
-            
-            // VRCFury integration banner (will be updated dynamically)
+
+
             var vrcFuryBanner = new VisualElement();
             vrcFuryBanner.name = "vrcfury-banner";
             root.Add(vrcFuryBanner);
-            
-            // Target Meshes Card
+
+
             var targetCard = YUCPUIToolkitHelper.CreateCard("Target Meshes", "Configure body and clothing meshes");
             var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
             targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("targetBodyMesh"), "Body Mesh"));
             targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("clothingMeshes"), "Clothing Meshes"));
             root.Add(targetCard);
-            
-            // Detection Settings Card
+
+
             var detectionCard = YUCPUIToolkitHelper.CreateCard("Detection Settings", "Configure body hiding detection method");
             var detectionContent = YUCPUIToolkitHelper.GetCardContent(detectionCard);
             detectionContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("detectionMethod"), "Detection Method"));
             detectionContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("safetyMargin"), "Safety Margin"));
-            
+
             var proximityThresholdField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("proximityThreshold"), "Proximity Threshold");
             proximityThresholdField.name = "proximity-threshold";
             detectionContent.Add(proximityThresholdField);
-            
+
             var raycastDistanceField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("raycastDistance"), "Raycast Distance");
             raycastDistanceField.name = "raycast-distance";
             detectionContent.Add(raycastDistanceField);
-            
+
             var hybridExpansionField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("hybridExpansionFactor"), "Expansion Factor");
             hybridExpansionField.name = "hybrid-expansion";
             detectionContent.Add(hybridExpansionField);
-            
+
             var manualMaskField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("manualMask"), "Manual Mask");
             manualMaskField.name = "manual-mask";
             detectionContent.Add(manualMaskField);
-            
+
             var manualMaskThresholdField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("manualMaskThreshold"), "Mask Threshold");
             manualMaskThresholdField.name = "manual-mask-threshold";
             detectionContent.Add(manualMaskThresholdField);
-            
+
             root.Add(detectionCard);
-            
-            // Smart Detection Foldout
+
+
             var smartFoldout = YUCPUIToolkitHelper.CreateFoldout("Smart Detection Settings", showSmartDetection);
             smartFoldout.RegisterValueChangedCallback(evt => { showSmartDetection = evt.newValue; });
             smartFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("smartRayDirections"), "Ray Directions"));
@@ -140,20 +140,20 @@ namespace YUCP.Components.Editor
             smartFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("smartMinDistanceToClothing"), "Min Distance to Clothing"));
             smartFoldout.name = "smart-detection-foldout";
             root.Add(smartFoldout);
-            
-            // Application Mode Card
+
+
             var appModeCard = YUCPUIToolkitHelper.CreateCard("Application Mode", "Configure how body hiding is applied");
             var appModeContent = YUCPUIToolkitHelper.GetCardContent(appModeCard);
             appModeContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("applicationMode"), "Mode"));
             var autoDetectHelp = YUCPUIToolkitHelper.CreateHelpBox("Auto-detect will use UV Discard for Poiyomi/FastFur shaders, Mesh Deletion for others.", YUCPUIToolkitHelper.MessageType.Info);
             autoDetectHelp.name = "auto-detect-help";
             appModeContent.Add(autoDetectHelp);
-            
-            // Material selection for UV Discard mode
+
+
             var materialPickerContainer = new VisualElement();
             materialPickerContainer.name = "material-picker-container";
-            
-            // Store references for dynamic updates
+
+
             var currentSelectionContainer = new VisualElement();
             currentSelectionContainer.name = "current-material-selection";
             currentSelectionContainer.style.flexDirection = FlexDirection.Row;
@@ -167,7 +167,7 @@ namespace YUCP.Components.Editor
             currentSelectionContainer.style.borderTopRightRadius = 6;
             currentSelectionContainer.style.borderBottomLeftRadius = 6;
             currentSelectionContainer.style.borderBottomRightRadius = 6;
-            
+
             var currentMaterialPreview = new Image();
             currentMaterialPreview.name = "current-material-preview";
             currentMaterialPreview.style.width = 40;
@@ -175,30 +175,30 @@ namespace YUCP.Components.Editor
             currentMaterialPreview.style.marginRight = 8;
             currentMaterialPreview.style.backgroundColor = new StyleColor(new Color(0.2f, 0.2f, 0.2f, 1f));
             currentSelectionContainer.Add(currentMaterialPreview);
-            
+
             var currentMaterialInfo = new VisualElement();
             currentMaterialInfo.style.flexGrow = 1;
-            
+
             var currentMaterialName = new Label("None (Auto-detect)");
             currentMaterialName.name = "current-material-name";
             currentMaterialName.style.fontSize = 13;
             currentMaterialName.style.unityFontStyleAndWeight = FontStyle.Bold;
             currentMaterialInfo.Add(currentMaterialName);
-            
+
             var currentMaterialShader = new Label("Will auto-detect all compatible materials");
             currentMaterialShader.name = "current-material-shader";
             currentMaterialShader.style.fontSize = 11;
             currentMaterialShader.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f, 1f));
             currentMaterialInfo.Add(currentMaterialShader);
-            
-            // Selected materials list (for multiple selection)
+
+
             var selectedMaterialsList = new VisualElement();
             selectedMaterialsList.name = "selected-materials-list";
             selectedMaterialsList.style.marginTop = 5;
             currentMaterialInfo.Add(selectedMaterialsList);
-            
+
             currentSelectionContainer.Add(currentMaterialInfo);
-            
+
             var clearMaterialButton = new Button(() => {
                 var targetMaterialsProp = serializedObject.FindProperty("targetMaterials");
                 targetMaterialsProp.arraySize = 0;
@@ -209,54 +209,54 @@ namespace YUCP.Components.Editor
             clearMaterialButton.style.width = 80;
             clearMaterialButton.style.marginLeft = 8;
             currentSelectionContainer.Add(clearMaterialButton);
-            
+
             materialPickerContainer.Add(currentSelectionContainer);
-            
-            // Material grid
+
+
             var materialGridContainer = new VisualElement();
             materialGridContainer.name = "material-grid-container";
             materialGridContainer.style.flexDirection = FlexDirection.Row;
             materialGridContainer.style.flexWrap = Wrap.Wrap;
             materialGridContainer.style.marginTop = 5;
-            
+
             materialPickerContainer.Add(materialGridContainer);
-            
+
             var materialHelpContainer = new VisualElement();
             materialHelpContainer.name = "material-help-container";
             materialPickerContainer.Add(materialHelpContainer);
-            
-            // Store references for updates - add label at the beginning
+
+
             var materialPickerLabel = new Label("Target Materials (Optional)");
             materialPickerLabel.style.fontSize = 13;
             materialPickerLabel.style.marginBottom = 5;
             materialPickerContainer.Insert(0, materialPickerLabel);
-            
+
             appModeContent.Add(materialPickerContainer);
-            
+
             root.Add(appModeCard);
-            
-            // UV Discard Settings Card (conditional)
+
+
             var uvCard = YUCPUIToolkitHelper.CreateCard("UV Discard Settings", "Configure UV tile coordinates");
             var uvContent = YUCPUIToolkitHelper.GetCardContent(uvCard);
-            
-            // Auto-detect UV channel toggle
+
+
             var autoDetectUVField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoDetectUVChannel"), "Auto-Detect UV Channel");
             uvContent.Add(autoDetectUVField);
-            
-            // Detected UV channel display (when auto-detect is enabled)
+
+
             var detectedUVContainer = new VisualElement();
             detectedUVContainer.name = "detected-uv-container";
             uvContent.Add(detectedUVContainer);
-            
-            // Manual UV channel field (will be moved to advanced, but keep reference for now)
+
+
             var manualUVChannelField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvChannel"), "UV Channel");
             manualUVChannelField.name = "manual-uv-channel-field";
-            
-            // Auto-assign tile toggle
+
+
             var autoAssignTileProp = serializedObject.FindProperty("autoAssignUVTile");
             uvContent.Add(YUCPUIToolkitHelper.CreateField(autoAssignTileProp, "Auto Assign Tile"));
-            
-            // Tile assignment info display when auto-assigned
+
+
             var tileInfoContainer = new VisualElement();
             tileInfoContainer.name = "tile-info-container";
             tileInfoContainer.style.marginTop = 5;
@@ -270,19 +270,19 @@ namespace YUCP.Components.Editor
             tileInfoContainer.style.borderTopRightRadius = 4;
             tileInfoContainer.style.borderBottomLeftRadius = 4;
             tileInfoContainer.style.borderBottomRightRadius = 4;
-            
+
             var tileInfoLabel = new Label("Tile: Auto-assigned by orchestrator");
             tileInfoLabel.name = "tile-info-label";
             tileInfoLabel.style.fontSize = 11;
             tileInfoLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f, 1f));
             tileInfoContainer.Add(tileInfoLabel);
             uvContent.Add(tileInfoContainer);
-            
-            // Manual tile assignment shown when auto-assign is disabled
+
+
             var manualTileContainer = new VisualElement();
             manualTileContainer.name = "manual-tile-container";
             manualTileContainer.style.marginTop = 5;
-            
+
             var rowColumnContainer = new VisualElement();
             rowColumnContainer.style.flexDirection = FlexDirection.Row;
             rowColumnContainer.style.marginBottom = 5;
@@ -294,70 +294,70 @@ namespace YUCP.Components.Editor
             columnField.style.flexGrow = 1;
             rowColumnContainer.Add(columnField);
             manualTileContainer.Add(rowColumnContainer);
-            
+
             var manualTileHelp = YUCPUIToolkitHelper.CreateHelpBox(
                 "Manually specify the UV tile coordinates. Make sure this tile is not used by other clothing pieces on the same body mesh.",
                 YUCPUIToolkitHelper.MessageType.Info);
             manualTileContainer.Add(manualTileHelp);
-            
+
             uvContent.Add(manualTileContainer);
             uvCard.name = "uv-card";
             root.Add(uvCard);
-            
-            // VRCFury Toggle Section
+
+
             var toggleCard = YUCPUIToolkitHelper.CreateCard("VRCFury Toggle", "Configure toggle integration with VRCFury");
             var toggleCardContent = YUCPUIToolkitHelper.GetCardContent(toggleCard);
             toggleCard.name = "toggle-card";
             root.Add(toggleCard);
-            
+
             var toggleSection = new VisualElement();
             toggleSection.name = "toggle-section";
             toggleCardContent.Add(toggleSection);
-            
-            // Advanced Options Foldout
+
+
             var advancedFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced Options", showAdvancedOptions);
             advancedFoldout.RegisterValueChangedCallback(evt => { showAdvancedOptions = evt.newValue; });
             advancedFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("mirrorSymmetry"), "Mirror Symmetry"));
-            
+
             YUCPUIToolkitHelper.AddSpacing(advancedFoldout, 3);
             var useBoneFilteringField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("useBoneFiltering"), "Use Bone Filtering");
             advancedFoldout.Add(useBoneFilteringField);
-            
+
             var filterBonesContainer = new VisualElement();
             filterBonesContainer.style.paddingLeft = 15;
             filterBonesContainer.name = "filter-bones-container";
             var filterBonesField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("filterBones"), "Filter Bones");
             filterBonesContainer.Add(filterBonesField);
             advancedFoldout.Add(filterBonesContainer);
-            
+
             YUCPUIToolkitHelper.AddSpacing(advancedFoldout, 3);
             var optimizeTileField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("optimizeTileUsage"), "Optimize Tile Usage");
             advancedFoldout.Add(optimizeTileField);
             var optimizeHelp = YUCPUIToolkitHelper.CreateHelpBox("Reduces UV tiles for layered outfits by skipping overlap tiles for fully-covered inner layers.", YUCPUIToolkitHelper.MessageType.Info);
             optimizeHelp.name = "optimize-help";
             advancedFoldout.Add(optimizeHelp);
-            
+
             YUCPUIToolkitHelper.AddSpacing(advancedFoldout, 3);
             advancedFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Mode"));
             advancedFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("showPreview"), "Show Preview"));
             root.Add(advancedFoldout);
-            
-            // Preview Tools Section
+
+
             YUCPUIToolkitHelper.AddSpacing(root, 15);
-            
+
             var previewCard = YUCPUIToolkitHelper.CreateCard("Preview", "Visualize what will be hidden before building");
             var previewCardContent = YUCPUIToolkitHelper.GetCardContent(previewCard);
             previewCard.name = "preview-card";
             root.Add(previewCard);
-            
+
             var previewInfo = new VisualElement();
             previewInfo.name = "preview-info";
             previewCardContent.Add(previewInfo);
-            
+
             YUCPUIToolkitHelper.AddSpacing(previewCardContent, 8);
-            
-            // Single context-sensitive button
-            var previewActionButton = YUCPUIToolkitHelper.CreateButton("Generate Preview", () => 
+
+
+            var previewActionButton = YUCPUIToolkitHelper.CreateButton("Generate Preview", () =>
             {
                 if (data.previewGenerated)
                 {
@@ -372,35 +372,35 @@ namespace YUCP.Components.Editor
             previewActionButton.style.marginBottom = 8;
             previewActionButton.name = "preview-action-button";
             previewCardContent.Add(previewActionButton);
-            
-            // Clear cache button
+
+
             var clearCacheButton = YUCPUIToolkitHelper.CreateButton("Clear Detection Cache", () =>
             {
                 DetectionCache.ClearCache();
-                EditorUtility.DisplayDialog("Cache Cleared", 
-                    "Detection cache has been cleared.\n\nNext build will re-run detection for all Auto Body Hider components.", 
+                EditorUtility.DisplayDialog("Cache Cleared",
+                    "Detection cache has been cleared.\n\nNext build will re-run detection for all Auto Body Hider components.",
                     "OK");
             }, YUCPUIToolkitHelper.ButtonVariant.Secondary);
             clearCacheButton.style.height = 32;
             clearCacheButton.style.marginBottom = 8;
             clearCacheButton.name = "clear-cache-button";
             previewCardContent.Add(clearCacheButton);
-            
-            // Help text
+
+
             var previewHelp = new Label("Preview shows red faces in Scene view that will be hidden. Toggle 'Show Preview' in Advanced settings to enable visualization.");
             previewHelp.style.fontSize = 11;
             previewHelp.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f, 1f));
             previewHelp.style.whiteSpace = WhiteSpace.Normal;
             previewHelp.style.marginTop = 4;
             previewCardContent.Add(previewHelp);
-            
+
             YUCPUIToolkitHelper.AddSpacing(root, 10);
-            
+
             var validationError = new VisualElement();
             validationError.name = "validation-error";
             root.Add(validationError);
-            
-            // Initialize toggle section on first load
+
+
             var vrcFuryComponents = data.GetComponents<Component>();
             Component initialVrcFuryToggle = null;
             foreach (var comp in vrcFuryComponents)
@@ -412,68 +412,68 @@ namespace YUCP.Components.Editor
                 }
             }
             UpdateToggleSection(toggleSection, data, serializedObject, initialVrcFuryToggle);
-            
-            // Dynamic updates using schedule.Execute
+
+
             root.schedule.Execute(() =>
             {
                 serializedObject.Update();
                 var detectionMethod = serializedObject.FindProperty("detectionMethod");
                 var detectionMethodValue = (DetectionMethod)detectionMethod.enumValueIndex;
-                
+
                 proximityThresholdField.style.display = (detectionMethodValue == DetectionMethod.Proximity || detectionMethodValue == DetectionMethod.Hybrid) ? DisplayStyle.Flex : DisplayStyle.None;
                 raycastDistanceField.style.display = (detectionMethodValue == DetectionMethod.Raycast || detectionMethodValue == DetectionMethod.Hybrid || detectionMethodValue == DetectionMethod.Smart) ? DisplayStyle.Flex : DisplayStyle.None;
                 hybridExpansionField.style.display = (detectionMethodValue == DetectionMethod.Hybrid) ? DisplayStyle.Flex : DisplayStyle.None;
                 manualMaskField.style.display = (detectionMethodValue == DetectionMethod.Manual) ? DisplayStyle.Flex : DisplayStyle.None;
                 manualMaskThresholdField.style.display = (detectionMethodValue == DetectionMethod.Manual) ? DisplayStyle.Flex : DisplayStyle.None;
                 smartFoldout.style.display = (detectionMethodValue == DetectionMethod.Smart) ? DisplayStyle.Flex : DisplayStyle.None;
-                
+
                 var appMode = serializedObject.FindProperty("applicationMode");
                 var appModeValue = (ApplicationMode)appMode.enumValueIndex;
                 autoDetectHelp.style.display = (appModeValue == ApplicationMode.AutoDetect) ? DisplayStyle.Flex : DisplayStyle.None;
                 uvCard.style.display = (appModeValue == ApplicationMode.UVDiscard || appModeValue == ApplicationMode.AutoDetect) ? DisplayStyle.Flex : DisplayStyle.None;
-                
-                // Toggle card visible for UV Discard or Auto Detect
+
+
                 var toggleCard = root.Q<VisualElement>("toggle-card");
                 if (toggleCard != null)
                 {
                     toggleCard.style.display = (appModeValue == ApplicationMode.UVDiscard || appModeValue == ApplicationMode.AutoDetect) ? DisplayStyle.Flex : DisplayStyle.None;
                 }
-                
-                // Update UV channel detection display
+
+
                 var autoDetectUVProp = serializedObject.FindProperty("autoDetectUVChannel");
                 bool autoDetectEnabled = autoDetectUVProp.boolValue;
                 var detectedUVContainer = root.Q<VisualElement>("detected-uv-container");
                 var manualUVSection = root.Q<VisualElement>("manual-uv-section");
-                
+
                 if (detectedUVContainer != null)
                 {
-                    // Update if mesh changed or container is empty
+
                     Mesh currentMesh = data.targetBodyMesh != null ? data.targetBodyMesh.sharedMesh : null;
                     bool meshChanged = currentMesh != previousDetectedMesh;
-                    
+
                     if (meshChanged || detectedUVContainer.childCount == 0)
                     {
                         detectedUVContainer.Clear();
-                        
+
                         if (autoDetectEnabled && currentMesh != null)
                         {
-                            // Cache the detection result
+
                             cachedDetectedUVChannel = UVManipulator.DetectBestUVChannel(currentMesh);
                             previousDetectedMesh = currentMesh;
-                            
+
                             var detectedLabel = new Label($"Detected UV Channel: UV{cachedDetectedUVChannel}");
                             detectedLabel.style.fontSize = 12;
                             detectedLabel.style.color = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f));
                             detectedLabel.style.marginTop = 5;
                             detectedLabel.style.marginBottom = 5;
                             detectedUVContainer.Add(detectedLabel);
-                            
-                            string channelInfo = cachedDetectedUVChannel == 1 
-                                ? "UV1: discard coordinates are written here." 
-                                : cachedDetectedUVChannel == 0 
+
+                            string channelInfo = cachedDetectedUVChannel == 1
+                                ? "UV1: discard coordinates are written here."
+                                : cachedDetectedUVChannel == 0
                                     ? "UV0 detected (UV1 not available). The system will create UV1 during processing."
                                     : $"UV{cachedDetectedUVChannel} detected (unusual). Ensure this channel is available on your mesh.";
-                            
+
                             detectedUVContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(channelInfo, YUCPUIToolkitHelper.MessageType.Info));
                         }
                         else if (!autoDetectEnabled)
@@ -489,17 +489,17 @@ namespace YUCP.Components.Editor
                         }
                     }
                 }
-                
+
                 if (manualUVSection != null)
                 {
                     manualUVSection.style.display = autoDetectEnabled ? DisplayStyle.None : DisplayStyle.Flex;
                 }
-                
-                // Show/hide material picker for UV Discard or Auto-Detect
+
+
                 bool showMaterialField = (appModeValue == ApplicationMode.UVDiscard || appModeValue == ApplicationMode.AutoDetect);
                 materialPickerContainer.style.display = showMaterialField ? DisplayStyle.Flex : DisplayStyle.None;
-                
-                // Update material picker when field is visible
+
+
                 if (showMaterialField)
                 {
                     var currentSelection = materialPickerContainer.Q<VisualElement>("current-material-selection");
@@ -509,19 +509,19 @@ namespace YUCP.Components.Editor
                     var gridContainer = materialPickerContainer.Q<VisualElement>("material-grid-container");
                     var helpContainer = materialPickerContainer.Q<VisualElement>("material-help-container");
                     var selectedMaterialsList = currentSelection != null ? currentSelection.Q<VisualElement>("selected-materials-list") : null;
-                    
+
                     if (currentSelection != null && currentPreview != null && currentName != null && currentShader != null && gridContainer != null && helpContainer != null)
                     {
                         UpdateMaterialPicker(data, serializedObject, currentSelection, currentPreview, currentName, currentShader, gridContainer, helpContainer, selectedMaterialsList);
                     }
                 }
-                
+
                 var optimizeTileUsage = serializedObject.FindProperty("optimizeTileUsage");
                 optimizeHelp.style.display = optimizeTileUsage.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
-                
+
                 var useBoneFiltering = serializedObject.FindProperty("useBoneFiltering");
                 filterBonesContainer.style.display = useBoneFiltering.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
-                
+
                 var vrcFuryComponents = data.GetComponents<Component>();
                 Component vrcFuryToggle = null;
                 foreach (var comp in vrcFuryComponents)
@@ -532,14 +532,14 @@ namespace YUCP.Components.Editor
                         break;
                     }
                 }
-                
+
                 if (vrcFuryToggle != previousVrcFuryToggle)
                 {
                     UpdateVrcFuryBanner(vrcFuryBanner, vrcFuryToggle, appModeValue);
                     previousVrcFuryToggle = vrcFuryToggle;
                 }
-                
-                // Update toggle section when state changes
+
+
                 var createToggleProp = serializedObject.FindProperty("createToggle");
                 var useExistingToggleProp = serializedObject.FindProperty("useExistingToggle");
                 var selectedToggleProp = serializedObject.FindProperty("selectedToggle");
@@ -548,15 +548,15 @@ namespace YUCP.Components.Editor
                 Component currentSelectedToggle = selectedToggleProp.objectReferenceValue as Component;
                 var uvDiscardToggle = data.GetComponent<UVDiscardToggleData>();
                 bool currentHasUVDiscardToggle = uvDiscardToggle != null;
-                bool needsToggleUpdate = 
+                bool needsToggleUpdate =
                     currentCreateToggle != previousCreateToggle ||
                     currentUseExistingToggle != previousUseExistingToggle ||
                     currentSelectedToggle != previousSelectedToggle ||
                     currentHasUVDiscardToggle != previousHasUVDiscardToggle ||
                     vrcFuryToggle != previousVrcFuryToggle ||
                     appModeValue != previousAppMode ||
-                    toggleSection.childCount == 0; // Update if section is empty on initial load
-                
+                    toggleSection.childCount == 0;
+
                 if (needsToggleUpdate)
                 {
                     UpdateToggleSection(toggleSection, data, serializedObject, vrcFuryToggle);
@@ -566,76 +566,76 @@ namespace YUCP.Components.Editor
                     previousHasUVDiscardToggle = currentHasUVDiscardToggle;
                     previousAppMode = appModeValue;
                 }
-                
+
                 UpdatePreviewInfo(previewInfo, data);
-                
-                // Update tile assignment UI
+
+
                 var autoAssignTileProp = serializedObject.FindProperty("autoAssignUVTile");
                 bool autoAssign = autoAssignTileProp.boolValue;
-                
+
                 var tileInfoContainer = root.Q<VisualElement>("tile-info-container");
                 var manualTileContainer = root.Q<VisualElement>("manual-tile-container");
-                
+
                 if (tileInfoContainer != null)
                 {
                     tileInfoContainer.style.display = autoAssign ? DisplayStyle.Flex : DisplayStyle.None;
-                    
+
                     if (autoAssign)
                     {
                         var tileInfoLabel = tileInfoContainer.Q<Label>("tile-info-label");
                         if (tileInfoLabel != null)
                         {
-                            // Display current assigned tile
+
                             tileInfoLabel.text = $"Tile: ({data.uvDiscardRow}, {data.uvDiscardColumn}) - Auto-assigned by orchestrator";
                         }
                     }
                 }
-                
+
                 if (manualTileContainer != null)
                 {
                     manualTileContainer.style.display = autoAssign ? DisplayStyle.None : DisplayStyle.Flex;
                 }
-                
-                // Update context-sensitive button
+
+
                 var previewActionButton = root.Q<Button>("preview-action-button");
                 if (previewActionButton != null)
                 {
                     bool hasPreview = data.previewGenerated;
                     bool canGenerate = !isGeneratingPreview && ValidateData();
-                    
-                    // Button is enabled if: generating (to show progress), or has preview (to clear), or can generate
+
+
                     previewActionButton.SetEnabled(isGeneratingPreview || hasPreview || canGenerate);
-                    
+
                     if (isGeneratingPreview)
                     {
                         previewActionButton.text = "Generating...";
-                        // Keep primary color during generation
+
                         previewActionButton.RemoveFromClassList("yucp-button-danger");
                         previewActionButton.AddToClassList("yucp-button-primary");
                     }
                     else if (hasPreview)
                     {
                         previewActionButton.text = "Clear Preview";
-                        // Change to danger variant for clear action
+
                         previewActionButton.RemoveFromClassList("yucp-button-primary");
                         previewActionButton.AddToClassList("yucp-button-danger");
                     }
                     else
                     {
                         previewActionButton.text = "Generate Preview";
-                        // Use primary variant for generate action
+
                         previewActionButton.RemoveFromClassList("yucp-button-danger");
                         previewActionButton.AddToClassList("yucp-button-primary");
                     }
                 }
-                
+
                 string currentValidationError = ValidateData() ? null : GetValidationError();
                 if (currentValidationError != previousValidationError)
                 {
                     UpdateValidationError(validationError, currentValidationError);
                     previousValidationError = currentValidationError;
                 }
-                
+
                 bool settingsChanged = CheckForSettingsChanges();
                 if (data.previewGenerated && data.previewRawHiddenVertices != null)
                 {
@@ -663,13 +663,13 @@ namespace YUCP.Components.Editor
                         }
                     }
                 }
-                
+
                 serializedObject.ApplyModifiedProperties();
             }).Every(100);
-            
+
             return root;
         }
-        
+
         private void UpdateVrcFuryBanner(VisualElement container, Component vrcFuryToggle, ApplicationMode mode)
         {
             container.Clear();
@@ -682,7 +682,7 @@ namespace YUCP.Components.Editor
                     YUCPUIToolkitHelper.MessageType.Info));
             }
         }
-        
+
         private void UpdateValidationError(VisualElement container, string error)
         {
             container.Clear();
@@ -691,44 +691,44 @@ namespace YUCP.Components.Editor
                 container.Add(YUCPUIToolkitHelper.CreateHelpBox(error, YUCPUIToolkitHelper.MessageType.Error));
             }
         }
-        
+
         private void UpdateToggleSection(VisualElement container, AutoBodyHiderData data, SerializedObject so, Component vrcFuryToggle)
         {
             container.Clear();
-            
+
             var appMode = so.FindProperty("applicationMode");
             var appModeValue = (ApplicationMode)appMode.enumValueIndex;
-            
-            // Show toggle section with content
+
+
             if (appModeValue != ApplicationMode.UVDiscard && appModeValue != ApplicationMode.AutoDetect)
             {
-                // Show message that toggle is available for UV Discard mode
+
                 var helpBox = YUCPUIToolkitHelper.CreateHelpBox(
                     "Toggle options are only available when using UV Discard mode (or Auto Detect with compatible shaders).",
                     YUCPUIToolkitHelper.MessageType.Info);
                 container.Add(helpBox);
                 return;
             }
-            
+
             YUCPUIToolkitHelper.AddSpacing(container, 5);
             var useExistingToggleProp = so.FindProperty("useExistingToggle");
             var createToggleProp = so.FindProperty("createToggle");
             var selectedToggleProp = so.FindProperty("selectedToggle");
             var uvDiscardToggle = data.GetComponent<UVDiscardToggleData>();
             var hasVRCFuryToggle = vrcFuryToggle != null;
-            
-            // Get all available VRCFury toggles from GameObject and children
-            var availableToggles = GetAvailableVRCFuryToggles(data.gameObject);
-            
-            // Use Existing Toggle section
+
+
+            var availableToggles = VRCFuryHelper.FindToggles(data.gameObject);
+
+
             container.Add(YUCPUIToolkitHelper.CreateField(useExistingToggleProp, "Use Existing Toggle"));
-            
+
             if (useExistingToggleProp.boolValue)
             {
                 var toggleSelectionContainer = new VisualElement();
                 toggleSelectionContainer.style.paddingLeft = 15;
                 toggleSelectionContainer.name = "toggle-selection-container";
-                
+
                 if (availableToggles.Count == 0)
                 {
                     toggleSelectionContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
@@ -737,7 +737,7 @@ namespace YUCP.Components.Editor
                 }
                 else
                 {
-                    // Current selection display
+
                     var currentToggleContainer = new VisualElement();
                     currentToggleContainer.name = "current-toggle-selection";
                     currentToggleContainer.style.flexDirection = FlexDirection.Row;
@@ -751,29 +751,29 @@ namespace YUCP.Components.Editor
                     currentToggleContainer.style.borderTopRightRadius = 6;
                     currentToggleContainer.style.borderBottomLeftRadius = 6;
                     currentToggleContainer.style.borderBottomRightRadius = 6;
-                    
+
                     var currentToggleInfo = new VisualElement();
                     currentToggleInfo.style.flexGrow = 1;
-                    
+
                     var currentToggleName = new Label("None Selected");
                     currentToggleName.name = "current-toggle-name";
                     currentToggleName.style.fontSize = 13;
                     currentToggleName.style.unityFontStyleAndWeight = FontStyle.Bold;
                     currentToggleInfo.Add(currentToggleName);
-                    
+
                     var currentTogglePath = new Label("Select a toggle from the grid below");
                     currentTogglePath.name = "current-toggle-path";
                     currentTogglePath.style.fontSize = 11;
                     currentTogglePath.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f, 1f));
                     currentToggleInfo.Add(currentTogglePath);
-                    
+
                     currentToggleContainer.Add(currentToggleInfo);
-                    
+
                     var clearToggleButton = new Button(() => {
                         selectedToggleProp.objectReferenceValue = null;
                         so.ApplyModifiedProperties();
                         UpdateCurrentToggleDisplay(null, data, currentToggleName, currentTogglePath);
-                        // Update all cards' border colors
+
                         var gridContainer = toggleSelectionContainer.Q<VisualElement>("toggle-grid-container");
                         if (gridContainer != null)
                         {
@@ -795,10 +795,10 @@ namespace YUCP.Components.Editor
                     clearToggleButton.style.width = 60;
                     clearToggleButton.style.marginLeft = 8;
                     currentToggleContainer.Add(clearToggleButton);
-                    
+
                     toggleSelectionContainer.Add(currentToggleContainer);
-                    
-                    // Toggle grid
+
+
                     var toggleGridLabel = new Label("Available Toggles");
                     toggleGridLabel.style.fontSize = 12;
                     toggleGridLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -806,7 +806,7 @@ namespace YUCP.Components.Editor
                     toggleGridLabel.style.marginBottom = 8;
                     toggleGridLabel.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f, 1f));
                     toggleSelectionContainer.Add(toggleGridLabel);
-                    
+
                     var toggleGridContainer = new VisualElement();
                     toggleGridContainer.name = "toggle-grid-container";
                     toggleGridContainer.style.flexDirection = FlexDirection.Row;
@@ -822,25 +822,25 @@ namespace YUCP.Components.Editor
                     toggleGridContainer.style.borderTopRightRadius = 8;
                     toggleGridContainer.style.borderBottomLeftRadius = 8;
                     toggleGridContainer.style.borderBottomRightRadius = 8;
-                    
+
                     foreach (var toggle in availableToggles)
                     {
                         var toggleCard = CreateToggleCard(toggle, data, selectedToggleProp, so, currentToggleName, currentTogglePath);
                         toggleGridContainer.Add(toggleCard);
                     }
-                    
+
                     toggleSelectionContainer.Add(toggleGridContainer);
-                    
-                    // Update current selection display
+
+
                     UpdateCurrentToggleDisplay(selectedToggleProp.objectReferenceValue as Component, data, currentToggleName, currentTogglePath);
                 }
-                
+
                 container.Add(toggleSelectionContainer);
-                
-                // Disable create toggle when using existing
+
+
                 createToggleProp.boolValue = false;
             }
-            
+
             if (uvDiscardToggle != null || hasVRCFuryToggle)
             {
                 var disabledField = YUCPUIToolkitHelper.CreateField(createToggleProp, $"Create Toggle (Disabled - {(uvDiscardToggle != null ? "UV Discard Toggle present" : "VRCFury Toggle present")})");
@@ -850,7 +850,7 @@ namespace YUCP.Components.Editor
             else if (!useExistingToggleProp.boolValue)
             {
                 container.Add(YUCPUIToolkitHelper.CreateField(createToggleProp, "Create Toggle"));
-                
+
                 if (!createToggleProp.boolValue)
                 {
                     YUCPUIToolkitHelper.AddSpacing(container, 3);
@@ -864,13 +864,13 @@ namespace YUCP.Components.Editor
                         YUCPUIToolkitHelper.MessageType.Info));
                 }
             }
-            
+
             if (createToggleProp.boolValue && uvDiscardToggle == null && !hasVRCFuryToggle && !useExistingToggleProp.boolValue)
             {
                 var toggleCard = YUCPUIToolkitHelper.CreateCard("Toggle Configuration", "Configure toggle menu and parameter settings");
                 var toggleContent = YUCPUIToolkitHelper.GetCardContent(toggleCard);
                 toggleContent.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleType"), "Toggle Type"));
-                
+
                 var toggleType = so.FindProperty("toggleType");
                 var toggleTypeValue = (ToggleType)toggleType.enumValueIndex;
                 if (toggleTypeValue == ToggleType.ObjectToggle)
@@ -881,23 +881,23 @@ namespace YUCP.Components.Editor
                 {
                     toggleContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Hidden Toggle: Only toggles body hiding (clothing always visible)", YUCPUIToolkitHelper.MessageType.Info));
                 }
-                
+
                 toggleContent.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleMenuPath"), "Menu Path"));
-                
+
                 var toggleSyncedProp = so.FindProperty("toggleSynced");
                 toggleContent.Add(YUCPUIToolkitHelper.CreateField(toggleSyncedProp, "Synced"));
-                
+
                 var paramNameContainer = new VisualElement();
                 paramNameContainer.style.paddingLeft = 15;
                 paramNameContainer.name = "param-name-container";
                 paramNameContainer.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleParameterName"), "Parameter Name (Optional)"));
                 toggleContent.Add(paramNameContainer);
-                
+
                 var syncedHelpContainer = new VisualElement();
                 syncedHelpContainer.style.paddingLeft = 15;
                 syncedHelpContainer.name = "synced-help-container";
                 toggleContent.Add(syncedHelpContainer);
-                
+
                 var savedDefaultContainer = new VisualElement();
                 savedDefaultContainer.style.flexDirection = FlexDirection.Row;
                 savedDefaultContainer.style.marginBottom = 5;
@@ -907,7 +907,7 @@ namespace YUCP.Components.Editor
                 savedDefaultContainer.Add(savedField);
                 savedDefaultContainer.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleDefaultOn"), "Default ON"));
                 toggleContent.Add(savedDefaultContainer);
-                
+
                 var hasMenuPath = !string.IsNullOrEmpty(data.toggleMenuPath);
                 var hasCustomParam = !string.IsNullOrEmpty(data.toggleParameterName);
                 syncedHelpContainer.Clear();
@@ -932,53 +932,53 @@ namespace YUCP.Components.Editor
                     paramNameContainer.style.display = DisplayStyle.None;
                     syncedHelpContainer.Add(YUCPUIToolkitHelper.CreateHelpBox("Local Toggle: State is local to your client only (not synced).", YUCPUIToolkitHelper.MessageType.Info));
                 }
-                
+
                 if (string.IsNullOrEmpty(data.toggleMenuPath) && !data.toggleSynced)
                 {
                     toggleContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Menu path is required for local toggles!", YUCPUIToolkitHelper.MessageType.Warning));
                 }
-                
-                // Advanced toggle options
+
+
                 var showToggleAdvanced = SessionState.GetBool($"AutoBodyHider_ToggleAdvanced_{data.GetInstanceID()}", false);
                 var toggleAdvancedFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced Toggle Options", showToggleAdvanced);
                 toggleAdvancedFoldout.RegisterValueChangedCallback(evt => { SessionState.SetBool($"AutoBodyHider_ToggleAdvanced_{data.GetInstanceID()}", evt.newValue); });
                 toggleAdvancedFoldout.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleSlider"), "Use Slider"));
                 toggleAdvancedFoldout.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleHoldButton"), "Hold Button"));
                 toggleAdvancedFoldout.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleExclusiveOffState"), "Exclusive Off State"));
-                
+
                 YUCPUIToolkitHelper.AddSpacing(toggleAdvancedFoldout, 3);
                 var enableExclusiveTagProp = so.FindProperty("toggleEnableExclusiveTag");
                 toggleAdvancedFoldout.Add(YUCPUIToolkitHelper.CreateField(enableExclusiveTagProp, "Exclusive Tags"));
-                
+
                 var exclusiveTagContainer = new VisualElement();
                 exclusiveTagContainer.style.paddingLeft = 15;
                 exclusiveTagContainer.name = "exclusive-tag-container";
                 exclusiveTagContainer.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleExclusiveTag"), "Tag Names"));
                 toggleAdvancedFoldout.Add(exclusiveTagContainer);
-                
+
                 YUCPUIToolkitHelper.AddSpacing(toggleAdvancedFoldout, 3);
                 var enableIconProp = so.FindProperty("toggleEnableIcon");
                 toggleAdvancedFoldout.Add(YUCPUIToolkitHelper.CreateField(enableIconProp, "Custom Icon"));
-                
+
                 var iconContainer = new VisualElement();
                 iconContainer.style.paddingLeft = 15;
                 iconContainer.name = "icon-container";
                 iconContainer.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("toggleIcon"), "Icon Texture"));
                 toggleAdvancedFoldout.Add(iconContainer);
-                
+
                 YUCPUIToolkitHelper.AddSpacing(toggleAdvancedFoldout, 3);
                 toggleAdvancedFoldout.Add(YUCPUIToolkitHelper.CreateField(so.FindProperty("debugSaveAnimation"), "Debug: Save Animation"));
-                
+
                 exclusiveTagContainer.style.display = enableExclusiveTagProp.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
                 iconContainer.style.display = enableIconProp.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
-                
+
                 toggleContent.Add(toggleAdvancedFoldout);
-                
+
                 if (appModeValue == ApplicationMode.MeshDeletion)
                 {
                     toggleContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Toggle only works with UV Discard mode, not Mesh Deletion!", YUCPUIToolkitHelper.MessageType.Warning));
                 }
-                
+
                 if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
                 {
                     bool hasCompatibleShader = false;
@@ -995,7 +995,7 @@ namespace YUCP.Components.Editor
                         toggleContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Body mesh needs a Poiyomi or FastFur shader with UV support for toggles to work!", YUCPUIToolkitHelper.MessageType.Warning));
                     }
                 }
-                
+
                 container.Add(toggleCard);
             }
             else if (uvDiscardToggle != null)
@@ -1006,11 +1006,11 @@ namespace YUCP.Components.Editor
                     YUCPUIToolkitHelper.MessageType.Info));
             }
         }
-        
+
         private void UpdatePreviewInfo(VisualElement container, AutoBodyHiderData data)
         {
             container.Clear();
-            
+
             if (data.previewGenerated && data.previewHiddenFaces != null)
             {
                 int totalFaces = data.previewTriangles.Length / 3;
@@ -1019,7 +1019,7 @@ namespace YUCP.Components.Editor
                 {
                     if (hidden) hiddenFaces++;
                 }
-                
+
                 var statsContainer = new VisualElement();
                 statsContainer.style.paddingTop = 6;
                 statsContainer.style.paddingBottom = 6;
@@ -1031,21 +1031,21 @@ namespace YUCP.Components.Editor
                 statsContainer.style.borderBottomLeftRadius = 6;
                 statsContainer.style.borderBottomRightRadius = 6;
                 statsContainer.style.marginBottom = 8;
-                
+
                 var statusLabel = new Label("Preview Ready");
                 statusLabel.style.fontSize = 12;
                 statusLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
                 statusLabel.style.color = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f));
                 statusLabel.style.marginBottom = 6;
                 statsContainer.Add(statusLabel);
-                
+
                 var statsText = new Label($"Hidden: {hiddenFaces:N0} / {totalFaces:N0} faces ({(hiddenFaces * 100f / totalFaces):F1}%)\n" +
                                          $"Performance: -{hiddenFaces:N0} triangles");
                 statsText.style.fontSize = 11;
                 statsText.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f, 1f));
                 statsText.style.whiteSpace = WhiteSpace.Normal;
                 statsContainer.Add(statsText);
-                
+
                 container.Add(statsContainer);
             }
             else
@@ -1061,28 +1061,28 @@ namespace YUCP.Components.Editor
                 emptyState.style.borderBottomLeftRadius = 6;
                 emptyState.style.borderBottomRightRadius = 6;
                 emptyState.style.marginBottom = 8;
-                
+
                 var emptyLabel = new Label("No preview generated yet");
                 emptyLabel.style.fontSize = 11;
                 emptyLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f, 1f));
                 emptyState.Add(emptyLabel);
-                
+
                 container.Add(emptyState);
             }
         }
 
         public override void OnInspectorGUI()
         {
-            // Legacy support - not used anymore
+
         }
 
-        
+
         private void CreateVRCFuryToggleComponent()
         {
             try
             {
                 var toggle = com.vrcfury.api.FuryComponents.CreateToggle(data.gameObject);
-                
+
                 if (toggle == null)
                 {
                     EditorUtility.DisplayDialog(
@@ -1092,22 +1092,22 @@ namespace YUCP.Components.Editor
                     );
                     return;
                 }
-                
+
                 toggle.SetMenuPath("Clothing/Hide Body");
                 toggle.SetSaved();
-                
-                // The user can add blend shapes, animations, etc. via the VRCFury inspector
-                // The Auto Body Hider processor will automatically add the UV discard animation during build
-                
+
+
+
+
                 EditorUtility.SetDirty(data.gameObject);
                 serializedObject.Update();
-                
-                // Force UI update
-                previousVrcFuryToggle = null; // Force toggle section to update
+
+
+                previousVrcFuryToggle = null;
                 Repaint();
-                
+
                 Debug.Log($"[AutoBodyHider] Created VRCFury Toggle component on '{data.gameObject.name}'", data);
-                
+
                 EditorUtility.DisplayDialog(
                     "VRCFury Toggle Created",
                     "A VRCFury Toggle component has been added to this object with default settings:\n\n" +
@@ -1143,8 +1143,8 @@ namespace YUCP.Components.Editor
                 {
                     return false;
                 }
-                
-                // Check for at least one valid clothing mesh
+
+
                 bool hasValidMesh = false;
                 foreach (var mesh in data.clothingMeshes)
                 {
@@ -1170,8 +1170,8 @@ namespace YUCP.Components.Editor
                 {
                     return "At least one Clothing Mesh is required for automatic detection.";
                 }
-                
-                // Check for at least one valid clothing mesh
+
+
                 bool hasValidMesh = false;
                 foreach (var mesh in data.clothingMeshes)
                 {
@@ -1193,7 +1193,7 @@ namespace YUCP.Components.Editor
         {
             Debug.Log("[YUCP Preview] Starting preview generation...");
             isGeneratingPreview = true;
-            
+
             try
             {
                 if (!ValidateData())
@@ -1201,13 +1201,13 @@ namespace YUCP.Components.Editor
                     Debug.LogError($"[YUCP Preview] Validation failed: {GetValidationError()}");
                     return;
                 }
-                
+
                 GPURaycast.Initialize();
 
                 Mesh bodyMesh = data.targetBodyMesh.sharedMesh;
                 Vector3[] vertices = bodyMesh.vertices;
                 Vector3[] normals = bodyMesh.normals;
-                
+
                 List<Vector2> uv0List = new List<Vector2>();
                 bodyMesh.GetUVs(0, uv0List);
                 Vector2[] uv0 = uv0List.ToArray();
@@ -1219,7 +1219,7 @@ namespace YUCP.Components.Editor
                 }
 
                 EditorUtility.DisplayProgressBar("YUCP Preview", "Detecting hidden vertices...", 0.5f);
-                
+
                 data.previewRawHiddenVertices = VertexDetection.DetectHiddenVertices(
                     data,
                     vertices,
@@ -1227,23 +1227,23 @@ namespace YUCP.Components.Editor
                     uv0,
                     null
                 );
-                
+
                 data.previewLocalVertices = vertices;
                 data.previewTriangles = bodyMesh.triangles;
-                
+
                 data.previewHiddenVertices = new bool[data.previewRawHiddenVertices.Length];
                 System.Array.Copy(data.previewRawHiddenVertices, data.previewHiddenVertices, data.previewRawHiddenVertices.Length);
 
                 if (data.mirrorSymmetry)
                 {
-                    data.previewHiddenVertices = ApplySymmetryMirror(data.previewHiddenVertices, vertices);
+                    data.previewHiddenVertices = VertexDetection.ApplySymmetryMirror(data.previewHiddenVertices, vertices);
                 }
 
                 if (data.safetyMargin > 0.0001f)
                 {
-                    data.previewHiddenVertices = ApplySafetyMargin(data.previewHiddenVertices, vertices);
+                    data.previewHiddenVertices = VertexDetection.ApplySafetyMargin(data.previewHiddenVertices, vertices, data);
                 }
-                
+
                 data.lastPreviewSafetyMargin = data.safetyMargin;
                 data.lastPreviewMirrorSymmetry = data.mirrorSymmetry;
                 lastCheckedSafetyMargin = data.safetyMargin;
@@ -1256,14 +1256,14 @@ namespace YUCP.Components.Editor
 
                 SceneView.RepaintAll();
                 EditorUtility.ClearProgressBar();
-                
+
                 int totalFaces = data.previewTriangles.Length / 3;
                 int hiddenFaces = 0;
                 foreach (bool hidden in data.previewHiddenFaces)
                 {
                     if (hidden) hiddenFaces++;
                 }
-                
+
                 Debug.Log($"[YUCP Preview] Preview generated: {hiddenFaces}/{totalFaces} faces hidden ({(hiddenFaces * 100f / totalFaces):F1}%)");
             }
             catch (System.Exception e)
@@ -1282,38 +1282,38 @@ namespace YUCP.Components.Editor
         private void UpdatePreviewFromCache()
         {
             if (data.previewRawHiddenVertices == null || data.previewLocalVertices == null) return;
-            
+
             data.previewHiddenVertices = new bool[data.previewRawHiddenVertices.Length];
             System.Array.Copy(data.previewRawHiddenVertices, data.previewHiddenVertices, data.previewRawHiddenVertices.Length);
-            
+
             if (data.mirrorSymmetry)
             {
-                data.previewHiddenVertices = ApplySymmetryMirror(data.previewHiddenVertices, data.previewLocalVertices);
+                data.previewHiddenVertices = VertexDetection.ApplySymmetryMirror(data.previewHiddenVertices, data.previewLocalVertices);
             }
-            
+
             if (data.safetyMargin > 0.0001f)
             {
-                data.previewHiddenVertices = ApplySafetyMargin(data.previewHiddenVertices, data.previewLocalVertices);
+                data.previewHiddenVertices = VertexDetection.ApplySafetyMargin(data.previewHiddenVertices, data.previewLocalVertices, data);
             }
-            
+
             CalculateHiddenFaces(data);
             SceneView.RepaintAll();
             Repaint();
         }
-        
+
         private void CalculateHiddenFaces(AutoBodyHiderData data)
         {
             int faceCount = data.previewTriangles.Length / 3;
             data.previewHiddenFaces = new bool[faceCount];
-            
+
             for (int i = 0; i < faceCount; i++)
             {
                 int v0 = data.previewTriangles[i * 3];
                 int v1 = data.previewTriangles[i * 3 + 1];
                 int v2 = data.previewTriangles[i * 3 + 2];
-                
-                data.previewHiddenFaces[i] = data.previewHiddenVertices[v0] || 
-                                             data.previewHiddenVertices[v1] || 
+
+                data.previewHiddenFaces[i] = data.previewHiddenVertices[v0] ||
+                                             data.previewHiddenVertices[v1] ||
                                              data.previewHiddenVertices[v2];
             }
         }
@@ -1321,7 +1321,7 @@ namespace YUCP.Components.Editor
         private bool CheckForSettingsChanges()
         {
             bool changed = false;
-            
+
             if (data.detectionMethod != lastDetectionMethod) { lastDetectionMethod = data.detectionMethod; changed = true; }
             if (Mathf.Abs(data.proximityThreshold - lastProximityThreshold) > 0.0001f) { lastProximityThreshold = data.proximityThreshold; changed = true; }
             if (Mathf.Abs(data.raycastDistance - lastRaycastDistance) > 0.0001f) { lastRaycastDistance = data.raycastDistance; changed = true; }
@@ -1331,10 +1331,10 @@ namespace YUCP.Components.Editor
             if (data.smartRequireBidirectional != lastSmartRequireBidirectional) { lastSmartRequireBidirectional = data.smartRequireBidirectional; changed = true; }
             if (data.manualMask != lastManualMask) { lastManualMask = data.manualMask; changed = true; }
             if (Mathf.Abs(data.manualMaskThreshold - lastManualMaskThreshold) > 0.0001f) { lastManualMaskThreshold = data.manualMaskThreshold; changed = true; }
-            
+
             return changed;
         }
-        
+
         private void ClearPreview()
         {
             data.previewHiddenVertices = null;
@@ -1350,54 +1350,12 @@ namespace YUCP.Components.Editor
             SceneView.RepaintAll();
             Repaint();
         }
-        
-        private List<Component> GetAvailableVRCFuryToggles(GameObject root)
-        {
-            var toggles = new List<Component>();
-            
-            // Check root GameObject
-            var rootComponents = root.GetComponents<Component>();
-            foreach (var comp in rootComponents)
-            {
-                if (comp != null && comp.GetType().Name == "VRCFury")
-                {
-                    toggles.Add(comp);
-                }
-            }
-            
-            // Check all children
-            foreach (Transform child in root.transform)
-            {
-                var childComponents = child.GetComponents<Component>();
-                foreach (var comp in childComponents)
-                {
-                    if (comp != null && comp.GetType().Name == "VRCFury")
-                    {
-                        toggles.Add(comp);
-                    }
-                }
-            }
-            
-            return toggles;
-        }
-        
-        private string GetGameObjectPath(GameObject obj, GameObject root)
-        {
-            if (obj == root)
-                return obj.name;
-            
-            var path = new System.Collections.Generic.List<string>();
-            Transform current = obj.transform;
-            
-            while (current != null && current != root.transform)
-            {
-                path.Insert(0, current.name);
-                current = current.parent;
-            }
-            
-            return string.Join("/", path);
-        }
-        
+
+
+        private string GetGameObjectPath(GameObject obj, GameObject root) =>
+            obj == root ? obj.name : AnimationUtility.CalculateTransformPath(obj.transform, root.transform);
+
+
         private void UpdateMaterialPicker(
             AutoBodyHiderData data,
             SerializedObject so,
@@ -1415,13 +1373,13 @@ namespace YUCP.Components.Editor
             {
                 selectedMaterials[i] = targetMaterialsProp.GetArrayElementAtIndex(i).objectReferenceValue as Material;
             }
-            
-            // Check if grid rebuild is needed when body mesh or its materials changed
+
+
             Material[] currentBodyMeshMaterials = data.targetBodyMesh != null ? data.targetBodyMesh.sharedMaterials : null;
             bool bodyMeshChanged = data.targetBodyMesh != previousTargetBodyMesh;
             bool materialsOnMeshChanged = false;
-            
-            // Check if materials on the mesh actually changed
+
+
             if (bodyMeshChanged || previousBodyMeshMaterials == null)
             {
                 materialsOnMeshChanged = true;
@@ -1444,36 +1402,36 @@ namespace YUCP.Components.Editor
                     }
                 }
             }
-            
+
             bool needsGridRebuild = materialsOnMeshChanged || (materialGridContainer.childCount == 0);
-            
-            // Update tracking
+
+
             if (materialsOnMeshChanged)
             {
                 previousBodyMeshMaterials = currentBodyMeshMaterials != null ? (Material[])currentBodyMeshMaterials.Clone() : null;
             }
-            
-            // Check if materials actually changed (for state tracking)
-            bool materialsChanged = previousTargetMaterials == null || 
+
+
+            bool materialsChanged = previousTargetMaterials == null ||
                                    previousTargetMaterials.Length != selectedMaterials.Length ||
                                    !selectedMaterials.SequenceEqual(previousTargetMaterials ?? new Material[0]);
-            
-            // Update current selection display to reflect current state
+
+
             if (selectedMaterialsList != null)
             {
                 selectedMaterialsList.Clear();
             }
-            
-            // Filter out null materials
+
+
             var validSelectedMaterials = selectedMaterials.Where(m => m != null).ToArray();
-            
+
             if (validSelectedMaterials.Length > 0)
             {
                 int compatibleCount = validSelectedMaterials.Count(m => UVManipulator.IsPoiyomiWithUVSupport(m));
                 currentMaterialName.text = $"{validSelectedMaterials.Length} Material(s) Selected";
                 currentMaterialShader.text = $"{compatibleCount} compatible";
-                
-                // Show first material preview
+
+
                 Material firstMaterial = validSelectedMaterials[0];
                 if (firstMaterial != null)
                 {
@@ -1489,8 +1447,8 @@ namespace YUCP.Components.Editor
                 {
                     currentMaterialPreview.image = null;
                 }
-                
-                // Show list of selected materials
+
+
                 if (selectedMaterialsList != null)
                 {
                     foreach (var mat in validSelectedMaterials)
@@ -1499,15 +1457,15 @@ namespace YUCP.Components.Editor
                         materialItem.style.flexDirection = FlexDirection.Row;
                         materialItem.style.marginTop = 2;
                         materialItem.style.marginBottom = 2;
-                        
+
                         var matLabel = new Label($"• {mat.name}");
                         matLabel.style.fontSize = 11;
                         bool isCompatible = UVManipulator.IsPoiyomiWithUVSupport(mat);
-                        matLabel.style.color = isCompatible 
+                        matLabel.style.color = isCompatible
                             ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f))
                             : new StyleColor(new Color(0.8f, 0.5f, 0.3f, 1f));
                         materialItem.Add(matLabel);
-                        
+
                         selectedMaterialsList.Add(materialItem);
                     }
                 }
@@ -1518,19 +1476,19 @@ namespace YUCP.Components.Editor
                 currentMaterialShader.text = "Will auto-detect all compatible materials";
                 currentMaterialPreview.image = null;
             }
-            
-            // Update state tracking (after display update)
+
+
             if (materialsChanged)
             {
                 previousTargetMaterials = validSelectedMaterials;
             }
             previousTargetBodyMesh = data.targetBodyMesh;
-            
-            // Update material grid when needed
+
+
             if (needsGridRebuild)
             {
                 materialGridContainer.Clear();
-                
+
                 if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null && data.targetBodyMesh.sharedMaterials.Length > 0)
             {
                 var availableMaterials = new System.Collections.Generic.List<Material>();
@@ -1541,7 +1499,7 @@ namespace YUCP.Components.Editor
                         availableMaterials.Add(mat);
                     }
                 }
-                
+
                 if (availableMaterials.Count > 0)
                 {
                     foreach (var mat in availableMaterials)
@@ -1549,7 +1507,7 @@ namespace YUCP.Components.Editor
                         var materialCard = CreateMaterialCard(mat, selectedMaterials, targetMaterialsProp, so);
                         materialGridContainer.Add(materialCard);
                     }
-                    
+
                     materialHelpContainer.Clear();
                     materialHelpContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
                         $"Select one or more materials from the grid above, or leave empty to auto-detect all compatible materials.",
@@ -1571,15 +1529,15 @@ namespace YUCP.Components.Editor
                         YUCPUIToolkitHelper.MessageType.Info));
                 }
             }
-            
-            // Update selection border on cards when selection changes
+
+
             if (!needsGridRebuild && materialGridContainer.childCount > 0)
             {
                 foreach (var child in materialGridContainer.Children())
                 {
                     if (child is VisualElement card && card.userData is Material cardMaterial)
                     {
-                        // Update border color
+
                         bool isSelected = selectedMaterials != null && selectedMaterials.Contains(cardMaterial);
                         var borderColor = isSelected
                             ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f))
@@ -1588,8 +1546,8 @@ namespace YUCP.Components.Editor
                         card.style.borderRightColor = borderColor;
                         card.style.borderBottomColor = borderColor;
                         card.style.borderLeftColor = borderColor;
-                        
-                        // Also update preview if it wasn't ready before
+
+
                         var previewImage = card.Q<Image>();
                         if (previewImage != null && (previewImage.image == null || previewImage.image == EditorGUIUtility.FindTexture("Material Icon")))
                         {
@@ -1603,7 +1561,7 @@ namespace YUCP.Components.Editor
                 }
             }
         }
-        
+
         private VisualElement CreateMaterialCard(Material material, Material[] selectedMaterials, SerializedProperty targetMaterialsProp, SerializedObject so)
         {
             var card = new VisualElement();
@@ -1627,41 +1585,41 @@ namespace YUCP.Components.Editor
             card.style.borderLeftWidth = 2;
             bool isSelected = selectedMaterials != null && selectedMaterials.Contains(material);
             var borderColor = isSelected
-                ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f)) 
+                ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f))
                 : new StyleColor(new Color(0.2f, 0.2f, 0.2f, 1f));
             card.style.borderTopColor = borderColor;
             card.style.borderRightColor = borderColor;
             card.style.borderBottomColor = borderColor;
             card.style.borderLeftColor = borderColor;
-            
+
             bool isCompatible = UVManipulator.IsPoiyomiWithUVSupport(material);
             string shaderName = material.shader != null ? material.shader.name : "No Shader";
-            
-            // Preview image
+
+
             var preview = new Image();
             preview.style.width = 84;
             preview.style.height = 60;
             preview.style.marginBottom = 6;
             preview.style.backgroundColor = new StyleColor(new Color(0.1f, 0.1f, 0.1f, 1f));
-            
+
             Texture2D previewTexture = AssetPreview.GetAssetPreview(material);
             if (previewTexture == null)
             {
                 previewTexture = AssetPreview.GetMiniThumbnail(material);
-                // Request preview generation for future frames
+
                 AssetPreview.SetPreviewTextureCacheSize(256);
             }
             if (previewTexture != null)
             {
                 preview.image = previewTexture;
             }
-            
-            // Store material reference in userData for easy access
+
+
             card.userData = material;
-            
+
             card.Add(preview);
-            
-            // Material name
+
+
             var nameLabel = new Label(material.name);
             nameLabel.style.fontSize = 11;
             nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -1670,13 +1628,13 @@ namespace YUCP.Components.Editor
             nameLabel.style.maxHeight = 30;
             nameLabel.style.overflow = Overflow.Hidden;
             card.Add(nameLabel);
-            
-            // Function to toggle material in array (following AvatarUploader pattern)
+
+
             System.Action toggleMaterial = () =>
             {
-                // Update serialized object to get current state
+
                 so.Update();
-                
+
                 var materialsList = new List<Material>();
                 for (int i = 0; i < targetMaterialsProp.arraySize; i++)
                 {
@@ -1686,8 +1644,8 @@ namespace YUCP.Components.Editor
                         materialsList.Add(mat);
                     }
                 }
-                
-                // Toggle: if selected, remove it; if not selected, add it
+
+
                 if (materialsList.Contains(material))
                 {
                     materialsList.Remove(material);
@@ -1696,28 +1654,28 @@ namespace YUCP.Components.Editor
                 {
                     materialsList.Add(material);
                 }
-                
-                // Update array
+
+
                 targetMaterialsProp.arraySize = materialsList.Count;
                 for (int i = 0; i < materialsList.Count; i++)
                 {
                     targetMaterialsProp.GetArrayElementAtIndex(i).objectReferenceValue = materialsList[i];
                 }
-                
+
                 so.ApplyModifiedProperties();
                 EditorUtility.SetDirty(so.targetObject);
             };
-            
-            // Add smooth transitions for animations
+
+
             card.style.transitionDuration = new List<TimeValue> { new TimeValue(150, TimeUnit.Millisecond) };
-            card.style.transitionProperty = new List<StylePropertyName> 
-            { 
+            card.style.transitionProperty = new List<StylePropertyName>
+            {
                 new StylePropertyName("background-color"),
                 new StylePropertyName("border-color"),
                 new StylePropertyName("scale")
             };
-            
-            // Compatibility badge
+
+
             if (isCompatible)
             {
                 var badge = new Label("UV Discard");
@@ -1736,9 +1694,9 @@ namespace YUCP.Components.Editor
                 badge.style.borderBottomRightRadius = 3;
                 card.Add(badge);
             }
-            
-            // Click handler - toggle selection when clicking anywhere on card
-            // Following AvatarUploader pattern: use MouseDownEvent with stop propagation
+
+
+
             card.RegisterCallback<MouseDownEvent>(evt =>
             {
                 if (evt.button == 0)
@@ -1747,21 +1705,21 @@ namespace YUCP.Components.Editor
                     toggleMaterial();
                 }
             }, TrickleDown.NoTrickleDown);
-            
-            // Hover effect with smooth animation
+
+
             card.RegisterCallback<MouseEnterEvent>(evt =>
             {
                 card.style.backgroundColor = new StyleColor(new Color(0.22f, 0.22f, 0.22f, 1f));
                 card.style.scale = new Scale(new Vector2(1.02f, 1.02f));
             });
-            
+
             card.RegisterCallback<MouseLeaveEvent>(evt =>
             {
                 card.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f, 1f));
                 card.style.scale = new Scale(new Vector2(1f, 1f));
             });
-            
-            // Update border color with animation
+
+
             if (isSelected)
             {
                 card.style.borderTopColor = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f));
@@ -1769,7 +1727,7 @@ namespace YUCP.Components.Editor
                 card.style.borderBottomColor = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f));
                 card.style.borderLeftColor = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f));
             }
-            
+
             return card;
         }
 
@@ -1794,23 +1752,23 @@ namespace YUCP.Components.Editor
             card.style.borderRightWidth = 2;
             card.style.borderBottomWidth = 2;
             card.style.borderLeftWidth = 2;
-            
+
             bool isSelected = selectedToggleProp.objectReferenceValue == toggle;
             var borderColor = isSelected
-                ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f)) 
+                ? new StyleColor(new Color(0.212f, 0.749f, 0.694f, 1f))
                 : new StyleColor(new Color(0.25f, 0.25f, 0.25f, 1f));
             card.style.borderTopColor = borderColor;
             card.style.borderRightColor = borderColor;
             card.style.borderBottomColor = borderColor;
             card.style.borderLeftColor = borderColor;
-            
-            // Store toggle reference
+
+
             card.userData = toggle;
-            
-            // Get VRCFury toggle information
+
+
             var toggleInfo = GetVRCFuryToggleInfo(toggle);
-            
-            // Menu path (primary identifier for differentiation)
+
+
             string displayName = !string.IsNullOrEmpty(toggleInfo.menuPath) ? toggleInfo.menuPath : toggle.name;
             var nameLabel = new Label(displayName);
             nameLabel.style.fontSize = 13;
@@ -1823,14 +1781,14 @@ namespace YUCP.Components.Editor
             nameLabel.style.marginBottom = 6;
             nameLabel.style.color = new StyleColor(new Color(0.95f, 0.95f, 0.95f, 1f));
             card.Add(nameLabel);
-            
-            // Info container for badges and details
+
+
             var infoContainer = new VisualElement();
             infoContainer.style.flexDirection = FlexDirection.Column;
             infoContainer.style.alignItems = Align.Center;
             infoContainer.style.marginTop = 4;
-            
-            // Global parameter badge (if exists)
+
+
             if (!string.IsNullOrEmpty(toggleInfo.globalParam))
             {
                 var paramBadge = new Label($"Param: {toggleInfo.globalParam}");
@@ -1849,8 +1807,8 @@ namespace YUCP.Components.Editor
                 paramBadge.style.borderBottomRightRadius = 4;
                 infoContainer.Add(paramBadge);
             }
-            
-            // Action summary (what the toggle does)
+
+
             if (!string.IsNullOrEmpty(toggleInfo.actionSummary))
             {
                 var actionLabel = new Label(toggleInfo.actionSummary);
@@ -1863,8 +1821,8 @@ namespace YUCP.Components.Editor
                 actionLabel.style.overflow = Overflow.Hidden;
                 infoContainer.Add(actionLabel);
             }
-            
-            // GameObject path
+
+
             string path = GetGameObjectPath(toggle.gameObject, data.gameObject);
             var pathLabel = new Label(path);
             pathLabel.style.fontSize = 9;
@@ -1875,8 +1833,8 @@ namespace YUCP.Components.Editor
             pathLabel.style.maxHeight = 18;
             pathLabel.style.overflow = Overflow.Hidden;
             infoContainer.Add(pathLabel);
-            
-            // Location badge (Root/Child) and action count
+
+
             bool isOnRoot = toggle.gameObject == data.gameObject;
             string locationText = isOnRoot ? "Root" : "Child";
             if (toggleInfo.actionCount > 0)
@@ -1897,34 +1855,34 @@ namespace YUCP.Components.Editor
             locationBadge.style.borderBottomLeftRadius = 4;
             locationBadge.style.borderBottomRightRadius = 4;
             infoContainer.Add(locationBadge);
-            
+
             card.Add(infoContainer);
-            
-            // Add smooth transitions for animations
+
+
             card.style.transitionDuration = new List<TimeValue> { new TimeValue(150, TimeUnit.Millisecond) };
-            card.style.transitionProperty = new List<StylePropertyName> 
-            { 
+            card.style.transitionProperty = new List<StylePropertyName>
+            {
                 new StylePropertyName("background-color"),
                 new StylePropertyName("border-color"),
                 new StylePropertyName("scale")
             };
-            
-            // Click handler - select toggle
+
+
             card.RegisterCallback<MouseDownEvent>(evt =>
             {
                 if (evt.button == 0)
                 {
                     evt.StopPropagation();
-                    
-                    // Update selection
+
+
                     selectedToggleProp.objectReferenceValue = toggle;
                     so.ApplyModifiedProperties();
                     EditorUtility.SetDirty(so.targetObject);
-                    
-                    // Update current selection display
+
+
                     UpdateCurrentToggleDisplay(toggle, data, currentToggleName, currentTogglePath);
-                    
-                    // Update all cards' border colors
+
+
                     var gridContainer = card.parent;
                     if (gridContainer != null)
                     {
@@ -1945,8 +1903,8 @@ namespace YUCP.Components.Editor
                     }
                 }
             }, TrickleDown.NoTrickleDown);
-            
-            // Hover effect with smooth animation
+
+
             card.RegisterCallback<MouseEnterEvent>(evt =>
             {
                 card.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.18f, 1f));
@@ -1959,7 +1917,7 @@ namespace YUCP.Components.Editor
                     card.style.borderLeftColor = new StyleColor(new Color(0.35f, 0.35f, 0.35f, 1f));
                 }
             });
-            
+
             card.RegisterCallback<MouseLeaveEvent>(evt =>
             {
                 card.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.12f, 1f));
@@ -1972,10 +1930,10 @@ namespace YUCP.Components.Editor
                     card.style.borderLeftColor = borderColor;
                 }
             });
-            
+
             return card;
         }
-        
+
         private void UpdateCurrentToggleDisplay(Component selectedToggle, AutoBodyHiderData data, Label nameLabel, Label pathLabel)
         {
             if (selectedToggle != null)
@@ -1991,161 +1949,29 @@ namespace YUCP.Components.Editor
                 pathLabel.text = "Select a toggle from the grid below";
             }
         }
-        
-        private (string menuPath, string globalParam, int actionCount, string actionSummary) GetVRCFuryToggleInfo(Component vrcFuryComponent)
+
+        private (string menuPath, string globalParam, int actionCount, string actionSummary) GetVRCFuryToggleInfo(Component component)
         {
-            string menuPath = "";
-            string globalParam = "";
-            int actionCount = 0;
-            string actionSummary = "";
-            
-            try
+            var model = VRCFuryHelper.GetToggleModel(component);
+            if (model == null) return ("", "", 0, "");
+
+            string menuPath = model.GetType().GetField("name").GetValue(model) as string ?? "";
+            string globalParam = VRCFuryHelper.GetToggleGlobalParameter(component) ?? "";
+            var state = model.GetType().GetField("state").GetValue(model);
+            var actions = state?.GetType().GetField("actions").GetValue(state) as System.Collections.IList;
+            if (actions == null) return (menuPath, globalParam, 0, "");
+
+            var types = new HashSet<string>();
+            foreach (var action in actions)
             {
-                // Get the content field via reflection
-                var contentField = vrcFuryComponent.GetType().GetField("content", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (contentField != null)
-                {
-                    var content = contentField.GetValue(vrcFuryComponent);
-                    if (content != null && content.GetType().Name == "Toggle")
-                    {
-                        // Get menu path (name property)
-                        var nameField = content.GetType().GetField("name", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (nameField != null)
-                        {
-                            menuPath = nameField.GetValue(content) as string ?? "";
-                        }
-                        
-                        // Get global parameter
-                        var useGlobalParamField = content.GetType().GetField("useGlobalParam", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        var globalParamField = content.GetType().GetField("globalParam", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (useGlobalParamField != null && globalParamField != null)
-                        {
-                            bool useGlobal = (bool)(useGlobalParamField.GetValue(content) ?? false);
-                            if (useGlobal)
-                            {
-                                globalParam = globalParamField.GetValue(content) as string ?? "";
-                            }
-                        }
-                        
-                        // Get action count and summary
-                        var stateField = content.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (stateField != null)
-                        {
-                            var state = stateField.GetValue(content);
-                            var actionsField = state.GetType().GetField("actions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                            if (actionsField != null)
-                            {
-                                var actionsList = actionsField.GetValue(state) as System.Collections.IList;
-                                if (actionsList != null)
-                                {
-                                    actionCount = actionsList.Count;
-                                    
-                                    // Create summary of action types
-                                    var actionTypes = new System.Collections.Generic.HashSet<string>();
-                                    foreach (var action in actionsList)
-                                    {
-                                        if (action != null)
-                                        {
-                                            string actionTypeName = action.GetType().Name;
-                                            // Remove "Action" suffix from action type name
-                                            if (actionTypeName.EndsWith("Action"))
-                                            {
-                                                actionTypeName = actionTypeName.Substring(0, actionTypeName.Length - 6);
-                                            }
-                                            actionTypes.Add(actionTypeName);
-                                        }
-                                    }
-                                    
-                                    if (actionTypes.Count > 0)
-                                    {
-                                        actionSummary = string.Join(", ", actionTypes);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                if (action == null) continue;
+                string name = action.GetType().Name;
+                if (name.EndsWith("Action", System.StringComparison.Ordinal))
+                    name = name.Substring(0, name.Length - 6);
+                types.Add(name);
             }
-            catch (System.Exception)
-            {
-                // Silently fail - return empty info
-            }
-            
-            return (menuPath, globalParam, actionCount, actionSummary);
+            return (menuPath, globalParam, actions.Count, string.Join(", ", types));
         }
-        
-        private bool[] ApplySymmetryMirror(bool[] hiddenVertices, Vector3[] vertices)
-        {
-            bool[] result = new bool[hiddenVertices.Length];
-            System.Array.Copy(hiddenVertices, result, hiddenVertices.Length);
-
-            for (int i = 0; i < vertices.Length; i++)
-            {
-                if (hiddenVertices[i])
-                {
-                    Vector3 mirrorPos = new Vector3(-vertices[i].x, vertices[i].y, vertices[i].z);
-                    float closestDist = float.MaxValue;
-                    int closestIdx = -1;
-
-                    for (int j = 0; j < vertices.Length; j++)
-                    {
-                        float dist = Vector3.Distance(vertices[j], mirrorPos);
-                        if (dist < closestDist)
-                        {
-                            closestDist = dist;
-                            closestIdx = j;
-                        }
-                    }
-
-                    if (closestIdx != -1 && closestDist < 0.001f)
-                    {
-                        result[closestIdx] = true;
-                    }
-                }
-            }
-
-            return result;
-        }
-
-         private bool[] ApplySafetyMargin(bool[] hiddenVertices, Vector3[] vertices)
-         {
-             bool[] shrunk = new bool[hiddenVertices.Length];
-             System.Array.Copy(hiddenVertices, shrunk, hiddenVertices.Length);
- 
-             Vector3[] worldVertices = new Vector3[vertices.Length];
-             for (int i = 0; i < vertices.Length; i++)
-             {
-                 worldVertices[i] = data.targetBodyMesh.transform.TransformPoint(vertices[i]);
-             }
- 
-             for (int i = 0; i < vertices.Length; i++)
-             {
-                 if (hiddenVertices[i])
-                 {
-                     bool isNearEdge = false;
-                     
-                     for (int j = 0; j < vertices.Length; j++)
-                     {
-                         if (!hiddenVertices[j])
-                         {
-                             float dist = Vector3.Distance(worldVertices[i], worldVertices[j]);
-                             if (dist < data.safetyMargin)
-                             {
-                                 isNearEdge = true;
-                                 break;
-                             }
-                         }
-                     }
-                     
-                     if (isNearEdge)
-                     {
-                         shrunk[i] = false;
-                     }
-                 }
-             }
- 
-             return shrunk;
-         }
 
         [DrawGizmo(GizmoType.Selected | GizmoType.Active)]
         static void DrawGizmos(AutoBodyHiderData data, GizmoType gizmoType)
@@ -2155,7 +1981,7 @@ namespace YUCP.Components.Editor
             if (data.previewVertexPositions == null || data.targetBodyMesh == null) return;
 
             Handles.color = new Color(1f, 0f, 0f, 0.6f);
-            
+
             for (int i = 0; i < data.previewHiddenFaces.Length; i++)
             {
                 if (data.previewHiddenFaces[i])
@@ -2163,35 +1989,35 @@ namespace YUCP.Components.Editor
                     int v0 = data.previewTriangles[i * 3];
                     int v1 = data.previewTriangles[i * 3 + 1];
                     int v2 = data.previewTriangles[i * 3 + 2];
-                    
+
                     Vector3 p0 = data.previewVertexPositions[v0];
                     Vector3 p1 = data.previewVertexPositions[v1];
                     Vector3 p2 = data.previewVertexPositions[v2];
-                    
+
                     Handles.DrawAAConvexPolygon(p0, p1, p2);
                 }
             }
 
             Handles.BeginGUI();
-            
+
             int totalFaces = data.previewTriangles.Length / 3;
             int hiddenFaces = 0;
             foreach (bool hidden in data.previewHiddenFaces)
             {
                 if (hidden) hiddenFaces++;
             }
-            
+
             GUI.Box(new Rect(10, 10, 280, 90), "");
             GUI.Label(new Rect(15, 15, 270, 20), "YUCP Preview", EditorStyles.boldLabel);
-            
+
             GUI.color = new Color(1f, 0f, 0f, 0.6f);
             GUI.Box(new Rect(15, 40, 15, 15), "");
             GUI.color = Color.white;
             GUI.Label(new Rect(35, 38, 230, 20), "= Faces to be deleted");
-            
+
             GUI.Label(new Rect(15, 60, 260, 20), $"{hiddenFaces} / {totalFaces} faces will be deleted");
             GUI.Label(new Rect(15, 75, 260, 20), $"({(hiddenFaces * 100f / totalFaces):F1}%) | VRChat: -{hiddenFaces} tris");
-            
+
             Handles.EndGUI();
         }
     }

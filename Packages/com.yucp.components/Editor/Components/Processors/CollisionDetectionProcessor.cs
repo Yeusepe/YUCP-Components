@@ -110,23 +110,6 @@ namespace YUCP.Components.Editor
             return true;
         }
 
-        private static string ResolveMenuLocation(VRCAvatarDescriptor descriptor, string requestedLocation)
-        {
-            var trimmed = (requestedLocation ?? string.Empty).Trim();
-            if (string.IsNullOrEmpty(trimmed))
-            {
-                return string.Empty;
-            }
-
-            if (descriptor == null || descriptor.expressionsMenu == null)
-            {
-                Debug.LogWarning("[YUCP Collision Detection] Expressions menu is not assigned on this avatar. Falling back to root menu for the generated toggle.");
-                return string.Empty;
-            }
-
-            return trimmed;
-        }
-
         private static void WarnAboutDivergentGroups(IEnumerable<GroupMember> members)
         {
             var byGroupId = members.Where(m => !m.IsIsolated).GroupBy(m => m.GroupId);
@@ -202,7 +185,7 @@ namespace YUCP.Components.Editor
                         });
 
                     VRCFuryHelper.AddControllerToVRCFury(descriptor, clonedController);
-                    RegisterGlobalParameters(descriptor, paramMap);
+                    VRCFuryHelper.RegisterGlobalParameters(descriptor, paramMap.Values);
                     InstallSystem(descriptor, prefab, settings, rootName, paramMap);
                 }
 
@@ -250,7 +233,7 @@ namespace YUCP.Components.Editor
             {
                 var collision = particleSystem.collision;
                 var triggers = particleSystem.trigger;
-                
+
                 if (settings.useTriggers)
                 {
                     collision.enabled = false;
@@ -276,34 +259,34 @@ namespace YUCP.Components.Editor
                 var container = collisionSystem.transform.Find("Container");
                 if (container == null)
                 {
-                    // If Container doesn't exist, use the collisionSystem itself as container
+
                     container = collisionSystem.transform;
                 }
 
-                // Store the world position and rotation before reparenting
+
                 var worldPosition = settings.appliedObject.transform.position;
                 var worldRotation = settings.appliedObject.transform.rotation;
                 var worldScale = settings.appliedObject.transform.lossyScale;
 
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
-                
-                // Reparent to container
+
+
                 settings.appliedObject.transform.parent = container;
-                
-                // Reset object's local transform to identity (0,0,0 position, identity rotation, 1,1,1 scale)
+
+
                 settings.appliedObject.transform.localPosition = Vector3.zero;
                 settings.appliedObject.transform.localRotation = Quaternion.identity;
                 settings.appliedObject.transform.localScale = Vector3.one;
-                
-                // Adjust container's transform to maintain the object's original world position
-                // Calculate what the container's world transform should be so that the object (at local 0,0,0) 
-                // appears at its original world position
+
+
+
+
                 container.position = worldPosition;
                 container.rotation = worldRotation;
-                
-                // Note: Scale is trickier with lossyScale, so we'll preserve the container's existing scale
-                // The object's local scale is now 1,1,1, so it will use the container's scale
-                
+
+
+
+
                 var newPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -329,24 +312,6 @@ namespace YUCP.Components.Editor
                     VRCFuryHelper.AddMenuToggle(menu, $"Collision Reset ({targetName})", resetParam);
                     VRCFuryHelper.AddMenuToggle(menu, $"Collision Always Reset ({targetName})", alwaysResetParam);
                 }
-            }
-        }
-
-        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
-        {
-            if (descriptor == null || paramMap == null)
-            {
-                return;
-            }
-
-            foreach (var param in paramMap.Values.Distinct())
-            {
-                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
-                {
-                    continue;
-                }
-
-                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
             }
         }
 

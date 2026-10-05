@@ -180,7 +180,7 @@ namespace YUCP.Components.Editor
                         });
 
                     VRCFuryHelper.AddControllerToVRCFury(descriptor, clonedController);
-                    RegisterGlobalParameters(descriptor, paramMap);
+                    VRCFuryHelper.RegisterGlobalParameters(descriptor, paramMap.Values);
                     InstallSystem(descriptor, prefab, settings, rootName, clonedController, paramMap);
                 }
 
@@ -329,24 +329,6 @@ namespace YUCP.Components.Editor
                     var label = settings.appliedObject != null ? $"Contact Tracker Control ({settings.appliedObject.name})" : "Contact Tracker Control";
                     VRCFuryHelper.AddMenuToggle(menu, label, controlParam);
                 }
-            }
-        }
-
-        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
-        {
-            if (descriptor == null || paramMap == null)
-            {
-                return;
-            }
-
-            foreach (var param in paramMap.Values.Distinct())
-            {
-                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
-                {
-                    continue;
-                }
-
-                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
             }
         }
 

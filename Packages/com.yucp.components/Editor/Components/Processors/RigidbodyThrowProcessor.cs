@@ -215,7 +215,7 @@ namespace YUCP.Components.Editor
                         });
 
                     VRCFuryHelper.AddControllerToVRCFury(descriptor, controller);
-                    RegisterGlobalParameters(descriptor, paramMap);
+                    VRCFuryHelper.RegisterGlobalParameters(descriptor, paramMap.Values);
                     InstallSystem(descriptor, prefab, settings, rootName);
                 }
 
@@ -294,30 +294,30 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                // Store the world position and rotation before reparenting
+
                 var worldPosition = settings.appliedObject.transform.position;
                 var worldRotation = settings.appliedObject.transform.rotation;
                 var worldScale = settings.appliedObject.transform.lossyScale;
 
                 var oldPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
-                
-                // Reparent to container
+
+
                 settings.appliedObject.transform.parent = container;
-                
-                // Reset object's local transform to identity (0,0,0 position, identity rotation, 1,1,1 scale)
+
+
                 settings.appliedObject.transform.localPosition = Vector3.zero;
                 settings.appliedObject.transform.localRotation = Quaternion.identity;
                 settings.appliedObject.transform.localScale = Vector3.one;
-                
-                // Adjust container's transform to maintain the object's original world position
-                // Calculate what the container's world transform should be so that the object (at local 0,0,0) 
-                // appears at its original world position
+
+
+
+
                 container.position = worldPosition;
                 container.rotation = worldRotation;
-                
-                // Note: Scale is trickier with lossyScale, so we'll preserve the container's existing scale
-                // The object's local scale is now 1,1,1, so it will use the container's scale
-                
+
+
+
+
                 var newPath = AnimationUtility.CalculateTransformPath(settings.appliedObject.transform, descriptor.transform);
 
                 var allClips = descriptor.baseAnimationLayers.Concat(descriptor.specialAnimationLayers)
@@ -341,7 +341,7 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            // Add global parameters to VRCFury if enabled
+
             if (settings.useGlobalParameters)
             {
                 VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, settings.throwParameterName);
@@ -370,7 +370,7 @@ namespace YUCP.Components.Editor
 
         private static void RenameControllerParameters(AnimatorController controller, GroupKey key)
         {
-            // Use VRCFury's RewriteParameters method via reflection.
+
             Assembly vrcfuryAssembly = VRCFuryReflectionUtils.LoadEditorCommonAssembly();
             if (vrcfuryAssembly == null)
             {
@@ -378,7 +378,7 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            // Get the VFController type from the assembly
+
             Type vfControllerType = vrcfuryAssembly.GetType("VF.Utils.Controller.VFController");
             if (vfControllerType == null)
             {
@@ -386,7 +386,7 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            // Create instance using constructor: VFController(AnimatorController ctrl)
+
             object vfController = Activator.CreateInstance(vfControllerType, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, null, new object[] { controller }, null);
             if (vfController == null)
             {
@@ -394,8 +394,8 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            // Get RewriteParameters method with signature: RewriteParameters(Func<string, string>, bool, bool, ICollection<VFLayer>)
-            // Need to get VFLayer type first to construct the method signature
+
+
             Type vfLayerType = vrcfuryAssembly.GetType("VF.Utils.Controller.VFLayer");
             Type iCollectionType = typeof(ICollection<>);
             Type iCollectionVFLayerType = vfLayerType != null ? iCollectionType.MakeGenericType(vfLayerType) : null;
@@ -412,57 +412,39 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            // Create parameter rename function
+
             Func<string, string> renameParam = (string paramName) =>
             {
-                // Only rename gesture parameters
+
                 if (paramName == "GestureRight" || paramName == "GestureLeft")
                 {
                     if (key.UseGlobalParameters)
                     {
-                        // For global parameters, we need to map based on context (throw vs reset)
-                        // This will be handled by the transition modification below
+
+
                         return key.ThrowParameterName;
                     }
                     else
                     {
-                        // For gesture mode, rename to selected hand
+
                         return key.GestureHand == GestureHand.Left ? "GestureLeft" : "GestureRight";
                     }
                 }
                 return paramName;
             };
 
-            // Call VRCFury's RewriteParameters method
+
             rewriteParametersMethod.Invoke(vfController, new object[] { renameParam, true, true, null });
 
-            // For global parameters, we still need to handle throw vs reset threshold mapping
+
             if (key.UseGlobalParameters)
             {
                 RenameGlobalParameterTransitions(controller, key);
             }
             else
             {
-                // For gesture mode, update thresholds if needed
+
                 RenameGestureThresholds(controller, key);
-            }
-        }
-
-        private static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, Dictionary<string, string> paramMap)
-        {
-            if (descriptor == null || paramMap == null)
-            {
-                return;
-            }
-
-            foreach (var param in paramMap.Values.Distinct())
-            {
-                if (AnimationCloneUtility.IsIgnoredGlobalParameter(param))
-                {
-                    continue;
-                }
-
-                VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, param);
             }
         }
 
@@ -520,12 +502,12 @@ namespace YUCP.Components.Editor
                     parameter = condition.parameter
                 };
 
-                // If this condition uses the throw parameter, check if we need to adjust threshold
+
                 if (condition.parameter == key.ThrowParameterName)
                 {
                     if (key.ParameterMode == ParameterMode.Single)
                     {
-                        // Single mode: throw (was threshold 2) -> 1.0, reset (was threshold 1) -> 0.0
+
                         if (condition.mode == AnimatorConditionMode.Equals && condition.threshold == 2f)
                         {
                             newCondition.threshold = 1.0f;
@@ -535,9 +517,9 @@ namespace YUCP.Components.Editor
                             newCondition.threshold = 0.0f;
                         }
                     }
-                    else // Dual mode
+                    else
                     {
-                        // Dual mode: throw (threshold 2) -> throw param 1.0, reset (threshold 1) -> reset param 1.0
+
                         if (condition.mode == AnimatorConditionMode.Equals && condition.threshold == 1f)
                         {
                             newCondition.parameter = key.ResetParameterName;
@@ -602,7 +584,7 @@ namespace YUCP.Components.Editor
 
             var gestureParamName = key.GestureHand == GestureHand.Left ? "GestureLeft" : "GestureRight";
             var newConditions = new List<AnimatorCondition>();
-            
+
             foreach (var condition in transition.conditions)
             {
                 var newCondition = new AnimatorCondition
@@ -612,7 +594,7 @@ namespace YUCP.Components.Editor
                     parameter = condition.parameter
                 };
 
-                // Update thresholds for gesture parameters if they match defaults
+
                 if (condition.parameter == gestureParamName)
                 {
                     if (condition.mode == AnimatorConditionMode.Equals && condition.threshold == 2f)

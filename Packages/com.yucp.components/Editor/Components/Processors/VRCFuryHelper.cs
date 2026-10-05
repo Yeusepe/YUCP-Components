@@ -1,15 +1,64 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
 using com.vrcfury.api;
+using com.vrcfury.api.Actions;
 
 namespace YUCP.Components.Editor
 {
     public static class VRCFuryHelper
     {
+        internal static object GetToggleModel(Component component)
+        {
+            if (component == null || component.GetType().FullName != "VF.Model.VRCFury")
+                return null;
+
+            var model = component.GetType().GetField("content").GetValue(component);
+            if (model == null || model.GetType().FullName != "VF.Model.Feature.Toggle")
+                return null;
+            return model;
+        }
+
+        internal static List<Component> FindToggles(GameObject root)
+        {
+            var toggles = new List<Component>();
+            foreach (var component in root.GetComponentsInChildren<Component>(true))
+                if (GetToggleModel(component) != null)
+                    toggles.Add(component);
+            return toggles;
+        }
+
+        internal static string GetToggleGlobalParameter(Component component)
+        {
+            var model = GetToggleModel(component);
+            if (model == null) return null;
+            var type = model.GetType();
+            if (!(bool)type.GetField("useGlobalParam").GetValue(model)) return null;
+            return type.GetField("globalParam").GetValue(model) as string;
+        }
+
+        internal static void AddAnimationToToggle(Component component, AnimationClip clip)
+        {
+            var model = GetToggleModel(component);
+            if (model == null)
+                throw new ArgumentException("The component must contain a VRCFury toggle.", nameof(component));
+            var state = model.GetType().GetField("state").GetValue(model);
+            if (state == null)
+                throw new InvalidOperationException("The VRCFury toggle has no action state.");
+
+
+            var actions = (FuryActionSet)Activator.CreateInstance(typeof(FuryActionSet),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { state }, null);
+            actions.AddAnimationClip(clip);
+            EditorUtility.SetDirty(component);
+        }
+
         public static object TryCreateVFController(AnimatorController controller)
         {
             if (controller == null)
@@ -124,33 +173,33 @@ namespace YUCP.Components.Editor
                 VRCExpressionsMenu.Control nextMenuControl = menu.controls
                     .Where(x => x.type == VRCExpressionsMenu.Control.ControlType.SubMenu)
                     .FirstOrDefault(x => x.name == nextMenu);
-                
+
                 if (nextMenuControl == null || nextMenuControl.subMenu == null)
                 {
-                    // Create the missing submenu
+
                     VRCExpressionsMenu newSubMenu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
                     newSubMenu.name = nextMenu;
                     newSubMenu.controls = new System.Collections.Generic.List<VRCExpressionsMenu.Control>();
-                    
-                    // If the parent menu is an asset, save the submenu as a sub-asset
+
+
                     if (AssetDatabase.Contains(menu))
                     {
                         AssetDatabase.AddObjectToAsset(newSubMenu, menu);
                         AssetDatabase.SaveAssets();
                     }
-                    
-                    // Create the submenu control
+
+
                     VRCExpressionsMenu.Control subMenuControl = new VRCExpressionsMenu.Control()
                     {
                         name = nextMenu,
                         type = VRCExpressionsMenu.Control.ControlType.SubMenu,
                         subMenu = newSubMenu
                     };
-                    
+
                     menu.controls.Add(subMenuControl);
                     EditorUtility.SetDirty(menu);
                     EditorUtility.SetDirty(newSubMenu);
-                    
+
                     menu = newSubMenu;
                 }
                 else
@@ -194,13 +243,13 @@ namespace YUCP.Components.Editor
         }
         public static void AddControllerToVRCFury(VRCAvatarDescriptor descriptor, AnimatorController controller, VRCAvatarDescriptor.AnimLayerType layerType = VRCAvatarDescriptor.AnimLayerType.FX)
         {
-            
+
             CreateNewFullController(descriptor, controller, layerType);
         }
 
         public static void AddParamsToVRCFury(VRCAvatarDescriptor descriptor, VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters parameters)
         {
-            
+
             var fullController = FuryComponents.CreateFullController(descriptor.gameObject);
             fullController.AddParams(parameters);
             EditorUtility.SetDirty(descriptor.gameObject);
@@ -213,9 +262,42 @@ namespace YUCP.Components.Editor
             EditorUtility.SetDirty(descriptor.gameObject);
         }
 
+        /// <summary>
+        /// Registers a controller, its expression parameters and a menu as ONE VRCFury Full
+        /// Controller. They must travel together: VRCFury validates each Full Controller component
+        /// in isolation, so a menu on its own component fails with "menu uses parameters that
+        /// aren't in the merged parameters file" even when another component carries them. And
+        /// mutating descriptor.expressionsMenu instead is a trap of its own -- avatars built
+        /// entirely with VRCFury have no root menu asset, so the control silently vanishes.
+        /// </summary>
+        public static void AddFullControllerToVRCFury(
+            VRCAvatarDescriptor descriptor,
+            AnimatorController controller,
+            VRCExpressionParameters parameters,
+            VRCExpressionsMenu menu,
+            string menuPrefix,
+            VRCAvatarDescriptor.AnimLayerType layerType = VRCAvatarDescriptor.AnimLayerType.FX)
+        {
+            var fullController = FuryComponents.CreateFullController(descriptor.gameObject);
+            if (controller != null) fullController.AddController(controller, layerType);
+            if (parameters != null) fullController.AddParams(parameters);
+            if (menu != null) fullController.AddMenu(menu, menuPrefix ?? string.Empty);
+            EditorUtility.SetDirty(descriptor.gameObject);
+        }
+
+        internal static void RegisterGlobalParameters(VRCAvatarDescriptor descriptor, IEnumerable<string> parameters)
+        {
+            if (descriptor == null || parameters == null) return;
+            foreach (var parameter in parameters.Distinct())
+            {
+                if (!AnimationCloneUtility.IsIgnoredGlobalParameter(parameter))
+                    AddGlobalParamToVRCFury(descriptor, parameter);
+            }
+        }
+
         public static void AddGlobalParamToVRCFury(VRCAvatarDescriptor descriptor, string parameterName)
         {
-            // Always use the public API for consistency and robustness
+
             var fullController = FuryComponents.CreateFullController(descriptor.gameObject);
             fullController.AddGlobalParam(parameterName);
             EditorUtility.SetDirty(descriptor.gameObject);

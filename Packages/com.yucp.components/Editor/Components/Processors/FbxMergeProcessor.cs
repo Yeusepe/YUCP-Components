@@ -714,23 +714,7 @@ namespace YUCP.Components.Editor
                 var components = walk.GetComponents<Component>();
                 foreach (var comp in components)
                 {
-                    if (comp == null || comp.GetType().Name != "VRCFury")
-                    {
-                        continue;
-                    }
-
-                    var contentField = comp.GetType().GetField("content",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    if (contentField == null)
-                    {
-                        continue;
-                    }
-
-                    var content = contentField.GetValue(comp);
-                    if (content == null || content.GetType().Name != "Toggle")
-                    {
-                        continue;
-                    }
+                    if (VRCFuryHelper.GetToggleModel(comp) == null) continue;
 
                     AnimationClip toggleClip = CreateMergedToggleClip(
                         baseRenderer,
@@ -751,7 +735,7 @@ namespace YUCP.Components.Editor
                         continue;
                     }
 
-                    if (InjectClipIntoVRCFuryToggle(content, toggleClip, debugMode, logContext))
+                    if (InjectClipIntoVRCFuryToggle(comp, toggleClip, debugMode, logContext))
                     {
                         injected = true;
                         EditorUtility.SetDirty(comp);
@@ -826,46 +810,11 @@ namespace YUCP.Components.Editor
             return hasCurves ? clip : null;
         }
 
-        private static bool InjectClipIntoVRCFuryToggle(object toggleContent, AnimationClip clip, bool debugMode, UnityEngine.Object logContext)
+        private static bool InjectClipIntoVRCFuryToggle(Component component, AnimationClip clip, bool debugMode, UnityEngine.Object logContext)
         {
             try
             {
-                var stateField = toggleContent.GetType().GetField("state",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (stateField == null)
-                {
-                    return false;
-                }
-
-                var state = stateField.GetValue(toggleContent);
-                var actionsField = state.GetType().GetField("actions",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (actionsField == null)
-                {
-                    return false;
-                }
-
-                var actionsList = actionsField.GetValue(state) as System.Collections.IList;
-                if (actionsList == null)
-                {
-                    return false;
-                }
-
-                var animActionType = System.Type.GetType("VF.Model.StateAction.AnimationClipAction, VRCFury");
-                if (animActionType == null)
-                {
-                    return false;
-                }
-
-                var animAction = System.Activator.CreateInstance(animActionType);
-                var motionField = animActionType.GetField("motion",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (motionField != null)
-                {
-                    motionField.SetValue(animAction, clip);
-                }
-
-                actionsList.Add(animAction);
+                VRCFuryHelper.AddAnimationToToggle(component, clip);
                 return true;
             }
             catch (System.Exception ex)

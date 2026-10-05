@@ -218,13 +218,6 @@ namespace YUCP.Components
         [FormerlySerializedAs("singleGlobalParameterName")]
         public string singleGlobalParameterName = "AutoUVDiscard_All";
 
-        [Header("Advanced Options")]
-        [Tooltip("Preview detected regions in the scene view.")]
-        public bool showPreview = true;
-
-        [Tooltip("Color coding for preview regions.")]
-        public bool useColorCoding = true;
-
         [Header("Build Statistics (Read-only)")]
         [Tooltip("Number of regions detected (populated at build time).")]
         [SerializeField] private int detectedRegions = 0;
@@ -236,9 +229,6 @@ namespace YUCP.Components
         public int DetectedRegions => detectedRegions;
         public List<string> UsedUVTiles => usedUVTiles;
 
-        // Preview data
-        [System.NonSerialized] public List<UVRegion> previewRegions;
-        [System.NonSerialized] public bool previewGenerated = false;
 
         public void SetBuildStats(int regions, List<string> tiles)
         {

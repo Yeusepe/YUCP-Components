@@ -16,7 +16,7 @@ namespace YUCP.Components.Editor
     /// </summary>
     public class AutoUVDiscardProcessor : IVRCSDKPreprocessAvatarCallback
     {
-        public int callbackOrder => int.MinValue + 101; // Run right after AutoBodyHider
+        public int callbackOrder => int.MinValue + 101;
 
         public bool OnPreprocessAvatar(GameObject avatarRoot)
         {
@@ -39,7 +39,7 @@ namespace YUCP.Components.Editor
             {
                 Debug.Log($"[AutoUVDiscard] Processing: {data.gameObject.name}", data);
 
-                // Validate
+
                 if (data.targetBodyMesh == null)
                 {
                     Debug.LogError($"[AutoUVDiscard] Target body mesh not set!", data);
@@ -53,7 +53,7 @@ namespace YUCP.Components.Editor
                     return;
                 }
 
-                // Find compatible materials (use targetMaterials if specified, otherwise auto-detect)
+
                 List<Material> targetMaterials = new List<Material>();
                 if (data.targetMaterials != null && data.targetMaterials.Length > 0)
                 {
@@ -65,8 +65,8 @@ namespace YUCP.Components.Editor
                         }
                     }
                 }
-                
-                // If no target materials specified, auto-detect all compatible materials
+
+
                 if (targetMaterials.Count == 0)
                 {
                     if (data.targetBodyMesh != null && data.targetBodyMesh.sharedMaterials != null)
@@ -80,18 +80,18 @@ namespace YUCP.Components.Editor
                         }
                     }
                 }
-                
+
                 if (targetMaterials.Count == 0)
                 {
                     Debug.LogError($"[AutoUVDiscard] Body mesh doesn't have a Poiyomi or FastFur material with UV support!", data);
                     return;
                 }
-                
+
                 string shaderName = UVManipulator.GetShaderDisplayName(targetMaterials[0]);
                 Debug.Log($"[AutoUVDiscard] Using {shaderName} shader for UV discard on {targetMaterials.Count} material(s)", data);
 
-                // Detect UV regions from clothing mesh
-                int effectiveUVChannel = data.autoDetectUVChannel 
+
+                int effectiveUVChannel = data.autoDetectUVChannel
                     ? UVManipulator.DetectBestUVChannel(clothingRenderer.sharedMesh)
                     : data.uvChannel;
                 List<AutoUVDiscardData.UVRegion> regions = DetectUVRegions(clothingRenderer.sharedMesh, data, effectiveUVChannel);
@@ -104,21 +104,21 @@ namespace YUCP.Components.Editor
 
                 Debug.Log($"[AutoUVDiscard] Detected {regions.Count} UV regions", data);
 
-                // Assign UV tiles to each region
+
                 AssignUVTiles(regions, data);
 
-                // Process each region
+
                 List<string> usedTiles = new List<string>();
                 Mesh originalBodyMesh = data.targetBodyMesh.sharedMesh;
-                
+
                 for (int i = 0; i < regions.Count; i++)
                 {
                     var region = regions[i];
                     region.name = $"Region {i + 1}";
-                    
+
                     Debug.Log($"[AutoUVDiscard] Processing {region.name}: {region.vertexIndices.Count} vertices -> UV {region.assignedRow},{region.assignedColumn}", data);
 
-                    // Create hidden vertices array for this region
+
                     bool[] hiddenVertices = new bool[clothingRenderer.sharedMesh.vertexCount];
                     foreach (int vertexIndex in region.vertexIndices)
                     {
@@ -126,7 +126,7 @@ namespace YUCP.Components.Editor
                             hiddenVertices[vertexIndex] = true;
                     }
 
-                    // Apply UV discard for this region
+
                     Mesh modifiedMesh = UVManipulator.ApplyUVDiscard(
                         originalBodyMesh,
                         hiddenVertices,
@@ -138,10 +138,10 @@ namespace YUCP.Components.Editor
                     if (modifiedMesh != null)
                     {
                         data.targetBodyMesh.sharedMesh = modifiedMesh;
-                        originalBodyMesh = modifiedMesh; // Use modified mesh for next iteration
+                        originalBodyMesh = modifiedMesh;
                     }
 
-                    // Configure all target materials for this tile
+
                     foreach (var material in targetMaterials)
                     {
                         ConfigurePoiyomiMaterial(material, region.assignedRow, region.assignedColumn, data, originalBodyMesh, effectiveUVChannel);
@@ -149,7 +149,7 @@ namespace YUCP.Components.Editor
 
                     usedTiles.Add($"Row{region.assignedRow}_Col{region.assignedColumn}");
 
-                    // Register global parameter for this region
+
                     string globalParamName = GetGlobalParameterName(data, i);
                     if (!string.IsNullOrEmpty(globalParamName))
                     {
@@ -157,9 +157,9 @@ namespace YUCP.Components.Editor
                     }
                 }
 
-                // Store stats
+
                 data.SetBuildStats(regions.Count, usedTiles);
-                
+
                 Debug.Log($"[AutoUVDiscard] Successfully processed {regions.Count} regions!", data);
             }
             catch (System.Exception ex)
@@ -171,7 +171,7 @@ namespace YUCP.Components.Editor
 
         private List<AutoUVDiscardData.UVRegion> DetectUVRegions(Mesh mesh, AutoUVDiscardData data, int uvChannel)
         {
-            // Dispatch to mode-specific detection method
+
             return data.detectionMode switch
             {
                 DetectionMode.UVProximity => DetectByUVProximity(mesh, data, uvChannel),
@@ -196,10 +196,10 @@ namespace YUCP.Components.Editor
                 return null;
             }
 
-            // Group vertices by UV proximity
+
             List<List<int>> uvClusters = ClusterVerticesByUV(uvs, data.mergeTolerance);
 
-            // Filter out small clusters
+
             int minVertices = Mathf.CeilToInt(mesh.vertexCount * (data.minRegionSize / 100f));
             uvClusters = uvClusters.Where(cluster => cluster.Count >= minVertices).ToList();
 
@@ -223,7 +223,7 @@ namespace YUCP.Components.Editor
 
             var regions = new List<AutoUVDiscardData.UVRegion>();
 
-            // Each mask in the list defines a separate region
+
             foreach (var maskDef in data.maskRegions)
             {
                 if (!maskDef.enabled || maskDef.maskTexture == null)
@@ -231,11 +231,11 @@ namespace YUCP.Components.Editor
 
                 var vertexIndices = new List<int>();
 
-                // Sample mask for each vertex
+
                 for (int v = 0; v < uvs.Length; v++)
                 {
                     float maskValue = UVManipulator.SampleMaskAtUV(maskDef.maskTexture, uvs[v]);
-                    
+
                     if (maskValue >= data.maskThreshold)
                     {
                         vertexIndices.Add(v);
@@ -250,7 +250,7 @@ namespace YUCP.Components.Editor
                         name = maskDef.name,
                         debugColor = maskDef.debugColor
                     };
-                    
+
                     CalculateRegionBounds(region, uvs);
                     regions.Add(region);
                 }
@@ -269,7 +269,7 @@ namespace YUCP.Components.Editor
         private List<AutoUVDiscardData.UVRegion> DetectByUVSeams(Mesh mesh, AutoUVDiscardData data)
         {
             var seamEdges = UVManipulator.FindUVSeamEdges(mesh, data.seamUVChannel, data.seamThreshold);
-            
+
             if (seamEdges.Count == 0)
             {
                 Debug.LogWarning("[AutoUVDiscard] No UV seams detected!", data);
@@ -278,10 +278,10 @@ namespace YUCP.Components.Editor
 
             Debug.Log($"[AutoUVDiscard] Detected {seamEdges.Count} seam edges", data);
 
-            // Flood fill to create regions bounded by seams
+
             var clusters = UVManipulator.FloodFillRegionsFromEdges(mesh, seamEdges);
-            
-            // Filter out small clusters
+
+
             int minVertices = Mathf.CeilToInt(mesh.vertexCount * (data.minRegionSize / 100f));
             clusters = clusters.Where(c => c.Count >= minVertices).ToList();
 
@@ -292,7 +292,7 @@ namespace YUCP.Components.Editor
         private List<AutoUVDiscardData.UVRegion> DetectBySharpEdges(Mesh mesh, AutoUVDiscardData data)
         {
             var sharpEdges = UVManipulator.FindSharpEdges(mesh, data.sharpAngleThreshold);
-            
+
             if (sharpEdges.Count == 0)
             {
                 Debug.LogWarning("[AutoUVDiscard] No sharp edges detected!", data);
@@ -301,10 +301,10 @@ namespace YUCP.Components.Editor
 
             Debug.Log($"[AutoUVDiscard] Detected {sharpEdges.Count} sharp edges", data);
 
-            // Flood fill to create regions bounded by sharp edges
+
             var clusters = UVManipulator.FloodFillRegionsFromEdges(mesh, sharpEdges);
-            
-            // Filter out small clusters
+
+
             int minVertices = Mathf.CeilToInt(mesh.vertexCount * (data.minRegionSize / 100f));
             clusters = clusters.Where(c => c.Count >= minVertices).ToList();
 
@@ -349,7 +349,7 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            // Calculate UV bounds for each region
+
             Vector2[] uvs = GetUVChannel(mesh, 0);
             if (uvs != null && uvs.Length > 0)
             {
@@ -365,7 +365,7 @@ namespace YUCP.Components.Editor
         private List<AutoUVDiscardData.UVRegion> DetectByMaterialSlots(Mesh mesh, AutoUVDiscardData data)
         {
             var submeshGroups = UVManipulator.GroupVerticesBySubmesh(mesh);
-            
+
             if (submeshGroups.Count == 0)
             {
                 Debug.LogWarning("[AutoUVDiscard] No submeshes found!", data);
@@ -376,15 +376,15 @@ namespace YUCP.Components.Editor
 
             var clusters = submeshGroups.Values.ToList();
             Vector2[] uvs = GetUVChannel(mesh, 0);
-            
+
             var regions = ConvertClustersToRegions(clusters, uvs, data);
-            
-            // Name regions by submesh index
+
+
             for (int i = 0; i < regions.Count; i++)
             {
                 regions[i].name = $"Material {i}";
             }
-            
+
             return regions;
         }
 
@@ -396,7 +396,7 @@ namespace YUCP.Components.Editor
                 return null;
             }
 
-            // Get bone indices from renderer
+
             var renderer = data.GetComponent<SkinnedMeshRenderer>();
             if (renderer == null || renderer.bones == null)
             {
@@ -404,15 +404,15 @@ namespace YUCP.Components.Editor
                 return null;
             }
 
-            // Map target bones to their indices
+
             var targetBoneIndices = new HashSet<int>();
             for (int i = 0; i < renderer.bones.Length; i++)
             {
                 if (data.targetBones.Contains(renderer.bones[i]))
                 {
                     targetBoneIndices.Add(i);
-                    
-                    // Include child bones if enabled
+
+
                     if (data.includeChildBones)
                     {
                         AddChildBoneIndices(renderer.bones[i], renderer.bones, targetBoneIndices);
@@ -431,8 +431,8 @@ namespace YUCP.Components.Editor
 
             Vector2[] uvs = GetUVChannel(mesh, 0);
             var regions = ConvertClustersToRegions(clusters, uvs, data);
-            
-            // Name regions by bone
+
+
             int idx = 0;
             foreach (var kvp in boneGroups.Where(kvp => kvp.Value.Count > 0))
             {
@@ -442,7 +442,7 @@ namespace YUCP.Components.Editor
                 }
                 idx++;
             }
-            
+
             return regions;
         }
 
@@ -469,10 +469,10 @@ namespace YUCP.Components.Editor
         private List<AutoUVDiscardData.UVRegion> ConvertClustersToRegions(List<List<int>> clusters, Vector2[] uvs, AutoUVDiscardData data)
         {
             List<AutoUVDiscardData.UVRegion> regions = new List<AutoUVDiscardData.UVRegion>();
-            Color[] debugColors = new Color[] 
-            { 
-                Color.red, Color.green, new Color(0.212f, 0.749f, 0.694f), Color.yellow, 
-                new Color(0.212f, 0.749f, 0.694f), Color.magenta, new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 1f) 
+            Color[] debugColors = new Color[]
+            {
+                Color.red, Color.green, new Color(0.212f, 0.749f, 0.694f), Color.yellow,
+                new Color(0.212f, 0.749f, 0.694f), Color.magenta, new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 1f)
             };
 
             for (int i = 0; i < clusters.Count; i++)
@@ -492,7 +492,7 @@ namespace YUCP.Components.Editor
                 regions.Add(region);
             }
 
-            // Sort by UV center (top to bottom, left to right)
+
             regions = regions.OrderByDescending(r => r.uvCenter.y)
                            .ThenBy(r => r.uvCenter.x)
                            .ToList();
@@ -504,7 +504,7 @@ namespace YUCP.Components.Editor
         {
             Vector2 min = new Vector2(float.MaxValue, float.MaxValue);
             Vector2 max = new Vector2(float.MinValue, float.MinValue);
-            
+
             foreach (int vertexIdx in region.vertexIndices)
             {
                 if (vertexIdx < uvs.Length)
@@ -531,7 +531,7 @@ namespace YUCP.Components.Editor
             {
                 if (assigned[i]) continue;
 
-                // Start a new cluster
+
                 List<int> cluster = new List<int>();
                 Queue<int> toProcess = new Queue<int>();
                 toProcess.Enqueue(i);
@@ -542,7 +542,7 @@ namespace YUCP.Components.Editor
                     int current = toProcess.Dequeue();
                     cluster.Add(current);
 
-                    // Find nearby vertices
+
                     for (int j = 0; j < uvs.Length; j++)
                     {
                         if (assigned[j]) continue;
@@ -569,28 +569,28 @@ namespace YUCP.Components.Editor
         {
             if (data.autoAssignUVTile)
             {
-                // Use orchestrator-assigned starting tile
+
                 int currentRow = data.startRow >= 0 ? data.startRow : 3;
                 int currentColumn = data.startColumn >= 0 ? data.startColumn : 0;
-                
-                // Check if coordinator has assigned tiles for this component
+
+
                 if (AutoBodyHiderCoordinator.UVDiscardGroups.ContainsKey(data.targetBodyMesh))
                 {
                     var group = AutoBodyHiderCoordinator.UVDiscardGroups[data.targetBodyMesh];
                     if (group.assignedTiles.ContainsKey(data) && group.assignedTiles[data].Count > 0)
                     {
-                        // Use coordinator-assigned starting tile
+
                         var firstTile = group.assignedTiles[data][0];
                         currentRow = firstTile.row;
                         currentColumn = firstTile.col;
                     }
                 }
-                
+
                 foreach (var region in regions)
                 {
                     region.assignedRow = currentRow;
                     region.assignedColumn = currentColumn;
-                    
+
                     currentColumn++;
                     if (currentColumn > 3)
                     {
@@ -607,7 +607,7 @@ namespace YUCP.Components.Editor
             }
             else
             {
-                // Manual assignment
+
                 int currentRow = data.startRow >= 0 ? data.startRow : 3;
                 int currentColumn = data.startColumn >= 0 ? data.startColumn : 0;
 
@@ -635,8 +635,8 @@ namespace YUCP.Components.Editor
         private void ConfigurePoiyomiMaterial(Material material, int row, int column, AutoUVDiscardData data, Mesh mesh, int uvChannel)
         {
             string shaderNameLower = material.shader.name.ToLower();
-            
-            // Configure shader
+
+
             if (shaderNameLower.Contains("poiyomi"))
             {
                 material.SetFloat("_EnableUDIMDiscardOptions", 1f);
@@ -644,7 +644,7 @@ namespace YUCP.Components.Editor
             }
             else if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("fast fur") || shaderNameLower.Contains("wffs") || shaderNameLower.Contains("warren"))
             {
-                // FastFur: Install UV Discard module first
+
                 if (material.HasProperty("_WFFS_FEATURES_UVDISCARD"))
                 {
                     float currentValue = material.GetFloat("_WFFS_FEATURES_UVDISCARD");
@@ -661,8 +661,8 @@ namespace YUCP.Components.Editor
                         material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
                     }
                 }
-                
-                // Enable UDIM discard option
+
+
                 if (material.HasProperty("_EnableUDIMDiscardOptions"))
                 {
                     material.SetFloat("_EnableUDIMDiscardOptions", 1f);
@@ -671,7 +671,7 @@ namespace YUCP.Components.Editor
                     material.name = material.name;
                 }
             }
-            
+
             material.SetFloat("_UDIMDiscardMode", 0f);
             material.SetFloat("_UDIMDiscardUV", uvChannel);
 
@@ -697,7 +697,7 @@ namespace YUCP.Components.Editor
                 return $"{baseName}_{regionIndex + 1}";
             }
         }
-        
+
         private void RegisterGlobalParameter(AutoUVDiscardData data, string parameterName, Material poiyomiMaterial, AutoUVDiscardData.UVRegion region)
         {
             try
@@ -708,27 +708,30 @@ namespace YUCP.Components.Editor
                     Debug.LogWarning($"[AutoUVDiscard] No VRCAvatarDescriptor found on avatar root. Global parameter '{parameterName}' will not be registered.", data);
                     return;
                 }
-                
+
                 VRCFuryHelper.AddGlobalParamToVRCFury(descriptor, parameterName);
-                
-                // Find existing VRCFury toggles that use this global parameter
-                var availableToggles = ScanVRCFuryTogglesForGlobalParameter(data.gameObject, parameterName);
-                
+
+                var animation = CreateRegionAnimation(data, poiyomiMaterial, region);
+                if (animation == null) return;
+
+                var availableToggles = VRCFuryHelper.FindToggles(data.gameObject)
+                    .FindAll(toggle => VRCFuryHelper.GetToggleGlobalParameter(toggle) == parameterName);
+
                 if (availableToggles.Count > 0)
                 {
-                    // Add animation to existing toggle(s) that use this parameter
+
                     foreach (var toggle in availableToggles)
                     {
-                        AddAnimationToToggle(toggle, data, poiyomiMaterial, region, parameterName);
+                        VRCFuryHelper.AddAnimationToToggle(toggle, animation);
                     }
                 }
                 else
                 {
-                    // Create a new toggle with this global parameter
+
                     var toggle = FuryComponents.CreateToggle(data.gameObject);
                     toggle.SetGlobalParameter(parameterName);
-                    
-                    // Disable menu item creation for global parameter only mode
+
+
                     var toggleType = toggle.GetType();
                     var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     if (cField != null)
@@ -740,8 +743,8 @@ namespace YUCP.Components.Editor
                             addMenuItemField.SetValue(toggleModel, false);
                         }
                     }
-                    
-                    AddAnimationToToggle(toggle, data, poiyomiMaterial, region, parameterName);
+
+                    toggle.GetActions().AddAnimationClip(animation);
                     Debug.Log($"[AutoUVDiscard] Created toggle with global parameter '{parameterName}' for {region.name}", data);
                 }
             }
@@ -751,123 +754,10 @@ namespace YUCP.Components.Editor
                 Debug.LogException(ex);
             }
         }
-        
-        private List<object> ScanVRCFuryTogglesForGlobalParameter(GameObject root, string globalParameter)
-        {
-            var matchingToggles = new List<object>();
-            
-            // Check root GameObject
-            var rootComponents = root.GetComponents<Component>();
-            foreach (var comp in rootComponents)
-            {
-                if (comp != null && comp.GetType().Name == "VRCFury")
-                {
-                    string toggleParam = GetGlobalParameterFromToggle(comp);
-                    if (toggleParam == globalParameter)
-                    {
-                        matchingToggles.Add(comp);
-                    }
-                }
-            }
-            
-            // Check all children
-            foreach (Transform child in root.transform)
-            {
-                var childComponents = child.GetComponents<Component>();
-                foreach (var comp in childComponents)
-                {
-                    if (comp != null && comp.GetType().Name == "VRCFury")
-                    {
-                        string toggleParam = GetGlobalParameterFromToggle(comp);
-                        if (toggleParam == globalParameter)
-                        {
-                            matchingToggles.Add(comp);
-                        }
-                    }
-                }
-            }
-            
-            return matchingToggles;
-        }
-        
-        private string GetGlobalParameterFromToggle(Component toggle)
-        {
-            try
-            {
-                var toggleType = toggle.GetType();
-                var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (cField == null) return null;
-                
-                var toggleModel = cField.GetValue(toggle);
-                if (toggleModel == null) return null;
-                
-                var stateField = toggleModel.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (stateField == null) return null;
-                
-                var state = stateField.GetValue(toggleModel);
-                if (state == null) return null;
-                
-                var globalParameterField = state.GetType().GetField("globalParameter", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (globalParameterField == null) return null;
-                
-                return globalParameterField.GetValue(state) as string;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-        
-        private void AddAnimationToToggle(object toggleComponent, AutoUVDiscardData data, Material poiyomiMaterial, AutoUVDiscardData.UVRegion region, string parameterName)
-        {
-            try
-            {
-                AnimationClip toggleAnimation = CreateRegionAnimation(data, poiyomiMaterial, region);
-                if (toggleAnimation == null) return;
-                
-                var toggleType = toggleComponent.GetType();
-                var actionsMethod = toggleType.GetMethod("GetActions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (actionsMethod != null)
-                {
-                    var actions = actionsMethod.Invoke(toggleComponent, null) as dynamic;
-                    if (actions != null)
-                    {
-                        actions.AddAnimationClip(toggleAnimation);
-                        
-                        var cField = toggleType.GetField("c", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                        if (cField != null)
-                        {
-                            var toggleModel = cField.GetValue(toggleComponent);
-                            var stateField = toggleModel.GetType().GetField("state", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                            if (stateField != null)
-                            {
-                                var state = stateField.GetValue(toggleModel);
-                                var actionsField = state.GetType().GetField("actions", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                                if (actionsField != null)
-                                {
-                                    var actionsList = actionsField.GetValue(state) as System.Collections.IList;
-                                    if (actionsList != null && actionsList.Count > 0)
-                                    {
-                                        var lastAction = actionsList[actionsList.Count - 1];
-                                        var motionField = lastAction.GetType().GetField("motion", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                                        if (motionField != null)
-                                        {
-                                            motionField.SetValue(lastAction, toggleAnimation);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[AutoUVDiscard] Error adding animation to toggle: {ex.Message}", data);
-            }
-        }
 
-        private AnimationClip CreateRegionAnimation(AutoUVDiscardData data, Material poiyomiMaterial, 
+
+
+        private AnimationClip CreateRegionAnimation(AutoUVDiscardData data, Material poiyomiMaterial,
             AutoUVDiscardData.UVRegion region)
         {
             AnimationClip clip = new AnimationClip();
@@ -881,16 +771,16 @@ namespace YUCP.Components.Editor
                 return null;
             }
 
-            string rendererPath = GetRelativePath(data.targetBodyMesh.transform, data.transform.root);
+            string rendererPath = AnimationUtility.CalculateTransformPath(data.targetBodyMesh.transform, data.transform.root);
 
-            // Animation plays when toggle is ON: set to 1 (discard ON)
+
             float animValue = 1f;
 
             AnimationCurve discardCurve = new AnimationCurve();
             discardCurve.AddKey(0f, animValue);
             discardCurve.AddKey(1f / 60f, animValue);
 
-            // Unity uses "material.PropertyName" format
+
             string propertyPath = $"material.{tilePropertyName}";
 
             EditorCurveBinding binding = EditorCurveBinding.FloatCurve(
@@ -922,22 +812,6 @@ namespace YUCP.Components.Editor
             return uvList.ToArray();
         }
 
-        private string GetRelativePath(Transform target, Transform root)
-        {
-            if (target == root)
-                return "";
-
-            List<string> path = new List<string>();
-            Transform current = target;
-
-            while (current != null && current != root)
-            {
-                path.Insert(0, current.name);
-                current = current.parent;
-            }
-
-            return string.Join("/", path);
-        }
     }
 }
 
