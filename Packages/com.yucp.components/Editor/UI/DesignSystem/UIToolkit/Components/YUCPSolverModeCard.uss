@@ -1,4 +1,4 @@
-/* YUCP Solver Mode Card Component */
+
 .yucp-solver-mode-card {
     border-radius: var(--yucp-radius-card);
     padding: var(--yucp-spacing-sm);
@@ -28,10 +28,6 @@
 
 .yucp-solver-mode-card.mode-affine {
     background-color: rgba(255, 179, 128, 0.2);
-}
-
-.yucp-solver-mode-card.mode-cage-rbf {
-    background-color: rgba(204, 128, 255, 0.2);
 }
 
 .yucp-solver-title {

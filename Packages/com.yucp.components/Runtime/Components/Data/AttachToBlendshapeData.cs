@@ -50,10 +50,9 @@ namespace YUCP.Components
 
     public enum SolverMode
     {
-        Rigid,
-        RigidNormalOffset,
-        Affine,
-        CageRBF
+        Rigid = 0,
+        RigidNormalOffset = 1,
+        Affine = 2
     }
 
     [Serializable]
@@ -61,15 +60,15 @@ namespace YUCP.Components
     {
         [Tooltip("Triangle index in the mesh")]
         public int triIndex;
-        
+
         [Tooltip("Barycentric coordinates within the triangle")]
         public Vector3 barycentric;
-        
+
         [Tooltip("Weight of this anchor in the cluster")]
         public float weight;
-        
+
         public TriangleAnchor() { }
-        
+
         public TriangleAnchor(int index, Vector3 bary, float w)
         {
             triIndex = index;
@@ -83,13 +82,13 @@ namespace YUCP.Components
     {
         [Tooltip("Triangle anchors in the cluster")]
         public List<TriangleAnchor> anchors = new List<TriangleAnchor>();
-        
+
         [Tooltip("Total weight of all anchors (for normalization)")]
         public float totalWeight = 1f;
-        
+
         [Tooltip("Center position of the cluster in local space")]
         public Vector3 centerPosition;
-        
+
         [Tooltip("Average normal of the cluster")]
         public Vector3 averageNormal;
     }
@@ -147,8 +146,7 @@ namespace YUCP.Components
         [Tooltip("How to calculate object transforms during deformation:\n\n" +
                  "• Rigid: Simple rotation + translation about the object's pivot (best for piercings, badges)\n" +
                  "• Rigid Normal Offset: Rigid + slight outward push along surface normal\n" +
-                 "• Affine: Allows minor shear/scale to match skin stretch (stickers, patches)\n" +
-                 "• Cage RBF: Advanced smooth deformation for larger objects (experimental)")]
+                 "• Affine: Allows minor shear/scale to match skin stretch (stickers, patches)")]
         public SolverMode solverMode = SolverMode.Rigid;
 
         [Tooltip("Align object rotation to surface normal and tangent.\n\n" +
@@ -165,23 +163,6 @@ namespace YUCP.Components
                  "0 = no smoothing, 1 = maximum smoothing.")]
         [Range(0f, 1f)]
         public float rotationSmoothingFactor = 0.3f;
-
-        [Header("Cage/RBF Settings (CageRBF mode only)")]
-        [Tooltip("Number of driver points on the surface (3-16).\n\n" +
-                 "More points = more accurate deformation but slower computation.\n" +
-                 "Recommended: 4-8 for most objects.")]
-        [Range(3, 16)]
-        public int rbfDriverPointCount = 6;
-
-        [Tooltip("RBF kernel radius multiplier.\n\n" +
-                 "Controls how far each driver point influences the mesh.\n" +
-                 "Lower = more localized, Higher = smoother but less detailed.")]
-        [Range(0.5f, 3f)]
-        public float rbfRadiusMultiplier = 1.5f;
-
-        [Tooltip("Use GPU acceleration for RBF computation (when available).\n\n" +
-                 "Significantly faster for meshes with many vertices.")]
-        public bool useGPUAcceleration = true;
 
         [Header("Bone Attachment")]
         [Tooltip("Attach to closest bone for base positioning.\n\n" +
@@ -304,7 +285,7 @@ namespace YUCP.Components
         [SerializeField] private int remappedCurveCount = 0;
         [SerializeField] private List<string> buildWarnings = new List<string>();
 
-        // Preview data (not serialized)
+
         [System.NonSerialized] public SurfaceCluster previewCluster;
         [System.NonSerialized] public List<string> previewBlendshapes = new List<string>();
         [System.NonSerialized] public bool previewGenerated = false;
@@ -324,12 +305,12 @@ namespace YUCP.Components
         [System.NonSerialized] public bool previewHasBaseSolver;
         [System.NonSerialized] public Vector3 previewPositionOffset;
         [System.NonSerialized] public Quaternion previewRotationOffset = Quaternion.identity;
-        [System.NonSerialized] public SkinnedMeshRenderer previewTempSkinnedMesh; // Temporary SkinnedMeshRenderer for MeshFilter preview
-        [System.NonSerialized] public MeshFilter previewOriginalMeshFilter; // Original MeshFilter for restoration
-        [System.NonSerialized] public MeshRenderer previewOriginalMeshRenderer; // Original MeshRenderer for restoration (stored before disabling)
-        [System.NonSerialized] public Mesh previewOriginalMesh; // Original mesh before blendshape transfer (for restoration)
-        [System.NonSerialized] public Mesh previewWorkingMesh; // Working mesh copy with transferred blendshapes
-        [System.NonSerialized] public Mesh previewOriginalTargetMesh; // Original target mesh (before any transfers) for categorization
+        [System.NonSerialized] public SkinnedMeshRenderer previewTempSkinnedMesh;
+        [System.NonSerialized] public MeshFilter previewOriginalMeshFilter;
+        [System.NonSerialized] public MeshRenderer previewOriginalMeshRenderer;
+        [System.NonSerialized] public Mesh previewOriginalMesh;
+        [System.NonSerialized] public Mesh previewWorkingMesh;
+        [System.NonSerialized] public Mesh previewOriginalTargetMesh;
         [System.NonSerialized] public bool previewUsesMergedMesh;
         [System.NonSerialized] public Mesh previewOriginalBaseMesh;
         [System.NonSerialized] public Material[] previewOriginalBaseMaterials;
@@ -377,9 +358,16 @@ namespace YUCP.Components
             buildWarnings = warnings != null ? new List<string>(warnings) : new List<string>();
         }
 
+        private void OnValidate()
+        {
+
+            if ((int)solverMode == 3)
+                solverMode = SolverMode.Rigid;
+        }
+
         private void Reset()
         {
-            // Set sensible defaults when component is first added
+
             clusterTriangleCount = 4;
             searchRadius = 0.1f;
             solverMode = SolverMode.Rigid;
@@ -389,9 +377,6 @@ namespace YUCP.Components
             smartDetectionThreshold = 0.001f;
             attachToClosestBone = true;
             boneSearchRadius = 0.5f;
-            rbfDriverPointCount = 6;
-            rbfRadiusMultiplier = 1.5f;
-            useGPUAcceleration = true;
 
             outputMode = AttachToBlendshapeOutputMode.Auto;
             bakeMethod = AttachToBlendshapeBakeMethod.RigidPivotTransform;
@@ -411,7 +396,7 @@ namespace YUCP.Components
         private void Awake()
         {
             #if !UNITY_EDITOR
-            // Runtime cleanup - remove this component (it's editor-only)
+
             Destroy(this);
             #endif
         }

@@ -57,12 +57,6 @@ namespace YUCP.UI.DesignSystem.Utilities
                     description = "Allows minor shear/scale to match skin stretch";
                     goodFor = "Stickers, patches, wider decorations";
                     break;
-                case SolverMode.CageRBF:
-                    AddToClassList("mode-cage-rbf");
-                    title = "Cage/RBF Deformation";
-                    description = "Smooth deformation using driver points (advanced)";
-                    goodFor = "Masks, large patches, complex meshes";
-                    break;
             }
             
             if (titleLabel != null) titleLabel.text = title;
@@ -75,7 +69,6 @@ namespace YUCP.UI.DesignSystem.Utilities
             RemoveFromClassList("mode-rigid");
             RemoveFromClassList("mode-rigid-normal");
             RemoveFromClassList("mode-affine");
-            RemoveFromClassList("mode-cage-rbf");
         }
     }
 }
