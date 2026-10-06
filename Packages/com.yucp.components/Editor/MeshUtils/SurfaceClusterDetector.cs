@@ -56,12 +56,12 @@ namespace YUCP.Components.Editor.MeshUtils
             int[] triangles = mesh.triangles;
             int triangleCount = triangles.Length / 3;
 
-            // Convert target position to local space
+
             Vector3 localTarget = targetMesh.transform.InverseTransformPoint(targetPosition);
 
-            // Build list of all triangles with distance data
+
             List<TriangleData> allTriangles = new List<TriangleData>();
-            
+
             for (int i = 0; i < triangleCount; i++)
             {
                 int idx0 = triangles[i * 3];
@@ -74,15 +74,15 @@ namespace YUCP.Components.Editor.MeshUtils
 
                 TriangleData triData = new TriangleData(i, v0, v1, v2, localTarget);
 
-                // Degenerate triangles have no surface frame. They can still be closest
-                // by center distance, but selecting them makes position appear to work
-                // while rotation falls back to an arbitrary axis.
+
+
+
                 if (triData.normal.sqrMagnitude <= 1e-10f)
                 {
                     continue;
                 }
 
-                // Filter by search radius if specified
+
                 if (searchRadius > 0 && triData.distanceToTarget > searchRadius)
                 {
                     continue;
@@ -97,10 +97,10 @@ namespace YUCP.Components.Editor.MeshUtils
                 return null;
             }
 
-            // Sort by distance
+
             allTriangles = allTriangles.OrderBy(t => t.distanceToTarget).ToList();
 
-            // Create cluster
+
             SurfaceCluster cluster = new SurfaceCluster();
             cluster.anchors = new List<TriangleAnchor>();
 
@@ -111,9 +111,9 @@ namespace YUCP.Components.Editor.MeshUtils
                 if (manualIndex >= 0) seed = allTriangles[manualIndex];
             }
 
-            // Grow a coherent patch from one seed instead of taking globally-nearest
-            // triangles. Around a mouth or eyelid, disconnected surfaces can be closer
-            // in Euclidean space than the next triangle on the intended surface.
+
+
+
             int requestedClusterSize = Mathf.Clamp(clusterSize, 1, allTriangles.Count);
             var selectedTriangles = new List<TriangleData> { seed };
             var selectedIndices = new HashSet<int> { seed.triIndex };
@@ -138,7 +138,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 selectedIndices.Add(next.triIndex);
             }
 
-            // Calculate barycentric coordinates for target position relative to each triangle
+
             float totalWeight = 0f;
             Vector3 clusterCenter = Vector3.zero;
             Vector3 clusterNormal = Vector3.zero;
@@ -148,8 +148,8 @@ namespace YUCP.Components.Editor.MeshUtils
             {
                 Vector3 bary = tri.closestBarycentric;
 
-                // Weight calculation: inverse distance with smoothing
-                // Add small epsilon
+
+
                 float weight = 1f / (tri.distanceToTarget + 0.001f);
                 totalWeight += weight;
 
@@ -166,7 +166,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 clusterNormal += coherentNormal * weight;
             }
 
-            // Normalize weights
+
             cluster.totalWeight = totalWeight;
             foreach (var anchor in cluster.anchors)
             {
@@ -193,8 +193,8 @@ namespace YUCP.Components.Editor.MeshUtils
             }
             catch
             {
-                // Validation elsewhere reports unusable renderer/mesh data. Cluster
-                // detection can still attempt the imported mesh as a fallback.
+
+
             }
             finally
             {
@@ -271,8 +271,8 @@ namespace YUCP.Components.Editor.MeshUtils
                 if (triangles[a + i] == triangles[b + j]) shared++;
             if (shared >= 2) return true;
 
-            // Imported meshes often split vertices at UV/normal seams. Treat two
-            // coincident endpoints as the same topological edge.
+
+
             int coincident = 0;
             for (int i = 0; i < 3; i++)
             {
@@ -360,12 +360,12 @@ namespace YUCP.Components.Editor.MeshUtils
                 Vector3 v1 = vertices[idx1];
                 Vector3 v2 = vertices[idx2];
 
-                // Interpolate position using barycentric coordinates
+
                 Vector3 anchorPos = anchor.barycentric.x * v0 +
                                    anchor.barycentric.y * v1 +
                                    anchor.barycentric.z * v2;
 
-                // Calculate triangle normal
+
                 Vector3 triNormal = Vector3.Cross(v1 - v0, v2 - v0).normalized;
                 if (triNormal.sqrMagnitude > 1e-10f)
                 {
@@ -373,9 +373,9 @@ namespace YUCP.Components.Editor.MeshUtils
                     else if (Vector3.Dot(triNormal, referenceNormal) < 0f) triNormal = -triNormal;
                 }
 
-                // Meshes commonly contain coincident triangles with opposite winding.
-                // Keep their tangent direction coherent as well, otherwise the surface
-                // frame can retain position while its rotation axes cancel to zero.
+
+
+
                 Vector3 triTangent = Vector3.ProjectOnPlane(v1 - v0, triNormal).normalized;
                 if (triTangent.sqrMagnitude > 1e-10f)
                 {
@@ -383,19 +383,19 @@ namespace YUCP.Components.Editor.MeshUtils
                     else if (Vector3.Dot(triTangent, referenceTangent) < 0f) triTangent = -triTangent;
                 }
 
-                // Weight contribution
+
                 position += anchorPos * anchor.weight;
                 normal += triNormal * anchor.weight;
                 edge0Sum += triTangent * anchor.weight;
             }
 
             normal = normal.normalized;
-            
-            // Calculate tangent by projecting edge direction onto triangle plane
+
+
             Vector3 edgeDirection = edge0Sum.normalized;
             tangent = (edgeDirection - Vector3.Dot(edgeDirection, normal) * normal).normalized;
 
-            // Fallback if tangent is degenerate
+
             if (tangent.magnitude < 0.1f)
             {
                 tangent = Vector3.Cross(normal, Vector3.up).normalized;
@@ -406,44 +406,6 @@ namespace YUCP.Components.Editor.MeshUtils
             }
         }
 
-        /// <summary>
-        /// Find the closest triangle to a point.
-        /// </summary>
-        public static int FindClosestTriangle(
-            Mesh mesh,
-            Vector3 localPosition,
-            float searchRadius = 0f)
-        {
-            Vector3[] vertices = mesh.vertices;
-            int[] triangles = mesh.triangles;
-            int triangleCount = triangles.Length / 3;
-
-            int closestIndex = -1;
-            float closestDistance = float.MaxValue;
-
-            for (int i = 0; i < triangleCount; i++)
-            {
-                int idx0 = triangles[i * 3];
-                int idx1 = triangles[i * 3 + 1];
-                int idx2 = triangles[i * 3 + 2];
-
-                Vector3 center = (vertices[idx0] + vertices[idx1] + vertices[idx2]) / 3f;
-                float distance = Vector3.Distance(center, localPosition);
-
-                if (searchRadius > 0 && distance > searchRadius)
-                {
-                    continue;
-                }
-
-                if (distance < closestDistance)
-                {
-                    closestDistance = distance;
-                    closestIndex = i;
-                }
-            }
-
-            return closestIndex;
-        }
     }
 }
 

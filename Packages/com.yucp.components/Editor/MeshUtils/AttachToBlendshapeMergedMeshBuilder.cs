@@ -826,13 +826,6 @@ namespace YUCP.Components.Editor.MeshUtils
             mesh.SetUVs(channel, uv);
         }
 
-        private static Material[] BuildMaterialArray(Material[] source, int count)
-        {
-            var result = new Material[count];
-            for (int i = 0; i < count; i++) result[i] = source != null && source.Length > 0 ? source[Mathf.Min(i, source.Length - 1)] : null;
-            return result;
-        }
-
         private static bool HasTriangleTopology(Mesh mesh)
         {
             for (int i = 0; i < mesh.subMeshCount; i++) if (mesh.GetTopology(i) != MeshTopology.Triangles) return false;

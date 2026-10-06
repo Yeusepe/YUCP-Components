@@ -16,42 +16,42 @@ namespace YUCP.Components.Editor.MeshUtils
         {
             if (material == null || material.shader == null)
                 return false;
-            
+
             string shaderName = material.shader.name;
             string shaderNameLower = shaderName.ToLower();
-            
-            // Check for Poiyomi
+
+
             if (shaderNameLower.Contains("poiyomi"))
             {
                 return material.HasProperty("_EnableUDIMDiscardOptions");
             }
-            
-            // Check for FastFur (Warren's Fast Fur Shader)
+
+
             if (shaderNameLower.Contains("fastfur") || shaderNameLower.Contains("fast fur") || shaderNameLower.Contains("wffs") || shaderNameLower.Contains("warren"))
             {
-                // FastFur requires the UV Discard module to be installed
+
                 bool hasUVProperty = material.HasProperty("_EnableUDIMDiscardOptions");
                 bool hasFeatureToggle = material.HasProperty("_WFFS_FEATURES_UVDISCARD");
-                
+
                 return hasUVProperty || hasFeatureToggle;
             }
-            
+
             return false;
         }
-        
+
         public static string GetShaderDisplayName(Material material)
         {
             if (material == null || material.shader == null)
                 return "Unknown";
-            
+
             string shaderName = material.shader.name.ToLower();
-            
+
             if (shaderName.Contains("poiyomi"))
                 return "Poiyomi";
-            
+
             if (shaderName.Contains("fastfur") || shaderName.Contains("fast fur") || shaderName.Contains("wffs") || shaderName.Contains("warren"))
                 return "FastFur";
-            
+
             return material.shader.name;
         }
 
@@ -75,20 +75,20 @@ namespace YUCP.Components.Editor.MeshUtils
         {
             Mesh newMesh = UnityEngine.Object.Instantiate(originalMesh);
             newMesh.name = originalMesh.name + "_UVHidden";
-            
-            // Get source UV channel (usually UV0 for texture mapping)
+
+
             Vector2[] sourceUV = GetUVChannel(originalMesh, 0);
-            
+
             if (sourceUV == null || sourceUV.Length == 0)
             {
                 Debug.LogError($"[UVManipulator] No UV0 found on mesh.");
                 return originalMesh;
             }
-            
-            // Get or create target UV channel
+
+
             Vector2[] targetUV = GetUVChannel(originalMesh, targetUVChannel);
-            
-            // If target channel doesn't exist, create it from UV0
+
+
             if (targetUV == null || targetUV.Length == 0)
             {
                 targetUV = new Vector2[sourceUV.Length];
@@ -101,10 +101,10 @@ namespace YUCP.Components.Editor.MeshUtils
                 Array.Copy(sourceUV, targetUV, sourceUV.Length);
                 Debug.LogWarning($"[UVManipulator] UV{targetUVChannel} length mismatch, recreating from UV0.");
             }
-            
+
             float uOffset = uvColumn;
             float vOffset = uvRow;
-            
+
             for (int i = 0; i < hiddenVertices.Length && i < targetUV.Length; i++)
             {
                 if (hiddenVertices[i])
@@ -112,9 +112,9 @@ namespace YUCP.Components.Editor.MeshUtils
                     targetUV[i] = new Vector2(targetUV[i].x + uOffset, targetUV[i].y + vOffset);
                 }
             }
-            
+
             SetUVChannel(newMesh, targetUVChannel, targetUV);
-            
+
             return newMesh;
         }
 
@@ -128,16 +128,16 @@ namespace YUCP.Components.Editor.MeshUtils
                 Debug.LogError("[UVManipulator] Material is null.");
                 return;
             }
-            
+
             if (!IsPoiyomiWithUVSupport(material))
             {
                 Debug.LogWarning($"[UVManipulator] Material {material.name} doesn't support UV discard.");
                 return;
             }
-            
+
             string shaderName = GetShaderDisplayName(material);
             string shaderNameLower = material.shader.name.ToLower();
-            
+
             if (shaderNameLower.Contains("poiyomi"))
             {
                 material.EnableKeyword("POI_UDIMDISCARD");
@@ -154,21 +154,21 @@ namespace YUCP.Components.Editor.MeshUtils
                     material.EnableKeyword("WFFS_FEATURES_UVDISCARD");
                     UnityEditor.EditorUtility.SetDirty(material);
                 }
-                
+
                 if (material.HasProperty("_EnableUDIMDiscardOptions"))
                 {
                     material.SetFloat("_EnableUDIMDiscardOptions", 1f);
                     UnityEditor.EditorUtility.SetDirty(material);
                 }
             }
-            
+
             if (material.HasProperty("_UDIMDiscardMode"))
             {
-                material.SetFloat("_UDIMDiscardMode", 0f);  // Vertex mode
+                material.SetFloat("_UDIMDiscardMode", 0f);
             }
-            
+
             int effectiveUVChannel = GetEffectiveUVChannel(data, mesh);
-            
+
             if (material.HasProperty("_UDIMDiscardUV"))
             {
                 material.SetFloat("_UDIMDiscardUV", effectiveUVChannel);
@@ -177,10 +177,10 @@ namespace YUCP.Components.Editor.MeshUtils
             {
                 material.SetFloat("_UDIMDiscardUVChannel", effectiveUVChannel);
             }
-            
+
 #pragma warning disable 0612, 0618
             string propertyName = $"_UDIMDiscardRow{data.uvDiscardRow}_{data.uvDiscardColumn}";
-            
+
             if (material.HasProperty(propertyName))
             {
                 material.SetFloat(propertyName, 1f);
@@ -188,14 +188,14 @@ namespace YUCP.Components.Editor.MeshUtils
                 Debug.Log($"[UVManipulator] Configured {shaderName} material '{material.name}' with UV tile ({data.uvDiscardRow}, {data.uvDiscardColumn}) on UV channel {effectiveUVChannel}{autoDetectNote}");
             }
 #pragma warning restore 0612, 0618
-            
+
             EditorUtility.SetDirty(material);
         }
 
         private static Vector2[] GetUVChannel(Mesh mesh, int channel)
         {
             List<Vector2> uvList = new List<Vector2>();
-            
+
             switch (channel)
             {
                 case 0: mesh.GetUVs(0, uvList); break;
@@ -206,14 +206,14 @@ namespace YUCP.Components.Editor.MeshUtils
                     Debug.LogError($"[UVManipulator] Invalid UV channel: {channel}");
                     return null;
             }
-            
+
             return uvList.ToArray();
         }
 
         private static void SetUVChannel(Mesh mesh, int channel, Vector2[] uvs)
         {
             List<Vector2> uvList = new List<Vector2>(uvs);
-            
+
             switch (channel)
             {
                 case 0: mesh.SetUVs(0, uvList); break;
@@ -225,7 +225,7 @@ namespace YUCP.Components.Editor.MeshUtils
                     break;
             }
         }
-        
+
         public static int DetectBestUVChannel(Mesh mesh)
         {
             if (mesh == null)
@@ -233,9 +233,9 @@ namespace YUCP.Components.Editor.MeshUtils
                 Debug.LogWarning("[UVManipulator] Cannot detect UV channel: mesh is null. Defaulting to UV1.");
                 return 1;
             }
-            
+
             List<Vector2> uvList = new List<Vector2>();
-            
+
             mesh.GetUVs(1, uvList);
             if (uvList != null && uvList.Count > 0)
             {
@@ -250,14 +250,14 @@ namespace YUCP.Components.Editor.MeshUtils
                     return 1;
                 }
             }
-            
+
             uvList.Clear();
             mesh.GetUVs(0, uvList);
             if (uvList != null && uvList.Count > 0)
             {
                 return 1;
             }
-            
+
             for (int channel = 2; channel <= 3; channel++)
             {
                 uvList.Clear();
@@ -267,10 +267,10 @@ namespace YUCP.Components.Editor.MeshUtils
                     return channel;
                 }
             }
-            
+
             return 1;
         }
-        
+
         public static int GetEffectiveUVChannel(AutoBodyHiderData data, Mesh mesh)
         {
             if (data.autoDetectUVChannel)
@@ -460,34 +460,6 @@ namespace YUCP.Components.Editor.MeshUtils
             }
 
             return sharpEdges;
-        }
-
-        public static int[] GetDominantBonePerVertex(Mesh mesh, float boneWeightThreshold = 0.5f)
-        {
-            BoneWeight[] weights = mesh.boneWeights;
-            int[] dominantBones = new int[mesh.vertexCount];
-
-            for (int i = 0; i < weights.Length; i++)
-            {
-                BoneWeight bw = weights[i];
-
-                int maxBone = -1;
-                float maxWeight = boneWeightThreshold;
-
-                if (bw.weight0 >= maxWeight) { maxBone = bw.boneIndex0; maxWeight = bw.weight0; }
-                if (bw.weight1 >= maxWeight) { maxBone = bw.boneIndex1; maxWeight = bw.weight1; }
-                if (bw.weight2 >= maxWeight) { maxBone = bw.boneIndex2; maxWeight = bw.weight2; }
-                if (bw.weight3 >= maxWeight) { maxBone = bw.boneIndex3; maxWeight = bw.weight3; }
-
-                dominantBones[i] = maxBone;
-            }
-
-            for (int i = weights.Length; i < mesh.vertexCount; i++)
-            {
-                dominantBones[i] = -1;
-            }
-
-            return dominantBones;
         }
 
         public static Dictionary<int, List<int>> GroupVerticesByBone(Mesh mesh, HashSet<int> targetBoneIndices, float boneWeightThreshold = 0.5f)
