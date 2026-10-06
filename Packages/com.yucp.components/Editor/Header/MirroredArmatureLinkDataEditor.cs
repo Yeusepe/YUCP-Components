@@ -14,14 +14,14 @@ namespace YUCP.Components.Editor
 		private static Material previewMat;
 		private static readonly System.Collections.Generic.Dictionary<SkinnedMeshRenderer, Mesh> bakedMeshCache = new System.Collections.Generic.Dictionary<SkinnedMeshRenderer, Mesh>();
 
-		// Foldouts (match AttachToBlendshape style)
+
 		private bool foldTarget = true;
 		private bool foldBuiltins = true;
 		private bool foldCustoms = true;
 		private bool foldMenu = true;
 		private bool foldConstraint = true;
 		private bool foldAdvanced = false;
-		
+
 		private VisualElement customTargetsContainer;
 		private SerializedProperty customTargetsProp;
 		private int lastCustomTargetsArraySize = -1;
@@ -30,7 +30,7 @@ namespace YUCP.Components.Editor
 		{
 			SceneView.duringSceneGui += OnSceneGUI;
 
-			// Load foldout states
+
 			var t = target as MirroredArmatureLinkData;
 			if (t != null)
 			{
@@ -63,11 +63,11 @@ namespace YUCP.Components.Editor
 		public override VisualElement CreateInspectorGUI()
 		{
 			serializedObject.Update();
-			
+
 			var root = new VisualElement();
 			YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
 			root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Mirrored Armature Link"));
-			
+
 			var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(MirroredArmatureLinkData));
 			if (betaWarning != null) root.Add(betaWarning);
 
@@ -79,17 +79,17 @@ namespace YUCP.Components.Editor
 
 			var builtinsCard = YUCPUIToolkitHelper.CreateCard("Built-in Left/Right Options", "Configure left and right side options");
 			var builtinsContent = YUCPUIToolkitHelper.GetCardContent(builtinsCard);
-			
+
 			var includeLeft = serializedObject.FindProperty("includeLeft");
 			var includeRight = serializedObject.FindProperty("includeRight");
 			builtinsContent.Add(YUCPUIToolkitHelper.CreateField(includeLeft, "Include Left"));
-			
+
 			var leftContainer = new VisualElement();
 			leftContainer.style.paddingLeft = 15;
 			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftParam"), "Left Global Param"));
 			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftDefaultOn"), "Left Default On"));
 			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftExclusiveOffState"), "Left Exclusive Off State"));
-			
+
 			var leftAnimContainer = new VisualElement();
 			leftAnimContainer.style.flexDirection = FlexDirection.Row;
 			leftAnimContainer.style.marginBottom = 5;
@@ -97,7 +97,7 @@ namespace YUCP.Components.Editor
 			leftAnimField.style.flexGrow = 1;
 			leftAnimField.style.marginRight = 5;
 			leftAnimContainer.Add(leftAnimField);
-			
+
 			var leftRecordButton = YUCPUIToolkitHelper.CreateButton("Record", () =>
 			{
 				var data = target as MirroredArmatureLinkData;
@@ -115,15 +115,15 @@ namespace YUCP.Components.Editor
 			leftAnimContainer.Add(leftRecordButton);
 			leftContainer.Add(leftAnimContainer);
 			builtinsContent.Add(leftContainer);
-			
+
 			builtinsContent.Add(YUCPUIToolkitHelper.CreateField(includeRight, "Include Right"));
-			
+
 			var rightContainer = new VisualElement();
 			rightContainer.style.paddingLeft = 15;
 			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightParam"), "Right Global Param"));
 			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightDefaultOn"), "Right Default On"));
 			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightExclusiveOffState"), "Right Exclusive Off State"));
-			
+
 			var rightAnimContainer = new VisualElement();
 			rightAnimContainer.style.flexDirection = FlexDirection.Row;
 			rightAnimContainer.style.marginBottom = 5;
@@ -131,7 +131,7 @@ namespace YUCP.Components.Editor
 			rightAnimField.style.flexGrow = 1;
 			rightAnimField.style.marginRight = 5;
 			rightAnimContainer.Add(rightAnimField);
-			
+
 			var rightRecordButton = YUCPUIToolkitHelper.CreateButton("Record", () =>
 			{
 				var data = target as MirroredArmatureLinkData;
@@ -149,19 +149,19 @@ namespace YUCP.Components.Editor
 			rightAnimContainer.Add(rightRecordButton);
 			rightContainer.Add(rightAnimContainer);
 			builtinsContent.Add(rightContainer);
-			
+
 			root.schedule.Execute(() =>
 			{
 				leftContainer.style.display = includeLeft.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
 				rightContainer.style.display = includeRight.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
 			}).Every(100);
-			
+
 			root.Add(builtinsCard);
 
 			var customsCard = YUCPUIToolkitHelper.CreateCard("Custom Targets", "Configure custom symmetric targets");
 			var customsContent = YUCPUIToolkitHelper.GetCardContent(customsCard);
 			customTargetsProp = serializedObject.FindProperty("customTargets");
-			
+
 			var addButton = YUCPUIToolkitHelper.CreateButton("Add Custom Target", () =>
 			{
 				customTargetsProp.arraySize++;
@@ -169,14 +169,14 @@ namespace YUCP.Components.Editor
 			}, YUCPUIToolkitHelper.ButtonVariant.Secondary);
 			addButton.style.marginBottom = 10;
 			customsContent.Add(addButton);
-			
+
 			customTargetsContainer = new VisualElement();
 			customTargetsContainer.name = "customTargetsContainer";
 			customsContent.Add(customTargetsContainer);
-			
+
 			lastCustomTargetsArraySize = -1;
 			UpdateCustomTargetsUI(customTargetsContainer, customTargetsProp);
-			
+
 			root.schedule.Execute(() =>
 			{
 				serializedObject.Update();
@@ -186,7 +186,7 @@ namespace YUCP.Components.Editor
 					UpdateCustomTargetsUI(customTargetsContainer, customTargetsProp);
 				}
 			}).Every(100);
-			
+
 			root.Add(customsCard);
 
 			var menuCard = YUCPUIToolkitHelper.CreateCard("Toggles & Menu", "Configure menu and toggle settings");
@@ -216,14 +216,14 @@ namespace YUCP.Components.Editor
 		{
 			var data = target as MirroredArmatureLinkData;
 			if (data == null || data.gameObject == null) return;
-			// Show preview when this object or a child is selected, or if it's in multi-selection
+
 			var sel = Selection.activeGameObject;
 			bool shouldShow = false;
 			if (sel != null)
 			{
 				shouldShow = (sel == data.gameObject || sel.transform.IsChildOf(data.transform));
 			}
-			// Check all selected objects (for multi-select and locked inspector scenarios)
+
 			if (!shouldShow && Selection.gameObjects.Length > 0)
 			{
 				foreach (var go in Selection.gameObjects)
@@ -235,8 +235,8 @@ namespace YUCP.Components.Editor
 					}
 				}
 			}
-			// Show preview if this component is being inspected (works for locked inspector)
-			// The editor is active when the component is selected or inspector is locked on it
+
+
 			if (!shouldShow && target != null)
 			{
 				shouldShow = true;
@@ -249,17 +249,17 @@ namespace YUCP.Components.Editor
 			EnsurePreviewMaterial();
 
 			bool prevInvert = GL.invertCulling;
-			GL.invertCulling = true; // handle negative scale reflection if any
+			GL.invertCulling = true;
 			try
 			{
 				var meshRenderers = data.GetComponentsInChildren<MeshRenderer>(true);
 				var skinnedRenderers = data.GetComponentsInChildren<SkinnedMeshRenderer>(true);
 
-				// Compute relative matrices from object root
+
 				var objRoot = data.transform;
 				var objRootInv = objRoot.worldToLocalMatrix;
 
-				// Resolve built-in left/right targets
+
 				Transform leftT = null, rightT = null;
 				if (MirroredArmatureLinkData.TryMapBodyPartToSides(data.part, out var leftB, out var rightB))
 				{
@@ -269,7 +269,7 @@ namespace YUCP.Components.Editor
 					rightT = ApplyOffset(rightT, data.offset);
 				}
 
-				// Determine base side (closest to object) for mirroring offset
+
 				Transform baseSide = null, mirrorSide = null;
 				if (leftT != null && rightT != null)
 				{
@@ -279,15 +279,15 @@ namespace YUCP.Components.Editor
 					mirrorSide = (baseSide == leftT) ? rightT : leftT;
 				}
 
-				// Draw mirrored ghost on the opposite side bone (if both sides exist)
+
 				if (baseSide != null && mirrorSide != null)
 				{
-					// Calculate local offset relative to the base side
-					ComputeLocalOffset(objRoot, baseSide, out var localPos, out var localRot);
-					// Mirror ONLY X component in base-side local space
+
+					MirroredArmatureLinkProcessor.ComputeLocalOffset(objRoot, baseSide, out var localPos, out var localRot);
+
 					var mirroredLocalPos = new Vector3(-localPos.x, localPos.y, localPos.z);
 					var mirroredLocalRot = MirrorLocalRotationX(localRot);
-					// Build preview matrix per constraint mode
+
 					Matrix4x4 GetPreviewMatrixParent()
 					{
 						var m = Matrix4x4.TRS(mirroredLocalPos, mirroredLocalRot, Vector3.one);
@@ -311,7 +311,7 @@ namespace YUCP.Components.Editor
 						default: mGhost = GetPreviewMatrixParent(); break;
 					}
 
-					// Draw object meshes at mGhost
+
 					foreach (var mr in meshRenderers)
 					{
 						var mf = mr.GetComponent<MeshFilter>();
@@ -336,11 +336,11 @@ namespace YUCP.Components.Editor
 					}
 				}
 
-				// Draw ghosts at each custom target honoring keepTransforms and constraintMode
+
 				var customs = ResolveCustomTargets(animator, data);
 				if (customs.Count > 0)
 				{
-					// Build a lookup of keepTransforms per resolved transform (by index order)
+
 					int idx = 0;
 					foreach (var ct in data.customTargets)
 					{
@@ -349,7 +349,7 @@ namespace YUCP.Components.Editor
 						Matrix4x4 mGhost;
 						if (ct.keepTransforms)
 						{
-							ComputeLocalOffset(objRoot, t, out var lp, out var lr);
+							MirroredArmatureLinkProcessor.ComputeLocalOffset(objRoot, t, out var lp, out var lr);
 							if (data.constraintMode == MirroredArmatureLinkData.ConstraintMode.PositionOnly)
 							{
 								var pos = t.TransformPoint(lp);
@@ -368,7 +368,7 @@ namespace YUCP.Components.Editor
 						}
 						else
 						{
-							// No offset: snap to target per mode
+
 							if (data.constraintMode == MirroredArmatureLinkData.ConstraintMode.PositionOnly)
 							{
 								mGhost = Matrix4x4.TRS(t.position, objRoot.rotation, Vector3.one);
@@ -383,7 +383,7 @@ namespace YUCP.Components.Editor
 							}
 						}
 
-						// Draw object meshes at mGhost
+
 						foreach (var mr in meshRenderers)
 						{
 							var mf = mr.GetComponent<MeshFilter>();
@@ -467,35 +467,9 @@ namespace YUCP.Components.Editor
 			previewMat.renderQueue = 3000;
 		}
 
-		// Utilities duplicated locally for preview parity
-		private static void ComputeLocalOffset(Transform obj, Transform source, out Vector3 localPos, out Quaternion localRot)
-		{
-			if (obj == null || source == null)
-			{
-				localPos = Vector3.zero;
-				localRot = Quaternion.identity;
-				return;
-			}
-			var m = source.worldToLocalMatrix * obj.localToWorldMatrix;
-			localPos = m.MultiplyPoint3x4(Vector3.zero);
-			var forward = new Vector3(m.m02, m.m12, m.m22);
-			var upwards = new Vector3(m.m01, m.m11, m.m21);
-			if (forward.sqrMagnitude < 1e-6f || upwards.sqrMagnitude < 1e-6f)
-			{
-				localRot = Quaternion.identity;
-			}
-			else
-			{
-				localRot = Quaternion.LookRotation(forward, upwards);
-			}
-		}
-
-		// (unused)
-		private static Matrix4x4 BuildRelativeNoScale(Transform root, Transform child) { return Matrix4x4.identity; }
-
 		private static Matrix4x4 CorrectScale(Matrix4x4 m, Vector3 desiredScale)
 		{
-			// Extract rotation by normalizing basis vectors
+
 			var x = new Vector3(m.m00, m.m10, m.m20);
 			var y = new Vector3(m.m01, m.m11, m.m21);
 			var z = new Vector3(m.m02, m.m12, m.m22);
@@ -511,7 +485,7 @@ namespace YUCP.Components.Editor
 
 		private static Quaternion MirrorLocalRotationX(Quaternion q)
 		{
-			// Implement R' = S R S where S = diag(-1,1,1) in local space
+
 			var R = Matrix4x4.Rotate(q);
 			var S = Matrix4x4.Scale(new Vector3(-1f, 1f, 1f));
 			var Rp = S * R * S;
@@ -522,7 +496,7 @@ namespace YUCP.Components.Editor
 		{
 			serializedObject.Update();
 			container.Clear();
-			
+
 			if (customTargetsProp.arraySize == 0)
 			{
 				var emptyLabel = new Label("No custom targets. Click 'Add Custom Target' to add one.");
@@ -533,59 +507,59 @@ namespace YUCP.Components.Editor
 				container.Add(emptyLabel);
 				return;
 			}
-			
+
 			for (int i = 0; i < customTargetsProp.arraySize; i++)
 			{
 				var elementProp = customTargetsProp.GetArrayElementAtIndex(i);
 				var displayNameProp = elementProp.FindPropertyRelative("displayName");
 				var displayName = string.IsNullOrEmpty(displayNameProp.stringValue) ? "Custom" : displayNameProp.stringValue;
 				var targetFoldout = YUCPUIToolkitHelper.CreateFoldout($"Target {i + 1}: {displayName}", true);
-				
+
 				var targetContent = new VisualElement();
 				targetContent.style.paddingLeft = 10;
 				targetContent.style.paddingTop = 5;
 				targetContent.style.paddingBottom = 5;
 				targetContent.Bind(serializedObject);
-				
+
 				var targetTypeProp = elementProp.FindPropertyRelative("targetType");
 				var displayNameField = YUCPUIToolkitHelper.CreateField(displayNameProp, "Display Name");
 				var targetTypeField = YUCPUIToolkitHelper.CreateField(targetTypeProp, "Target Type");
 				var globalBoolParamField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("globalBoolParam"), "Global Bool Param");
-				
+
 				targetContent.Add(displayNameField);
 				targetContent.Add(globalBoolParamField);
 				targetContent.Add(targetTypeField);
-				
+
 				var humanoidBoneField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("humanoidBone"), "Humanoid Bone");
 				var transformField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("transform"), "Transform");
 				var armaturePathField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("armaturePath"), "Armature Path");
-				
+
 				var humanoidBoneContainer = new VisualElement();
 				humanoidBoneContainer.Add(humanoidBoneField);
 				humanoidBoneContainer.style.paddingLeft = 15;
-				
+
 				var transformContainer = new VisualElement();
 				transformContainer.Add(transformField);
 				transformContainer.style.paddingLeft = 15;
-				
+
 				var armaturePathContainer = new VisualElement();
 				armaturePathContainer.Add(armaturePathField);
 				armaturePathContainer.style.paddingLeft = 15;
-				
+
 				targetContent.Add(humanoidBoneContainer);
 				targetContent.Add(transformContainer);
 				targetContent.Add(armaturePathContainer);
-				
+
 				var offsetPathField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("offsetPath"), "Offset Path");
 				var defaultOnField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("defaultOn"), "Default On");
 				var keepTransformsField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("keepTransforms"), "Keep Transforms");
 				var exclusiveOffStateField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("exclusiveOffState"), "Exclusive Off State");
-				
+
 				targetContent.Add(offsetPathField);
 				targetContent.Add(defaultOnField);
 				targetContent.Add(keepTransformsField);
 				targetContent.Add(exclusiveOffStateField);
-				
+
 				var animContainer = new VisualElement();
 				animContainer.style.flexDirection = FlexDirection.Row;
 				animContainer.style.marginBottom = 5;
@@ -594,7 +568,7 @@ namespace YUCP.Components.Editor
 				animField.style.marginRight = 5;
 				animContainer.Add(animField);
 				targetContent.Add(animContainer);
-				
+
 				var index = i;
 				var removeButtonContainer = new VisualElement();
 				removeButtonContainer.style.flexDirection = FlexDirection.Row;
@@ -603,7 +577,7 @@ namespace YUCP.Components.Editor
 				removeButtonContainer.style.paddingTop = 8;
 				removeButtonContainer.style.borderTopWidth = 1;
 				removeButtonContainer.style.borderTopColor = new StyleColor(new Color(0.3f, 0.3f, 0.3f, 0.5f));
-				
+
 				var removeButton = YUCPUIToolkitHelper.CreateButton("Remove", () =>
 				{
 					customTargetsProp.DeleteArrayElementAtIndex(index);
@@ -615,18 +589,18 @@ namespace YUCP.Components.Editor
 				removeButton.style.paddingRight = 12;
 				removeButton.style.paddingTop = 4;
 				removeButton.style.paddingBottom = 4;
-				
+
 				removeButtonContainer.Add(removeButton);
 				targetContent.Add(removeButtonContainer);
-				
+
 				targetFoldout.Add(targetContent);
-				
+
 				var targetIndex = index;
 				System.Action updateVisibility = () =>
 				{
 					serializedObject.Update();
 					if (targetIndex >= customTargetsProp.arraySize) return;
-					
+
 					var currentElement = customTargetsProp.GetArrayElementAtIndex(targetIndex);
 					var currentTargetType = (MirroredArmatureLinkData.TargetType)currentElement.FindPropertyRelative("targetType").enumValueIndex;
 					var currentDisplayName = currentElement.FindPropertyRelative("displayName").stringValue;
@@ -634,27 +608,27 @@ namespace YUCP.Components.Editor
 					{
 						currentDisplayName = "Custom";
 					}
-					
+
 					humanoidBoneContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.HumanoidBone ? DisplayStyle.Flex : DisplayStyle.None;
 					transformContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.Transform ? DisplayStyle.Flex : DisplayStyle.None;
 					armaturePathContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.ArmaturePath ? DisplayStyle.Flex : DisplayStyle.None;
-					
+
 					targetFoldout.text = $"Target {targetIndex + 1}: {currentDisplayName}";
 				};
-				
+
 				targetFoldout.schedule.Execute(() => updateVisibility()).Every(100);
-				
+
 				updateVisibility();
-				
+
 				container.Add(targetFoldout);
-				
+
 				if (i < customTargetsProp.arraySize - 1)
 				{
 					container.Add(YUCPUIToolkitHelper.CreateDivider());
 				}
 			}
 		}
-		
+
 
 	}
 }

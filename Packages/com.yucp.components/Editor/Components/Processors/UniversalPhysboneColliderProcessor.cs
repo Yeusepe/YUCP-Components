@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEditor;
 using VRC.Dynamics;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Dynamics.PhysBone.Components;
@@ -99,7 +100,7 @@ namespace YUCP.Components.Editor
 			var set = new HashSet<VRCPhysBone>();
 			if (excludeList == null || excludeList.Count == 0 || physBones == null || avatarRoot == null) return set;
 
-			// Collect paths to exclude (path-based matching survives avatar cloning)
+
 			var excludedPaths = new HashSet<string>();
 
 			foreach (var obj in excludeList)
@@ -108,7 +109,7 @@ namespace YUCP.Components.Editor
 
 				if (obj is VRCPhysBone pb)
 				{
-					// Direct PhysBone: use path of its effective root
+
 					Transform effectiveRoot = pb.rootTransform != null ? pb.rootTransform : pb.transform;
 					string path = GetPathFromRoot(effectiveRoot, avatarRoot);
 					if (!string.IsNullOrEmpty(path))
@@ -134,15 +135,15 @@ namespace YUCP.Components.Editor
 					Debug.Log($"[YUCP Universal Physbone Collider] BuildExclusion: '{t.name}' path null (not under avatar root?)");
 			}
 
-			// Match PhysBones by path. Check both effectiveRoot (chain start) and physBone.transform (component location).
-			// Use case-insensitive matching and leaf segment matching (handles VRCFury/NDMF hierarchy restructuring).
+
+
 			foreach (var physBone in physBones)
 			{
 				if (physBone == null) continue;
 				Transform effectiveRoot = physBone.rootTransform != null ? physBone.rootTransform : physBone.transform;
 				string rootPath = GetPathFromRoot(effectiveRoot, avatarRoot);
 				string componentPath = GetPathFromRoot(physBone.transform, avatarRoot);
-				// Check both root path and component path (PhysBone may be on excluded object with root elsewhere)
+
 				string[] pathsToCheck = new[] { rootPath, componentPath };
 				bool matched = false;
 
@@ -154,7 +155,7 @@ namespace YUCP.Components.Editor
 					foreach (var excludedPath in excludedPaths)
 					{
 						string exclLower = excludedPath.ToLowerInvariant();
-						// Exact or prefix match (case-insensitive)
+
 						if (pathLower == exclLower ||
 						    pathLower.StartsWith(exclLower + "/") ||
 						    exclLower.StartsWith(pathLower + "/"))
@@ -162,7 +163,7 @@ namespace YUCP.Components.Editor
 							matched = true;
 							break;
 						}
-						// Excluded leaf segment in path (e.g. "Belt accessories" matches "..belt accessories/.." after hierarchy merge)
+
 						string excludedLeaf = exclLower.Substring(exclLower.LastIndexOf('/') + 1);
 						if (!string.IsNullOrEmpty(excludedLeaf) &&
 						    (pathLower.Contains("/" + excludedLeaf + "/") || pathLower.EndsWith("/" + excludedLeaf)))
@@ -183,29 +184,17 @@ namespace YUCP.Components.Editor
 		private static string GetPathFromRoot(Transform t, Transform root)
 		{
 			if (t == null || root == null) return null;
-			// t may be from original avatar; root may be clone. Use t's hierarchy if t not under root.
-			Transform pathRoot = (t.IsChildOf(root) || t == root) ? root : GetAvatarRoot(t);
+
+			Transform pathRoot = t.IsChildOf(root) ? root : GetAvatarRoot(t);
 			if (pathRoot == null) return null;
-			var parts = new List<string>();
-			var cur = t;
-			while (cur != null && cur != pathRoot)
-			{
-				parts.Insert(0, cur.name);
-				cur = cur.parent;
-			}
-			return parts.Count > 0 ? string.Join("/", parts) : null;
+			string path = AnimationUtility.CalculateTransformPath(t, pathRoot);
+			return string.IsNullOrEmpty(path) ? null : path;
 		}
 
 		private static Transform GetAvatarRoot(Transform t)
 		{
-			var cur = t;
-			while (cur != null)
-			{
-				if (cur.GetComponent<VRCAvatarDescriptor>() != null)
-					return cur;
-				cur = cur.parent;
-			}
-			return null;
+			var descriptor = t.GetComponentInParent<VRCAvatarDescriptor>(true);
+			return descriptor == null ? null : descriptor.transform;
 		}
 	}
 }

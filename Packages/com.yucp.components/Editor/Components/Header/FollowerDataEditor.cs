@@ -136,7 +136,7 @@ namespace YUCP.Components.Editor
             previousIncludeCredits = includeCreditsProp.boolValue;
             
             UpdateCreditBanner(creditBanner);
-            UpdateBuildSummary(buildSummary);
+            YUCPUIToolkitHelper.UpdateBuildSummary(buildSummary, data.GetBuildSummary(), data.GetLastBuildTimeUtc());
             UpdateDescriptorWarnings(descriptorWarnings);
             var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
             UpdateOverviewCard(overviewCard, data, descriptor);
@@ -156,7 +156,7 @@ namespace YUCP.Components.Editor
                 string currentBuildSummary = data.GetBuildSummary();
                 if (currentBuildSummary != previousBuildSummary)
                 {
-                    UpdateBuildSummary(buildSummary);
+                    YUCPUIToolkitHelper.UpdateBuildSummary(buildSummary, data.GetBuildSummary(), data.GetLastBuildTimeUtc());
                     previousBuildSummary = currentBuildSummary;
                 }
                 
@@ -187,31 +187,12 @@ namespace YUCP.Components.Editor
             var overviewCard = YUCPUIToolkitHelper.CreateCard("Follower Overview", null);
             var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
             
-            AddInfoRow(overviewContent, "Followed Object", targetPath);
-            AddInfoRow(overviewContent, "Group", groupingLabel);
+            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Followed Object", targetPath);
+            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Group", groupingLabel);
             
             container.Add(overviewCard);
         }
         
-        private void AddInfoRow(VisualElement parent, string label, string value)
-        {
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginBottom = 2;
-            
-            var labelElement = new Label(label);
-            labelElement.style.fontSize = 10;
-            labelElement.style.unityFontStyleAndWeight = FontStyle.Bold;
-            labelElement.style.width = 100;
-            row.Add(labelElement);
-            
-            var valueElement = new Label(value);
-            valueElement.style.fontSize = 11;
-            valueElement.style.whiteSpace = WhiteSpace.Normal;
-            row.Add(valueElement);
-            
-            parent.Add(row);
-        }
         
         private void UpdateCreditBanner(VisualElement container)
         {
@@ -222,21 +203,6 @@ namespace YUCP.Components.Editor
             }
         }
         
-        private void UpdateBuildSummary(VisualElement container)
-        {
-            container.Clear();
-            var summary = data.GetBuildSummary();
-            if (!string.IsNullOrEmpty(summary))
-            {
-                var timestamp = data.GetLastBuildTimeUtc();
-                string label = summary;
-                if (timestamp.HasValue)
-                {
-                    label += $" • {timestamp.Value.ToLocalTime():g}";
-                }
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Last build: {label}", YUCPUIToolkitHelper.MessageType.None));
-            }
-        }
         
         private void UpdateDescriptorWarnings(VisualElement container)
         {

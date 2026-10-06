@@ -14,41 +14,73 @@ namespace YUCP.UI.DesignSystem.Utilities
     /// </summary>
     public static class YUCPUIToolkitHelper
     {
+        public static void AddInfoRow(VisualElement parent, string label, string value)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom = 2;
+
+            var labelElement = new Label(label);
+            labelElement.style.fontSize = 10;
+            labelElement.style.unityFontStyleAndWeight = FontStyle.Bold;
+            labelElement.style.width = 100;
+            row.Add(labelElement);
+
+            var valueElement = new Label(value);
+            valueElement.style.fontSize = 11;
+            valueElement.style.whiteSpace = WhiteSpace.Normal;
+            row.Add(valueElement);
+
+            parent.Add(row);
+        }
+        public static void UpdateBuildSummary(VisualElement container, string summary, DateTime? timestamp)
+        {
+            container.Clear();
+            if (!string.IsNullOrEmpty(summary))
+            {
+                string label = summary;
+                if (timestamp.HasValue)
+                {
+                    label += $" • {timestamp.Value.ToLocalTime():g}";
+                }
+                container.Add(CreateHelpBox($"Last build: {label}", MessageType.None));
+            }
+        }
         /// <summary>
         /// Loads and applies all design system stylesheets to the root element.
         /// </summary>
         public static void LoadDesignSystemStyles(VisualElement root)
         {
             root.AddToClassList("yucp-root");
-            
+
             var designSystemStyle = AssetDatabase.LoadAssetAtPath<StyleSheet>(
                 "Packages/com.yucp.components/Editor/UI/DesignSystem/Styles/YUCPDesignSystem.uss");
             if (designSystemStyle != null)
             {
                 root.styleSheets.Add(designSystemStyle);
             }
-            
+
             var cardStyle = AssetDatabase.LoadAssetAtPath<StyleSheet>(
                 "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPCard.uss");
             if (cardStyle != null)
             {
                 root.styleSheets.Add(cardStyle);
             }
-            
+
             var alertStyle = AssetDatabase.LoadAssetAtPath<StyleSheet>(
                 "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPAlert.uss");
             if (alertStyle != null)
             {
                 root.styleSheets.Add(alertStyle);
             }
-            
+
             var buttonStyle = AssetDatabase.LoadAssetAtPath<StyleSheet>(
                 "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPButton.uss");
             if (buttonStyle != null)
             {
                 root.styleSheets.Add(buttonStyle);
             }
-            
+
             var foldoutStyle = AssetDatabase.LoadAssetAtPath<StyleSheet>(
                 "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Components/YUCPFoldout.uss");
             if (foldoutStyle != null)
@@ -276,8 +308,8 @@ namespace YUCP.UI.DesignSystem.Utilities
                     header.Add(badgeLabel);
                 }
 
-                // Note: Foldout's toggle is not easily customizable, so icon/badge support is limited
-                // This would require a custom foldout implementation
+
+
             }
 
             return foldout;
@@ -305,18 +337,8 @@ namespace YUCP.UI.DesignSystem.Utilities
             divider.style.marginBottom = 10;
             return divider;
         }
-        
-        /// <summary>
-        /// Creates a key detection field for keyboard input.
-        /// </summary>
-        public static YUCPKeyDetectionField CreateKeyDetectionField(KeyCode currentKey, Action<KeyCode> onKeyAssigned)
-        {
-            var field = new YUCPKeyDetectionField();
-            field.Key = currentKey;
-            field.SetOnKeyAssigned(onKeyAssigned);
-            return field;
-        }
-        
+
+
         /// <summary>
         /// Creates a tracking mode selector for blendshape tracking modes.
         /// </summary>
@@ -327,7 +349,7 @@ namespace YUCP.UI.DesignSystem.Utilities
             selector.SetOnModeChanged(onModeChanged);
             return selector;
         }
-        
+
         /// <summary>
         /// Creates a solver mode card displaying solver information.
         /// </summary>
@@ -337,7 +359,7 @@ namespace YUCP.UI.DesignSystem.Utilities
             card.SetMode(mode);
             return card;
         }
-        
+
         /// <summary>
         /// Creates a preset selector for presets.
         /// </summary>
@@ -347,7 +369,7 @@ namespace YUCP.UI.DesignSystem.Utilities
             selector.SetOnPresetSelected(onPresetSelected);
             return selector;
         }
-        
+
         /// <summary>
         /// Creates a blendshape list editor for managing blendshape names.
         /// </summary>
@@ -359,7 +381,7 @@ namespace YUCP.UI.DesignSystem.Utilities
             editor.SetOnListChanged(onListChanged);
             return editor;
         }
-        
+
         /// <summary>
         /// Creates an input mapping editor for editing input mappings.
         /// </summary>
@@ -371,7 +393,7 @@ namespace YUCP.UI.DesignSystem.Utilities
             editor.SetOnRemove(onRemove);
             return editor;
         }
-        
+
         /// <summary>
         /// Creates preview tools component for preview status and controls.
         /// </summary>

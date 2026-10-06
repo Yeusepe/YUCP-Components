@@ -59,15 +59,15 @@ namespace YUCP.Components.Editor
 
 		private void ProcessOne(MirroredArmatureLinkData data, Animator animator)
 		{
-			// Resolve all targets (Left/Right/custom)
+
 			var targets = new List<(string name, Transform t, bool defaultOn, string globalParam, bool keepTransforms, bool isCustom, AnimationClip animation)>();
 			var usedParams = new HashSet<string>();
 			var usedMenuNames = new HashSet<string>();
 
-			// Pre-resolve built-in side transforms for base-side offset mirroring
+
 			Transform leftResolved = null, rightResolved = null;
 
-			// Left/Right mapping
+
 				if (MirroredArmatureLinkData.TryMapBodyPartToSides(data.part, out var leftBone, out var rightBone))
 			{
 					if (data.includeLeft)
@@ -100,7 +100,7 @@ namespace YUCP.Components.Editor
 				}
 			}
 
-			// Custom targets
+
 			foreach (var ct in data.customTargets)
 			{
 				Transform resolved = null;
@@ -133,12 +133,12 @@ namespace YUCP.Components.Editor
 				return;
 			}
 
-			// Use ParentConstraint for consistent offsets across modes
+
 			var parC = data.GetComponent<ParentConstraint>();
 			if (parC == null) parC = data.gameObject.AddComponent<ParentConstraint>();
 			parC.enabled = true;
 			ClearSources(parC);
-			// Choose base side (closest) for symmetric offsets across Left/Right
+
 			Transform baseSide = null;
 			if (leftResolved != null && rightResolved != null)
 			{
@@ -161,13 +161,13 @@ namespace YUCP.Components.Editor
 				var index = parC.AddSource(src);
 				if (targets[s].keepTransforms)
 				{
-					// Built-ins: use symmetric base offsets with X-only mirroring for opposite side
+
 					if (!targets[s].isCustom && baseSide != null)
 					{
 						Vector3 posOff = baseLocalPos;
 						if (targets[s].t != baseSide)
 						{
-							posOff.x = -posOff.x; // mirror only X
+							posOff.x = -posOff.x;
 						}
 						parC.SetTranslationOffset(index, posOff);
 						var rotOff = (targets[s].t == baseSide) ? baseLocalRot : MirrorLocalRotationX(baseLocalRot);
@@ -182,7 +182,7 @@ namespace YUCP.Components.Editor
 				}
 				else
 				{
-					// Snap behavior: zero offsets
+
 					parC.SetTranslationOffset(index, Vector3.zero);
 					parC.SetRotationOffset(index, Vector3.zero);
 				}
@@ -190,7 +190,7 @@ namespace YUCP.Components.Editor
 			parC.locked = true;
 			parC.constraintActive = true;
 
-			// Generate one clip per source to select exactly that source (weight=1) and zero others
+
 			var clips = new List<(string name, AnimationClip clip)>();
 			var root = animator.transform;
 			var path = AnimationUtility.CalculateTransformPath(data.transform, root);
@@ -207,7 +207,7 @@ namespace YUCP.Components.Editor
 				clips.Add((targets[select].name, clip));
 			}
 
-			// Create VRCFury toggles
+
 			var sharedTag = string.IsNullOrEmpty(data.exclusiveTag)
 				? $"YUCP:MirArm:{AnimationUtility.CalculateTransformPath(data.transform, animator.transform)}"
 				: data.exclusiveTag;
@@ -223,7 +223,7 @@ namespace YUCP.Components.Editor
 				if (data.saved) toggle.SetSaved();
 				if (target.defaultOn) toggle.SetDefaultOn();
 				toggle.AddExclusiveTag(sharedTag);
-				// Exclusive Off State per option
+
 				if (!target.isCustom)
 				{
 					if (string.Equals(toggleName, "Left", StringComparison.OrdinalIgnoreCase) && data.leftExclusiveOffState)
@@ -237,7 +237,7 @@ namespace YUCP.Components.Editor
 				}
 				else
 				{
-					// Find matching custom to check flag
+
 					foreach (var ct in data.customTargets)
 					{
 						var name = string.IsNullOrEmpty(ct.displayName) ? "Custom" : ct.displayName;
@@ -251,7 +251,7 @@ namespace YUCP.Components.Editor
 				toggle.SetGlobalParameter(target.globalParam);
 				var actions = toggle.GetActions();
 				actions.AddAnimationClip(clip);
-				// Add custom animation clip if provided
+
 				if (target.animation != null)
 				{
 					actions.AddAnimationClip(target.animation);
@@ -264,7 +264,7 @@ namespace YUCP.Components.Editor
 			}
 		}
 
-		private static void ComputeLocalOffset(Transform obj, Transform source, out Vector3 localPos, out Quaternion localRot)
+		internal static void ComputeLocalOffset(Transform obj, Transform source, out Vector3 localPos, out Quaternion localRot)
 		{
 			if (obj == null || source == null)
 			{
@@ -274,7 +274,7 @@ namespace YUCP.Components.Editor
 			}
 			var m = source.worldToLocalMatrix * obj.localToWorldMatrix;
 			localPos = m.MultiplyPoint3x4(Vector3.zero);
-			// Extract rotation from matrix
+
 			var forward = new Vector3(m.m02, m.m12, m.m22);
 			var upwards = new Vector3(m.m01, m.m11, m.m21);
 			if (forward.sqrMagnitude < 1e-6f || upwards.sqrMagnitude < 1e-6f)
