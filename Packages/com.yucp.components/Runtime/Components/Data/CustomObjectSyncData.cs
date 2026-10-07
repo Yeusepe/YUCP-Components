@@ -154,15 +154,8 @@ namespace YUCP.Components
 
         public DateTime? GetLastBuildTimeUtc()
         {
-            if (lastBuildTicks <= 0) return null;
-            try
-            {
-                return new DateTime(lastBuildTicks, DateTimeKind.Utc);
-            }
-            catch
-            {
-                return null;
-            }
+            if (lastBuildTicks <= 0 || lastBuildTicks > DateTime.MaxValue.Ticks) return null;
+            return new DateTime(lastBuildTicks, DateTimeKind.Utc);
         }
 
         public Settings ToSettings()
