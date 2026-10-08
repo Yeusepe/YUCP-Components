@@ -23,7 +23,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
             public string keyId;
             public string publicKey;
             public string displayName;
-            public string fetchTime; // ISO 8601 format
+            public string fetchTime;
         }
 
         [Serializable]
@@ -60,29 +60,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
         }
 
         /// <summary>
-        /// Add a URL to the list
-        /// </summary>
-        public static void AddUrl(string url)
-        {
-            var urls = GetUrls();
-            if (!urls.Contains(url))
-            {
-                urls.Add(url);
-                SetUrls(urls);
-            }
-        }
-
-        /// <summary>
-        /// Remove a URL from the list
-        /// </summary>
-        public static void RemoveUrl(string url)
-        {
-            var urls = GetUrls();
-            urls.Remove(url);
-            SetUrls(urls);
-        }
-
-        /// <summary>
         /// Get cached keys from all URLs
         /// </summary>
         public static Dictionary<string, CachedKey> GetCachedKeys()
@@ -92,7 +69,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
             {
                 var data = JsonUtility.FromJson<CachedKeysData>(cachedKeysJson);
                 var result = new Dictionary<string, CachedKey>();
-                
+
                 if (data?.keys != null)
                 {
                     foreach (var key in data.keys)
@@ -103,7 +80,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
                         }
                     }
                 }
-                
+
                 return result;
             }
             catch
@@ -118,7 +95,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
         public static void CacheKeys(string url, List<Core.AuthorityKeyFetcher.AuthorityKey> keys, DateTime fetchTime)
         {
             var cachedKeys = GetCachedKeys();
-            
+
             foreach (var key in keys)
             {
                 var cachedKey = new CachedKey
@@ -126,44 +103,25 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
                     keyId = key.keyId,
                     publicKey = key.publicKey,
                     displayName = key.displayName ?? "",
-                    fetchTime = fetchTime.ToString("O") // ISO 8601
+                    fetchTime = fetchTime.ToString("O")
                 };
-                
+
                 cachedKeys[key.keyId] = cachedKey;
             }
 
-            // Save back to EditorPrefs
+
             var data = new CachedKeysData
             {
                 keys = cachedKeys.Values.ToList()
             };
-            
+
             string cachedKeysJson = JsonUtility.ToJson(data);
             EditorPrefs.SetString(PrefsKeyCachedKeys, cachedKeysJson);
-            
-            // Update fetch time for this URL
+
+
             var fetchTimes = GetFetchTimes();
             fetchTimes[url] = fetchTime.ToString("O");
             SaveFetchTimes(fetchTimes);
-        }
-
-        /// <summary>
-        /// Clear cached keys for a specific URL (or all if url is null)
-        /// </summary>
-        public static void ClearCachedKeys(string url = null)
-        {
-            if (url == null)
-            {
-                EditorPrefs.DeleteKey(PrefsKeyCachedKeys);
-                EditorPrefs.DeleteKey(PrefsKeyFetchTimes);
-            }
-            else
-            {
-                // For simplicity, we clear all cached keys when any URL is cleared
-                // In a more sophisticated implementation, we could track which keys came from which URL
-                EditorPrefs.DeleteKey(PrefsKeyCachedKeys);
-                EditorPrefs.DeleteKey(PrefsKeyFetchTimes);
-            }
         }
 
         /// <summary>
@@ -176,7 +134,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
             {
                 var wrapper = JsonUtility.FromJson<FetchTimesWrapper>(fetchTimesJson);
                 var result = new Dictionary<string, string>();
-                
+
                 if (wrapper?.entries != null)
                 {
                     foreach (var entry in wrapper.entries)
@@ -187,7 +145,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
                         }
                     }
                 }
-                
+
                 return result;
             }
             catch
@@ -205,7 +163,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
             {
                 entries = new List<FetchTimeEntry>()
             };
-            
+
             if (fetchTimes != null)
             {
                 foreach (var kvp in fetchTimes)
@@ -213,7 +171,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
                     wrapper.entries.Add(new FetchTimeEntry { url = kvp.Key, time = kvp.Value });
                 }
             }
-            
+
             string fetchTimesJson = JsonUtility.ToJson(wrapper);
             EditorPrefs.SetString(PrefsKeyFetchTimes, fetchTimesJson);
         }
@@ -234,7 +192,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Settings
             return null;
         }
 
-        // Wrapper classes for JSON serialization
+
         [Serializable]
         private class UrlListWrapper
         {

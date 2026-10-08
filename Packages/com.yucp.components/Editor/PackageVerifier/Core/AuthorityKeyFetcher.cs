@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
@@ -44,43 +43,6 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
         }
 
         /// <summary>
-        /// Fetch authority keys from a URL
-        /// </summary>
-        public static IEnumerator FetchKeysFromUrlCoroutine(string url, System.Action<FetchResult> callback)
-        {
-            var result = new FetchResult();
-
-            using (UnityWebRequest request = UnityWebRequest.Get(url))
-            {
-                yield return request.SendWebRequest();
-
-                if (request.result != UnityWebRequest.Result.Success)
-                {
-                    result.success = false;
-                    result.error = $"Network error: {request.error}";
-                    callback(result);
-                    yield break;
-                }
-
-                try
-                {
-                    string jsonText = request.downloadHandler.text;
-                    result = ParseAuthorityResponse(jsonText);
-                    result.fetchTime = DateTime.UtcNow;
-                }
-                catch (Exception ex)
-                {
-                    result.success = false;
-                    result.error = $"Parse error: {ex.Message}";
-                    callback(result);
-                    yield break;
-                }
-            }
-
-            callback(result);
-        }
-
-        /// <summary>
         /// Parse JSON authority response and validate keys
         /// </summary>
         public static FetchResult ParseAuthorityResponse(string jsonText)
@@ -112,7 +74,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                         continue;
                     }
 
-                    // Validate public key format (should be base64-encoded 32-byte Ed25519 key)
+
                     try
                     {
                         byte[] keyBytes = Convert.FromBase64String(authority.publicKey);
@@ -155,7 +117,7 @@ namespace YUCP.Components.Editor.PackageVerifier.Core
                 {
                     request.SendWebRequest();
 
-                    // Wait for completion
+
                     while (!request.isDone)
                     {
                         System.Threading.Thread.Sleep(10);
