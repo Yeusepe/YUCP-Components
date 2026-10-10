@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -22,7 +21,7 @@ namespace YUCP.Components.Editor.MeshUtils
         public const string CcdIkTypeName = "RootMotion.FinalIK.CCDIK";
         public const string HingeTypeName = "RootMotion.FinalIK.RotationLimitHinge";
 
-        private static readonly Dictionary<string, Type> TypeCache = new Dictionary<string, Type>();
+        private static readonly Dictionary<string, Type> CachedTypes = new Dictionary<string, Type>();
 
         public static bool IsAvailable => FindType(LimbIkTypeName) != null && FindType(ExecutionOrderTypeName) != null;
 
@@ -31,7 +30,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
         public static Vector2 CalculateHingeLimits(float restAngle, Vector2 limits)
         {
-            // Keep Final IK's quaternion comparison dead band inside the anatomical range.
+
             var margin = Mathf.Min(0.2f, (limits.y - limits.x) * 0.25f);
             return new Vector2(restAngle - limits.y + margin, restAngle - limits.x - margin);
         }
@@ -59,16 +58,16 @@ namespace YUCP.Components.Editor.MeshUtils
 
             var component = host.AddComponent(FindType(CcdIkTypeName)) as MonoBehaviour;
             var so = new SerializedObject(component);
-            // These helpers are not animated. Continue from the previous solution:
-            // resetting to bind each frame makes CCD jump between different folds.
+
+
             Set(so, "fixTransforms", p => p.boolValue = false);
             var chain = so.FindProperty("solver.bones");
             chain.arraySize = bones.Length;
             for (int i = 0; i < bones.Length; i++)
             {
                 chain.GetArrayElementAtIndex(i).FindPropertyRelative("transform").objectReferenceValue = bones[i];
-                // Distal-first CCD otherwise collapses the hock into a local minimum.
-                // Final IK's standard decreasing weights let the knee take its share of the fold.
+
+
                 chain.GetArrayElementAtIndex(i).FindPropertyRelative("weight").floatValue = 1f - i / 3f;
             }
             Set(so, "solver.target", p => p.objectReferenceValue = target);
@@ -82,20 +81,19 @@ namespace YUCP.Components.Editor.MeshUtils
 
         public static Type FindType(string fullName)
         {
-            if (TypeCache.TryGetValue(fullName, out var cached)) return cached;
+            if (CachedTypes.TryGetValue(fullName, out var cached)) return cached;
 
             Type found = null;
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var type in UnityEditor.TypeCache.GetTypesDerivedFrom<MonoBehaviour>())
             {
-                Type[] types;
-                try { types = assembly.GetTypes(); }
-                catch { continue; }
+                if (type.FullName != fullName)
+                    continue;
 
-                found = types.FirstOrDefault(t => t.FullName == fullName);
-                if (found != null) break;
+                found = type;
+                break;
             }
 
-            TypeCache[fullName] = found;
+            CachedTypes[fullName] = found;
             return found;
         }
 
@@ -127,13 +125,26 @@ namespace YUCP.Components.Editor.MeshUtils
             Set(so, "solver.bendNormal", p => p.vector3Value = bendNormal);
             Set(so, "solver.IKPositionWeight", p => p.floatValue = 1f);
             Set(so, "solver.IKRotationWeight", p => p.floatValue = 1f);
-            // bendModifier 1 == Target: take the bend plane from the goal's rotation.
+
             Set(so, "solver.bendModifier", p => p.enumValueIndex = 1);
             Set(so, "solver.bendModifierWeight", p => p.floatValue = 1f);
             Set(so, "solver.maintainRotationWeight", p => p.floatValue = 0f);
             so.ApplyModifiedPropertiesWithoutUndo();
 
             return component;
+        }
+
+        /// <summary>
+        /// Bends a LimbIK towards <paramref name="goal"/>. Unlike the Target modifier this has no
+        /// state from the pose the solver initiates in, which for a nearly straight finger is noise.
+        /// </summary>
+        public static void UseBendGoal(MonoBehaviour limb, Transform goal)
+        {
+            var so = new SerializedObject(limb);
+
+            Set(so, "solver.bendModifier", p => p.enumValueIndex = 4);
+            Set(so, "solver.bendGoal", p => p.objectReferenceValue = goal);
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         /// <summary>

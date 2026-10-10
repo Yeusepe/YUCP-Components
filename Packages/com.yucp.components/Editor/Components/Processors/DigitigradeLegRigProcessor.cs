@@ -48,9 +48,9 @@ namespace YUCP.Components.Editor
         {
             data.ResolveBones();
 
-            // The split stage no longer touches the humanoid at all (the metatarsus is a sibling
-            // bone), so the Avatar on the animator is still the pristine import and this is the
-            // only rebuild in the whole pipeline.
+
+
+
             var rebuilder = HumanoidRebuilder.Capture(animator);
             if (rebuilder == null)
             {
@@ -65,8 +65,8 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            // Move the humanoid onto the hidden plantigrade chain so VRChat's IK keeps seeing an
-            // ordinary human leg, and drop the toes so the visible toe bone is free for the rig.
+
+
             var unmap = new[] { HumanBodyBones.LeftToes, HumanBodyBones.RightToes };
             if (!rebuilder.Rebuild(avatarRoot, rig.addedBones, new List<Transform>(), rig.humanRemap, unmap, null, out var rebuildError))
             {
@@ -78,7 +78,7 @@ namespace YUCP.Components.Editor
             var folder = EnsureGeneratedFolder();
             var controller = DigitigradeControllerBuilder.Build(avatarRoot, rig, data, folder);
 
-            // The menu toggle is dead unless the parameter is registered as an expression parameter.
+
             var parameters = ScriptableObject.CreateInstance<VRCExpressionParameters>();
             parameters.name = "YUCP_DigitigradeLegs_Params";
             var parameterDefaults = new List<(string name, float value)>
@@ -101,9 +101,9 @@ namespace YUCP.Components.Editor
             }).ToArray();
             AssetDatabase.CreateAsset(parameters, AssetDatabase.GenerateUniqueAssetPath(folder + "/YUCP_DigitigradeLegs_Params.asset"));
 
-            // The toggle goes through VRCFury's menu merge. This avatar has no root expressions
-            // menu asset of its own -- VRCFury composes it -- so editing descriptor.expressionsMenu
-            // directly would silently do nothing and the toggle would never appear.
+
+
+
             var menu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
             menu.name = "YUCP_DigitigradeLegs_Menu";
             menu.controls = new List<VRCExpressionsMenu.Control>
@@ -140,8 +140,8 @@ namespace YUCP.Components.Editor
             }
             AssetDatabase.CreateAsset(menu, AssetDatabase.GenerateUniqueAssetPath(folder + "/YUCP_DigitigradeLegs_Menu.asset"));
 
-            // One Full Controller carrying controller + params + menu together -- VRCFury validates
-            // each component in isolation, so splitting them across components fails its checks.
+
+
             VRCFuryHelper.AddFullControllerToVRCFury(descriptor, controller, parameters, menu, data.menuPath);
 
             var solvers = avatarRoot.GetComponentsInChildren<MonoBehaviour>(true)
@@ -151,8 +151,8 @@ namespace YUCP.Components.Editor
                           $"{solvers} IK solvers), humanoid remapped, FX layer generated";
             data.SetBuildSummary(summary);
 
-            // Unconditional: without this, a build that quietly did nothing looks exactly like a
-            // build that worked.
+
+
             Debug.Log("[YUCP Digitigrade Rig] " + summary, data);
 
             return true;
@@ -164,7 +164,7 @@ namespace YUCP.Components.Editor
             subParameters = new[] { new VRCExpressionsMenu.Control.Parameter { name = parameter } }
         };
 
-        private static string EnsureGeneratedFolder()
+        internal static string EnsureGeneratedFolder()
         {
             const string folder = "Assets/YUCP Generated";
             if (!AssetDatabase.IsValidFolder(folder))

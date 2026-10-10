@@ -41,7 +41,7 @@ namespace YUCP.Components.Editor.MeshUtils
         /// <summary>Everything the FX controller needs to address one leg.</summary>
         public sealed class Side
         {
-            public string suffix;               // ".L" / ".R"
+            public string suffix;
             public Transform thigh, shin, metatarsus, foot;
             public Transform plantiHip, plantiKnee, plantiAnkle;
             public Transform ankleUpNode, ankleDownNode, metatarsusRestNode;
@@ -104,7 +104,7 @@ namespace YUCP.Components.Editor.MeshUtils
                 BuildSide(result, side, hips, legNodes.transform, solverHost.transform, data, plantiSolvers, digiSolvers);
             }
 
-            // Legacy passes need ordered evaluation; constrained legs each solve the complete chain.
+
             var execHost = new GameObject("IK Execution Order");
             execHost.transform.SetParent(result.rigRoot.transform, false);
             FinalIkBridge.AddExecutionOrder(execHost, animator, plantiSolvers.Concat(digiSolvers).ToList());
@@ -125,7 +125,7 @@ namespace YUCP.Components.Editor.MeshUtils
         {
             var suffix = side.suffix;
 
-            // --- hidden plantigrade chain: hip -> knee -> ankle, straight through the same endpoints
+
             side.plantiHip = MakeBone("Planti_Hip" + suffix, hips, side.thigh.position, side.thigh.rotation);
             side.plantiKnee = MakeBone("Planti_Knee" + suffix, side.plantiHip, side.shin.position, side.shin.rotation);
             side.plantiAnkle = MakeBone("Planti_Ankle" + suffix, side.plantiKnee, side.foot.position, side.foot.rotation);
@@ -138,35 +138,35 @@ namespace YUCP.Components.Editor.MeshUtils
             result.humanRemap[suffix == ".L" ? HumanBodyBones.LeftLowerLeg : HumanBodyBones.RightLowerLeg] = side.plantiKnee;
             result.humanRemap[suffix == ".L" ? HumanBodyBones.LeftFoot : HumanBodyBones.RightFoot] = side.plantiAnkle;
 
-            // --- solver nodes: a mirror of both chains, living in hips space
+
             var plantiHipIk = MakeBone("Planti_Hip_IK" + suffix, legNodes, side.thigh.position, side.thigh.rotation);
 
-            // Rex redistributes the helper leg's lengths: a longer thigh and a shin at ~53%
-            // of the human shin. Move the KNEE toward the ankle, keeping both endpoints fixed.
-            // Shortening the shin by moving the ankle instead leaves the standing goal out of
-            // reach and holds the first pass fully extended until the tracked foot rises.
+
+
+
+
             var passShinScale = Mathf.Lerp(1f, 0.53f, Mathf.Clamp01(data.kneeStraightness));
             var passKneePos = Vector3.Lerp(side.foot.position, side.shin.position, passShinScale);
             var plantiKneeIk = data.enforceJointLimits ? null : MakeBone("Planti_Knee_IK" + suffix, plantiHipIk, passKneePos, side.shin.rotation);
             var plantiAnkleIk = data.enforceJointLimits ? null : MakeBone("Planti_Ankle_IK" + suffix, plantiKneeIk, side.foot.position, side.foot.rotation);
 
-            // The digitigrade solver chain must mirror the visible bones EXACTLY.
-            //
-            // Only the solved rotations are transferred to the real leg, never positions, so a
-            // solver chain of different proportions produces angles for a limb that does not exist:
-            // the solver reaches its goal perfectly while the real paw falls short, and the leg
-            // reads as stretched. Fold depth has to come from the bone layout itself -- move the
-            // split, or offset the joint off the knee-to-ankle chord -- not from inflating this.
-            // The digi chain hangs directly off the SOLVED plantigrade hip -- hierarchy
-            // propagation is same-frame, where a copy-constraint hop would add a frame of lag
-            // between the tracked leg and the visible one.
+
+
+
+
+
+
+
+
+
+
             var digiKneeIk = MakeBone("Digi_Knee_IK" + suffix, plantiHipIk, side.shin.position, side.shin.rotation);
             var digiMetaIk = MakeBone("Digi_Meta_IK" + suffix, digiKneeIk, side.metatarsus.position, side.metatarsus.rotation);
             var digiAnkleIk = MakeBone("Digi_Ankle_IK" + suffix, digiMetaIk, side.foot.position, side.foot.rotation);
 
-            // Aim at the visible chain's solved knee. Rex stabilizes roll with an object ahead
-            // of and above the hips. Derive both local axes from the rest pose so avatars with
-            // different bone rolls keep their original orientation when the aim activates.
+
+
+
             var legScaleAim = Vector3.Distance(side.plantiKnee.position, side.plantiAnkle.position);
             var avatarTransform = result.rigRoot.transform.parent;
             var thighDirection = (side.shin.position - side.thigh.position).normalized;
@@ -195,25 +195,25 @@ namespace YUCP.Components.Editor.MeshUtils
                 aim.IsActive = true;
             }
 
-            // --- goal: the real (plantigrade) ankle, position and rotation
+
             var goalHost = new GameObject("Goal" + suffix);
             goalHost.transform.SetParent(solverHost, false);
             goalHost.transform.position = side.plantiAnkle.position;
             goalHost.transform.rotation = side.plantiAnkle.rotation;
             AddParentConstraint(goalHost, side.plantiAnkle);
 
-            // Pass 1 normalises the plantigrade leg: same endpoints, but a clean twist-free
-            // solution with a knee plane we control.
+
+
             var plantiSolver = data.enforceJointLimits ? null : FinalIkBridge.AddLimbIk(goalHost, plantiHipIk, plantiKneeIk, plantiAnkleIk, goalHost.transform, -bendNormal);
 
-            // Pass 2 folds shin + metatarsus onto the same goal. The flipped bend normal is what
-            // makes that joint bend backwards into a hock.
-            // The digitigrade goal is NOT the plantigrade goal: on a mesh authored straight, the
-            // same foot target just re-derives the bind pose and the toggle does nothing. Standing
-            // digitigrade means standing on the toes -- so the goal is the tracked ankle pitched
-            // about the TOE TIP. The toe stays planted, the ankle lifts, the reach from the knee
-            // shortens, and the hock folds to absorb it. Parented under the goal so it follows the
-            // tracked foot everywhere.
+
+
+
+
+
+
+
+
             var toe = FindToe(side.foot);
             var toePivot = toe != null ? toe.position : side.foot.position + (side.foot.position - side.metatarsus.position) * 0.5f;
             var stance = Quaternion.AngleAxis(data.stanceAngle, bendNormal);
@@ -229,9 +229,9 @@ namespace YUCP.Components.Editor.MeshUtils
                     digiGoal, bendNormal, data.kneeAngleLimits, data.hockAngleLimits)
                 : FinalIkBridge.AddLimbIk(digiHost, digiKneeIk, digiMetaIk, digiAnkleIk, digiGoal, bendNormal);
 
-            // Rex softness: the paw is only partially flattened toward the tracked foot's
-            // orientation (Rex runs 0.2); the rest of its rotation rides the hock fold. At 1.0
-            // the paw locks to the foot and the whole leg reads mechanical.
+
+
+
             if (digiSolver != null && !data.enforceJointLimits)
             {
                 var soft = new SerializedObject(digiSolver);
@@ -242,13 +242,13 @@ namespace YUCP.Components.Editor.MeshUtils
             if (plantiSolver != null) plantiSolvers.Add(plantiSolver);
             if (digiSolver != null) digiSolvers.Add(digiSolver);
 
-            // --- the plantigrade source for the metatarsus: the BIND pose, riding the hidden
-            // plantigrade knee (as Rex hangs TopFut_L Node off Planti_Left_Knee).
-            //
-            // The mesh was skinned in the bind pose, so OFF must reproduce it exactly -- any
-            // synthetic "straightened" pose here visibly bends the leg where the mesh expects
-            // none. The ON/OFF difference comes from the DIGITIGRADE side instead: the stance
-            // pitch below shortens the digi solver's reach so the hock genuinely folds.
+
+
+
+
+
+
+
             side.metatarsusRestNode = MakeBone("Meta_Rest" + suffix, side.plantiKnee,
                 side.metatarsus.position, side.metatarsus.rotation);
             side.ankleUpNode = MakeBone("Meta_Up" + suffix, side.shin, side.metatarsus.position,
@@ -256,7 +256,7 @@ namespace YUCP.Components.Editor.MeshUtils
             side.ankleDownNode = MakeBone("Meta_Down" + suffix, side.shin, side.metatarsus.position,
                 Quaternion.AngleAxis(-data.ankleDownAngle, bendNormal) * side.metatarsus.rotation);
 
-            // --- the switchboard. source0 = plantigrade, source1 = solved digitigrade.
+
             side.thighConstraint = AddRotationConstraint(side.thigh.gameObject,
                 new[] { side.plantiHip, hipAim }, new[] { 1f, 0f });
             side.shinConstraint = AddRotationConstraint(side.shin.gameObject,
@@ -272,21 +272,21 @@ namespace YUCP.Components.Editor.MeshUtils
                 ConfigureMotionConstraint(side.metatarsusConstraint, digiMetaIk);
             }
 
-            // The paw rides a socket NESTED under the metatarsus, exactly as the Rex nests its
-            // ankle under TopFut. The visible foot cannot be parented there itself -- Unity's
-            // humanoid rejected that while the foot was mapped, and the skeleton must keep
-            // matching the import -- but a generic socket node can be, and a single-source parent
-            // constraint is rigid: the paw's position is DERIVED from the metatarsus fold at every
-            // blend value. Blending paw positions across sources (the previous 4-source design)
-            // smears the ankle into a curve at any mid-blend, which Ankle Weight lives in.
+
+
+
+
+
+
+
             var pawSocket = MakeBone("PawSocket" + suffix, side.metatarsus, side.foot.position, side.foot.rotation);
             side.footConstraint = AddMultiParentConstraint(side.foot.gameObject,
                 new[] { pawSocket }, new[] { 1f });
 
-            // Flatten on the socket so the unweighted rotation inherits the metatarsus, as
-            // Rex's ankle inherits TopFut. VRC blends from RotationAtRest relative to the parent,
-            // not from a preceding constraint: stacking this on the foot would blend from the
-            // shin and override the socket rotation. FX animates GlobalWeight on this socket.
+
+
+
+
             side.pawFlattenConstraint = AddRotationConstraint(pawSocket.gameObject,
                 new[] { side.plantiAnkle }, new[] { 1f });
             side.pawFlattenConstraint.RotationAtRest = pawSocket.localEulerAngles;
@@ -341,7 +341,7 @@ namespace YUCP.Components.Editor.MeshUtils
 
             // --- toe pitch sensor ---
             // Rex's virtual lever is ~0.57 shin lengths, pointing forward at rest. Using
-            // the mesh's toe makes sensitivity depend on paw length and imported bone roll.
+
             var forward = Vector3.ProjectOnPlane(result.rigRoot.transform.parent.forward, bendNormal).normalized;
             if (forward.sqrMagnitude < 1e-8f)
                 forward = Vector3.Cross(bendNormal, side.plantiKnee.position - side.plantiAnkle.position).normalized;
@@ -353,9 +353,9 @@ namespace YUCP.Components.Editor.MeshUtils
             toeSender.radius = reach.magnitude / (60f * Mathf.Abs(senderHost.lossyScale.x));
             toeSender.collisionTags = new List<string> { pitchTag };
 
-            // Measured from the reference rig: +18/-60 degree input centers with radii
-            // 0.08/0.28 for a 0.3-unit lever. The smaller radii leave a neutral dead zone.
-            // These are sensor calibration values, not anatomical joint limits.
+
+
+
             var upPos = side.plantiAnkle.position + Quaternion.AngleAxis(18f, bendNormal) * reach;
             var downPos = side.plantiAnkle.position + Quaternion.AngleAxis(-60f, bendNormal) * reach;
 
@@ -364,7 +364,7 @@ namespace YUCP.Components.Editor.MeshUtils
             AddProximityReceiver(side.plantiKnee, "ToeDownRec" + sfx, downPos,
                 reach.magnitude * (0.28f / 0.3f), DigitigradeControllerBuilder.ParamToeDown(sfx), pitchTag);
 
-            // --- foot plant sensor ---
+
             var plantTag = "YUCPPlant" + sfx;
             var signal = MakeBone("PlantSignal" + sfx, side.plantiAnkle, side.plantiAnkle.position, side.plantiAnkle.rotation);
             var plantSender = signal.gameObject.AddComponent<VRCContactSender>();
@@ -376,7 +376,7 @@ namespace YUCP.Components.Editor.MeshUtils
             pin.IsActive = false;
             pin.Locked = false;
             pin.Sources.Add(new VRCConstraintSource(side.plantiAnkle, 1f, Vector3.zero, Vector3.zero));
-            pin.AffectsPositionZ = false;   // frozen fore/aft, exactly Rex's FootPlantReciever
+            pin.AffectsPositionZ = false;
             pin.Locked = true;
             pin.IsActive = true;
 
@@ -409,7 +409,7 @@ namespace YUCP.Components.Editor.MeshUtils
             return foot.childCount > 0 ? foot.GetChild(0) : null;
         }
 
-        private static Transform MakeBone(string name, Transform parent, Vector3 position, Quaternion rotation)
+        internal static Transform MakeBone(string name, Transform parent, Vector3 position, Quaternion rotation)
         {
             var go = new GameObject(name);
             var t = go.transform;
@@ -463,9 +463,9 @@ namespace YUCP.Components.Editor.MeshUtils
 
         private static void ConfigureMotionConstraint(VRCRotationConstraint constraint, Transform solved)
         {
-            // Scale LOCAL joint motion after the solve. Scaling world rotations would undo
-            // the parent's styling and break the hinge angles; changing solver limits would
-            // leave the previous fold stuck inside a newly expanded range.
+
+
+
             constraint.SolveInLocalSpace = true;
             var rest = constraint.transform.localRotation;
             var hinge = solved.GetComponent(FinalIkBridge.FindType(FinalIkBridge.HingeTypeName));
@@ -475,8 +475,8 @@ namespace YUCP.Components.Editor.MeshUtils
                 var safeRestAngle = Mathf.Clamp(0f, so.FindProperty("min").floatValue, so.FindProperty("max").floatValue);
                 rest *= Quaternion.AngleAxis(safeRestAngle, so.FindProperty("axis").vector3Value);
             }
-            // Both endpoints lie on the same hinge within its anatomical limits. Blending
-            // between them preserves those bounds, including a bind pose outside the range.
+
+
             constraint.RotationAtRest = rest.eulerAngles;
         }
 

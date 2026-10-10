@@ -73,7 +73,7 @@ namespace YUCP.Components.Editor.MeshUtils
             return controller;
         }
 
-        private static void AddLayer(AnimatorController controller, string name, Motion motion)
+        internal static void AddLayer(AnimatorController controller, string name, Motion motion)
         {
             var machine = new AnimatorStateMachine { name = name, hideFlags = HideFlags.HideInHierarchy };
             AssetDatabase.AddObjectToAsset(machine, controller);
@@ -140,15 +140,15 @@ namespace YUCP.Components.Editor.MeshUtils
             var up = Clip(avatarRoot, controller, side, data, Pose.AnkleUp, "Digi AnkleUp" + sfx);
             var down = Clip(avatarRoot, controller, side, data, Pose.AnkleDown, "Digi AnkleDown" + sfx);
 
-            // Mode 0 -- whole-leg reactions: toes pressed down flatten the ENTIRE leg back to
-            // plantigrade (Rex "Digi Foot Down").
+
+
             var footDownA = Tree(controller, "FootDownA" + sfx, ParamToeDown(sfx), (0f, on), (1f, off));
             var weightA = Tree(controller, "AnklesWeightA" + sfx, ParamAnklesWeight, (0f, on), (1f, footDownA));
             var extraOffA = Tree(controller, "ExtraOffA" + sfx, ParamExtraOff(sfx), (0.5f, weightA), (2f, off));
 
-            // Mode 1 -- optional ankle-only reactions: foot pitch drives just the metatarsus
-            // between its limit poses; planted-and-toes-down fades the leg out so the folded hock
-            // does not fight the floor.
+
+
+
             var toeDownB = Tree(controller, "ToeDownB" + sfx, ParamToeDown(sfx), (0f, on), (1f, down));
             var toeUpB = Tree(controller, "ToeUpB" + sfx, ParamToeUp(sfx), (0f, toeDownB), (1f, up));
             var planted = Tree(controller, "Planted" + sfx, ParamToeDown(sfx), (0f, on), (1f, off));
@@ -160,7 +160,7 @@ namespace YUCP.Components.Editor.MeshUtils
             return Tree(controller, "Digi Main" + sfx, ParamMain, (0f, off), (1f, mode));
         }
 
-        private static BlendTree Tree(AnimatorController controller, string name, string parameter, params (float threshold, Motion motion)[] children)
+        internal static BlendTree Tree(AnimatorController controller, string name, string parameter, params (float threshold, Motion motion)[] children)
         {
             var tree = new BlendTree
             {
@@ -196,15 +196,15 @@ namespace YUCP.Components.Editor.MeshUtils
 
             var digi = pose != Pose.Plantigrade;
 
-            // Thigh and shin only have plantigrade/digitigrade; the limit poses are metatarsus-only.
+
             SetWeights(clip, avatarRoot, side.thighConstraint, digi ? 1 : 0, 2);
             SetWeights(clip, avatarRoot, side.shinConstraint, digi ? 1 : 0, 2);
             SetWeights(clip, avatarRoot, side.metatarsusConstraint,
                 data.enforceJointLimits && digi ? 1 : (int)pose, 4);
 
-            // The paw's socket constraint is never blended; only its softness changes. Plantigrade
-            // pins the paw fully to the tracked foot (the original avatar's behavior); digitigrade
-            // relaxes it to the flatten weight so the paw rides the hock fold.
+
+
+
             if (side.pawFlattenConstraint != null)
             {
                 var pawPath = AnimationUtility.CalculateTransformPath(side.pawFlattenConstraint.transform, avatarRoot.transform);
@@ -229,7 +229,7 @@ namespace YUCP.Components.Editor.MeshUtils
             }
         }
 
-        private static void AddFloat(AnimatorController controller, string name, float defaultValue)
+        internal static void AddFloat(AnimatorController controller, string name, float defaultValue)
         {
             if (controller.parameters.Any(p => p.name == name)) return;
             controller.AddParameter(new AnimatorControllerParameter
