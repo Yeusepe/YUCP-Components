@@ -7,8 +7,6 @@ using UnityEditor.Animations;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
-using VRC.SDKBase;
-using static VRC.SDKBase.VRC_AnimatorTrackingControl;
 using static VRC.SDKBase.VRC_AvatarParameterDriver;
 using Object = UnityEngine.Object;
 
@@ -18,7 +16,7 @@ namespace VRLabs.CustomObjectSyncCreator
 	{
 
 		public static bool defaultWriteDefaults = false;
-		public static AnimationClip GenerateClip(string name, Bounds localBounds = default, float frameRate = 60f, WrapMode wrapMode = WrapMode.Default, AnimationEvent[] events = null)
+		public static AnimationClip GenerateClip(string name, Bounds localBounds = default, float frameRate = 60f, WrapMode wrapMode = WrapMode.Default)
 		{
 			return new AnimationClip()
 			{
@@ -30,55 +28,9 @@ namespace VRLabs.CustomObjectSyncCreator
 			};
 		}
 
-		public static AnimationCurve GenerateCurve(Keyframe[] keys, WrapMode preWrapMode = WrapMode.ClampForever, WrapMode postWrapMode = WrapMode.ClampForever)
-		{
-			return new AnimationCurve()
-			{
-				keys = keys,
-				preWrapMode = preWrapMode,
-				postWrapMode = postWrapMode
-			};
-		}
 				
-		public static ObjectReferenceKeyframe GenerateObjectReferenceKeyFrame(float time, Object obj)
-		{
-			return new ObjectReferenceKeyframe()
-			{
-				time = time,
-				value = obj
-			};
-		}
-
-		public static Keyframe GenerateKeyFrame(float time = 0, float value = 0, float inTangent = 0, float outTangent = 0, float inWeight = 0, float outWeight = 0)
-		{
-			Keyframe frame = new Keyframe()
-			{
-				time = time,
-				value = value,
-				inTangent = inTangent,
-				outTangent = outTangent,
-				inWeight = inWeight,
-				outWeight = outWeight,
-			};
-			frame.weightedMode = (inWeight != 0 || outWeight != 0) ? WeightedMode.Both : WeightedMode.None;
-			return frame;
-		}
 			
-		public static void AddCurve(AnimationClip clip, string relativePath, Type type, string propertyName, AnimationCurve curve)
-		{
-			clip.SetCurve(relativePath, type, propertyName, curve);
-		}
 		
-        public static void AddObjectCurve(AnimationClip clip, string relativePath, Type type, string propertyName, ObjectReferenceKeyframe[] curve)
-        {
-            AnimationUtility.SetObjectReferenceCurve(clip, new EditorCurveBinding()
-            {
-                path = relativePath,
-                propertyName = propertyName,
-                type = type
-            }, curve);	
-        }
-
         public static BlendTree GenerateBlendTree(string name, BlendTreeType blendType, string blendParameter = "", string blendParameterY = "", float minThreshold = 0, float maxThreshold = 1, bool useAutomaticThresholds = true)
         {
             return new BlendTree()
@@ -132,14 +84,6 @@ namespace VRLabs.CustomObjectSyncCreator
 			};
 		}
 		
-        public static ChildAnimatorStateMachine GenerateChildStateMachine(Vector3 position, AnimatorStateMachine stateMachine)
-        {
-            return new ChildAnimatorStateMachine()
-            {
-                position = position,
-                stateMachine = stateMachine
-            };
-        }
 		
 		public static AnimatorState GenerateState(string name, bool writeDefaultValues = false, string tag = "", 
 			Motion motion = null, AnimatorStateTransition[] transitions = null,
@@ -206,22 +150,6 @@ namespace VRLabs.CustomObjectSyncCreator
 			};
 		}
 
-		public static AnimatorTransition GenerateStateMachineTransition(string name, AnimatorCondition[] conditions = null, 
-			AnimatorState destinationState = null, AnimatorStateMachine destinationStateMachine = null,
-			bool solo = false, bool mute = false, bool isExit = false)
-		{
-			return new AnimatorTransition()
-			{
-				name = name,
-				conditions = conditions ?? Array.Empty<AnimatorCondition>(),
-				destinationState = destinationState,
-				destinationStateMachine = destinationStateMachine,
-				solo = solo,
-				mute = mute,
-				isExit = isExit,
-			};
-		}
-
 		public static AnimatorCondition GenerateCondition(AnimatorConditionMode mode, string parameter, float threshold)
 		{
 			return new AnimatorCondition()
@@ -277,37 +205,6 @@ namespace VRLabs.CustomObjectSyncCreator
 			};
 		}
 		
-		public static AnimatorControllerParameter GenerateTriggerParameter(string name)
-		{
-			return new AnimatorControllerParameter()
-			{
-				name = name,
-				type = AnimatorControllerParameterType.Trigger,
-			};
-		}
-
-		public static AvatarMask GenerateMask(string name, string[] transforms, bool[] values, AvatarMaskBodyPart[] bodyParts)
-		{
-			AvatarMask mask = new AvatarMask()
-			{
-				name = name,
-				transformCount = transforms.Length
-			};
-
-			for (var i = 0; i < transforms.Length; i++)
-			{
-				mask.SetTransformPath(i, transforms[i]);
-				mask.SetTransformActive(i, values[i]);
-			}
-
-			foreach (var part in Enum.GetValues(typeof(AvatarMaskBodyPart)).Cast<AvatarMaskBodyPart>().Where(x => x != AvatarMaskBodyPart.LastBodyPart))
-			{
-				mask.SetHumanoidBodyPartActive(part, bodyParts.Contains(part));
-			}
-			
-			return mask;
-		}
-
 
 		public static VRCAvatarParameterDriver GenerateParameterDriver(Parameter[] parameters, bool isEnabled = true, bool localOnly = false, string debugString = "")
 		{
@@ -339,82 +236,7 @@ namespace VRLabs.CustomObjectSyncCreator
 			};
 		}
 
-		public static VRCAnimatorLayerControl GenerateAnimatorLayerControl(VRC_AnimatorLayerControl.BlendableLayer playable, int layer = 0, float blendDuration = 0, float goalWeight = 1, string debugString = "")
-		{
-			VRCAnimatorLayerControl control = ScriptableObject.CreateInstance<VRCAnimatorLayerControl>();
-			control.playable = playable;
-			control.layer = layer;
-			control.blendDuration = blendDuration;
-			control.goalWeight = goalWeight;
-			control.debugString = debugString;
-			return control;
-		}
-
-		public static VRCAnimatorLocomotionControl GenerateLocomotionControl(bool disableLocomotion, string debugString = "")
-		{
-			VRCAnimatorLocomotionControl control = ScriptableObject.CreateInstance<VRCAnimatorLocomotionControl>();
-			control.disableLocomotion = disableLocomotion;
-			control.debugString = debugString;
-			return control;
-		}
-
-		public static VRCAnimatorTrackingControl GenerateTrackingControl(TrackingType trackingHead = TrackingType.NoChange,
-			TrackingType trackingLeftHand = TrackingType.NoChange,
-			TrackingType trackingRightHand = TrackingType.NoChange,
-			TrackingType trackingHip = TrackingType.NoChange,
-			TrackingType trackingLeftFoot = TrackingType.NoChange,
-			TrackingType trackingRightFoot = TrackingType.NoChange,
-			TrackingType trackingLeftFingers = TrackingType.NoChange,
-			TrackingType trackingRightFingers = TrackingType.NoChange,
-			TrackingType trackingEyes = TrackingType.NoChange,
-			TrackingType trackingMouth = TrackingType.NoChange,
-			string debugString = "")
-		{
-			VRCAnimatorTrackingControl control = ScriptableObject.CreateInstance<VRCAnimatorTrackingControl>();
-			control.trackingHead = trackingHead;
-			control.trackingLeftHand = trackingLeftHand;
-			control.trackingRightHand = trackingRightHand;
-			control.trackingHip = trackingHip;
-			control.trackingLeftFoot = trackingLeftFoot;
-			control.trackingRightFoot = trackingRightFoot;
-			control.trackingLeftFingers = trackingLeftFingers;
-			control.trackingRightFingers = trackingRightFingers;
-			control.trackingEyes = trackingEyes;
-			control.trackingMouth = trackingMouth;
-			control.trackingEyes = trackingEyes;
-			control.debugString = debugString;
-			return control;
-		}
-
-		public static VRCPlayableLayerControl GeneratePlayableLayerControl(VRC_PlayableLayerControl.BlendableLayer layer, float blendDuration = 0, float goalWeight = 1, string debugString = "")
-		{
-			VRCPlayableLayerControl control = ScriptableObject.CreateInstance<VRCPlayableLayerControl>();
-			control.layer = layer;
-			control.blendDuration = blendDuration;
-			control.goalWeight = goalWeight;
-			control.debugString = debugString;
-			return control;
-		}
-
-		public static VRCAnimatorTemporaryPoseSpace GenerateTemporaryPoseSpace(float delayTime = 0, bool fixedDelay = false, bool enterPoseSpace = true, string debugString = "")
-		{
-			VRCAnimatorTemporaryPoseSpace control = ScriptableObject.CreateInstance<VRCAnimatorTemporaryPoseSpace>();
-			control.delayTime = delayTime;
-			control.fixedDelay = fixedDelay;
-			control.enterPoseSpace = enterPoseSpace;
-			control.debugString = debugString;
-			return control;
-		}
 		
-		public static AnimatorController GenerateController(string name, AnimatorControllerLayer[] layers, AnimatorControllerParameter[] parameters)
-		{
-			return new AnimatorController()
-			{
-				name = name,
-				layers = layers,
-				parameters = parameters
-			};
-		}
 		
 		public static void SerializeController(AnimatorController controller)
 		{
