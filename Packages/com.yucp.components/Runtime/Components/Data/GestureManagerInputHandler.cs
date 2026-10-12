@@ -59,10 +59,10 @@ namespace YUCP.Components
             public bool enabled;
         }
 
-        // Runtime mappings
+
         public List<RuntimeInputMapping> runtimeMappings = new List<RuntimeInputMapping>();
 
-        // Private fields
+
         private Component gestureManager;
         private object moduleVrc3;
         private Dictionary<string, float> inputValues = new Dictionary<string, float>();
@@ -73,7 +73,7 @@ namespace YUCP.Components
         private int inputEventCount;
         private int parameterSetCount;
 
-        // Rotation and flick detection state
+
         private float _leftPrevAngleRad = 0f;
         private float _rightPrevAngleRad = 0f;
         private bool _leftInitialized = false;
@@ -91,7 +91,7 @@ namespace YUCP.Components
         private float _leftAccumulatedRotationDelta = 0f;
         private float _rightAccumulatedRotationDelta = 0f;
 
-        // Public properties for external access
+
         public Component GestureManager => gestureManager;
         public Dictionary<string, float> InputValues => inputValues;
         public bool IsDebugOverlayVisible() => showDebugOverlay;
@@ -106,7 +106,7 @@ namespace YUCP.Components
             Debug.Log($"[GestureManagerInputHandler] Runtime mappings count: {runtimeMappings.Count}");
             Debug.Log($"[GestureManagerInputHandler] Enable input capture: {enableInputCapture}");
 
-            // Initialize input state tracking
+
             InitializeInputStates();
             Debug.Log($"[GestureManagerInputHandler] Initialization complete");
         }
@@ -115,8 +115,8 @@ namespace YUCP.Components
         {
             Debug.Log($"[GestureManagerInputHandler] Start called - Component enabled: {enabled}");
             Debug.Log($"[GestureManagerInputHandler] Debug mode: {debugMode}, Show overlay: {showDebugOverlay}");
-            
-            // Initialize debug overlay after configuration is set
+
+
             if (debugMode)
             {
                 Debug.Log($"[GestureManagerInputHandler] Debug mode enabled - overlay will be shown");
@@ -128,10 +128,10 @@ namespace YUCP.Components
         {
             if (!enableInputCapture || runtimeMappings.Count == 0) return;
 
-            // Process input mappings
+
             ProcessInputMappings();
 
-            // Handle F1 key for debug overlay
+
             if (debugMode && Input.GetKeyDown(KeyCode.F1))
             {
                 ToggleDebugOverlay();
@@ -142,7 +142,7 @@ namespace YUCP.Components
         {
             if (!debugMode || !showDebugOverlay) return;
 
-            // Draw debug overlay
+
             DrawDebugOverlay();
         }
 
@@ -194,17 +194,17 @@ namespace YUCP.Components
         private float GetControllerButtonValue(string buttonName)
         {
             if (string.IsNullOrEmpty(buttonName) || buttonName == "None") return 0f;
-            
+
             string standardButton = MapToStandardButton(buttonName);
-            
-            // Try to get button value with error handling for unmapped buttons
+
+
             try
             {
                 return Input.GetButton(standardButton) ? 1f : 0f;
             }
             catch (System.ArgumentException)
             {
-                // Button not configured in Input Manager - try joystick button index
+
                 int joystickButton = GetJoystickButtonIndex(buttonName);
                 if (joystickButton >= 0)
                 {
@@ -223,24 +223,24 @@ namespace YUCP.Components
 
         private float GetControllerAxisValue(string axisName)
         {
-            
+
             if (string.IsNullOrEmpty(axisName) || axisName == "None") return 0f;
-            
+
             string axisLower = axisName.ToLower();
-            
-            // Check if this is a rotation direction axis
+
+
             if (axisLower.Contains("rotation direction") || axisLower.Contains("rotationdirection"))
             {
                 return GetStickRotationDirection(axisName);
             }
-            
-            // Check if this is a flick detection axis
+
+
             if (axisLower.Contains("flick"))
             {
                 return GetStickFlick(axisName);
             }
-            
-            // Check if this is an angle axis that needs calculation from X/Y
+
+
             if (axisLower == "left stick angle" || axisLower == "ls angle")
             {
                 return GetStickAngle("Horizontal", "Vertical");
@@ -249,14 +249,14 @@ namespace YUCP.Components
             {
                 return GetStickAngle("Mouse X", "Mouse Y");
             }
-            
+
             string standardAxis = MapToStandardAxis(axisName);
-            
-            // Try to get axis value with error handling for unmapped axes
+
+
             try
             {
                 float value = Input.GetAxis(standardAxis);
-                // Apply deadzone but keep continuous values
+
                 if (Mathf.Abs(value) > controllerDeadzone)
                 {
                     return value * axisSensitivity;
@@ -265,29 +265,29 @@ namespace YUCP.Components
             }
             catch (System.ArgumentException)
             {
-                // Axis not configured in Input Manager - silently return 0
+
                 return 0f;
             }
         }
-        
+
         private float GetStickAngle(string xAxis, string yAxis)
         {
             try
             {
                 float x = Input.GetAxisRaw(xAxis);
                 float y = Input.GetAxisRaw(yAxis);
-                
-                // Check deadzone
+
+
                 float magnitude = Mathf.Sqrt(x * x + y * y);
                 if (magnitude < controllerDeadzone)
                 {
                     return 0f;
                 }
-                
-                // Calculate angle in degrees (0-360)
+
+
                 float angle = Mathf.Atan2(y, x) * Mathf.Rad2Deg;
                 if (angle < 0) angle += 360f;
-                
+
                 return angle;
             }
             catch (System.ArgumentException)
@@ -299,9 +299,9 @@ namespace YUCP.Components
         private float GetControllerTriggerValue(string triggerName)
         {
             if (string.IsNullOrEmpty(triggerName) || triggerName == "None") return 0f;
-            
+
             float value = GetDirectAxisValue(triggerName);
-            // Apply deadzone but keep continuous values
+
             if (Mathf.Abs(value) > controllerDeadzone)
             {
                 return value * axisSensitivity;
@@ -312,9 +312,9 @@ namespace YUCP.Components
         private float GetControllerDpadValue(string dpadName)
         {
             if (string.IsNullOrEmpty(dpadName) || dpadName == "None") return 0f;
-            
+
             float value = GetDirectAxisValue(dpadName);
-            // Apply deadzone but keep continuous values
+
             if (Mathf.Abs(value) > controllerDeadzone)
             {
                 return value * axisSensitivity;
@@ -328,7 +328,7 @@ namespace YUCP.Components
 
         private string MapToStandardButton(string buttonName)
         {
-            // Map common controller button names to Unity's standard input system
+
             switch (buttonName.ToLower())
             {
                 case "a": case "cross": return "Fire1";
@@ -344,10 +344,10 @@ namespace YUCP.Components
                 default: return buttonName;
             }
         }
-        
+
         private int GetJoystickButtonIndex(string buttonName)
         {
-            // Map button names to joystick button indices (for direct KeyCode access)
+
             switch (buttonName.ToLower())
             {
                 case "a": case "cross": return 0;
@@ -370,7 +370,7 @@ namespace YUCP.Components
 
         private string MapToStandardAxis(string axisName)
         {
-            // Map common controller axis names to Unity's standard input system
+
             switch (axisName.ToLower())
             {
                 case "left stick x": case "ls x": return "Horizontal";
@@ -386,15 +386,15 @@ namespace YUCP.Components
         private float GetDirectAxisValue(string axisName)
         {
             if (string.IsNullOrEmpty(axisName) || axisName == "None") return 0f;
-            
-            // Try to get axis value directly by name first
+
+
             try
             {
                 return Input.GetAxis(axisName);
             }
             catch (System.ArgumentException)
             {
-                // Axis not configured in Input Manager - try to map it
+
                 string mappedAxis = MapAxisNameToJoystickAxis(axisName);
                 if (!string.IsNullOrEmpty(mappedAxis))
                 {
@@ -410,32 +410,19 @@ namespace YUCP.Components
                 return 0f;
             }
         }
-        
+
         private string MapAxisNameToJoystickAxis(string axisName)
         {
-            // Map trigger/dpad names to Unity's numbered axes
+
             switch (axisName.ToLower())
             {
                 case "left trigger": return "Axis 3";
                 case "right trigger": return "Axis 6";
                 case "d-pad up": case "dpad up": return "Axis 7";
-                case "d-pad down": case "dpad down": return "Axis 7"; // Same axis, negative
-                case "d-pad left": case "dpad left": return "Axis 6"; // Same axis as triggers
+                case "d-pad down": case "dpad down": return "Axis 7";
+                case "d-pad left": case "dpad left": return "Axis 6";
                 case "d-pad right": case "dpad right": return "Axis 6";
                 default: return null;
-            }
-        }
-
-        private float GetDirectAxis(int axisNumber)
-        {
-            // Direct axis access for unconfigured axes
-            try
-            {
-                return Input.GetAxis($"Axis {axisNumber}");
-            }
-            catch
-            {
-                return 0f;
             }
         }
 
@@ -457,15 +444,15 @@ namespace YUCP.Components
 
         private void SendGestureManagerParameter(RuntimeInputMapping mapping, float inputValue)
         {
-            // Convert input value to parameter value
+
             float parameterValue = ConvertInputToParameterValue(mapping, inputValue);
 
             try
             {
-                // Try to get the ModuleVrc3 instance at runtime (it may not be initialized yet)
+
                 if (moduleVrc3 == null)
                 {
-                    // Try to get the Module from the GestureManager at runtime
+
                     if (gestureManager != null)
                     {
                         var moduleField = gestureManager.GetType().GetField("Module", BindingFlags.Public | BindingFlags.Instance);
@@ -489,15 +476,15 @@ namespace YUCP.Components
                             }
                         }
                     }
-                    
+
                     if (moduleVrc3 == null)
                     {
-                        // Still null, Gesture Manager not ready
+
                         return;
                     }
                 }
 
-                // Get the Params dictionary from the ModuleVrc3
+
                 var paramsField = moduleVrc3.GetType().GetField("Params", BindingFlags.Public | BindingFlags.Instance);
                 if (paramsField == null)
                 {
@@ -513,10 +500,10 @@ namespace YUCP.Components
                 }
 
 
-                // Get the Vrc3Param from the dictionary
+
                 var containsKeyMethod = paramsDict.GetType().GetMethod("ContainsKey", new[] { typeof(string) });
                 var getItemMethod = paramsDict.GetType().GetMethod("get_Item", new[] { typeof(string) });
-                
+
                 if (containsKeyMethod == null || getItemMethod == null)
                 {
                     Debug.LogWarning($"[GestureManagerInputHandler] Params dictionary methods not found - Gesture Manager not ready");
@@ -527,8 +514,8 @@ namespace YUCP.Components
                 if (!hasKey)
                 {
                     Debug.LogWarning($"[GestureManagerInputHandler] Parameter '{mapping.parameterName}' not found in Gesture Manager");
-                    
-                    // Debug: Show available parameters
+
+
                     if (debugMode)
                     {
                         try
@@ -563,7 +550,7 @@ namespace YUCP.Components
                     return;
                 }
 
-                // Call Set method on the Vrc3Param - the correct signature is Set(ModuleVrc3 module, float value, object source = null)
+
                 var setMethod = vrc3Param.GetType().GetMethod("Set", new[] { moduleVrc3.GetType(), typeof(float), typeof(object) });
                 if (setMethod != null)
                 {
@@ -571,7 +558,7 @@ namespace YUCP.Components
                 }
                 else
                 {
-                    // Try the method without the source parameter
+
                     setMethod = vrc3Param.GetType().GetMethod("Set", new[] { moduleVrc3.GetType(), typeof(float) });
                     if (setMethod != null)
                     {
@@ -590,7 +577,7 @@ namespace YUCP.Components
 
         private void SendAnimatorParameter(RuntimeInputMapping mapping, float inputValue)
         {
-            // Convert input value to parameter value
+
             float parameterValue = ConvertInputToParameterValue(mapping, inputValue);
 
             try
@@ -615,43 +602,43 @@ namespace YUCP.Components
                     return inputValue > 0.5f ? mapping.activeValue : mapping.inactiveValue;
 
                 case ParameterType.Float:
-                    // Check if this is an angle axis (0-360 range) vs regular axis (-1 to 1 range)
-                    bool isAngleAxis = mapping.inputType == InputType.ControllerAxis && 
+
+                    bool isAngleAxis = mapping.inputType == InputType.ControllerAxis &&
                                       !string.IsNullOrEmpty(mapping.controllerAxis) &&
                                       (mapping.controllerAxis.ToLower().Contains("angle"));
-                    
+
                     float normalizedValue;
                     if (isAngleAxis)
                     {
-                        // Normalize angle from 0-360 to 0-1
+
                         normalizedValue = Mathf.Clamp01(inputValue / 360f);
                     }
                     else
                     {
-                        // Normalize regular axis from -1 to 1 to 0-1
+
                         normalizedValue = (inputValue + 1f) / 2f;
                     }
-                    
+
                     return Mathf.Lerp(mapping.minValue, mapping.maxValue, normalizedValue);
 
                 case ParameterType.Int:
-                    // Check if this is an angle axis (0-360 range) vs regular axis (-1 to 1 range)
-                    bool isAngleAxisInt = mapping.inputType == InputType.ControllerAxis && 
+
+                    bool isAngleAxisInt = mapping.inputType == InputType.ControllerAxis &&
                                          !string.IsNullOrEmpty(mapping.controllerAxis) &&
                                          (mapping.controllerAxis.ToLower().Contains("angle"));
-                    
+
                     float normalizedValueInt;
                     if (isAngleAxisInt)
                     {
-                        // Normalize angle from 0-360 to 0-1
+
                         normalizedValueInt = Mathf.Clamp01(inputValue / 360f);
                     }
                     else
                     {
-                        // Normalize regular axis from -1 to 1 to 0-1
+
                         normalizedValueInt = (inputValue + 1f) / 2f;
                     }
-                    
+
                     return Mathf.RoundToInt(Mathf.Lerp(mapping.minValue, mapping.maxValue, normalizedValueInt));
 
                 default:
@@ -691,13 +678,13 @@ namespace YUCP.Components
         {
             gestureManager = gestureManagerComponent;
             Debug.Log($"[GestureManagerInputHandler] Set Gesture Manager: {gestureManager?.GetType().Name}");
-            
-            // Validate that we have a proper GestureManager component
+
+
             if (gestureManager != null && gestureManager.GetType().Name == "GestureManager")
             {
                 Debug.Log($"[GestureManagerInputHandler] Gesture Manager validated successfully");
-                
-                // ModuleVrc3 will be initialized at runtime when Gesture Manager is ready
+
+
                 Debug.Log($"[GestureManagerInputHandler] Gesture Manager reference set - Module will be initialized at runtime");
             }
             else
@@ -705,73 +692,6 @@ namespace YUCP.Components
                 Debug.LogError($"[GestureManagerInputHandler] Invalid Gesture Manager component: {gestureManager?.GetType().Name}");
                 enabled = false;
             }
-        }
-
-        public float GetGestureManagerParameterValue(string parameterName)
-        {
-            if (string.IsNullOrEmpty(parameterName))
-                return 0f;
-
-            try
-            {
-                // Try to get the ModuleVrc3 instance at runtime (it may not be initialized yet)
-                if (moduleVrc3 == null)
-                {
-                    // Try to get the Module from the GestureManager at runtime
-                    if (gestureManager != null)
-                    {
-                        var moduleField = gestureManager.GetType().GetField("Module", BindingFlags.Public | BindingFlags.Instance);
-                        if (moduleField != null)
-                        {
-                            moduleVrc3 = moduleField.GetValue(gestureManager);
-                            if (moduleVrc3 == null)
-                            {
-                                return 0f; // Gesture Manager not initialized yet
-                            }
-                        }
-                    }
-                    
-                    if (moduleVrc3 == null)
-                    {
-                        return 0f; // Gesture Manager not ready
-                    }
-                }
-
-                // Get the Params dictionary from the ModuleVrc3
-                var paramsField = moduleVrc3.GetType().GetField("Params", BindingFlags.Public | BindingFlags.Instance);
-                if (paramsField == null) return 0f;
-
-                var paramsDict = paramsField.GetValue(moduleVrc3);
-                if (paramsDict == null) return 0f;
-
-                // Get the Vrc3Param from the dictionary
-                var containsKeyMethod = paramsDict.GetType().GetMethod("ContainsKey", new[] { typeof(string) });
-                var getItemMethod = paramsDict.GetType().GetMethod("get_Item", new[] { typeof(string) });
-                
-                if (containsKeyMethod == null || getItemMethod == null) return 0f;
-
-                bool hasKey = (bool)containsKeyMethod.Invoke(paramsDict, new object[] { parameterName });
-                if (!hasKey) return 0f;
-
-                var vrc3Param = getItemMethod.Invoke(paramsDict, new object[] { parameterName });
-                if (vrc3Param == null) return 0f;
-
-                // Get the current value
-                var floatValueMethod = vrc3Param.GetType().GetMethod("FloatValue");
-                if (floatValueMethod != null)
-                {
-                    return (float)floatValueMethod.Invoke(vrc3Param, null);
-                }
-            }
-            catch (System.Exception ex)
-            {
-                if (debugMode)
-                {
-                    Debug.LogError($"[GestureManagerInputHandler] Error getting parameter '{parameterName}': {ex.Message}");
-                }
-            }
-
-            return 0f;
         }
 
         #endregion
@@ -786,10 +706,10 @@ namespace YUCP.Components
             float height = GetContentHeight();
             Rect overlayRect = new Rect(10, 10, width, height);
 
-            // Draw background
+
             GUI.Box(overlayRect, "", GUI.skin.box);
 
-            // Draw content
+
             GUILayout.BeginArea(overlayRect);
             scrollPosition = GUILayout.BeginScrollView(scrollPosition);
 
@@ -804,7 +724,7 @@ namespace YUCP.Components
 
         private float GetContentHeight()
         {
-            return 400f; // Fixed height for now
+            return 400f;
         }
 
         private float DrawStatusSection(float y, float width)
@@ -835,7 +755,7 @@ namespace YUCP.Components
         private float DrawInputMappingsSection(float y, float width)
         {
             GUILayout.Label("Active Mappings", GUI.skin.label);
-            
+
             if (runtimeMappings.Count > 0)
             {
                 foreach (var mapping in runtimeMappings)
@@ -906,12 +826,6 @@ namespace YUCP.Components
             Debug.Log($"[GestureManagerInputHandler] Debug overlay toggled: {showDebugOverlay}");
         }
 
-        public void ShowDebugOverlay()
-        {
-            showDebugOverlay = true;
-            Debug.Log($"[GestureManagerInputHandler] Debug overlay shown");
-        }
-
         public void HideDebugOverlay()
         {
             showDebugOverlay = false;
@@ -948,7 +862,7 @@ namespace YUCP.Components
         private bool HasInputChanged(RuntimeInputMapping mapping, float currentValue)
         {
             string inputKey = GetInputKey(mapping);
-            
+
             if (!previousInputValues.ContainsKey(inputKey))
             {
                 previousInputValues[inputKey] = 0f;
@@ -957,7 +871,7 @@ namespace YUCP.Components
 
             float previousValue = previousInputValues[inputKey];
             bool hasChanged = Mathf.Abs(currentValue - previousValue) > 0.01f;
-            
+
             if (hasChanged)
             {
                 previousInputValues[inputKey] = currentValue;
@@ -978,16 +892,16 @@ namespace YUCP.Components
         private float CalculateRotationDirection(float currentX, float currentY, ref float prevAngleRad, ref bool initialized, ref float accumulatedDelta, float deadzone = 0.2f, float minDeltaRad = 0.001f, float pulseThresholdRad = 0.02f)
         {
             float r = Mathf.Sqrt(currentX * currentX + currentY * currentY);
-            
+
             if (r < deadzone)
             {
                 initialized = false;
                 accumulatedDelta = 0f;
                 return 0f;
             }
-            
+
             float angle = Mathf.Atan2(currentY, currentX);
-            
+
             if (!initialized)
             {
                 prevAngleRad = angle;
@@ -995,9 +909,9 @@ namespace YUCP.Components
                 accumulatedDelta = 0f;
                 return 0f;
             }
-            
+
             float delta = angle - prevAngleRad;
-            
+
             if (delta > Mathf.PI)
             {
                 delta -= 2f * Mathf.PI;
@@ -1006,26 +920,26 @@ namespace YUCP.Components
             {
                 delta += 2f * Mathf.PI;
             }
-            
+
             prevAngleRad = angle;
-            
-            // Ignore extremely small deltas (noise filtering)
+
+
             if (Mathf.Abs(delta) < minDeltaRad)
             {
                 return 0f;
             }
-            
-            // Accumulate delta
+
+
             accumulatedDelta += delta;
-            
-            // Send pulse when accumulated delta exceeds threshold
+
+
             if (Mathf.Abs(accumulatedDelta) >= pulseThresholdRad)
             {
                 float result = accumulatedDelta > 0 ? -1f : 1f;
-                accumulatedDelta = 0f; // Reset accumulator
+                accumulatedDelta = 0f;
                 return result;
             }
-            
+
             return 0f;
         }
 
@@ -1035,13 +949,13 @@ namespace YUCP.Components
             float dx = currentX - prevX;
             float dy = currentY - prevY;
             float velocity = Mathf.Sqrt(dx * dx + dy * dy);
-            
+
             if (velocity > velocityThreshold && prevMagnitude > minRadius)
             {
                 flickFrameCount = 1;
                 return false;
             }
-            
+
             if (flickFrameCount > 0)
             {
                 flickFrameCount++;
@@ -1051,7 +965,7 @@ namespace YUCP.Components
                     return true;
                 }
             }
-            
+
             return false;
         }
 
@@ -1059,15 +973,15 @@ namespace YUCP.Components
         {
             string axisLower = axisName.ToLower();
             bool isLeft = axisLower.Contains("left") || axisLower.Contains("ls");
-            
+
             string xAxis = isLeft ? "Horizontal" : "Mouse X";
             string yAxis = isLeft ? "Vertical" : "Mouse Y";
-            
+
             try
             {
                 float x = Input.GetAxisRaw(xAxis);
                 float y = Input.GetAxisRaw(yAxis);
-                
+
                 float magnitude = Mathf.Sqrt(x * x + y * y);
                 if (magnitude < controllerDeadzone)
                 {
@@ -1083,7 +997,7 @@ namespace YUCP.Components
                     }
                     return 0f;
                 }
-                
+
                 float rotationDirection;
                 if (isLeft)
                 {
@@ -1099,7 +1013,7 @@ namespace YUCP.Components
                     _rightPrevY = y;
                     _rightPrevMagnitude = magnitude;
                 }
-                
+
                 return rotationDirection;
             }
             catch (System.ArgumentException)
@@ -1112,16 +1026,16 @@ namespace YUCP.Components
         {
             string axisLower = axisName.ToLower();
             bool isLeft = axisLower.Contains("left") || axisLower.Contains("ls");
-            
+
             string xAxis = isLeft ? "Horizontal" : "Mouse X";
             string yAxis = isLeft ? "Vertical" : "Mouse Y";
-            
+
             try
             {
                 float x = Input.GetAxisRaw(xAxis);
                 float y = Input.GetAxisRaw(yAxis);
                 float magnitude = Mathf.Sqrt(x * x + y * y);
-                
+
                 bool flick;
                 if (isLeft)
                 {
@@ -1133,13 +1047,13 @@ namespace YUCP.Components
                         _leftPrevMagnitude = magnitude;
                         return 0f;
                     }
-                    
+
                     flick = DetectFlick(x, y, _leftPrevX, _leftPrevY, _leftPrevMagnitude, ref _leftFlickFrameCount);
-                    
+
                     _leftPrevX = x;
                     _leftPrevY = y;
                     _leftPrevMagnitude = magnitude;
-                    
+
                     if (flick)
                     {
                         _leftFlickWasSent = true;
@@ -1156,20 +1070,20 @@ namespace YUCP.Components
                         _rightPrevMagnitude = magnitude;
                         return 0f;
                     }
-                    
+
                     flick = DetectFlick(x, y, _rightPrevX, _rightPrevY, _rightPrevMagnitude, ref _rightFlickFrameCount);
-                    
+
                     _rightPrevX = x;
                     _rightPrevY = y;
                     _rightPrevMagnitude = magnitude;
-                    
+
                     if (flick)
                     {
                         _rightFlickWasSent = true;
                         return 1f;
                     }
                 }
-                
+
                 return 0f;
             }
             catch (System.ArgumentException)
