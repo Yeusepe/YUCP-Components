@@ -1,9 +1,9 @@
 {
   "name": "com.yucp.components",
   "displayName": "YUCP Components",
-  "version": "0.3.42",
+  "version": "0.3.44",
   "unity": "2022.3",
-  "description": "Advanced VRChat avatar utilities with Pakacage Guardian VCS: auto-link armatures, hide body parts, generate grips, manage UV textures with GPU-accelerated detection, and version control for Unity projects",
+  "description": "VRChat avatar utilities with VRCFury integration: armature linking, blendshape attachment, body hiding, UV tools, facial animation, and parameter compression",
   "author": {
     "name": "YUCP Club",
     "url": "http://vpm.yucp.club/"
