@@ -2,14 +2,6 @@
 
 ## 🚀 Features
 
-### Version Control
-- **Pakacage Guardian** - Content-addressed version control system for Unity projects
-  - Automatic snapshots on file save and package manager events
-  - Visual commit graph with timeline
-  - Fast rollback to any previous state
-  - Stash management
-  - Deep Unity integration
-
 ### Armature Components
 - **Symmetric Armature Auto-Link** - Automatically attach objects to left/right body parts
 - **Closest Bone Auto-Link** - Find and attach to nearest bone (including extra bones like ears, tails)
@@ -24,12 +16,6 @@
 - **UV Discard Toggle** (Beta) - Merge clothing meshes with UDIM-based visibility toggles
   - Automatic UDIM tile assignment
   - AutoBodyHider integration
-
-### Animation Components
-- **Auto Grip Generator** (Beta) - Automatically generate hand grip animations
-  - Contact-based mesh analysis
-  - Multiple grip styles (Wrap, Pinch, Point)
-  - Hand pose generation
 
 ### Utility Components
 - **Auto UDIM Discard** (Beta) - Auto-detect UV regions for UDIM toggles
@@ -64,15 +50,6 @@ Then install "YUCP Components" from the package list in your project. VRCFury wi
 3. Install [VRCFury](https://vrcfury.com/) as a dependency
 
 ## 🔧 Usage
-
-### Pakacage Guardian
-
-Access via `Tools > YUCP > Pakacage Guardian`:
-- **Unified Interface** - Single window with tabbed navigation and YUCP brand styling
-- **Overview Tab** - Repository status, quick actions, and recent activity
-- **Commit Graph Tab** - Visual timeline with file changes and diff viewer
-- **Stashes Tab** - Manage automatic and manual snapshots
-- **Full Diff Engine** - Line-by-line comparison for text files
 
 ### Avatar Components
 
