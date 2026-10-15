@@ -19,6 +19,7 @@ namespace YUCP.Components.Editor
         private static void OnPostHeaderGUI(UnityEditor.Editor editor)
         {
             if (editor.target == null) return;
+            if (YUCPInspectorChrome.DrawsNotices(editor)) return; // shown in its status area
 
             // Check if this component has the BetaWarning attribute
             Type targetType = editor.target.GetType();

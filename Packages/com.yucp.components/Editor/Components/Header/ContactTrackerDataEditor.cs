@@ -1,9 +1,5 @@
-using System;
 using UnityEditor;
-using UnityEditor.UIElements;
-using UnityEngine;
 using UnityEngine.UIElements;
-using VRC.SDK3.Avatars.Components;
 using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
@@ -11,217 +7,36 @@ namespace YUCP.Components.Editor
     [CustomEditor(typeof(ContactTrackerData))]
     public class ContactTrackerDataEditor : UnityEditor.Editor
     {
-        private ContactTrackerData data;
-        private string previousBuildSummary = null;
-        private bool previousIncludeCredits = false;
-
-        private SerializedProperty appliedTransformProp;
-        private SerializedProperty menuLocationProp;
-        private SerializedProperty globalParameterControlProp;
-        private SerializedProperty collisionTagsProp;
-        private SerializedProperty sizeParameterProp;
-        private SerializedProperty enableGroupingProp;
-        private SerializedProperty trackerGroupIdProp;
-        private SerializedProperty verboseLoggingProp;
-        private SerializedProperty includeCreditsProp;
-
-        private static readonly string WikiUrl = "https://github.com/Yeusepe/Yeusepes-Modules/wiki/Contact-Tracker";
-
-        private void OnEnable()
-        {
-            data = (ContactTrackerData)target;
-
-            appliedTransformProp = serializedObject.FindProperty("appliedTransform");
-            menuLocationProp = serializedObject.FindProperty("menuLocation");
-            globalParameterControlProp = serializedObject.FindProperty("globalParameterControl");
-            collisionTagsProp = serializedObject.FindProperty("collisionTags");
-            sizeParameterProp = serializedObject.FindProperty("sizeParameter");
-            enableGroupingProp = serializedObject.FindProperty("enableGrouping");
-            trackerGroupIdProp = serializedObject.FindProperty("trackerGroupId");
-            verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
-            includeCreditsProp = serializedObject.FindProperty("includeCredits");
-        }
+        // One proximity contact per direction, in the order the build reads collisionTags.
+        private static readonly string[] Directions = { "X+", "X-", "Y+", "Y-", "Z+", "Z-" };
 
         public override VisualElement CreateInspectorGUI()
         {
-            serializedObject.Update();
-            
-            var root = new VisualElement();
-            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Contact Tracker"));
-            
-            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(ContactTrackerData));
-            if (betaWarning != null) root.Add(betaWarning);
-            
-            var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(ContactTrackerData));
-            if (supportBanner != null) root.Add(supportBanner);
-            
-            var creditBanner = new VisualElement();
-            creditBanner.name = "credit-banner";
-            root.Add(creditBanner);
-            
-            var buildSummary = new VisualElement();
-            buildSummary.name = "build-summary";
-            root.Add(buildSummary);
-            
-            var descriptorWarnings = new VisualElement();
-            descriptorWarnings.name = "descriptor-warnings";
-            root.Add(descriptorWarnings);
-            
-            var overviewCard = new VisualElement();
-            overviewCard.name = "overview-card";
-            root.Add(overviewCard);
-            
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what gets tracked and what follows the tracking.");
-            var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component is attached to the applied object you want to track contacts for. That object will be moved into the Contact Tracker's Container during build.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedTransformProp, "Applied Object"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object: The object that will be moved outside the prefab and positioned based on contact detection. This is the visual/functional object that follows the tracked contacts (e.g., a hand tracker that follows hand contacts). It will be centered on tracked objects using six proximity contacts (X+, X-, Y+, Y-, Z+, Z-).", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(targetCard);
-            
-            var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure contact tracker behavior.");
-            var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterControlProp, "Global Parameter (Control)"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("OPTIONAL: When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(optionsCard);
-            
-            var contactCard = YUCPUIToolkitHelper.CreateCard("Contact Settings", "Configure proximity contact collision tags and size.");
-            var contactContent = YUCPUIToolkitHelper.GetCardContent(contactCard);
-            contactContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Collision tags for the 6 proximity contacts. Order: X+, X-, Y+, Y-, Z+, Z-", YUCPUIToolkitHelper.MessageType.Info));
-            contactContent.Add(new PropertyField(collisionTagsProp, "Collision Tags"));
-            contactContent.Add(YUCPUIToolkitHelper.CreateField(sizeParameterProp, "Size Parameter"));
-            contactContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Size parameter value for ContactTracker/Size. This sets the default size when not tracking (0-1).", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(contactCard);
-            
-            var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
-            var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
-            groupingContent.Add(YUCPUIToolkitHelper.CreateField(enableGroupingProp, "Enable Grouping"));
-            
-            var groupIdField = YUCPUIToolkitHelper.CreateField(trackerGroupIdProp, "Group ID");
-            groupIdField.name = "group-id";
-            groupingContent.Add(groupIdField);
-            
-            var groupingHelp = new VisualElement();
-            groupingHelp.name = "grouping-help";
-            groupingContent.Add(groupingHelp);
-            root.Add(groupingCard);
-            
-            var diagnosticsCard = YUCPUIToolkitHelper.CreateCard("Diagnostics & Debug", "Surface build output and logging helpers.");
-            var diagnosticsContent = YUCPUIToolkitHelper.GetCardContent(diagnosticsCard);
-            diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(verboseLoggingProp, "Verbose Logging"));
-            diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(includeCreditsProp, "Include Credits Banner"));
-            root.Add(diagnosticsCard);
-            
-            YUCPUIToolkitHelper.AddSpacing(root, 6);
-            var helpLinks = new VisualElement();
-            helpLinks.style.flexDirection = FlexDirection.Row;
-            helpLinks.style.marginBottom = 10;
-            
-            var docButton = YUCPUIToolkitHelper.CreateButton("Open Documentation", () => Application.OpenURL(WikiUrl), YUCPUIToolkitHelper.ButtonVariant.Secondary);
-            docButton.style.flexGrow = 1;
-            docButton.style.marginRight = 5;
-            helpLinks.Add(docButton);
-            
-            root.Add(helpLinks);
-            
-            previousBuildSummary = data.GetBuildSummary();
-            previousIncludeCredits = includeCreditsProp.boolValue;
-            
-            UpdateCreditBanner(creditBanner);
-            YUCPUIToolkitHelper.UpdateBuildSummary(buildSummary, data.GetBuildSummary(), data.GetLastBuildTimeUtc());
-            UpdateDescriptorWarnings(descriptorWarnings);
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            UpdateOverviewCard(overviewCard, data, descriptor);
-            UpdateGroupingHelp(groupingHelp);
-            
-            root.schedule.Execute(() =>
+            var data = (ContactTrackerData)target;
+            var ui = YUCPInspector.Create(this, "Contact Tracker");
+            ui.Status(() => VRLabsInspector.Placement(data));
+
+            var tracking = ui.Section("Tracking");
+            VRLabsInspector.AvatarObject(ui, tracking, "appliedTransform", "Tracker Target");
+            ui.Field(tracking, "sizeParameter", "Default Size");
+            var tags = ui.Group(tracking, "Collision tags");
+            if (ui.Object.FindProperty("collisionTags").arraySize >= Directions.Length)
             {
-                serializedObject.Update();
-                
-                bool currentIncludeCredits = includeCreditsProp.boolValue;
-                if (currentIncludeCredits != previousIncludeCredits)
-                {
-                    UpdateCreditBanner(creditBanner);
-                    previousIncludeCredits = currentIncludeCredits;
-                }
-                
-                string currentBuildSummary = data.GetBuildSummary();
-                if (currentBuildSummary != previousBuildSummary)
-                {
-                    YUCPUIToolkitHelper.UpdateBuildSummary(buildSummary, data.GetBuildSummary(), data.GetLastBuildTimeUtc());
-                    previousBuildSummary = currentBuildSummary;
-                }
-                
-                UpdateDescriptorWarnings(descriptorWarnings);
-                descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-                UpdateOverviewCard(overviewCard, data, descriptor);
-                
-                groupIdField.SetEnabled(enableGroupingProp.boolValue);
-                
-                UpdateGroupingHelp(groupingHelp);
-                
-                serializedObject.ApplyModifiedProperties();
-            }).Every(100);
-            
-            return root;
-        }
-        
-        private void UpdateOverviewCard(VisualElement container, ContactTrackerData data, VRCAvatarDescriptor descriptor)
-        {
-            container.Clear();
-            
-            string targetPath = descriptor != null ? UnityEditor.AnimationUtility.CalculateTransformPath(data.transform, descriptor.transform) : data.gameObject.name;
-            var groupingLabel = enableGroupingProp.boolValue
-                ? ContactTrackerData.NormalizeGroupId(trackerGroupIdProp.stringValue)
-                : "Isolated (per-object)";
-            
-            var overviewCard = YUCPUIToolkitHelper.CreateCard("Contact Tracker Overview", null);
-            var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
-            
-            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Tracked Object", targetPath);
-            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Group", groupingLabel);
-            
-            container.Add(overviewCard);
-        }
-        
-        
-        private void UpdateCreditBanner(VisualElement container)
-        {
-            container.Clear();
-            if (includeCreditsProp.boolValue)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Powered by VRLabs Contact Tracker (MIT). Please credit VRLabs when shipping your avatar.", YUCPUIToolkitHelper.MessageType.Info));
+                for (var i = 0; i < Directions.Length; i++)
+                    ui.Field(tags, $"collisionTags.Array.data[{i}]", Directions[i]);
             }
-        }
-        
-        
-        private void UpdateDescriptorWarnings(VisualElement container)
-        {
-            container.Clear();
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            if (descriptor == null)
+            else
             {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("This component must be placed under a VRCAvatarDescriptor in order for the builder to configure contact tracking.", YUCPUIToolkitHelper.MessageType.Error));
+                // ponytail: old data with fewer than six tags gets the plain list until it has six again.
+                ui.Field(tags, "collisionTags");
+                ui.Messages(tags, () => new[] { YUCPInspector.Message.Warning(data.collisionTags == null || data.collisionTags.Length < Directions.Length
+                    ? "Add six collision tags, one per direction: X+, X-, Y+, Y-, Z+, Z-." : null) });
             }
-            else if (data.transform == descriptor.transform)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Attach Contact Tracker to the object you want to track contacts for, not the descriptor root.", YUCPUIToolkitHelper.MessageType.Warning));
-            }
-            else if (!data.transform.IsChildOf(descriptor.transform))
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Contact Tracker target must be within the avatar hierarchy. Please move it inside the descriptor object.", YUCPUIToolkitHelper.MessageType.Error));
-            }
-        }
-        
-        private void UpdateGroupingHelp(VisualElement container)
-        {
-            container.Clear();
-            var groupingInfo = enableGroupingProp.boolValue
-                ? "Components with the same Group ID share one contact tracker setup to reduce overhead."
-                : "Grouping disabled: this component will get its own contact tracker setup.";
-            container.Add(YUCPUIToolkitHelper.CreateHelpBox(groupingInfo, YUCPUIToolkitHelper.MessageType.Info));
+
+            VRLabsInspector.Menu(ui, null, "menuLocation", ("globalParameterControl", "Control Parameter"));
+            VRLabsInspector.Advanced(ui, "trackerGroupId", "Based on VRLabs Contact Tracker (MIT). Credit VRLabs when you share the avatar.",
+                data.GetBuildSummary, () => data.GetLastBuildTimeUtc());
+            return ui.Root;
         }
     }
 }
-

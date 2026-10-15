@@ -95,135 +95,94 @@ namespace YUCP.Components
 
 
     [SupportBanner]
-    [BetaWarning("This component is in BETA and may not work as intended. Blendshape attachment is experimental and may require manual configuration.")]
+    [BetaWarning("This component is in beta. Blendshape attachment may need manual setup.")]
     [AddComponentMenu("YUCP/Attach to Blendshape")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     [DisallowMultipleComponent]
     public class AttachToBlendshapeData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Source Mesh")]
-        [Tooltip("The skinned mesh with blendshapes to attach to (usually the avatar head/body).")]
+        [Tooltip("The avatar's skinned mesh whose blendshapes move the attachment, usually the face or body.")]
         public SkinnedMeshRenderer targetMesh;
 
         [Header("Target Mesh to Modify")]
-        [Tooltip("The mesh that will receive the generated blendshapes.\n\n" +
-                 "Supported targets:\n" +
-                 "• SkinnedMeshRenderer\n" +
-                 "• MeshFilter (will be converted to a SkinnedMeshRenderer at build-time so blendshapes can render)\n\n" +
-                 "If not set, will attempt to use a SkinnedMeshRenderer or MeshFilter on this GameObject.")]
+        [Tooltip("The mesh that follows the blendshapes: a Skinned Mesh Renderer, a Mesh Filter (made skinned at build time), or an object with one. Empty uses the mesh on this object.")]
         public UnityEngine.Object targetMeshToModify;
 
         [Header("Blendshape Tracking")]
-        [Tooltip("Which blendshapes to track:\n\n" +
-                 "• All: Track all blendshapes on the target mesh\n" +
-                 "• Specific: Only track blendshapes you select\n" +
-                 "• Visemes Only: Auto-detect VRChat viseme blendshapes\n" +
-                 "• Smart: Auto-detect blendshapes that affect this attachment")]
+        [Tooltip("Which body blendshapes move the attachment. Smart finds the ones that move the surface under it.")]
         public BlendshapeTrackingMode trackingMode = BlendshapeTrackingMode.Smart;
 
-        [Tooltip("Specific blendshapes to track (only used when mode = Specific).\n\n" +
-                 "Enter exact blendshape names from the target mesh.")]
+        [Tooltip("The body blendshapes to track when Tracking is Specific.")]
         public List<string> specificBlendshapes = new List<string>();
 
         [Header("Surface Attachment")]
-        [Tooltip("Number of triangles to use in the attachment cluster (1-8).\n\n" +
-                 "More triangles = more stable during deformation but slower computation.\n" +
-                 "Recommended: 3-5 for most attachments.")]
+        [Tooltip("How many nearby body triangles the attachment follows. More holds steadier on stretching skin; 3 to 5 suits most attachments.")]
         [Range(1, 8)]
         public int clusterTriangleCount = 4;
 
-        [Tooltip("Search radius in meters for finding attachment surface.\n\n" +
-                 "The component will find the closest surface within this radius.\n" +
-                 "Set to 0 for unlimited range.")]
+        [Tooltip("How far, in meters, to look for the body surface. 0 searches the whole mesh.")]
         [Min(0f)]
         public float searchRadius = 0.1f;
 
-        [Tooltip("Manual triangle index selection (leave -1 for auto-detect).\n\n" +
-                 "If set, this triangle will be the primary anchor.")]
+        [Tooltip("The body triangle to anchor to. -1 uses the closest one.")]
         public int manualTriangleIndex = -1;
 
         [Header("Solver Configuration")]
-        [Tooltip("How to calculate object transforms during deformation:\n\n" +
-                 "• Rigid: Simple rotation + translation about the object's pivot (best for piercings, badges)\n" +
-                 "• Rigid Normal Offset: Rigid + slight outward push along surface normal\n" +
-                 "• Affine: Allows minor shear/scale to match skin stretch (stickers, patches)")]
+        [Tooltip("How the attachment follows the surface. Rigid moves and turns it, Rigid Offset also pushes it out along the normal, and Affine also stretches it with the skin.")]
         public SolverMode solverMode = SolverMode.Rigid;
 
-        [Tooltip("Align object rotation to surface normal and tangent.\n\n" +
-                 "When enabled, object rotates to follow the surface orientation.")]
+        [Tooltip("Turns the attachment with the surface as it deforms.")]
         public bool alignRotationToSurface = true;
 
-        [Tooltip("Normal offset distance in meters (only for RigidNormalOffset mode).\n\n" +
-                 "Pushes object away from surface along normal.")]
+        [Tooltip("How far, in meters, Rigid Offset pushes the attachment out from the surface.")]
         [Min(0f)]
         public float normalOffset = 0.001f;
 
-        [Tooltip("Smoothing factor to prevent rotation flips (0-1).\n\n" +
-                 "Higher values = smoother transitions but less responsive.\n" +
-                 "0 = no smoothing, 1 = maximum smoothing.")]
+        [Tooltip("Smooths the preview's rotation to prevent flips. 0 is off; 1 is smoothest.")]
         [Range(0f, 1f)]
         public float rotationSmoothingFactor = 0.3f;
 
         [Header("Bone Attachment")]
-        [Tooltip("Attach to closest bone for base positioning.\n\n" +
-                 "Blendshape animations will be relative to this bone.")]
+        [Tooltip("Links the attachment to the closest bone with a VRCFury Armature Link, so it moves with that bone as well as with the blendshapes.")]
         public bool attachToClosestBone = true;
 
-        [Tooltip("Bone search radius in meters (0 = unlimited).")]
+        [Tooltip("How far, in meters, to look for a bone. 0 searches the whole armature.")]
         [Min(0f)]
         public float boneSearchRadius = 0.5f;
 
-        [Tooltip("Bone name filter (only consider bones containing this text).")]
+        [Tooltip("Optional. Only bones whose names contain this text are used.")]
         public string boneNameFilter = "";
 
-        [Tooltip("Ignore humanoid bones when searching for closest bone.")]
+        [Tooltip("Skips the avatar's humanoid bones when looking for the closest bone.")]
         public bool ignoreHumanoidBones = false;
 
-        [Tooltip("Optional bone path offset for fine-tuning.")]
+        [Tooltip("Optional. A child path under the closest bone to link to instead.")]
         public string boneOffset = "";
 
         [Header("Blendshape Transfer")]
-        [Tooltip("Number of keyframes per blendshape (2-10).\n\n" +
-                 "More keyframes = smoother deformation but larger file size.\n" +
-                 "Recommended: 5 for most cases.")]
+        [Tooltip("Keyframes baked per blendshape. More follows curved motion more smoothly but makes the avatar larger.")]
         [Range(2, 10)]
         public int samplesPerBlendshape = 5;
 
-        [Tooltip("Minimum vertex displacement (in meters) to consider blendshape active.\n\n" +
-                 "Used by Smart mode to detect which blendshapes affect the attachment.")]
+        [Tooltip("How far, in meters, a blendshape must move the surface for Smart tracking to include it.")]
         [Min(0.0001f)]
         public float smartDetectionThreshold = 0.001f;
 
         [Header("Output (Advanced)")]
-        [Tooltip(
-            "How the attachment is baked at build time.\n\n" +
-            "• Auto: Choose the safest mode automatically.\n" +
-            "• Linked Renderer Bake: Bake motion into blendshapes on the attachment mesh and use VRCFury BlendShapeLink.\n" +
-            "• Merge Into Base Mesh: Merge the attachment geometry into the base skinned mesh so it follows built-in VRChat blendshapes too.\n\n" +
-            "Auto will avoid Merge if it detects complex transform/material animations on the attachment.")]
+        [Tooltip("How the attachment is built. Merged lets visemes and other built-in blendshapes move it; Linked keeps it a separate mesh; Automatic picks one from the avatar's animations.")]
         public AttachToBlendshapeOutputMode outputMode = AttachToBlendshapeOutputMode.Auto;
 
-        [Tooltip(
-            "How to bake motion into the mesh.\n\n" +
-            "• Rigid Pivot Transform: uses solved rigid motion (fast).\n" +
-            "• Closest Surface Displacement: uses closest-surface correspondence on the base mesh (robust, recommended for Merge).")]
+        [Tooltip("How motion is baked into the merged mesh. Rigid Pivot Transform moves the whole attachment; Closest Surface Displacement moves each vertex with the surface under it.")]
         public AttachToBlendshapeBakeMethod bakeMethod = AttachToBlendshapeBakeMethod.RigidPivotTransform;
 
-        [Tooltip(
-            "How to handle attachment vertices that fail to find a closest-surface match (Merge/ClosestSurface only).\n\n" +
-            "• Skip: leave unmatched vertices unmoved.\n" +
-            "• Neighbor Propagate: copy deltas from nearest matched neighbors.\n" +
-            "• Smooth Diffusion: smooth deltas over the attachment mesh (slowest).")]
+        [Tooltip("What to do with attachment vertices that find no body surface when merged. Neighbor Propagate copies motion from nearby vertices; Smooth Diffusion blends it over the mesh and is slower.")]
         public AttachToBlendshapeUnmatchedHandling unmatchedHandling = AttachToBlendshapeUnmatchedHandling.NeighborPropagate;
 
-        [Tooltip(
-            "When enabled (default), Auto mode will avoid MergeIntoBaseMesh if it detects non-toggle-style transform animations on this object.\n" +
-            "This prevents losing complex transform animation behavior when geometry is merged into the base mesh.")]
+        [Tooltip("Keeps the attachment separate when Automatic finds animations that move it, other than on/off toggles.")]
         public bool autoAvoidMergeIfComplexTransformAnimation = true;
 
-        [Tooltip(
-            "When enabled (default), Auto mode will avoid MergeIntoBaseMesh if it detects material property animations on this object.\n" +
-            "Material bindings are difficult to retarget reliably after merging, so this falls back to Linked Renderer Bake.")]
+        [Tooltip("Keeps the attachment separate when Automatic finds material animations on it, which can't be moved to a merged mesh reliably.")]
         public bool autoAvoidMergeIfMaterialAnimation = true;
 
         [Tooltip(
@@ -231,36 +190,36 @@ namespace YUCP.Components
             "Complex continuous transform animations are not converted (Auto will fall back to Linked Renderer Bake).")]
         public bool preserveToggleStyleTransformAnimationsOnMerge = true;
 
-        [Tooltip("Disable the original attachment renderer when merging into the base mesh to prevent double-rendering.")]
+        [Tooltip("Turns off the attachment's own renderer after merging, so it isn't drawn twice.")]
         public bool disableOriginalRendererOnMerge = true;
 
         [Header("Merged Visibility")]
-        [Tooltip("How the appended attachment geometry is hidden after it becomes part of the base renderer.")]
+        [Tooltip("How the merged attachment is hidden when it's toggled off: a blendshape that shrinks it, or a UV discard tile.")]
         public AttachToBlendshapeVisibilityMode visibilityMode = AttachToBlendshapeVisibilityMode.SizeBlendshape;
 
-        [Tooltip("Automatically select a UV channel for UV discard data.")]
+        [Tooltip("Picks a free UV channel for UV discard.")]
         public bool autoDetectUVChannel = true;
 
-        [Tooltip("UV channel used when automatic selection is disabled.")]
+        [Tooltip("The UV channel for UV discard when it isn't picked automatically.")]
         [Range(0, 7)]
         public int uvChannel = 1;
 
-        [Tooltip("UV discard tile row used by this attachment.")]
+        [Tooltip("The UV discard tile row for this attachment.")]
         [Range(0, 3)]
         public int uvDiscardRow = 3;
 
-        [Tooltip("UV discard tile column used by this attachment.")]
+        [Tooltip("The UV discard tile column for this attachment.")]
         [Range(0, 3)]
         public int uvDiscardColumn = 3;
 
-        [Tooltip("Remap existing attachment blendshape, material, transform, renderer, and object visibility animations to the merged renderer.")]
+        [Tooltip("Moves the attachment's existing blendshape, material, transform, renderer and visibility animations to the merged mesh.")]
         public bool remapVisibilityAnimations = true;
 
         [Header("Advanced Options")]
-        [Tooltip("Enable debug logging during build.")]
+        [Tooltip("Logs each build and preview step to the Console.")]
         public bool debugMode = false;
 
-        [Tooltip("Show preview visualization in Scene view.")]
+        [Tooltip("Shows the surface the attachment follows in the Scene view while a preview is generated.")]
         public bool showPreview = false;
 
         [Header("Build Statistics (Read-only)")]

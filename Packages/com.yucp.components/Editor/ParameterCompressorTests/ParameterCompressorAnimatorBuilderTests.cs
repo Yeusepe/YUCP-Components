@@ -4,6 +4,8 @@ using System.Linq;
 using NUnit.Framework;
 using UnityEditor.Animations;
 using UnityEngine;
+using UnityEngine.Animations;
+using UnityEngine.Playables;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 
@@ -12,210 +14,288 @@ namespace YUCP.Components.Editor.Tests
     public sealed class ParameterCompressorAnimatorBuilderTests
     {
         private const string Prefix = "YUCP/TestCompressor";
-        private const string LayerName = "YUCP Parameter Compressor";
+        private const float Frame = 1f / 60f;
 
-        [TestCase(0, 0, 0)]
-        [TestCase(18, 0, 18)]
-        [TestCase(19, 1, 0)]
-        [TestCase(254, 13, 7)]
-        public void GeneratedSenderConsumesRadixNineteenValuesMostSignificantFirst(
-            int quantizedValue,
-            int expectedHighDigit,
-            int expectedLowDigit)
+        /// <summary>A change preempts the refresh on the wire, so it only waits for VRChat's
+        /// next sync, plus half a hold when the remote is already reading that value.</summary>
+        [Test]
+        public void ChangesReachTheRemoteWithinOneSync()
         {
-            var controller = BuildController(1, out _);
-            try
+            var entries = Entries(out var pageBits);
+            var controller = Build(entries, pageBits);
+            using (var wearer = new Client(controller, true))
+            using (var remote = new Client(controller, false))
             {
-                var machine = controller.layers.Single(layer =>
-                    layer.name == LayerName).stateMachine;
-                var router = machine.states.Select(child => child.state).Single(state =>
-                    state.name == "Local Cursor Router");
-                var load = router.transitions.Single(transition =>
-                    transition.destinationState != null &&
-                    transition.destinationState.name.StartsWith(
-                        "Local Load 0 ", StringComparison.Ordinal));
-                var sendCursorName = Prefix + "/_Internal/SendCursor";
-                var sendWorkName = Prefix + "/_Internal/SendWork";
-                var cursor = Mathf.RoundToInt(load.conditions.Single(condition =>
-                    condition.parameter == sendCursorName &&
-                    condition.mode == AnimatorConditionMode.Equals).threshold) + 1;
-                var work = quantizedValue;
-                var decoded = new List<int>();
-                var alphabet = new ParameterCompressionAlphabet(6);
+                Run(wearer, remote, 30f * ParameterCompressorAnimatorBuilder.TickSeconds);
+                AssertSynced(entries, wearer, remote);
 
-                for (var step = 0; step < 2; step++)
+                var random = new System.Random(7);
+                var latencies = new List<float>();
+                for (var change = 0; change < 60; change++)
                 {
-                    var route = router.transitions
-                        .Where(transition => transition.destinationState != null &&
-                                             transition.destinationState.name.StartsWith(
-                                                 "Local Digit ", StringComparison.Ordinal))
-                        .Single(transition => ConditionsMatch(
-                            transition.conditions,
-                            sendCursorName,
-                            cursor,
-                            sendWorkName,
-                            work));
-                    var driver = route.destinationState.behaviours
-                        .OfType<VRCAvatarParameterDriver>()
-                        .Single(behaviour => behaviour.localOnly);
-
-                    var word = 0;
-                    for (var bit = 0; bit < 6; bit++)
-                    {
-                        var carrier = Prefix + "/_Bus/Bit" + bit;
-                        var write = driver.parameters.Single(parameter =>
-                            parameter.name == carrier &&
-                            parameter.type ==
-                            VRC_AvatarParameterDriver.ChangeType.Set);
-                        if (write.value > 0.5f) word |= 1 << bit;
-                    }
-                    Assert.That(alphabet.TryDecodeDigit(word, out var digit), Is.True);
-                    decoded.Add(digit);
-
-                    foreach (var parameter in driver.parameters.Where(parameter =>
-                                 parameter.type ==
-                                 VRC_AvatarParameterDriver.ChangeType.Add))
-                    {
-                        if (parameter.name == sendWorkName)
-                            work += Mathf.RoundToInt(parameter.value);
-                        if (parameter.name == sendCursorName)
-                            cursor += Mathf.RoundToInt(parameter.value);
-                    }
+                    var entry = entries[random.Next(entries.Count)];
+                    wearer.Set(entry, RandomValue(entry, random));
+                    var seconds = 0f;
+                    while (!Matches(entry, wearer, remote) && seconds < 2f)
+                        seconds += Run(wearer, remote, Frame);
+                    Assert.That(seconds, Is.LessThanOrEqualTo(
+                        ParameterCompressorAnimatorBuilder.HoldSeconds +
+                        ParameterCompressorAnimatorBuilder.ReadSeconds + 4f * Frame), entry.name);
+                    AssertSynced(entries, wearer, remote);
+                    latencies.Add(seconds);
+                    Run(wearer, remote, 0.15f + (float)random.NextDouble() * 0.3f);
                 }
-
-                Assert.That(decoded, Is.EqualTo(new[]
-                {
-                    expectedHighDigit,
-                    expectedLowDigit
-                }));
-                Assert.That(work, Is.Zero,
-                    "Every emitted digit must be removed from the sender accumulator.");
+                Debug.Log("[YUCP Parameter Compressor] Change latency mean " +
+                          latencies.Average().ToString("0.000") + " s, max " +
+                          latencies.Max().ToString("0.000") + " s.");
             }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(controller);
-            }
+            UnityEngine.Object.DestroyImmediate(controller);
         }
 
         [Test]
-        public void SixWireTwentySixFloatGraphIsFlatBoundedAndPositional()
+        public void LateJoinerConvergesWithinOneRefreshCycle()
         {
-            var controller = BuildController(26, out var result);
-            try
+            var entries = Entries(out var pageBits);
+            var controller = Build(entries, pageBits, out var result);
+            using (var wearer = new Client(controller, true))
             {
-                Assert.That(result.busBits, Is.EqualTo(6));
-                Assert.That(result.radix, Is.EqualTo(19));
-                Assert.That(result.blockCount, Is.EqualTo(4));
-                Assert.That(result.blockIdDigits, Is.EqualTo(1));
-                Assert.That(result.signalSymbolsPerCycle, Is.EqualTo(60));
-                Assert.That(result.carrierParameters, Is.EqualTo(
-                    Enumerable.Range(0, 6).Select(index =>
-                        Prefix + "/_Bus/Bit" + index)));
-                Assert.That(result.stagingParameters, Is.EqualTo(
-                    Enumerable.Range(0, 26).Select(index =>
-                        Prefix + "/_Internal/Staging/" + index)));
-                Assert.That(result.estimatedFullRefreshSeconds,
-                    Is.GreaterThan(0f).And.LessThan(float.PositiveInfinity));
-
-                var layer = controller.layers.Single(item => item.name == LayerName);
-                var machine = layer.stateMachine;
-                var states = machine.states.Select(child => child.state).ToArray();
-                Assert.That(layer.defaultWeight, Is.Zero);
-                Assert.That(machine.anyStateTransitions, Is.Empty);
-                Assert.That(machine.stateMachines, Is.Empty,
-                    "The transport should stay in one flat utility layer.");
-                Assert.That(states.Select(state => state.motion)
-                    .OfType<BlendTree>(), Is.Empty);
-                Assert.That(result.generatedStates, Is.EqualTo(states.Length));
-                Assert.That(states.Length, Is.LessThan(300));
-
-                Assert.That(states.Any(state =>
-                    state.name == "Local Digit d19 v13"), Is.True);
-                Assert.That(states.Any(state =>
-                    state.name == "Local Digit d1 v18"), Is.True);
-                Assert.That(states.Any(state =>
-                    state.name == "Remote Digit d19 v13"), Is.True);
-                Assert.That(states.Any(state =>
-                    state.name == "Remote Digit d1 v18"), Is.True);
-
-                var parameters = controller.parameters.ToDictionary(parameter =>
-                    parameter.name, StringComparer.Ordinal);
-                Assert.That(parameters, Has.Count.EqualTo(64));
-                Assert.That(result.carrierParameters, Has.All.Matches<string>(name =>
-                    parameters[name].type == AnimatorControllerParameterType.Bool));
-                Assert.That(result.stagingParameters, Has.All.Matches<string>(name =>
-                    parameters[name].type == AnimatorControllerParameterType.Float));
-                for (var index = 0; index < 26; index++)
-                    Assert.That(parameters["Compressed/Float" + index.ToString("D2")].type,
-                        Is.EqualTo(AnimatorControllerParameterType.Float));
+                var random = new System.Random(11);
+                foreach (var entry in entries) wearer.Set(entry, RandomValue(entry, random));
+                Run(wearer, null, 3f);
+                using (var remote = new Client(controller, false))
+                {
+                    Run(wearer, remote, result.estimatedFullRefreshSeconds + 0.5f);
+                    AssertSynced(entries, wearer, remote);
+                }
             }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(controller);
-            }
+            UnityEngine.Object.DestroyImmediate(controller);
         }
 
-        private static AnimatorController BuildController(
-            int floatCount,
+        /// <summary>Each tick is a whole message, so a lost one only delays that value.</summary>
+        [Test]
+        public void DroppedTicksHealOnTheNextRefresh()
+        {
+            var entries = Entries(out var pageBits);
+            var controller = Build(entries, pageBits, out var result);
+            using (var wearer = new Client(controller, true))
+            using (var remote = new Client(controller, false))
+            {
+                var random = new System.Random(3);
+                for (var change = 0; change < 20; change++)
+                {
+                    foreach (var entry in entries.Where(_ => random.Next(3) == 0))
+                        wearer.Set(entry, RandomValue(entry, random));
+                    Run(wearer, remote, 0.2f, random);
+                }
+                Run(wearer, remote, 3f * result.estimatedFullRefreshSeconds, random);
+                AssertSynced(entries, wearer, remote);
+            }
+            UnityEngine.Object.DestroyImmediate(controller);
+        }
+
+        [Test]
+        public void CarrierIsOneIntCodeAndPageBools()
+        {
+            var entries = Entries(out var pageBits);
+            var controller = Build(entries, pageBits, out var result);
+            var types = controller.parameters.ToDictionary(parameter => parameter.name, parameter => parameter.type);
+
+            Assert.That(result.carrierParameters, Is.EqualTo(new[] { Prefix + "/_Bus/Code" }
+                .Concat(Enumerable.Range(0, pageBits).Select(bit => Prefix + "/_Bus/Page" + bit))));
+            Assert.That(types[Prefix + "/_Bus/Code"], Is.EqualTo(AnimatorControllerParameterType.Int));
+            Assert.That(result.carrierParameters.Skip(1), Has.All.Matches<string>(name =>
+                types[name] == AnimatorControllerParameterType.Bool));
+            Assert.That(result.generatedStates, Is.LessThanOrEqualTo(3 + 6 * entries.Count));
+            UnityEngine.Object.DestroyImmediate(controller);
+        }
+
+        /// <summary>Radials, signed Floats, Bools and a small Int, laid out by the planner.</summary>
+        private static List<ParameterCompressorAnimatorBuilder.Entry> Entries(out int pageBits)
+        {
+            var entries = new List<ParameterCompressorAnimatorBuilder.Entry>();
+            void Add(string name, AnimatorControllerParameterType type, int levels, float minimum, float maximum) =>
+                entries.Add(new ParameterCompressorAnimatorBuilder.Entry
+                {
+                    name = name, type = type, levels = levels, minimum = minimum, maximum = maximum
+                });
+            for (var index = 0; index < 5; index++)
+                Add("Radial" + index, AnimatorControllerParameterType.Float, 128, 0f, 1f);
+            for (var index = 0; index < 2; index++)
+                Add("Signed" + index, AnimatorControllerParameterType.Float, 255, -1f, 1f);
+            for (var index = 0; index < 4; index++)
+                Add("Toggle" + index, AnimatorControllerParameterType.Bool, 2, 0f, 1f);
+            Add("Outfit", AnimatorControllerParameterType.Int, 6, 0f, 5f);
+
+            var plan = ParameterCompressionPlanner.CreatePlan(0, 0, entries.Select(entry =>
+                new ParameterCompressionCandidate(entry.name, entry.levels, 0, 8, true)));
+            foreach (var allocation in plan.Allocations)
+            {
+                var entry = entries.Single(item => item.name == allocation.Name);
+                entry.page = allocation.Page;
+                entry.offset = allocation.Offset;
+            }
+            pageBits = plan.PageBits;
+            return entries;
+        }
+
+        private static AnimatorController Build(
+            IReadOnlyList<ParameterCompressorAnimatorBuilder.Entry> entries, int pageBits) =>
+            Build(entries, pageBits, out _);
+
+        private static AnimatorController Build(
+            IReadOnlyList<ParameterCompressorAnimatorBuilder.Entry> entries,
+            int pageBits,
             out ParameterCompressorAnimatorBuilder.Result result)
         {
-            var controller = new AnimatorController
+            var controller = new AnimatorController { name = "Compressor Test" };
+            result = ParameterCompressorAnimatorBuilder.Build(new ParameterCompressorAnimatorBuilder.Request
             {
-                name = "Parameter Compressor Test Controller"
-            };
-            result = ParameterCompressorAnimatorBuilder.Build(
-                new ParameterCompressorAnimatorBuilder.Request
-                {
-                    controller = controller,
-                    prefix = Prefix,
-                    busBits = 6,
-                    blockSize = 8,
-                    entries = Enumerable.Range(0, floatCount)
-                        .Select(index => new ParameterCompressorAnimatorBuilder.Entry
-                        {
-                            name = "Compressed/Float" + index.ToString("D2"),
-                            type = AnimatorControllerParameterType.Float,
-                            levels = 255,
-                            minimum = -1f,
-                            maximum = 1f
-                        })
-                        .ToArray()
-                });
+                controller = controller,
+                prefix = Prefix,
+                pageBits = pageBits,
+                entries = entries
+            });
             return controller;
         }
 
-        private static bool ConditionsMatch(
-            IEnumerable<AnimatorCondition> conditions,
-            string sendCursorName,
-            int cursor,
-            string sendWorkName,
-            int work)
+        private static float RandomValue(ParameterCompressorAnimatorBuilder.Entry entry, System.Random random)
         {
-            foreach (var condition in conditions)
-            {
-                float value;
-                if (condition.parameter == sendCursorName) value = cursor;
-                else if (condition.parameter == sendWorkName) value = work;
-                else if (condition.parameter == "IsLocal") value = 1f;
-                else if (condition.parameter.StartsWith(
-                             Prefix + "/_Bus/Bit", StringComparison.Ordinal)) value = 0f;
-                else value = 0f;
+            if (entry.type == AnimatorControllerParameterType.Bool) return random.Next(2);
+            if (entry.type == AnimatorControllerParameterType.Int)
+                return random.Next((int)entry.minimum, (int)entry.maximum + 1);
+            return entry.minimum + (float)random.NextDouble() * (entry.maximum - entry.minimum);
+        }
 
-                var matches = condition.mode switch
-                {
-                    AnimatorConditionMode.If => value > 0.5f,
-                    AnimatorConditionMode.IfNot => value <= 0.5f,
-                    AnimatorConditionMode.Greater => value > condition.threshold,
-                    AnimatorConditionMode.Less => value < condition.threshold,
-                    AnimatorConditionMode.Equals => Mathf.Approximately(
-                        value, condition.threshold),
-                    AnimatorConditionMode.NotEqual => !Mathf.Approximately(
-                        value, condition.threshold),
-                    _ => false
-                };
-                if (!matches) return false;
+        /// <summary>What the remote should show: the value rounded to its level.</summary>
+        private static bool Matches(ParameterCompressorAnimatorBuilder.Entry entry, Client wearer, Client remote)
+        {
+            var level = ParameterCompressorAnimatorBuilder.Level(entry, wearer.Get(entry));
+            var expected = entry.type == AnimatorControllerParameterType.Bool
+                ? level
+                : entry.minimum + level * (entry.maximum - entry.minimum) / (entry.levels - 1);
+            return Mathf.Abs(remote.Get(entry) - expected) < 1e-4f;
+        }
+
+        private static void AssertSynced(
+            IEnumerable<ParameterCompressorAnimatorBuilder.Entry> entries, Client wearer, Client remote)
+        {
+            foreach (var entry in entries)
+                Assert.That(Matches(entry, wearer, remote), Is.True,
+                    entry.name + ": wearer " + wearer.Get(entry) + ", remote " + remote.Get(entry));
+        }
+
+        /// <summary>Steps both clients a frame at a time; every 0.1 s the remote gets the
+        /// wearer's synced carriers, like Playable sync, losing 30% when given a random.</summary>
+        private static float Run(Client wearer, Client remote, float seconds, System.Random loss = null)
+        {
+            var elapsed = 0f;
+            for (; elapsed < seconds - 1e-6f; elapsed += Frame)
+            {
+                wearer.Step();
+                remote?.Step();
+                wearer.clock += Frame;
+                if (remote == null || wearer.clock < 0.1f) continue;
+                wearer.clock -= 0.1f;
+                if (loss != null && loss.NextDouble() < 0.3) continue;
+                foreach (var name in wearer.carriers) remote.SetRaw(name, wearer.GetRaw(name));
             }
-            return true;
+            return elapsed;
+        }
+
+        /// <summary>
+        /// One client's FX layer on a PlayableGraph. VRChat's drivers run on state
+        /// enter, sequentially, localOnly ones only for the wearer; Convert Range
+        /// clamps and Int writes floor, like Gesture Manager's emulation.
+        /// </summary>
+        private sealed class Client : IDisposable
+        {
+            private readonly GameObject gameObject;
+            private PlayableGraph graph;
+            private AnimatorControllerPlayable playable;
+            private readonly bool local;
+            private readonly Dictionary<string, AnimatorControllerParameterType> types;
+            private readonly AnimatorControllerLayer[] layers;
+            private readonly int[] active;
+            internal readonly string[] carriers;
+            internal float clock;
+
+            internal Client(AnimatorController controller, bool local)
+            {
+                this.local = local;
+                gameObject = new GameObject("Compressor client") { hideFlags = HideFlags.HideAndDontSave };
+                graph = PlayableGraph.Create("Compressor client");
+                graph.SetTimeUpdateMode(DirectorUpdateMode.Manual);
+                playable = AnimatorControllerPlayable.Create(graph, controller);
+                AnimationPlayableOutput.Create(graph, "FX", gameObject.AddComponent<Animator>())
+                    .SetSourcePlayable(playable);
+                types = controller.parameters.ToDictionary(parameter => parameter.name, parameter => parameter.type);
+                carriers = types.Keys.Where(name => name.StartsWith(Prefix + "/_Bus/", StringComparison.Ordinal)).ToArray();
+                layers = controller.layers;
+                active = new int[layers.Length];
+                graph.Evaluate(0f);
+                playable.SetBool("IsLocal", local);
+            }
+
+            internal void Step()
+            {
+                graph.Evaluate(Frame);
+                for (var index = 0; index < layers.Length; index++)
+                {
+                    var info = playable.IsInTransition(index)
+                        ? playable.GetNextAnimatorStateInfo(index)
+                        : playable.GetCurrentAnimatorStateInfo(index);
+                    if (info.fullPathHash == active[index]) continue;
+                    active[index] = info.fullPathHash;
+                    var state = layers[index].stateMachine.states.Select(child => child.state).First(item =>
+                        Animator.StringToHash(layers[index].name + "." + item.name) == info.fullPathHash);
+                    foreach (var driver in state.behaviours.OfType<VRCAvatarParameterDriver>())
+                        if (local || !driver.localOnly)
+                            foreach (var write in driver.parameters) Apply(write);
+                }
+            }
+
+            private void Apply(VRC_AvatarParameterDriver.Parameter write)
+            {
+                var value = write.value;
+                if (write.type == VRC_AvatarParameterDriver.ChangeType.Copy)
+                {
+                    value = GetRaw(write.source);
+                    if (write.convertRange)
+                        value = write.destMin + (write.destMax - write.destMin) *
+                            Mathf.Clamp01((value - write.sourceMin) / (write.sourceMax - write.sourceMin));
+                }
+                SetRaw(write.name, value);
+            }
+
+            internal float Get(ParameterCompressorAnimatorBuilder.Entry entry) => GetRaw(entry.name);
+
+            internal void Set(ParameterCompressorAnimatorBuilder.Entry entry, float value) => SetRaw(entry.name, value);
+
+            internal float GetRaw(string name)
+            {
+                switch (types[name])
+                {
+                    case AnimatorControllerParameterType.Bool: return playable.GetBool(name) ? 1f : 0f;
+                    case AnimatorControllerParameterType.Int: return playable.GetInteger(name);
+                    default: return playable.GetFloat(name);
+                }
+            }
+
+            internal void SetRaw(string name, float value)
+            {
+                switch (types[name])
+                {
+                    case AnimatorControllerParameterType.Bool: playable.SetBool(name, value != 0f); break;
+                    case AnimatorControllerParameterType.Int: playable.SetInteger(name, Mathf.FloorToInt(value)); break;
+                    default: playable.SetFloat(name, value); break;
+                }
+            }
+
+            public void Dispose()
+            {
+                graph.Destroy();
+                UnityEngine.Object.DestroyImmediate(gameObject);
+            }
         }
     }
 }

@@ -40,76 +40,76 @@ namespace YUCP.Components
     [Serializable]
     public class BlendshapeMarkdownHeadingRule
     {
-        [Tooltip("Display name shown in the configuration UI.")]
+        [Tooltip("A name for this rule.")]
         public string name = "Heading Rule";
 
-        [Tooltip("Disable a rule without deleting it.")]
+        [Tooltip("Uses this rule. Turn it off to keep the rule without using it.")]
         public bool enabled = true;
 
-        [Tooltip("How this rule detects markdown headings.")]
+        [Tooltip("Prefix matches # Title; Wrapped matches ==Title== or |-Title-|. Use Regex only when neither fits.")]
         public BlendshapeMarkdownHeadingRuleMode mode = BlendshapeMarkdownHeadingRuleMode.PrefixToken;
 
-        [Tooltip("The repeated token that determines heading depth.\n\nExamples:\n• # for markdown\n• = for =Title=\n• - for |-Title-|")]
+        [Tooltip("The repeated text that marks a heading. Its count sets the depth, so ## is nested under #.")]
         public string repeatToken = "#";
 
-        [Tooltip("Text that must appear before the repeated token for wrapped headings.\n\nExamples:\n• | for |-Title-|\n• || for ||---Title---||")]
+        [Tooltip("Text before the repeated token, such as | in |-Title-|.")]
         public string leftWrapper = "";
 
-        [Tooltip("Text that must appear after the repeated token for wrapped headings.")]
+        [Tooltip("Text after the repeated token, such as | in |-Title-|.")]
         public string rightWrapper = "";
 
-        [Tooltip("Require whitespace after the repeated token in Prefix mode.\n\nExample:\n• Enabled: # Title\n• Disabled: #Title")]
+        [Tooltip("Requires a space after the token, so # Title matches but #Title doesn't.")]
         public bool requireWhitespaceAfterPrefix = true;
 
-        [Tooltip("Ignore case when matching text-based wrappers or regex.")]
+        [Tooltip("Matches upper and lower case alike.")]
         public bool ignoreCase = false;
 
-        [Tooltip("Regex used in Raw Regex mode.\n\nCapture either the marker text or a numeric depth in the depth group, and the clean heading text in the title group.")]
+        [Tooltip("A regular expression with one group for the depth and one for the title. A pattern that takes too long is skipped.")]
         public string rawRegex = "";
 
-        [Tooltip("Regex group that provides heading depth. If the capture is numeric, that number is used. Otherwise its length is used.")]
+        [Tooltip("The group that sets the depth: a number, or marker text whose length is the depth.")]
         [Min(1)]
         public int rawRegexDepthGroup = 1;
 
-        [Tooltip("Regex group that provides the heading title.")]
+        [Tooltip("The group that holds the heading title.")]
         [Min(1)]
         public int rawRegexTitleGroup = 2;
 
-        [Tooltip("Trim whitespace around the final heading title.")]
+        [Tooltip("Removes spaces around the title.")]
         public bool trimTitleWhitespace = true;
     }
 
     [Serializable]
     public class BlendshapeMarkdownColorRule
     {
-        [Tooltip("Display name shown in the configuration UI.")]
+        [Tooltip("A name for this rule.")]
         public string name = "Color Rule";
 
-        [Tooltip("Disable a rule without deleting it.")]
+        [Tooltip("Uses this rule. Turn it off to keep the rule without using it.")]
         public bool enabled = true;
 
-        [Tooltip("Which part of the parsed section to test.")]
+        [Tooltip("Title matches the section's own name. Full Path matches its whole path, such as Body/Head.")]
         public BlendshapeMarkdownColorMatchTarget target = BlendshapeMarkdownColorMatchTarget.SectionTitle;
 
-        [Tooltip("How the section text should be matched.")]
+        [Tooltip("How the text is compared with the section.")]
         public BlendshapeMarkdownColorMatchMode matchMode = BlendshapeMarkdownColorMatchMode.Contains;
 
-        [Tooltip("The text or regex pattern to match.")]
+        [Tooltip("The text or regular expression to match. A rule without text is skipped.")]
         public string matchText = "";
 
-        [Tooltip("Ignore case when matching.")]
+        [Tooltip("Matches upper and lower case alike.")]
         public bool ignoreCase = true;
 
-        [Tooltip("Use a Pretty Hierarchy-inspired preset instead of custom colors.")]
+        [Tooltip("Preset uses a Pretty Hierarchy color style. Custom uses your own colors.")]
         public bool usePresetColors = true;
 
-        [Tooltip("Preset palette to apply when this rule matches.")]
+        [Tooltip("The color style for matching sections.")]
         public PrettyHierarchyPreset preset = PrettyHierarchyPreset.Ocean;
 
-        [Tooltip("Custom text color when Use Preset Colors is disabled.")]
+        [Tooltip("Header text color for matching sections.")]
         public Color textColor = Color.white;
 
-        [Tooltip("Custom background color when Use Preset Colors is disabled.")]
+        [Tooltip("Header background color for matching sections.")]
         public Color backgroundColor = new Color(0.15f, 0.35f, 0.5f, 1f);
     }
 
@@ -120,53 +120,53 @@ namespace YUCP.Components
     public class BlendshapeMarkdownData : MonoBehaviour, IEditorOnly
     {
         [Header("Target Renderer")]
-        [Tooltip("Optional explicit renderer to organize. Leave empty to use the SkinnedMeshRenderer on this GameObject.")]
+        [Tooltip("The renderer to organize. Leave empty to use the one on this object.")]
         public SkinnedMeshRenderer targetRenderer;
 
         [Header("Native Inspector Integration")]
-        [Tooltip("When enabled, this component replaces the flat BlendShapes list in Unity's native SkinnedMeshRenderer inspector with the markdown-organized view.")]
+        [Tooltip("Shows the renderer's blendshapes in collapsible sections in its inspector.")]
         public bool enableNativeInspectorIntegration = true;
 
-        [Tooltip("Replace Unity's default flat BlendShapes list. Disable this to keep the native list without the markdown grouping.")]
+        [Tooltip("Replaces Unity's flat blendshape list with the sections. Turn it off to keep the flat list.")]
         public bool replaceDefaultBlendshapeList = true;
 
-        [Tooltip("Show the search field above the organized blendshape tree.")]
+        [Tooltip("Shows a search field above the sections.")]
         public bool showSearchBar = true;
 
-        [Tooltip("Show blendshape counts on section headers.")]
+        [Tooltip("Shows how many blendshapes each section holds.")]
         public bool showBlendshapeCounts = true;
 
         [Header("Heading Parsing")]
-        [Tooltip("Quick preset for common heading styles. Use Apply Preset in the inspector to rebuild the rule list.")]
+        [Tooltip("Common heading styles. Add their rules to yours, or replace yours with them.")]
         public BlendshapeMarkdownPreset preset = BlendshapeMarkdownPreset.MixedConvenience;
 
-        [Tooltip("Treat forward slashes in a heading title as nested paths.\n\nExample:\n==Body/Head== becomes Body > Head.")]
+        [Tooltip("Treats / in a heading as nesting, so ==Body/Head== becomes Head inside Body.")]
         public bool useSlashAsPathSeparator = true;
 
-        [Tooltip("Group direct blendshapes under an Ungrouped foldout when they appear between markdown headings.")]
+        [Tooltip("Collects blendshapes that sit beside subsections into their own section.")]
         public bool showUngroupedBlendshapes = true;
 
-        [Tooltip("Label used for direct blendshapes that are not under a named subsection.")]
+        [Tooltip("The title of the ungrouped section.")]
         public string ungroupedSectionTitle = "Ungrouped";
 
-        [Tooltip("If a top-level blendshape starts with this text and is not already inside a markdown section, it is moved into the auto-group below.\n\nLeave empty to disable this behavior.")]
+        [Tooltip("Top-level blendshapes that start with this text, such as VRC visemes, get their own section. Leave empty to turn this off.")]
         public string topLevelAutoGroupPrefix = "VRC";
 
-        [Tooltip("Label used for top-level blendshapes matched by the auto-group prefix.")]
+        [Tooltip("The title of the auto-grouped section.")]
         public string topLevelAutoGroupTitle = "Visemes";
 
-        [Tooltip("Section matching rules. The first matching rule wins.")]
+        [Tooltip("Rules that find headings in blendshape names. The first rule that matches wins.")]
         public List<BlendshapeMarkdownHeadingRule> headingRules = new List<BlendshapeMarkdownHeadingRule>();
 
         [Header("Default Expansion")]
-        [Tooltip("Default state for top-level markdown sections before any SessionState is stored.")]
+        [Tooltip("Top-level sections start expanded.")]
         public bool expandTopLevelByDefault = true;
 
-        [Tooltip("Default state for nested markdown sections before any SessionState is stored.")]
+        [Tooltip("Nested sections start expanded.")]
         public bool expandNestedByDefault = false;
 
         [Header("Section Colors")]
-        [Tooltip("Optional color rules for section headers, similar in spirit to Pretty Hierarchy.")]
+        [Tooltip("Colors for matching section headers. The first enabled rule that matches wins.")]
         public List<BlendshapeMarkdownColorRule> colorRules = new List<BlendshapeMarkdownColorRule>();
 
         [Header("Debug")]

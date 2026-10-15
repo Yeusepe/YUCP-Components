@@ -26,20 +26,20 @@ namespace YUCP.Components
             Left, Right, Closest
         }
 
-        [Tooltip("Which symmetric body part to attach to.")]
+        [Tooltip("The body part to link this object to.")]
         public BodyPart part;
 
-        [Tooltip("For symmetric parts, pick a side (or Closest).")]
+        [Tooltip("The side to link to. Closest picks the side nearer this object.")]
         public Side side = Side.Closest;
 
-        [Tooltip("Optional offset string for fine tuning the attachment.")]
+        [Tooltip("Optional. Links to this child path under the bone instead of the bone itself.")]
         public string offset = "";
 
         [Header("Auto-Delete Components")]
-        [Tooltip("Drag in the GameObject you want destroyed if Left is selected.")]
+        [Tooltip("Optional. Deleted from the build when this object links to the left side.")]
         public GameObject leftComponentToDelete;
 
-        [Tooltip("Drag in the GameObject you want destroyed if Right is selected.")]
+        [Tooltip("Optional. Deleted from the build when this object links to the right side.")]
         public GameObject rightComponentToDelete;
 
         public int PreprocessOrder => 0;

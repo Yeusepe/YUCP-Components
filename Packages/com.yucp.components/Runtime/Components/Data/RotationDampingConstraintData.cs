@@ -20,15 +20,15 @@ namespace YUCP.Components
         [SerializeField, HideInInspector]
         private GameObject _dampenedObjectInfo;
         
-        [Tooltip("Applied object (transform): The object that will have its rotation dampened. This is automatically set to the GameObject this component is attached to.")]
+        [Tooltip("What the object follows while Rotation Target is empty.")]
         [FormerlySerializedAs("targetObject")]
         public Transform appliedTransform;
 
-        [Tooltip("ROTATION TARGET: The target rotation the constraint dampens towards. This object will be moved outside the prefab hierarchy. The dampened object will smoothly follow this target's rotation based on the damping weight.")]
+        [Tooltip("Whose rotation the object follows, with a delay.")]
         public Transform rotationTarget;
 
         [Header("Damping Settings")]
-        [Tooltip("Weight of the second source in the constraint. Lower values = stronger damping effect.")]
+        [Tooltip("How quickly the object catches up with its target. Lower is smoother and slower.")]
         [Range(0.01f, 1f)]
         public float dampingWeight = 0.15f;
 
@@ -39,21 +39,21 @@ namespace YUCP.Components
         [Tooltip("Rotation at rest. Default rotation when constraint weight is 0 or axis is frozen.")]
         public Vector3 rotationAtRest = Vector3.zero;
 
-        [Tooltip("Source rotation offset. Rotation offset applied to the constraint source (Euler angles in degrees).")]
+        [Tooltip("Rotation added to the target's, in degrees.")]
         public Vector3 sourceRotationOffset = Vector3.zero;
 
         [Header("Grouping")]
-        [Tooltip("Enable to combine multiple components into a shared constraint setup.")]
+        [Tooltip("Shares one constraint setup between components with the same group ID.")]
         public bool enableGrouping = false;
 
-        [Tooltip("Identifier used when grouping is enabled. Components with matching IDs are merged into the same setup.")]
+        [Tooltip("Components with the same group ID share one setup.")]
         public string constraintGroupId = "Default";
 
         [Header("Diagnostics")]
-        [Tooltip("Print additional information while building.")]
+        [Tooltip("Logs extra detail while the avatar builds.")]
         public bool verboseLogging = false;
 
-        [Tooltip("Include the automatic credit banner in the inspector and documentation.")]
+        [Tooltip("Shows the credit line for the VRLabs prefab this component is based on.")]
         public bool includeCredits = true;
 
 #if UNITY_EDITOR

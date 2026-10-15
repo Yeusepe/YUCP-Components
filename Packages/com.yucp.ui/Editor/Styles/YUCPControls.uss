@@ -1,0 +1,260 @@
+/* Controls the DevTools windows didn't have, drawn in the same language (YUCPDesignSystem.uss):
+   tinted teal for the selection, pill shapes, color-only hover (DESIGN.md §7). */
+
+/* ---- Section parts and groups ------------------------------------------------------------------ */
+
+.yucp-section-description {
+    margin-top: -8px;
+    margin-bottom: 12px;
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+    white-space: normal;
+}
+
+.yucp-section-content {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.yucp-group {
+    flex-direction: column;
+    margin-top: var(--yucp-spacing-md);
+}
+
+.yucp-group-title {
+    margin-bottom: 2px;
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+}
+
+/* ---- Button arrangements ----------------------------------------------------------------------- */
+
+.yucp-button-leading-icon {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.yucp-button-leading-icon > Image {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+}
+
+.yucp-button-icon > Image {
+    width: 16px;
+    height: 16px;
+}
+
+.yucp-button-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.yucp-button-row > .yucp-button {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+
+/* ---- Badges ------------------------------------------------------------------------------------ */
+
+.yucp-badge {
+    flex-shrink: 0;
+    min-height: 16px;
+    padding: 1px 8px;
+    font-size: 10px;
+    -unity-text-align: middle-center;
+    border-radius: var(--yucp-radius-pill);
+    background-color: var(--yucp-bg-control);
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-badge-primary,
+.yucp-badge-success {
+    background-color: var(--yucp-tint-accent);
+    color: var(--yucp-accent-primary);
+}
+
+.yucp-badge-warning {
+    background-color: var(--yucp-tint-warning);
+    color: var(--yucp-text-primary);
+}
+
+.yucp-badge-danger {
+    background-color: var(--yucp-tint-danger);
+    color: var(--yucp-text-primary);
+}
+
+.yucp-badge-info {
+    background-color: var(--yucp-tint-info);
+    color: var(--yucp-text-primary);
+}
+
+/* ---- Segmented control and tabs: the exporter's pill navigation --------------------------------- */
+
+.yucp-segmented-field {
+    align-items: center;
+}
+
+.yucp-segmented,
+.yucp-tabs-header {
+    flex-direction: row;
+    padding: 2px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: var(--yucp-radius-pill);
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.yucp-root--light .yucp-segmented,
+.yucp-root--light .yucp-tabs-header {
+    border-color: var(--yucp-border-input);
+    background-color: var(--yucp-bg-hover);
+}
+
+.yucp-segmented {
+    flex-grow: 1;
+    min-height: 24px;
+}
+
+.yucp-tabs-header {
+    align-self: center;
+    margin: var(--yucp-spacing-sm) 0 var(--yucp-spacing-xs) 0;
+}
+
+.yucp-segment,
+.yucp-tab {
+    min-height: 18px;
+    margin: 0;
+    padding: 0 10px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0);
+    border-radius: 10px;
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--yucp-text-tertiary);
+    transition-property: background-color, border-color, color;
+    transition-duration: 0.2s;
+}
+
+.yucp-segment {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+
+.yucp-tab {
+    min-height: 22px;
+    padding: 0 12px;
+}
+
+.yucp-segment:hover,
+.yucp-tab:hover {
+    background-color: var(--yucp-bg-hover);
+    color: var(--yucp-text-primary);
+}
+
+.yucp-segment--selected,
+.yucp-segment--selected:hover,
+.yucp-tab-selected,
+.yucp-tab-selected:hover {
+    border-color: var(--yucp-border-accent);
+    background-color: var(--yucp-tint-accent);
+    color: var(--yucp-accent-primary);
+}
+
+/* ---- Disclosure -------------------------------------------------------------------------------- */
+
+.yucp-foldout {
+    margin-top: var(--yucp-spacing-sm);
+}
+
+.yucp-foldout > .unity-foldout__toggle {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-foldout > .unity-foldout__content {
+    margin-top: var(--yucp-spacing-xs);
+    margin-left: 15px;
+}
+
+.yucp-foldout-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+}
+
+.yucp-foldout-badge {
+    margin-left: auto;
+}
+
+/* ---- Lists and rows (the exporter's row items) -------------------------------------------------- */
+
+.yucp-list {
+    padding: 2px;
+    border-width: 1px;
+    border-color: var(--yucp-border-input);
+    border-radius: var(--yucp-radius-input);
+    background-color: var(--yucp-bg-input);
+}
+
+.yucp-list .unity-collection-view__item {
+    border-radius: var(--yucp-radius-small);
+}
+
+.yucp-list .unity-collection-view__item--selected {
+    background-color: rgba(54, 191, 177, 0.12);
+}
+
+.yucp-list-item {
+    flex-direction: row;
+    flex-grow: 1;
+    align-items: center;
+    padding: 0 8px;
+}
+
+.yucp-list-item-name {
+    flex-grow: 1;
+    flex-shrink: 1;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-list-empty {
+    padding: 6px 3px;
+    color: var(--yucp-text-tertiary);
+    white-space: normal;
+}
+
+.yucp-list-footer {
+    flex-direction: row;
+    margin-top: var(--yucp-spacing-xs);
+}
+
+.yucp-row {
+    flex-direction: row;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 8px;
+    border-radius: var(--yucp-radius-small);
+    transition-property: background-color;
+    transition-duration: 0.15s;
+}
+
+.yucp-row-selectable:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.yucp-row--selected,
+.yucp-row--selected:hover {
+    background-color: rgba(54, 191, 177, 0.12);
+}
+
+.yucp-row-label {
+    width: 30%;
+    min-width: 70px;
+    color: var(--yucp-text-primary);
+}

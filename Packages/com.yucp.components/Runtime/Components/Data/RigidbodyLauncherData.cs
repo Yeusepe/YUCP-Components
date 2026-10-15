@@ -20,64 +20,64 @@ namespace YUCP.Components
         [SerializeField, HideInInspector]
         private GameObject _launchedObjectInfo;
         
-        [Tooltip("Applied object (transform): The object that will be launched. This object will be moved outside the prefab hierarchy and connected to a configurable joint that launches it when triggered.")]
+        [Tooltip("Where the launch starts. Empty keeps the prefab's default position.")]
         [FormerlySerializedAs("launcherTarget")]
         public Transform appliedTransform;
 
         [Header("Options")]
-        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Launcher\"). Leave blank to place it at the root menu.")]
+        [Tooltip("Submenu for the launcher toggle, e.g. Utility/Launcher. Empty puts it at the root.")]
         public string menuLocation = "Utility/Launcher";
 
-        [Tooltip("OPTIONAL: Base parameter name for RigidbodyLauncher/Control. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
+        [Tooltip("Optional global parameter that controls the launcher. /<object> is appended to keep it unique.")]
         public string globalParameterControl = "";
 
         [Header("Launch Settings")]
-        [Tooltip("Launch speed/velocity. Negative value for forward direction. This affects the Target Velocity in the animation clip.")]
+        [Tooltip("How fast the object launches. Negative values launch it forward.")]
         public float launchSpeed = -10f;
 
-        [Tooltip("Maximum force for the configurable joint X/Y/Z drives.")]
+        [Tooltip("The most force the launcher's joint can apply.")]
         [Range(0f, 10000f)]
         public float maximumForce = 1000f;
 
-        [Tooltip("Which hand to use for gesture triggers (Left or Right).")]
+        [Tooltip("The hand whose gestures launch and reset the object.")]
         public GestureHand gestureHand = GestureHand.Right;
 
-        [Tooltip("Gesture value for launching (default: 2 = HandOpen).")]
+        [Tooltip("The gesture that launches the object.")]
         [Range(0, 7)]
         public int launchGesture = 2;
 
-        [Tooltip("Gesture value for resetting (default: 1 = Fist).")]
+        [Tooltip("The gesture that brings the object back.")]
         [Range(0, 7)]
         public int resetGesture = 1;
 
-        [Tooltip("Layers that the particle system will detect collisions with.")]
+        [Tooltip("Layers the launched object collides with.")]
         public LayerMask collisionLayers = -1;
 
         [Header("Global Parameter Settings")]
-        [Tooltip("Enable global parameter triggers instead of gestures.")]
+        [Tooltip("Launches and resets with global parameters instead of gestures.")]
         public bool useGlobalParameters = false;
 
-        [Tooltip("Parameter mode: Single uses one parameter (true=launch, false=reset), Dual uses separate parameters for launch and reset.")]
+        [Tooltip("One parameter launches when on and resets when off. Two uses separate launch and reset parameters.")]
         public ParameterMode parameterMode = ParameterMode.Single;
 
-        [Tooltip("Base parameter name for launch. The system will append /<Target> to make it unique per component. In Single mode, this parameter is used for both launch (true) and reset (false).")]
+        [Tooltip("Global parameter that launches the object. /<object> is appended to keep it unique.")]
         public string launchParameterName = "LaunchObject";
 
-        [Tooltip("Base parameter name for reset. The system will append /<Target> to make it unique per component. Only used in Dual mode.")]
+        [Tooltip("Global parameter that resets the object. /<object> is appended to keep it unique.")]
         public string resetParameterName = "ResetObject";
 
         [Header("Grouping")]
-        [Tooltip("Enable to combine multiple components into a shared launcher setup.")]
+        [Tooltip("Shares one launcher setup between components with the same group ID.")]
         public bool enableGrouping = false;
 
-        [Tooltip("Identifier used when grouping is enabled. Components with matching IDs are merged into the same setup.")]
+        [Tooltip("Components with the same group ID share one setup.")]
         public string launcherGroupId = "Default";
 
         [Header("Diagnostics")]
-        [Tooltip("Print additional information while building.")]
+        [Tooltip("Logs extra detail while the avatar builds.")]
         public bool verboseLogging = false;
 
-        [Tooltip("Include the automatic credit banner in the inspector and documentation.")]
+        [Tooltip("Shows the credit line for the VRLabs prefab this component is based on.")]
         public bool includeCredits = true;
 
 #if UNITY_EDITOR

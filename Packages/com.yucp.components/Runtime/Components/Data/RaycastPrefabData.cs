@@ -20,37 +20,37 @@ namespace YUCP.Components
         [SerializeField, HideInInspector]
         private GameObject _raycastObjectInfo;
         
-        [Tooltip("Raycast origin: The object that determines the raycast direction. The raycast will be cast from this object's position in its forward direction. The raycast object will be positioned at the hit point using Final IK's Grounder.")]
+        [Tooltip("The ray starts here and points along its forward axis. The object moves to where the ray hits.")]
         [FormerlySerializedAs("castingTarget")]
         public Transform raycastOrigin;
 
         [Header("Options")]
-        [Tooltip("When enabled, an expression menu toggle is generated for this raycast. When disabled, no menu entry is added.")]
+        [Tooltip("Adds a menu toggle for the raycast.")]
         public bool generateMenu = false;
 
-        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Raycast\"). Leave blank to place it at the root menu. Only used when Generate Menu is enabled.")]
+        [Tooltip("Submenu for the toggle, e.g. Utility/Raycast. Empty puts it at the root.")]
         public string menuLocation = "Utility/Raycast";
 
         [Header("Raycast Settings")]
-        [Tooltip("Layers that the Grounder IK will raycast against.")]
+        [Tooltip("Layers the ray can hit.")]
         public LayerMask grounderLayers = -1;
 
-        [Tooltip("Maximum raycast distance.")]
+        [Tooltip("How far the ray reaches.")]
         [Range(0.1f, 100f)]
         public float raycastDistance = 10f;
 
         [Header("Grouping")]
-        [Tooltip("Enable to combine multiple components into a shared raycast setup.")]
+        [Tooltip("Shares one raycast setup between components with the same group ID.")]
         public bool enableGrouping = false;
 
-        [Tooltip("Identifier used when grouping is enabled. Components with matching IDs are merged into the same setup.")]
+        [Tooltip("Components with the same group ID share one setup.")]
         public string raycastGroupId = "Default";
 
         [Header("Diagnostics")]
-        [Tooltip("Print additional information while building.")]
+        [Tooltip("Logs extra detail while the avatar builds.")]
         public bool verboseLogging = false;
 
-        [Tooltip("Include the automatic credit banner in the inspector and documentation.")]
+        [Tooltip("Shows the credit line for the VRLabs prefab this component is based on.")]
         public bool includeCredits = true;
 
 #if UNITY_EDITOR

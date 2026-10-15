@@ -150,7 +150,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                 var outdated = new VisemePhraseEnrollmentStatus();
                 outdated.issues.Add(new VisemePhraseEnrollmentIssue(
                     VisemePhraseEnrollmentIssueLevel.Blocking,
-                    "This enrollment profile uses a different package data format. Open Record / Improve to create a current personal enrollment.",
+                    "This enrollment profile uses a different package data format. Click Record Takes to create a current personal enrollment.",
                     VisemePhraseEnrollmentIssueTarget.Compilation));
                 return outdated;
             }

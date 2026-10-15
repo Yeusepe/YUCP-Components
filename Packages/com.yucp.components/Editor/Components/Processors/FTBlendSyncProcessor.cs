@@ -116,7 +116,7 @@ namespace YUCP.Components.Editor
         {
             var plan = new Plan();
             var renderer = data.GetRenderer();
-            if (renderer == null || renderer.sharedMesh == null) { plan.errors.Add("Assign a skinned mesh renderer."); return plan; }
+            if (renderer == null || renderer.sharedMesh == null) { plan.errors.Add("Assign the face mesh."); return plan; }
             var mesh = renderer.sharedMesh;
             var resolver = new Resolver(mesh, data.allowApproximations);
             var explicitTargets = new HashSet<string>(StringComparer.Ordinal);

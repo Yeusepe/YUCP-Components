@@ -5,170 +5,98 @@ using System.Linq;
 
 namespace YUCP.Components.Editor
 {
-    internal enum ParameterCompressionValueKind
-    {
-        Bool,
-        Int,
-        Float
-    }
-
     /// <summary>
-    /// Neutral planner input. Levels are the number of distinct on-wire values,
-    /// not bits. A lossless VRChat Float therefore requests 255 levels, while an
-    /// Int requests 256 and a Bool requests two.
+    /// Neutral planner input. Levels are the number of distinct values remote
+    /// clients can see, not bits: a Bool has two, a [0,1] Float 128, a [-1,1]
+    /// Float 255 and a full Int 256.
     /// </summary>
     internal sealed class ParameterCompressionCandidate
     {
         internal ParameterCompressionCandidate(
             string name,
-            ParameterCompressionValueKind valueKind,
-            int minimumLevels,
-            int desiredLevels,
+            int levels,
             int priority,
             int currentBits,
             bool required = false)
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw new ArgumentException("A candidate needs a stable name.", nameof(name));
-            if (minimumLevels <= 0)
-                throw new ArgumentOutOfRangeException(nameof(minimumLevels));
-            if (desiredLevels < minimumLevels)
-                throw new ArgumentOutOfRangeException(nameof(desiredLevels));
+            if (levels < 2 || levels > ParameterCompressionPlanner.PageSize)
+                throw new ArgumentOutOfRangeException(nameof(levels));
             if (currentBits <= 0)
                 throw new ArgumentOutOfRangeException(nameof(currentBits));
 
             Name = name.Trim();
-            ValueKind = valueKind;
-            MinimumLevels = minimumLevels;
-            DesiredLevels = desiredLevels;
+            Levels = levels;
             Priority = priority;
             CurrentBits = currentBits;
             Required = required;
         }
 
         internal string Name { get; }
-        internal ParameterCompressionValueKind ValueKind { get; }
-        internal int MinimumLevels { get; }
-        internal int DesiredLevels { get; }
+        internal int Levels { get; }
         internal int Priority { get; }
         internal int CurrentBits { get; }
         internal bool Required { get; }
     }
 
-    internal sealed class ParameterCompressionBusPolicy
-    {
-        internal ParameterCompressionBusPolicy(
-            int minimumWireBits,
-            int maximumWireBits,
-            int maximumDigits,
-            float secondsPerWireWord)
-        {
-            if (minimumWireBits < 3)
-                throw new ArgumentOutOfRangeException(nameof(minimumWireBits));
-            if (maximumWireBits < minimumWireBits || maximumWireBits > 16)
-                throw new ArgumentOutOfRangeException(nameof(maximumWireBits));
-            if (maximumDigits < 0)
-                throw new ArgumentOutOfRangeException(nameof(maximumDigits));
-            if (float.IsNaN(secondsPerWireWord) ||
-                float.IsInfinity(secondsPerWireWord) ||
-                secondsPerWireWord <= 0f)
-                throw new ArgumentOutOfRangeException(nameof(secondsPerWireWord));
-
-            MinimumWireBits = minimumWireBits;
-            MaximumWireBits = maximumWireBits;
-            MaximumDigits = maximumDigits;
-            SecondsPerWireWord = secondsPerWireWord;
-        }
-
-        internal int MinimumWireBits { get; }
-        internal int MaximumWireBits { get; }
-        internal int MaximumDigits { get; }
-        internal float SecondsPerWireWord { get; }
-    }
-
+    /// <summary>Where one value's levels sit in the bus code space.</summary>
     internal sealed class ParameterCompressionAllocation
     {
         internal ParameterCompressionAllocation(
             ParameterCompressionCandidate candidate,
-            int levels,
-            long offset)
+            int page,
+            int offset)
         {
             Candidate = candidate;
-            Levels = levels;
+            Page = page;
             Offset = offset;
         }
 
         internal ParameterCompressionCandidate Candidate { get; }
         internal string Name => Candidate.Name;
-        internal int Levels { get; }
-        internal long Offset { get; }
+        internal int Levels => Candidate.Levels;
+        internal int Page { get; }
+        internal int Offset { get; }
     }
 
     internal sealed class ParameterCompressionPlan
     {
         internal ParameterCompressionPlan(
-            int currentBits,
-            int targetBits,
-            int busBits,
-            int radix,
-            int digitCount,
             int finalBits,
-            long totalCardinality,
-            float estimatedFrameSeconds,
-            float estimatedFullRefreshSeconds,
-            IReadOnlyList<ParameterCompressionAllocation> allocations,
-            ParameterCompressionEnumerativeLayout layout)
+            int pageBits,
+            IReadOnlyList<ParameterCompressionAllocation> allocations)
         {
-            CurrentBits = currentBits;
-            TargetBits = targetBits;
-            BusBits = busBits;
-            Radix = radix;
-            DigitCount = digitCount;
             FinalBits = finalBits;
-            TotalCardinality = totalCardinality;
-            EstimatedFrameSeconds = estimatedFrameSeconds;
-            EstimatedFullRefreshSeconds = estimatedFullRefreshSeconds;
+            PageBits = pageBits;
             Allocations = allocations;
-            Layout = layout;
         }
 
-        internal int CurrentBits { get; }
-        internal int TargetBits { get; }
-        internal int BusBits { get; }
-        internal int CarrierBits => BusBits;
-        internal int Radix { get; }
-        internal int DigitCount { get; }
         internal int FinalBits { get; }
-        internal long TotalCardinality { get; }
-        internal float EstimatedFrameSeconds { get; }
-        internal float EstimatedFullRefreshSeconds { get; }
+        internal int PageBits { get; }
         internal IReadOnlyList<ParameterCompressionAllocation> Allocations { get; }
-        internal IReadOnlyList<ParameterCompressionAllocation> SelectedCandidates =>
-            Allocations;
-        internal ParameterCompressionEnumerativeLayout Layout { get; }
-        internal bool UsesCompression => BusBits > 0;
+        internal bool UsesCompression => Allocations.Count > 0;
+        internal int BusBits => UsesCompression ? 8 + PageBits : 0;
     }
 
     /// <summary>
-    /// Deterministic budget and precision planner. It evaluates every allowed
-    /// constant-weight bus width, selects enough candidates to meet the target,
-    /// and water-fills numeric precision inside an exact radix^digits capacity.
+    /// Deterministic budget planner for the event bus. One message names a value
+    /// and its level, so a code space of sum(levels) is enough
+    /// (enumerative coding, Cover 1973: https://isl.stanford.edu/~cover/papers/transIT/0073cove.pdf).
+    /// The code is one synced Int plus page Bools that pick a 256-code page; first
+    /// fit decreasing packs values into pages so none straddles two.
     /// </summary>
     internal static class ParameterCompressionPlanner
     {
+        internal const int PageSize = 256;
+
         internal static ParameterCompressionPlan CreatePlan(
             int currentSyncedBits,
             int targetSyncedBits,
-            IEnumerable<ParameterCompressionCandidate> candidates,
-            ParameterCompressionBusPolicy policy)
+            IEnumerable<ParameterCompressionCandidate> candidates)
         {
-            if (!TryCreatePlan(
-                    currentSyncedBits,
-                    targetSyncedBits,
-                    candidates,
-                    policy,
-                    out var plan,
-                    out var error))
+            if (!TryCreatePlan(currentSyncedBits, targetSyncedBits, candidates,
+                    out var plan, out var error))
                 throw new InvalidOperationException(error);
             return plan;
         }
@@ -177,39 +105,18 @@ namespace YUCP.Components.Editor
             int currentSyncedBits,
             int targetSyncedBits,
             IEnumerable<ParameterCompressionCandidate> candidates,
-            ParameterCompressionBusPolicy policy,
             out ParameterCompressionPlan plan,
             out string error)
         {
             plan = null;
             error = null;
-            if (currentSyncedBits < 0)
+            if (currentSyncedBits < 0 || targetSyncedBits < 0)
             {
-                error = "Current synchronized bits cannot be negative.";
+                error = "Synchronized bit counts cannot be negative.";
                 return false;
             }
-            if (targetSyncedBits < 0)
-            {
-                error = "Target synchronized bits cannot be negative.";
-                return false;
-            }
-            if (candidates == null)
-            {
-                error = "Compression candidates are required.";
-                return false;
-            }
-            if (policy == null)
-            {
-                error = "A compression bus policy is required.";
-                return false;
-            }
-
-            var all = candidates.ToArray();
-            if (all.Any(candidate => candidate == null))
-            {
-                error = "A compression candidate cannot be null.";
-                return false;
-            }
+            var all = (candidates ?? throw new ArgumentNullException(nameof(candidates)))
+                .ToArray();
             var duplicate = all.GroupBy(candidate => candidate.Name, StringComparer.Ordinal)
                 .FirstOrDefault(group => group.Count() > 1);
             if (duplicate != null)
@@ -218,228 +125,69 @@ namespace YUCP.Components.Editor
                 return false;
             }
 
-            var required = all.Where(candidate => candidate.Required).ToArray();
-            if (currentSyncedBits <= targetSyncedBits && required.Length == 0)
-            {
-                plan = NoCompression(currentSyncedBits, targetSyncedBits);
-                return true;
-            }
-
-            ParameterCompressionPlan best = null;
-            string lastFailure = null;
-            for (var wireBits = policy.MinimumWireBits;
-                 wireBits <= policy.MaximumWireBits;
-                 wireBits++)
-            {
-                var alphabet = new ParameterCompressionAlphabet(wireBits);
-                var selected = SelectCandidates(
-                    currentSyncedBits, targetSyncedBits, wireBits, all);
-                if (selected == null)
-                {
-                    lastFailure = "The available candidates cannot save enough bits with a " +
-                                  wireBits + "-wire bus.";
-                    continue;
-                }
-                if (selected.Count == 0)
-                {
-                    var noCompression = NoCompression(
-                        currentSyncedBits, targetSyncedBits);
-                    if (IsBetter(noCompression, best)) best = noCompression;
-                    continue;
-                }
-
-                long capacity;
-                try
-                {
-                    capacity = ParameterCompressionEnumerativeLayout.Capacity(
-                        alphabet.Radix, policy.MaximumDigits);
-                }
-                catch (OverflowException)
-                {
-                    capacity = long.MaxValue;
-                }
-
-                if (!TryAllocateLevels(selected, capacity,
-                        out var levelByName, out var allocationError))
-                {
-                    lastFailure = allocationError;
-                    continue;
-                }
-
-                var ordered = selected
-                    .OrderBy(candidate => candidate.Name, StringComparer.Ordinal)
-                    .ToArray();
-                var domains = ordered.Select(candidate =>
-                    new ParameterCompressionDomain(
-                        candidate.Name, levelByName[candidate.Name])).ToArray();
-                var layout = new ParameterCompressionEnumerativeLayout(domains);
-                var digitCount = ParameterCompressionEnumerativeLayout.DigitsRequired(
-                    layout.TotalCardinality, alphabet.Radix);
-                if (digitCount > policy.MaximumDigits)
-                {
-                    lastFailure = "The selected domains exceed the configured digit limit.";
-                    continue;
-                }
-
-                var allocations = layout.Entries.Select((entry, index) =>
-                    new ParameterCompressionAllocation(
-                        ordered[index], entry.Cardinality, entry.Offset)).ToArray();
-                var finalBits = currentSyncedBits + wireBits -
-                                selected.Sum(candidate => candidate.CurrentBits);
-                var frameWords = 5 + 2 * digitCount;
-                var frameSeconds = frameWords * policy.SecondsPerWireWord;
-                var fullRefreshSeconds = frameSeconds * selected.Count;
-                var candidatePlan = new ParameterCompressionPlan(
-                    currentSyncedBits,
-                    targetSyncedBits,
-                    wireBits,
-                    alphabet.Radix,
-                    digitCount,
-                    finalBits,
-                    layout.TotalCardinality,
-                    frameSeconds,
-                    fullRefreshSeconds,
-                    new ReadOnlyCollection<ParameterCompressionAllocation>(allocations),
-                    layout);
-                if (IsBetter(candidatePlan, best)) best = candidatePlan;
-            }
-
-            if (best == null)
-            {
-                error = lastFailure ??
-                        "No allowed constant-weight bus can satisfy the compression target.";
-                return false;
-            }
-            plan = best;
-            return true;
-        }
-
-        private static List<ParameterCompressionCandidate> SelectCandidates(
-            int currentBits,
-            int targetBits,
-            int busBits,
-            IReadOnlyCollection<ParameterCompressionCandidate> candidates)
-        {
-            var selected = candidates.Where(candidate => candidate.Required)
+            var selected = all.Where(candidate => candidate.Required)
                 .OrderBy(candidate => candidate.Name, StringComparer.Ordinal)
                 .ToList();
-            var selectedNames = new HashSet<string>(
-                selected.Select(candidate => candidate.Name), StringComparer.Ordinal);
-            var finalBits = currentBits + busBits -
-                            selected.Sum(candidate => candidate.CurrentBits);
-            var optional = candidates.Where(candidate => !selectedNames.Contains(candidate.Name))
-                .OrderByDescending(candidate => candidate.Priority)
-                .ThenByDescending(candidate => candidate.CurrentBits)
-                .ThenBy(candidate => candidate.Name, StringComparer.Ordinal);
-            foreach (var candidate in optional)
+            if (selected.Count == 0 && currentSyncedBits <= targetSyncedBits)
             {
-                if (finalBits <= targetBits) break;
-                selected.Add(candidate);
-                selectedNames.Add(candidate.Name);
-                finalBits -= candidate.CurrentBits;
-            }
-            return finalBits <= targetBits ? selected : null;
-        }
-
-        private static bool TryAllocateLevels(
-            IReadOnlyCollection<ParameterCompressionCandidate> selected,
-            long capacity,
-            out Dictionary<string, int> levelByName,
-            out string error)
-        {
-            levelByName = selected.ToDictionary(
-                candidate => candidate.Name,
-                candidate => candidate.MinimumLevels,
-                StringComparer.Ordinal);
-            error = null;
-            var minimumTotal = selected.Sum(candidate => (long)candidate.MinimumLevels);
-            if (minimumTotal > capacity)
-            {
-                error = "Minimum requested precision needs " + minimumTotal +
-                        " enumerative values, but the radix capacity is only " + capacity + ".";
-                return false;
-            }
-
-            var desiredTotal = selected.Sum(candidate => (long)candidate.DesiredLevels);
-            if (desiredTotal <= capacity)
-            {
-                foreach (var candidate in selected)
-                    levelByName[candidate.Name] = candidate.DesiredLevels;
+                plan = new ParameterCompressionPlan(currentSyncedBits, 0,
+                    Array.Empty<ParameterCompressionAllocation>());
                 return true;
             }
 
-            var remaining = capacity - minimumTotal;
-            var adjustable = selected
-                .Where(candidate => candidate.DesiredLevels > candidate.MinimumLevels)
-                .OrderBy(candidate => candidate.Name, StringComparer.Ordinal)
-                .ToArray();
-            while (remaining > 0)
+            // Recorderis: a value saves at least one bit and grows the bus by at most
+            // one page bit, so adding candidates never makes the budget worse.
+            var optional = new Queue<ParameterCompressionCandidate>(all
+                .Where(candidate => !candidate.Required)
+                .OrderByDescending(candidate => candidate.Priority)
+                .ThenByDescending(candidate => candidate.CurrentBits)
+                .ThenBy(candidate => candidate.Name, StringComparer.Ordinal));
+            while (true)
             {
-                ParameterCompressionCandidate next = null;
-                foreach (var candidate in adjustable)
+                var allocations = Pack(selected, out var pageBits);
+                var finalBits = currentSyncedBits + 8 + pageBits -
+                                selected.Sum(candidate => candidate.CurrentBits);
+                if (selected.Count > 0 && finalBits <= targetSyncedBits)
                 {
-                    if (levelByName[candidate.Name] >= candidate.DesiredLevels) continue;
-                    if (next == null || HasLowerFill(candidate, next, levelByName))
-                        next = candidate;
+                    plan = new ParameterCompressionPlan(finalBits, pageBits, allocations);
+                    return true;
                 }
-                if (next == null) break;
-                levelByName[next.Name]++;
-                remaining--;
+                if (optional.Count == 0)
+                {
+                    error = "Moving every safe value onto the event bus still leaves " +
+                            finalBits + " synced bits, above the " + targetSyncedBits +
+                            "-bit target.";
+                    return false;
+                }
+                selected.Add(optional.Dequeue());
             }
-            return true;
         }
 
-        private static bool HasLowerFill(
-            ParameterCompressionCandidate candidate,
-            ParameterCompressionCandidate current,
-            IReadOnlyDictionary<string, int> levels)
+        /// <summary>First fit decreasing.</summary>
+        private static IReadOnlyList<ParameterCompressionAllocation> Pack(
+            IEnumerable<ParameterCompressionCandidate> selected,
+            out int pageBits)
         {
-            var candidateProgress = levels[candidate.Name] - candidate.MinimumLevels;
-            var candidateSpan = candidate.DesiredLevels - candidate.MinimumLevels;
-            var currentProgress = levels[current.Name] - current.MinimumLevels;
-            var currentSpan = current.DesiredLevels - current.MinimumLevels;
-            var left = (long)candidateProgress * currentSpan;
-            var right = (long)currentProgress * candidateSpan;
-            if (left != right) return left < right;
-            if (candidate.Priority != current.Priority)
-                return candidate.Priority > current.Priority;
-            return string.CompareOrdinal(candidate.Name, current.Name) < 0;
-        }
-
-        private static bool IsBetter(
-            ParameterCompressionPlan candidate,
-            ParameterCompressionPlan current)
-        {
-            if (candidate == null) return false;
-            if (current == null) return true;
-            var latency = candidate.EstimatedFullRefreshSeconds.CompareTo(
-                current.EstimatedFullRefreshSeconds);
-            if (latency != 0) return latency < 0;
-            if (candidate.TotalCardinality != current.TotalCardinality)
-                return candidate.TotalCardinality > current.TotalCardinality;
-            if (candidate.BusBits != current.BusBits)
-                return candidate.BusBits < current.BusBits;
-            if (candidate.Allocations.Count != current.Allocations.Count)
-                return candidate.Allocations.Count < current.Allocations.Count;
-            return false;
-        }
-
-        private static ParameterCompressionPlan NoCompression(
-            int currentBits,
-            int targetBits)
-        {
-            return new ParameterCompressionPlan(
-                currentBits,
-                targetBits,
-                0,
-                0,
-                0,
-                currentBits,
-                0,
-                0f,
-                0f,
-                Array.Empty<ParameterCompressionAllocation>(),
-                null);
+            var used = new List<int> { 0 };
+            var allocations = new List<ParameterCompressionAllocation>();
+            foreach (var candidate in selected
+                         .OrderByDescending(candidate => candidate.Levels)
+                         .ThenBy(candidate => candidate.Name, StringComparer.Ordinal))
+            {
+                var page = used.FindIndex(fill => fill + candidate.Levels <= PageSize);
+                if (page < 0)
+                {
+                    page = used.Count;
+                    used.Add(0);
+                }
+                allocations.Add(new ParameterCompressionAllocation(
+                    candidate, page, used[page]));
+                used[page] += candidate.Levels;
+            }
+            pageBits = 0;
+            while (1 << pageBits < used.Count) pageBits++;
+            return new ReadOnlyCollection<ParameterCompressionAllocation>(allocations
+                .OrderBy(allocation => allocation.Name, StringComparer.Ordinal).ToArray());
         }
     }
 }

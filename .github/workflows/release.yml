@@ -7,9 +7,10 @@ on:
       - main
     paths:
       - Packages/com.yucp.components/package.json
+      - Packages/com.yucp.ui/package.json
 
 env:
-  packageNames: com.yucp.components
+  packageNames: com.yucp.components com.yucp.ui
 
 permissions:
   contents: read
@@ -141,15 +142,14 @@ jobs:
             ${{ env.unityPackage }}
             ${{ env.packagePath }}/package.json
           tag_name: ${{ env.packageTag }}
+          generate_release_notes: true
 
-  # Called rather than triggered: a release GITHUB_TOKEN publishes raises no
-  # workflow event, and a workflow_run trigger would skip whenever any part of
-  # this run failed.
+  # Components requires UI, so publish the listing only after all package builds succeed.
   build-listing:
     needs:
       - detect-version-changes
       - build
-    if: ${{ !cancelled() && needs.detect-version-changes.outputs.has_changes == 'true' }}
+    if: ${{ needs.detect-version-changes.outputs.has_changes == 'true' }}
     permissions:
       contents: read
       pages: write

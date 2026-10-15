@@ -2,7 +2,15 @@
 
 All notable changes to YUCP Components will be documented in this file.
 
-## [Unreleased]
+## [0.3.45] - 2026-10-15
+
+### Shared UI
+- Require YUCP UI 0.1.0 for the shared inspector controls, material picker, and styles used by Components and DevTools.
+- Publish YUCP UI from this repository as a standalone VPM package and Unity package, available from the main YUCP package page.
+- Migrate component inspectors to the shared UI package and remove duplicated design-system assets.
+
+### Changed
+- Parameter Compressor now uses an event bus instead of a round-robin, return-to-zero Bool transport. Each VRChat sync tick carries one complete message (one Int code plus page Bools naming a value and its level), the wearer sends values whose remote copy is stale first, and idle ticks refresh the rest for late joiners. A changed value preempts a refresh still on the wire, so it waits only for VRChat's next sync. On CepeInterview a change now reaches remote players in about 0.09 s (0.18 s worst, simulated) instead of up to 17.4 s, a full refresh takes 4.4 s instead of 17.4 s, and the synced cost is unchanged (524 -> 251 bits). `[0,1]` radials use VRChat's native 128 levels and Ints only the levels their range holds. The Sync Preference slider no longer has anything to trade and was removed from the inspector.
 
 ### Added
 - Live Grip (`YUCP/Live Grip`): put it on a prop placed in a hand and the fingers close around it automatically at build, each joint curling through the avatar's own finger muscles until it touches the prop's convex hull. In game the grip is live and uses only native avatar components: Final IK LimbIK solves a hidden copy of each finger onto the surface it touched, the real finger follows through VRC Rotation Constraints, VRC Position Constraints let the fingertips slide over that surface when the prop is moved in the hand, and a hand/prop proximity contact fades the grip out as the prop leaves. A synced, saved menu toggle turns it off; hiding the prop releases the hand too.

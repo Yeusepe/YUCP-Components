@@ -319,7 +319,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                 DisarmPendingHandoffUpdate();
                 Debug.LogWarning(
                     "[YUCP Viseme Phrase Trigger] The Play Mode enrollment handoff timed out. " +
-                    "Open Record / Improve from the component inspector to continue.");
+                    "Click Record Takes in the component inspector to continue.");
                 return;
             }
 

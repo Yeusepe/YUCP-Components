@@ -3,24 +3,22 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
-using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 using VRC.SDK3.Avatars.Components;
 using YUCP.Components.Editor.MeshUtils;
 using YUCP.UI.DesignSystem.Utilities;
+using Toolkit = YUCP.UI.DesignSystem.Utilities.YUCPUIToolkitHelper;
 
 namespace YUCP.Components.Editor
 {
+    /// <summary>
+    /// Simple tab: the setup and the friendly speech sliders. Advanced tab: the profile, per-viseme
+    /// trims and rig tools. Each setting appears once, under one label (DESIGN.md).
+    /// </summary>
     [CustomEditor(typeof(AdvancedVisemeReconstructorData))]
     public sealed class AdvancedVisemeReconstructorDataEditor : UnityEditor.Editor
     {
-        private enum InspectorMode
-        {
-            Simple,
-            Advanced
-        }
-
         private const float MinimumVisemeResponseSeconds = 0.006f;
         private const float MaximumVisemeResponseSeconds = 0.12f;
         private const float DefaultVisemeResponseSeconds = 0.017f;
@@ -40,12 +38,7 @@ namespace YUCP.Components.Editor
 
         private static readonly List<string> SimpleTrackingLabels = new List<string>
         {
-            "Automatic (Recommended)",
-            "Off",
-            "Use Existing Setup",
-            "Create Compact Inputs",
-            "Create Detailed Inputs",
-            "Create Full Tongue Inputs"
+            "Automatic", "Off", "Existing Setup", "Compact Inputs", "Detailed Inputs", "Full Tongue Inputs"
         };
 
         private static readonly string[] FineTuneVisemeLabels =
@@ -71,163 +64,87 @@ namespace YUCP.Components.Editor
             "tongueX", "tongueRoll", "tongueArchY", "tongueShape", "tongueTwistRight",
             "tongueTwistLeft"
         };
+        private static readonly string[] PoseMouthFields =
+        {
+            "jawOpen", "lipClose", "mouthOpen", "lipFunnel", "lipPucker", "lipSuck",
+            "smileSad", "lipBite", "jawX", "jawZ", "mouthX"
+        };
 
         private AdvancedVisemeReconstructorData data;
-        private SerializedProperty faceRendererProp;
-        private SerializedProperty profileProp;
-        private SerializedProperty mouthOwnershipProp;
-        private SerializedProperty reconstructionModeProp;
-        private SerializedProperty trackingInputsProp;
-        private SerializedProperty trackingEncodingProp;
-        private SerializedProperty fusionModeProp;
-        private SerializedProperty parameterPrefixProp;
-        private SerializedProperty createToggleProp;
-        private SerializedProperty menuPathProp;
-        private SerializedProperty existingPrefixProp;
-        private SerializedProperty createTuningMenuProp;
-        private SerializedProperty tuningMenuPathProp;
-        private SerializedProperty saveTuningValuesProp;
-        private SerializedProperty tuningMenuSectionsProp;
-        private SerializedProperty verboseLoggingProp;
-
-        private VisualElement validation;
-        private VisualElement modeSwitcher;
-        private VisualElement simpleModeHost;
-        private VisualElement advancedModeHost;
-        private VisualElement simpleProfileHost;
-        private VisualElement simpleMenuOptions;
-        private VisualElement simpleFaceRendererContainer;
-        private Button simpleModeButton;
-        private Button advancedModeButton;
-        private PopupField<string> simpleTrackingPopup;
-        private Toggle simpleNaturalTransitionsToggle;
-        private Toggle simpleKeepSpeechClearToggle;
-        private Label simpleTrackingStatusLabel;
-        private Label simpleMenuStatusLabel;
-        private Slider simpleSpeechMovementSlider;
-        private Slider simpleSpeechLivelinessSlider;
-        private Slider simpleQuietSpeechSlider;
-        private Slider simpleReactionSpeedSlider;
-        private Slider simplePauseStabilitySlider;
-        private Slider simplePronunciationHelpSlider;
-        private Slider simpleFaceTrackingPrioritySlider;
-        private Slider simpleTongueMotionSlider;
-        private VisualElement encodingContainer;
-        private VisualElement fusionContainer;
-        private VisualElement toggleContainer;
-        private VisualElement menuPathContainer;
-        private VisualElement reuseContainer;
-        private VisualElement tuningMenuOptions;
-        private VisualElement motionProfileHost;
-        private VisualElement fineTuneProfileHost;
-        private VisualElement rigProfileHost;
-        private VisualElement expertProfileHost;
-        private VisualElement coarticulationContainer;
-        private VisualElement buildStatus;
-        private Label trackingBudgetLabel;
-        private Label tuningMenuBudgetLabel;
-        private Label mappingCoverageLabel;
-        private Button autoMapButton;
-        private Button remapAllButton;
-        private Button analyzeFitButton;
-        private Button emulatorButton;
-        private readonly List<Button> fineTuneVisemeButtons = new List<Button>();
-        private Button resetSelectedVisemeButton;
-
+        private YUCPInspector ui;
         private VisemeReconstructionProfile displayedProfile;
         private SerializedObject profileSerializedObject;
-        private bool profileUiBuilt;
+        // Refreshers for the profile UI; replaced whenever that UI is rebuilt for another profile.
+        private readonly List<Action> profileRefreshers = new List<Action>();
+        private VisualElement motionHost;
+        private VisualElement fineTuneHost;
+        private VisualElement rigHost;
+        private string fitError;
         private int selectedVisemeIndex;
         private int selectedFineTuneVisemeIndex;
         private int selectedBindingIndex;
-        private InspectorMode inspectorMode;
+
+        private string VisemeKey => $"YUCP_AVR_Viseme_{data.GetInstanceID()}";
+        private string FineTuneKey => $"YUCP_AVR_FineTuneViseme_{data.GetInstanceID()}";
+        private string BindingKey => $"YUCP_AVR_Articulator_{data.GetInstanceID()}";
+
+        private bool TrackingOn => data.trackingInputs != AdvancedVisemeTrackingInputs.Disabled;
+        private bool CreatesInputs => data.trackingInputs == AdvancedVisemeTrackingInputs.Balanced8 ||
+                                      data.trackingInputs == AdvancedVisemeTrackingInputs.Quality12 ||
+                                      data.trackingInputs == AdvancedVisemeTrackingInputs.FullTongue18;
+        private bool NaturalTransitions => data.reconstructionMode == AdvancedVisemeReconstructionMode.BetaCoarticulation;
 
         private void OnEnable()
         {
             data = (AdvancedVisemeReconstructorData)target;
-            faceRendererProp = serializedObject.FindProperty("faceRenderer");
-            profileProp = serializedObject.FindProperty("profile");
-            mouthOwnershipProp = serializedObject.FindProperty("mouthOwnership");
-            reconstructionModeProp = serializedObject.FindProperty("reconstructionMode");
-            trackingInputsProp = serializedObject.FindProperty("trackingInputs");
-            trackingEncodingProp = serializedObject.FindProperty("trackingEncoding");
-            fusionModeProp = serializedObject.FindProperty("fusionMode");
-            parameterPrefixProp = serializedObject.FindProperty("parameterPrefix");
-            createToggleProp = serializedObject.FindProperty("createFaceTrackingToggle");
-            menuPathProp = serializedObject.FindProperty("faceTrackingMenuPath");
-            existingPrefixProp = serializedObject.FindProperty("existingTrackingPrefix");
-            createTuningMenuProp = serializedObject.FindProperty("createTuningMenu");
-            tuningMenuPathProp = serializedObject.FindProperty("tuningMenuPath");
-            saveTuningValuesProp = serializedObject.FindProperty("saveTuningValues");
-            tuningMenuSectionsProp = serializedObject.FindProperty("tuningMenuSections");
-            verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
-
-            var id = data != null ? data.GetInstanceID() : 0;
-            selectedVisemeIndex = SessionState.GetInt($"YUCP_AVR_Viseme_{id}", 0);
-            selectedFineTuneVisemeIndex = SessionState.GetInt(
-                $"YUCP_AVR_FineTuneViseme_{id}", 0);
-            selectedBindingIndex = SessionState.GetInt($"YUCP_AVR_Articulator_{id}", 0);
-            inspectorMode = (InspectorMode)Mathf.Clamp(
-                SessionState.GetInt(InspectorModeSessionKey(id), (int)InspectorMode.Simple),
-                (int)InspectorMode.Simple, (int)InspectorMode.Advanced);
+            if (data == null) return;
+            selectedVisemeIndex = SessionState.GetInt(VisemeKey, 0);
+            selectedFineTuneVisemeIndex = SessionState.GetInt(FineTuneKey, 0);
+            selectedBindingIndex = SessionState.GetInt(BindingKey, 0);
         }
 
         public override VisualElement CreateInspectorGUI()
         {
-            serializedObject.Update();
+            ui = YUCPInspector.Create(this, "Advanced Viseme Reconstructor");
+            ui.Status(Problems);
+            ui.OnRefresh(RefreshProfile);
+            displayedProfile = null;
+            profileSerializedObject = null;
 
-            var root = new VisualElement();
-            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Advanced Viseme Reconstructor"));
+            var tabs = ui.Tabs("mode", "Simple", "Advanced");
+            tabs.Buttons[0].name = "simple-mode-tab";
+            tabs.Buttons[1].name = "advanced-mode-tab";
+            tabs.Pages[0].name = "simple-mode-ui";
+            tabs.Pages[1].name = "advanced-mode-ui";
+            // The view is per component, and never an avatar setting.
+            var modeKey = InspectorModeSessionKey(data.GetInstanceID());
+            tabs.Select(Mathf.Clamp(SessionState.GetInt(modeKey, 0), 0, 1));
+            tabs.Changed += i => SessionState.SetInt(modeKey, i);
 
-            var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(AdvancedVisemeReconstructorData));
-            if (supportBanner != null) root.Add(supportBanner);
+            BuildSimpleTab(tabs.Pages[0]);
+            BuildAdvancedTab(tabs.Pages[1]);
+            BuildAvatarMenu();
 
-            validation = new VisualElement { name = "validation-messages" };
-            root.Add(validation);
+            var advanced = ui.Advanced();
+            advanced.GetFirstAncestorOfType<Foldout>().name = "expert-settings";
+            ui.Field(advanced, "verboseLogging");
+            var reset = ui.Button(advanced, "Reset Profile", ResetProfile, Toolkit.ButtonVariant.Danger,
+                "Replaces all tuning, viseme poses and rig mappings in the profile with the defaults.");
+            reset.name = "reset-profile";
+            ui.ShowWhen(reset, () => data.profile != null);
+            ui.BuildSummary(data.GetBuildSummary);
 
-            var tabsStylesheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
-                "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Layouts/YUCPTabs.uss");
-            if (tabsStylesheet != null) root.styleSheets.Add(tabsStylesheet);
-
-            BuildModeSwitcher(root);
-
-            simpleModeHost = new VisualElement { name = "simple-mode-ui" };
-            simpleModeHost.AddToClassList("yucp-tabs-content");
-            root.Add(simpleModeHost);
-            BuildSimpleInspector(simpleModeHost);
-
-            advancedModeHost = new VisualElement { name = "advanced-mode-ui" };
-            advancedModeHost.AddToClassList("yucp-tabs-content");
-            root.Add(advancedModeHost);
-            BuildSetupCard(advancedModeHost);
-            BuildFaceTrackingCard(advancedModeHost);
-            BuildMotionTuning(advancedModeHost);
-            BuildFineTuneVisemes(advancedModeHost);
-            BuildAvatarMenuSettings(advancedModeHost);
-            BuildRigTools(advancedModeHost);
-            BuildExpertSettings(advancedModeHost);
-
-            RebuildProfileSections(profileProp.objectReferenceValue as VisemeReconstructionProfile, true);
-            UpdateDynamicUI();
-
-            root.schedule.Execute(() =>
-            {
-                if (target == null) return;
-                serializedObject.UpdateIfRequiredOrScript();
-                var selectedProfile = profileProp.objectReferenceValue as VisemeReconstructionProfile;
-                if (!profileUiBuilt || selectedProfile != displayedProfile)
-                    RebuildProfileSections(selectedProfile, true);
-                UpdateDynamicUI();
-            }).Every(200);
-
-            return root;
+            RebuildProfileUI();
+            ui.Refresh();
+            return ui.Root;
         }
 
         internal static string InspectorModeSessionKey(int instanceId)
         {
             return $"YUCP_AVR_UIMode_{instanceId}";
         }
+
+        // ---- Friendly slider mappings (each default sits at 50%) ------------------------------------
 
         internal static float ReactionSpeedFromSeconds(float seconds)
         {
@@ -310,400 +227,120 @@ namespace YUCP.Components.Editor
                 : Mathf.Lerp(configured, maximum, (slider - 0.5f) * 2f);
         }
 
-        private void BuildModeSwitcher(VisualElement root)
+        // ---- Status ---------------------------------------------------------------------------------
+
+        private IEnumerable<YUCPInspector.Message> Problems()
         {
-            modeSwitcher = new VisualElement { name = "mode-switcher" };
-            modeSwitcher.AddToClassList("yucp-tabs-header");
-
-            simpleModeButton = new Button(() => SetInspectorMode(InspectorMode.Simple))
+            if (Descriptor() == null)
             {
-                name = "simple-mode-tab",
-                text = "Simple"
-            };
-            simpleModeButton.AddToClassList("yucp-tab");
-            simpleModeButton.style.flexGrow = 1;
-            modeSwitcher.Add(simpleModeButton);
-
-            advancedModeButton = new Button(() => SetInspectorMode(InspectorMode.Advanced))
-            {
-                name = "advanced-mode-tab",
-                text = "Advanced"
-            };
-            advancedModeButton.AddToClassList("yucp-tab");
-            advancedModeButton.style.flexGrow = 1;
-            modeSwitcher.Add(advancedModeButton);
-
-            root.Add(modeSwitcher);
-        }
-
-        private void SetInspectorMode(InspectorMode mode)
-        {
-            inspectorMode = mode;
-            SessionState.SetInt(InspectorModeSessionKey(data.GetInstanceID()), (int)mode);
-            UpdateInspectorMode();
-        }
-
-        private void UpdateInspectorMode()
-        {
-            if (simpleModeHost != null)
-                simpleModeHost.style.display = inspectorMode == InspectorMode.Simple
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
-            if (advancedModeHost != null)
-                advancedModeHost.style.display = inspectorMode == InspectorMode.Advanced
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
-
-            if (simpleModeButton != null)
-            {
-                if (inspectorMode == InspectorMode.Simple)
-                    simpleModeButton.AddToClassList("yucp-tab-selected");
-                else
-                    simpleModeButton.RemoveFromClassList("yucp-tab-selected");
+                yield return YUCPInspector.Message.Error("Put this inside an avatar (under a VRC Avatar Descriptor).");
+                yield break;
             }
-            if (advancedModeButton != null)
-            {
-                if (inspectorMode == InspectorMode.Advanced)
-                    advancedModeButton.AddToClassList("yucp-tab-selected");
-                else
-                    advancedModeButton.RemoveFromClassList("yucp-tab-selected");
-            }
+            var renderer = EffectiveRenderer();
+            if (data.mouthOwnership == AdvancedVisemeMouthOwnership.DriveLowerFace &&
+                (renderer == null || renderer.sharedMesh == null))
+                yield return YUCPInspector.Message.Error(
+                    "To drive the lower face, assign the face renderer or set the avatar's viseme mesh.");
         }
 
-        private void BuildSimpleInspector(VisualElement root)
-        {
-            var setup = YUCPUIToolkitHelper.CreateCard(
-                "Quick Setup", "Choose how speech and face tracking work together.");
-            var setupContent = YUCPUIToolkitHelper.GetCardContent(setup);
-            simpleFaceRendererContainer = new VisualElement
-            {
-                name = "simple-face-renderer"
-            };
-            simpleFaceRendererContainer.Add(YUCPUIToolkitHelper.CreateField(
-                faceRendererProp, "Face Renderer"));
-            setupContent.Add(simpleFaceRendererContainer);
+        // ---- Simple tab -----------------------------------------------------------------------------
 
-            var trackingIndex = SimpleTrackingModeIndex(
-                (AdvancedVisemeTrackingInputs)trackingInputsProp.enumValueIndex);
-            simpleTrackingPopup = new PopupField<string>(
-                "Face Tracking", SimpleTrackingLabels, trackingIndex)
+        private void BuildSimpleTab(VisualElement page)
+        {
+            var setup = ui.Section(page, "Setup");
+            ui.Field(setup, "faceRenderer", "Face Renderer");
+            var tracking = Align(new PopupField<string>("Face Tracking", SimpleTrackingLabels, 0)
             {
                 name = "simple-face-tracking",
-                tooltip = "Automatic reuses a compatible face-tracking setup when one is already installed. The create options add their own compact inputs."
-            };
-            simpleTrackingPopup.AddToClassList("yucp-field-input");
-            simpleTrackingPopup.RegisterValueChangedCallback(evt =>
-            {
-                var selected = SimpleTrackingLabels.IndexOf(evt.newValue);
-                if (selected < 0 || selected >= SimpleTrackingModes.Length) return;
-                SetComponentEnum(
-                    trackingInputsProp, (int)SimpleTrackingModes[selected],
-                    "Change Advanced Viseme Face Tracking");
+                tooltip = serializedObject.FindProperty("trackingInputs").tooltip
             });
-            setupContent.Add(simpleTrackingPopup);
-
-            simpleNaturalTransitionsToggle = CreateSimpleToggle(
-                "simple-natural-transitions",
-                "Natural Transitions",
-                "Uses nearby sounds to ease into the next mouth shape and enables smart tongue inference.",
-                value => SetComponentEnum(
-                    reconstructionModeProp,
-                    value
-                        ? (int)AdvancedVisemeReconstructionMode.BetaCoarticulation
-                        : (int)AdvancedVisemeReconstructionMode.Normal,
-                    "Change Advanced Viseme Transitions"));
-            setupContent.Add(simpleNaturalTransitionsToggle);
-
-            simpleKeepSpeechClearToggle = CreateSimpleToggle(
-                "simple-keep-speech-clear",
-                "Keep Speech Shapes Clear",
-                "Lets speech correct closures and sharp consonants only where face tracking leaves uncertainty.",
-                value => SetComponentEnum(
-                    fusionModeProp,
-                    value
-                        ? (int)AdvancedVisemeFusionMode.PhoneticAssist
-                        : (int)AdvancedVisemeFusionMode.TrackerAuthoritative,
-                    "Change Advanced Viseme Speech Assistance"));
-            setupContent.Add(simpleKeepSpeechClearToggle);
-
-            simpleTrackingStatusLabel = Caption("", "simple-tracking-status");
-            setupContent.Add(simpleTrackingStatusLabel);
-            root.Add(setup);
-
-            var feel = YUCPUIToolkitHelper.CreateCard(
-                "Speech Feel", "Shape the motion without needing animation terminology.");
-            simpleProfileHost = YUCPUIToolkitHelper.GetCardContent(feel);
-            root.Add(feel);
-
-            var avatarControls = YUCPUIToolkitHelper.CreateCard(
-                "Avatar Controls", "Optionally adjust the same settings while wearing the avatar.");
-            var avatarControlsContent = YUCPUIToolkitHelper.GetCardContent(avatarControls);
-            avatarControlsContent.Add(YUCPUIToolkitHelper.CreateField(
-                createTuningMenuProp, "Add Settings to Avatar Menu"));
-            simpleMenuOptions = new VisualElement { name = "simple-menu-options" };
-            simpleMenuOptions.Add(YUCPUIToolkitHelper.CreateField(
-                saveTuningValuesProp, "Remember Avatar Menu Changes"));
-            simpleMenuOptions.Add(Caption(
-                "Changes are automatically shared with other players.",
-                "simple-menu-sharing"));
-            avatarControlsContent.Add(simpleMenuOptions);
-            simpleMenuStatusLabel = Caption("", "simple-menu-status");
-            avatarControlsContent.Add(simpleMenuStatusLabel);
-            root.Add(avatarControls);
-        }
-
-        private static Toggle CreateSimpleToggle(
-            string name,
-            string label,
-            string tooltip,
-            Action<bool> changed)
-        {
-            var toggle = new Toggle(label)
+            tracking.RegisterValueChangedCallback(_ =>
+                SetEnum("trackingInputs", (int)SimpleTrackingModes[tracking.index]));
+            void SyncTracking()
             {
-                name = name,
-                tooltip = tooltip
-            };
-            toggle.AddToClassList("yucp-field-input");
-            toggle.RegisterValueChangedCallback(evt => changed(evt.newValue));
-            return toggle;
-        }
-
-        private void SetComponentEnum(
-            SerializedProperty property,
-            int value,
-            string undoName)
-        {
-            if (property == null || property.enumValueIndex == value) return;
-            serializedObject.UpdateIfRequiredOrScript();
-            Undo.RecordObject(data, undoName);
-            property.enumValueIndex = value;
-            serializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(data);
-            UpdateDynamicUI();
-        }
-
-        private static int SimpleTrackingModeIndex(AdvancedVisemeTrackingInputs mode)
-        {
-            var index = Array.IndexOf(SimpleTrackingModes, mode);
-            return index < 0 ? 0 : index;
-        }
-
-        private void BuildSetupCard(VisualElement root)
-        {
-            var card = YUCPUIToolkitHelper.CreateCard("Setup", "The face rig and reconstruction mode.");
-            var content = YUCPUIToolkitHelper.GetCardContent(card);
-            content.Add(YUCPUIToolkitHelper.CreateField(faceRendererProp, "Face Renderer"));
-            content.Add(YUCPUIToolkitHelper.CreateField(profileProp, "Profile"));
-            content.Add(YUCPUIToolkitHelper.CreateField(mouthOwnershipProp, "Mouth Ownership"));
-            content.Add(YUCPUIToolkitHelper.CreateField(reconstructionModeProp, "Reconstruction"));
-            root.Add(card);
-        }
-
-        private void BuildFaceTrackingCard(VisualElement root)
-        {
-            var card = YUCPUIToolkitHelper.CreateCard("Face Tracking", "Reuse a tailored VRCFT rig or generate compact inputs.");
-            var content = YUCPUIToolkitHelper.GetCardContent(card);
-            content.Add(YUCPUIToolkitHelper.CreateField(trackingInputsProp, "Inputs"));
-
-            encodingContainer = new VisualElement { name = "encoding-container" };
-            encodingContainer.Add(YUCPUIToolkitHelper.CreateField(trackingEncodingProp, "Encoding"));
-            content.Add(encodingContainer);
-
-            fusionContainer = new VisualElement { name = "fusion-container" };
-            fusionContainer.Add(YUCPUIToolkitHelper.CreateField(fusionModeProp, "Fusion"));
-            content.Add(fusionContainer);
-
-            toggleContainer = new VisualElement { name = "toggle-container" };
-            toggleContainer.Add(YUCPUIToolkitHelper.CreateField(createToggleProp, "Face Tracking Toggle"));
-            menuPathContainer = new VisualElement { name = "menu-path-container" };
-            menuPathContainer.Add(YUCPUIToolkitHelper.CreateField(menuPathProp, "Toggle Path"));
-            toggleContainer.Add(menuPathContainer);
-            content.Add(toggleContainer);
-
-            reuseContainer = new VisualElement { name = "reuse-prefix-container" };
-            reuseContainer.Add(YUCPUIToolkitHelper.CreateField(existingPrefixProp, "Existing Prefix"));
-            content.Add(reuseContainer);
-
-            trackingBudgetLabel = Caption("", "tracking-budget");
-            content.Add(trackingBudgetLabel);
-            root.Add(card);
-        }
-
-        private void BuildMotionTuning(VisualElement root)
-        {
-            var foldout = RememberedFoldout("Motion Tuning", "motion-tuning", false);
-            motionProfileHost = new VisualElement { name = "profile-settings-host" };
-            foldout.Add(motionProfileHost);
-            root.Add(foldout);
-        }
-
-        private void BuildFineTuneVisemes(VisualElement root)
-        {
-            var card = YUCPUIToolkitHelper.CreateCard(
-                "Fine-tune Visemes",
-                "Adjust one sound without weakening the rest of the mouth or tongue.");
-            card.name = "fine-tune-visemes";
-            fineTuneProfileHost = YUCPUIToolkitHelper.GetCardContent(card);
-            root.Add(card);
-        }
-
-        private void BuildAvatarMenuSettings(VisualElement root)
-        {
-            var foldout = RememberedFoldout("Avatar Menu", "avatar-menu-settings", false);
-            foldout.Add(YUCPUIToolkitHelper.CreateField(createTuningMenuProp, "Add Tuning Sliders"));
-            tuningMenuOptions = new VisualElement { name = "tuning-menu-options" };
-            tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(tuningMenuPathProp, "Menu Path"));
-            tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(saveTuningValuesProp, "Save Values"));
-            tuningMenuOptions.Add(Caption(
-                "All generated sliders are compact-synced for remote players.",
-                "tuning-sharing"));
-            tuningMenuOptions.Add(YUCPUIToolkitHelper.CreateField(tuningMenuSectionsProp, "Slider Groups"));
-            foldout.Add(tuningMenuOptions);
-            tuningMenuBudgetLabel = Caption("", "runtime-menu-budget");
-            foldout.Add(tuningMenuBudgetLabel);
-            root.Add(foldout);
-        }
-
-        private void BuildRigTools(VisualElement root)
-        {
-            var foldout = RememberedFoldout("Rig & Calibration", "rig-tools", false);
-            rigProfileHost = new VisualElement();
-            foldout.Add(rigProfileHost);
-            root.Add(foldout);
-        }
-
-        private void BuildExpertSettings(VisualElement root)
-        {
-            var foldout = RememberedFoldout("Expert & Diagnostics", "expert-settings", false);
-            expertProfileHost = new VisualElement();
-            foldout.Add(expertProfileHost);
-            root.Add(foldout);
-        }
-
-        private void RebuildProfileSections(VisemeReconstructionProfile profile, bool force)
-        {
-            if (!force && profileUiBuilt && profile == displayedProfile) return;
-            profileUiBuilt = true;
-            displayedProfile = profile;
-            profileSerializedObject = null;
-            coarticulationContainer = null;
-            mappingCoverageLabel = null;
-            autoMapButton = null;
-            remapAllButton = null;
-            analyzeFitButton = null;
-            emulatorButton = null;
-            buildStatus = null;
-
-            simpleProfileHost.Clear();
-            motionProfileHost.Clear();
-            fineTuneProfileHost.Clear();
-            rigProfileHost.Clear();
-            expertProfileHost.Clear();
-
-            if (profile == null)
-            {
-                BuildSimpleProfileFields();
-                BuildMissingProfilePrompt(motionProfileHost);
-                fineTuneProfileHost.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "Create a custom profile to fine-tune individual sounds.",
-                    YUCPUIToolkitHelper.MessageType.Info));
-                var createProfile = YUCPUIToolkitHelper.CreateButton(
-                    "Create Custom Profile", CreateAndAssignProfile,
-                    YUCPUIToolkitHelper.ButtonVariant.Primary);
-                createProfile.name = "fine-tune-create-profile";
-                fineTuneProfileHost.Add(createProfile);
-                rigProfileHost.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "Create a profile to edit viseme poses, mappings, and calibration.",
-                    YUCPUIToolkitHelper.MessageType.Info));
-                BuildEmulatorButton(rigProfileHost);
-                BuildExpertComponentFields(expertProfileHost);
-                return;
+                var index = Mathf.Max(0, Array.IndexOf(SimpleTrackingModes, data.trackingInputs));
+                if (tracking.index != index) tracking.SetValueWithoutNotify(SimpleTrackingLabels[index]);
             }
+            ui.OnRefresh(SyncTracking);
+            SyncTracking();
+            setup.Add(tracking);
+            ui.Caption(setup, TrackingBudget).name = "tracking-budget";
+            EnumToggle(setup, "simple-natural-transitions", "Natural Transitions", "reconstructionMode",
+                (int)AdvancedVisemeReconstructionMode.BetaCoarticulation, (int)AdvancedVisemeReconstructionMode.Normal);
 
-            profile.EnsureDefaults();
-            profileSerializedObject = new SerializedObject(profile);
-            BuildSimpleProfileFields();
-            BuildMotionProfileFields();
-            BuildFineTuneProfileFields();
-            BuildRigProfileFields();
-            BuildExpertProfileFields();
-        }
-
-        private void BuildSimpleProfileFields()
-        {
-            simpleSpeechMovementSlider = null;
-            simpleSpeechLivelinessSlider = null;
-            simpleQuietSpeechSlider = null;
-            simpleReactionSpeedSlider = null;
-            simplePauseStabilitySlider = null;
-            simplePronunciationHelpSlider = null;
-            simpleFaceTrackingPrioritySlider = null;
-            simpleTongueMotionSlider = null;
-
-            simpleSpeechMovementSlider = AddSimpleProfileSlider(
-                "simple-speech-movement", "Exaggeration", "speechMotionStrength", 1f,
-                value => CenteredLinearToSlider(value, 0f, 1f, 2f),
-                value => SliderToCenteredLinear(value, 0f, 1f, 2f),
-                "Boosts small and quiet mouth movements toward the full authored pose without pushing past it.");
-            simpleSpeechLivelinessSlider = AddSimpleProfileSlider(
-                "simple-speech-liveliness", "Snappiness", "speechLiveliness", 0f,
-                value => CenteredLinearToSlider(value, -1f, 0f, 1f),
-                value => SliderToCenteredLinear(value, -1f, 0f, 1f),
-                "Lower is soft and flowing; higher is sharp and immediate. Face tracking stays unchanged.");
-            simpleQuietSpeechSlider = AddSimpleProfileSlider(
-                "simple-quiet-speech", "Soft Speech", "quietSpeechFloor", 0.55f,
-                value => CenteredLinearToSlider(value, 0f, 0.55f, 1f),
-                value => SliderToCenteredLinear(value, 0f, 0.55f, 1f),
-                "Keeps mouth shapes visible while speaking softly or mumbling. This does not change the microphone threshold.");
-            simpleReactionSpeedSlider = AddSimpleProfileSlider(
-                "simple-reaction-speed", "Reaction Speed", "visemeResponseSeconds", 0.017f,
+            var feel = ui.Section(page, "Speech feel");
+            SimpleSlider(feel, "simple-speech-movement", "Exaggeration", "speechMotionStrength", 1f,
+                v => CenteredLinearToSlider(v, 0f, 1f, 2f), v => SliderToCenteredLinear(v, 0f, 1f, 2f),
+                "Makes small and quiet mouth movements bigger, up to the full viseme shape.");
+            SimpleSlider(feel, "simple-speech-liveliness", "Snappiness", "speechLiveliness", 0f,
+                v => CenteredLinearToSlider(v, -1f, 0f, 1f), v => SliderToCenteredLinear(v, -1f, 0f, 1f),
+                "Lower is soft and flowing, higher is sharp and immediate. Face tracking isn't affected.");
+            SimpleSlider(feel, "simple-quiet-speech", "Soft Speech", "quietSpeechFloor", 0.55f,
+                v => CenteredLinearToSlider(v, 0f, 0.55f, 1f), v => SliderToCenteredLinear(v, 0f, 0.55f, 1f),
+                "Keeps mouth shapes visible when speaking softly. The microphone threshold doesn't change.");
+            SimpleSlider(feel, "simple-reaction-speed", "Reaction Speed", "visemeResponseSeconds", DefaultVisemeResponseSeconds,
                 ReactionSpeedFromSeconds, SecondsFromReactionSpeed,
-                "How quickly the mouth catches each new sound. Faster is crisper; slower is softer.");
-            simplePauseStabilitySlider = AddSimpleProfileSlider(
-                "simple-pause-stability", "Smooth Pauses", "speechHangoverSeconds", 0.16f,
+                "How quickly the mouth reaches each new sound. Faster is crisper, slower is softer.");
+            SimpleSlider(feel, "simple-pause-stability", "Smooth Pauses", "speechHangoverSeconds", DefaultSpeechHangoverSeconds,
                 PauseStabilityFromSeconds, SecondsFromPauseStability,
-                "Bridges very short silent gaps between words. Higher reduces twitching, but holds the last shape a little longer.");
-            simplePronunciationHelpSlider = AddSimpleProfileSlider(
-                "simple-pronunciation-help", "Clear Consonants", "phoneticConstraintStrength", 1f,
-                value => CenteredLinearToSlider(value, 0f, 1f, 2f),
-                value => SliderToCenteredLinear(value, 0f, 1f, 2f),
-                "How strongly speech fixes closures and sharp consonants that tracking did not already measure.");
-            simpleFaceTrackingPrioritySlider = AddSimpleProfileSlider(
-                "simple-face-tracking-priority", "Follow My Face", "residualMismatchFade", 1f,
-                value => CenteredLinearToSlider(value, 0f, 1f, 2f),
-                value => SliderToCenteredLinear(value, 0f, 1f, 2f),
-                "How strongly measured face movement replaces matching authored mouth motion. Untracked detail stays intact.");
-            simpleTongueMotionSlider = AddSimpleProfileSlider(
-                "simple-tongue-motion", "Tongue Motion", "tongueInferenceStrength", 1f,
-                value => CenteredLinearToSlider(value, 0f, 1f, 2f),
-                value => SliderToCenteredLinear(value, 0f, 1f, 2f),
-                "Amount of inferred tongue motion when no real tongue measurement is available. Real tongue tracking always wins.");
+                "Bridges short gaps between words. Higher reduces twitching but holds the last shape longer.");
+
+            var face = ui.Section(page, "Face tracking");
+            ui.ShowWhen(face.parent, () => TrackingOn);
+            EnumToggle(face, "simple-keep-speech-clear", "Keep Speech Shapes Clear", "fusionMode",
+                (int)AdvancedVisemeFusionMode.PhoneticAssist, (int)AdvancedVisemeFusionMode.TrackerAuthoritative);
+            var assist = ui.Indent(face);
+            SimpleSlider(assist, "simple-pronunciation-help", "Clear Consonants", "phoneticConstraintStrength", 1f,
+                v => CenteredLinearToSlider(v, 0f, 1f, 2f), v => SliderToCenteredLinear(v, 0f, 1f, 2f),
+                "How strongly speech corrects closures and sharp consonants that face tracking misses.");
+            ui.ShowWhen(assist, () => data.fusionMode == AdvancedVisemeFusionMode.PhoneticAssist);
+            SimpleSlider(face, "simple-face-tracking-priority", "Follow My Face", "residualMismatchFade", 1f,
+                v => CenteredLinearToSlider(v, 0f, 1f, 2f), v => SliderToCenteredLinear(v, 0f, 1f, 2f),
+                "How strongly tracked face movement replaces the matching viseme motion. Untracked detail stays.");
+            ui.ShowWhen(SimpleSlider(face, "simple-tongue-motion", "Tongue Motion", "tongueInferenceStrength", 1f,
+                v => CenteredLinearToSlider(v, 0f, 1f, 2f), v => SliderToCenteredLinear(v, 0f, 1f, 2f),
+                "How much tongue motion is inferred without tongue tracking. Used while Natural Transitions is on."),
+                () => NaturalTransitions);
         }
 
-        private Slider AddSimpleProfileSlider(
-            string name,
-            string label,
-            string propertyName,
-            float fallbackValue,
-            Func<float, float> toSimpleValue,
-            Func<float, float> fromSimpleValue,
-            string tooltip)
+        private string TrackingBudget()
         {
-            var slider = new Slider(label, 0f, 1f)
+            switch (data.trackingInputs)
             {
-                name = name,
-                tooltip = tooltip,
-                showInputField = false
-            };
-            slider.AddToClassList("yucp-field-input");
-            var configured = ReadProfileFloat(propertyName, fallbackValue);
-            slider.SetValueWithoutNotify(Mathf.Clamp01(toSimpleValue(configured)));
-            slider.RegisterValueChangedCallback(evt =>
+                case AdvancedVisemeTrackingInputs.Balanced8:
+                case AdvancedVisemeTrackingInputs.Quality12:
+                case AdvancedVisemeTrackingInputs.FullTongue18:
+                    return $"Uses up to {DisplayedTrackingBits()} synced bits.";
+                case AdvancedVisemeTrackingInputs.ReuseExisting:
+                    return "Uses the avatar's existing face tracking parameters.";
+                case AdvancedVisemeTrackingInputs.Auto:
+                    return "Uses the avatar's face tracking if it has a compatible setup; otherwise speech only.";
+                default:
+                    return "Speech only, with no synced parameters.";
+            }
+        }
+
+        private int DisplayedTrackingBits()
+        {
+            var bits = AdvancedVisemeMath.TrackingParameterBits(data.trackingInputs, data.trackingEncoding);
+            return data.createFaceTrackingToggle ? bits : Mathf.Max(0, bits - 1);
+        }
+
+        /// <summary>A 0-1 slider over one profile value. The first edit creates the profile.</summary>
+        private Slider SimpleSlider(VisualElement parent, string name, string label, string propertyName,
+            float fallback, Func<float, float> toSlider, Func<float, float> fromSlider, string tooltip)
+        {
+            var slider = Align(new Slider(label, 0f, 1f) { name = name, tooltip = tooltip });
+            slider.RegisterValueChangedCallback(e => ApplySimpleProfileValue(propertyName, e.newValue, fromSlider));
+            void Sync()
             {
-                ApplySimpleProfileValue(
-                    propertyName, evt.newValue, fromSimpleValue);
-            });
-            simpleProfileHost.Add(slider);
+                var property = profileSerializedObject?.FindProperty(propertyName);
+                var value = Mathf.Clamp01(toSlider(property != null ? property.floatValue : fallback));
+                if (Mathf.Abs(slider.value - value) > 1e-5f) slider.SetValueWithoutNotify(value);
+            }
+            ui.OnRefresh(Sync);
+            Sync();
+            parent.Add(slider);
             return slider;
         }
 
@@ -712,265 +349,283 @@ namespace YUCP.Components.Editor
             float sliderValue,
             Func<float, float> fromSimpleValue)
         {
-            if (fromSimpleValue == null ||
-                !EnsureProfileForSimpleEdit() ||
-                profileSerializedObject == null)
-                return false;
+            if (fromSimpleValue == null || !EnsureProfile()) return false;
             profileSerializedObject.UpdateIfRequiredOrScript();
             var property = profileSerializedObject.FindProperty(propertyName);
             if (property == null) return false;
-            Undo.RecordObject(displayedProfile, "Tune Advanced Viseme Speech");
             property.floatValue = fromSimpleValue(Mathf.Clamp01(sliderValue));
             profileSerializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(displayedProfile);
-            UpdateDynamicUI();
             return true;
         }
 
-        private float ReadProfileFloat(string propertyName, float fallbackValue)
+        /// <summary>A checkbox over a two-value enum.</summary>
+        private void EnumToggle(VisualElement parent, string name, string label, string path, int on, int off)
         {
-            if (profileSerializedObject == null) return fallbackValue;
-            profileSerializedObject.UpdateIfRequiredOrScript();
-            var property = profileSerializedObject.FindProperty(propertyName);
-            return property == null ? fallbackValue : property.floatValue;
+            var toggle = YUCPInspector.Checkbox(label, serializedObject.FindProperty(path).tooltip);
+            toggle.name = name;
+            toggle.RegisterValueChangedCallback(e => SetEnum(path, e.newValue ? on : off));
+            void Sync() => toggle.SetValueWithoutNotify(serializedObject.FindProperty(path).enumValueIndex == on);
+            ui.OnRefresh(Sync);
+            Sync();
+            parent.Add(toggle);
         }
 
-        private void RefreshSimpleProfileSlider(
-            Slider slider,
-            string propertyName,
-            float fallbackValue,
-            Func<float, float> toSimpleValue)
+        private void SetEnum(string path, int value)
         {
-            if (slider == null) return;
-            slider.SetValueWithoutNotify(Mathf.Clamp01(
-                toSimpleValue(ReadProfileFloat(propertyName, fallbackValue))));
-            slider.SetEnabled(true);
+            serializedObject.Update();
+            var property = serializedObject.FindProperty(path);
+            if (property.enumValueIndex == value) return;
+            property.enumValueIndex = value;
+            serializedObject.ApplyModifiedProperties();
         }
 
-        private void BuildMissingProfilePrompt(VisualElement host)
+        private static T Align<T>(T field) where T : VisualElement
         {
-            host.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                "This avatar uses YUCP's built-in natural tuning. Create a profile only when you want to customize it.",
-                YUCPUIToolkitHelper.MessageType.Info));
-            var button = YUCPUIToolkitHelper.CreateButton(
-                "Create Custom Profile", CreateAndAssignProfile,
-                YUCPUIToolkitHelper.ButtonVariant.Primary);
-            button.name = "profile-action";
-            host.Add(button);
+            field.AddToClassList("yucp-field-input");
+            field.AddToClassList(BaseField<bool>.alignedFieldUssClassName);
+            return field;
         }
 
-        private void BuildMotionProfileFields()
+        // ---- Advanced tab ---------------------------------------------------------------------------
+
+        private void BuildAdvancedTab(VisualElement page)
         {
-            var speech = YUCPUIToolkitHelper.CreateFoldout("Speech", true);
-            AddProfileField(speech, "visemeResponseSeconds", "Speech Response");
-            AddProfileField(speech, "speechHangoverSeconds", "Silence Stability");
-            AddProfileField(speech, "speechMotionStrength", "Speech Motion");
-            AddProfileField(speech, "speechLiveliness", "Speech Lead");
-            AddProfileField(speech, "authoredResidualDetail", "Authored Detail");
-            coarticulationContainer = new VisualElement { name = "coarticulation-strength" };
-            AddProfileField(coarticulationContainer, "betaCoarticulationStrength", "Coarticulation");
-            speech.Add(coarticulationContainer);
-            motionProfileHost.Add(speech);
+            var reconstruction = ui.Section(page, "Reconstruction");
+            ui.Segmented(reconstruction, "mouthOwnership", "Output", "Lower Face", "Parameters Only");
+            ui.Field(reconstruction, "profile", "Profile");
+            var motion = ui.Disclosure(reconstruction, "Motion Tuning", "motion-tuning");
+            motion.name = "motion-tuning";
+            motionHost = new VisualElement();
+            motion.Add(motionHost);
 
-            var tracking = YUCPUIToolkitHelper.CreateFoldout("Tracking Response", false);
-            AddProfileField(tracking, "localTrackingResponseSeconds", "Local Response");
-            AddProfileField(tracking, "remoteTrackingResponseSeconds", "Remote Response");
-            AddProfileField(tracking, "trackingAcquireResponseSeconds", "Tracker Acquisition");
-            AddProfileField(tracking, "trackingBlendResponseSeconds", "Tracker Release");
-            AddProfileField(tracking, "remoteTrackingTrust", "Remote Trust");
-            motionProfileHost.Add(tracking);
+            fineTuneHost = ui.Section(page, "Fine-tune visemes");
+            fineTuneHost.parent.name = "fine-tune-visemes";
 
-            var phonetics = YUCPUIToolkitHelper.CreateFoldout("Phonetic Detail", false);
-            AddProfileField(phonetics, "phoneticConstraintStrength", "Constraint Amount");
-            AddProfileField(phonetics, "bilabialAssistStrength", "PP Closure Assist");
-            AddProfileField(phonetics, "labiodentalAssistStrength", "FF Bite Assist");
-            AddProfileField(phonetics, "sibilantAssistStrength", "Sibilant Assist");
-            AddProfileField(phonetics, "hiddenPhoneStrength", "M/N Recognition");
-            AddProfileField(phonetics, "hiddenDetailStrength", "Hidden Detail");
-            motionProfileHost.Add(phonetics);
+            var rig = ui.Section(page, "Rig and calibration");
+            ui.Caption(rig, MappingCoverage).name = "mapping-coverage";
+            var mapping = ui.ButtonRow(rig);
+            ui.ShowWhen(mapping, () => data.profile != null);
+            var map = ui.Button(mapping, "Map Missing", () => ApplyAutoMap(false), Toolkit.ButtonVariant.Primary,
+                "Finds a blendshape for each articulator that has none.");
+            map.name = "auto-map-rig";
+            ui.EnableWhen(map, CanUseRigTools);
+            var remap = ui.Button(mapping, "Remap All", () => ApplyAutoMap(true), Toolkit.ButtonVariant.Danger,
+                "Replaces every articulator's blendshape with the automatic match, where there is one.");
+            remap.name = "remap-all";
+            ui.EnableWhen(remap, CanUseRigTools);
 
-            var tongue = YUCPUIToolkitHelper.CreateFoldout("Tongue", false);
-            AddProfileField(tongue, "tongueInferenceStrength", "Inference");
-            AddProfileField(tongue, "tongueOutStrength", "Out");
-            AddProfileField(tongue, "tongueYStrength", "Vertical");
-            AddProfileField(tongue, "tongueXStrength", "Lateral");
-            AddProfileField(tongue, "tongueRollStrength", "Roll");
-            AddProfileField(tongue, "tongueArchStrength", "Arch");
-            AddProfileField(tongue, "tongueShapeStrength", "Shape");
-            AddProfileField(tongue, "tongueTwistStrength", "Twist");
-            motionProfileHost.Add(tongue);
+            var checks = ui.ButtonRow(rig);
+            var analyze = ui.Button(checks, "Analyze Fit", AnalyzeFit, Toolkit.ButtonVariant.Secondary,
+                "Measures how closely the mapped articulators rebuild each viseme.");
+            analyze.name = "analyze-fit";
+            ui.ShowWhen(analyze, () => data.profile != null);
+            ui.EnableWhen(analyze, () => CanUseRigTools() && Descriptor() != null);
+            var emulator = ui.Button(checks, "Add Viseme Test Emulator", AddOrSelectEmulator, Toolkit.ButtonVariant.Secondary,
+                "Plays visemes in the editor so you can check the result without speaking.");
+            emulator.name = "viseme-test-emulator";
+            ui.OnRefresh(() =>
+            {
+                var found = FindEmulator() != null;
+                var text = found ? "Select Viseme Test Emulator" : "Add Viseme Test Emulator";
+                if (emulator.text != text) emulator.text = text;
+                emulator.SetEnabled(found || !EditorApplication.isPlaying);
+            });
+            ui.Caption(rig, FitResult);
+            ui.Messages(rig, () => new[] { YUCPInspector.Message.Error(fitError) });
+
+            var editors = ui.Disclosure(rig, "Viseme Poses and Bindings", "rig-tools");
+            editors.name = "rig-tools";
+            ui.ShowWhen(editors, () => data.profile != null);
+            rigHost = new VisualElement();
+            editors.Add(rigHost);
         }
 
-        private void BuildFineTuneProfileFields()
+        private void RefreshProfile()
+        {
+            var profile = data.profile;
+            if (profile != displayedProfile || (profile == null) != (profileSerializedObject == null))
+                RebuildProfileUI();
+            profileSerializedObject?.UpdateIfRequiredOrScript();
+            foreach (var refresh in profileRefreshers) refresh();
+        }
+
+        /// <summary>Rebuilds the profile's fields when another profile is assigned (never on a timer).</summary>
+        private void RebuildProfileUI()
+        {
+            displayedProfile = data.profile;
+            profileSerializedObject = null;
+            profileRefreshers.Clear();
+            motionHost.Clear();
+            fineTuneHost.Clear();
+            rigHost.Clear();
+
+            if (displayedProfile == null)
+            {
+                ui.Caption(motionHost, "Create a profile to change the built-in tuning.");
+                ui.Button(motionHost, "Create Profile", CreateProfile).name = "profile-action";
+                ui.Caption(fineTuneHost, "Create a profile to fine-tune each sound.");
+                ui.Button(fineTuneHost, "Create Profile", CreateProfile, Toolkit.ButtonVariant.Primary)
+                    .name = "fine-tune-create-profile";
+                return;
+            }
+
+            displayedProfile.EnsureDefaults();
+            profileSerializedObject = new SerializedObject(displayedProfile);
+            BuildMotionTuning(motionHost);
+            BuildFineTune(fineTuneHost);
+            BuildRigEditors(rigHost);
+        }
+
+        private void ProfileShowWhen(VisualElement element, Func<bool> visible)
+        {
+            void Update()
+            {
+                var display = visible() ? DisplayStyle.Flex : DisplayStyle.None;
+                if (element.style.display != display) element.style.display = display;
+            }
+            profileRefreshers.Add(Update);
+            Update();
+        }
+
+        private VisualElement ProfileGroup(VisualElement host, string title, params (string path, string label)[] fields)
+        {
+            var group = ui.Group(host, title);
+            foreach (var (path, label) in fields) ui.Field(group, profileSerializedObject, path, label);
+            return group;
+        }
+
+        private void BuildMotionTuning(VisualElement host)
+        {
+            var speech = ProfileGroup(host, "Speech", ("authoredResidualDetail", "Authored Detail"));
+            ProfileShowWhen(ui.Field(speech, profileSerializedObject, "betaCoarticulationStrength", "Transition Strength"),
+                () => NaturalTransitions);
+            ProfileGroup(host, "Voice",
+                ("voiceNoiseFloor", "Noise Floor"),
+                ("voiceFullScale", "Full Voice Level"));
+            ProfileShowWhen(ProfileGroup(host, "Tracking response",
+                ("localTrackingResponseSeconds", "Local Response"),
+                ("remoteTrackingResponseSeconds", "Remote Response"),
+                ("trackingAcquireResponseSeconds", "Tracking Start"),
+                ("trackingBlendResponseSeconds", "Tracking Release"),
+                ("remoteTrackingTrust", "Remote Trust")), () => TrackingOn);
+            ProfileGroup(host, "Consonants",
+                ("bilabialAssistStrength", "P / B / M Assist"),
+                ("bilabialClosure", "P / B / M Closure"),
+                ("labiodentalAssistStrength", "F / V Assist"),
+                ("labiodentalBite", "F / V Bite"),
+                ("sibilantAssistStrength", "S / Z Assist"),
+                ("sibilantJawMaximum", "S / Z Jaw Maximum"),
+                ("hiddenPhoneStrength", "M / N Recognition"),
+                ("hiddenDetailStrength", "Hidden Detail"));
+            ProfileGroup(host, "Tongue",
+                ("tongueOutStrength", "Out"),
+                ("tongueYStrength", "Vertical"),
+                ("tongueXStrength", "Lateral"),
+                ("tongueRollStrength", "Roll"),
+                ("tongueArchStrength", "Arch"),
+                ("tongueShapeStrength", "Shape"),
+                ("tongueTwistStrength", "Twist"));
+        }
+
+        // ---- Fine-tune visemes ----------------------------------------------------------------------
+
+        private void BuildFineTune(VisualElement host)
         {
             var adjustments = profileSerializedObject.FindProperty("visemeAdjustments");
             if (adjustments == null || adjustments.arraySize != VisemeReconstructionProfile.VisemeCount)
             {
-                fineTuneProfileHost.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "The profile's viseme adjustments need to be repaired.",
-                    YUCPUIToolkitHelper.MessageType.Warning));
+                host.Add(Toolkit.CreateHelpBox("Reset the profile to repair its viseme adjustments.",
+                    Toolkit.MessageType.Warning));
                 return;
             }
 
-            selectedFineTuneVisemeIndex = Mathf.Clamp(
-                selectedFineTuneVisemeIndex, 0, adjustments.arraySize - 1);
-            fineTuneVisemeButtons.Clear();
-
-            var chips = new VisualElement { name = "fine-tune-viseme-chips" };
-            var selection = new VisualElement { name = "fine-tune-selected-viseme" };
-            chips.style.flexDirection = FlexDirection.Row;
-            chips.style.flexWrap = Wrap.Wrap;
-            chips.style.marginBottom = 6;
-            for (var i = 0; i < adjustments.arraySize; i++)
+            // Three rows of five: consonants, consonants, vowels.
+            var chips = new Button[adjustments.arraySize];
+            var edited = new Label();
+            var selection = new VisualElement();
+            Action refreshSelection = null;
+            VisualElement row = null;
+            for (var i = 0; i < chips.Length; i++)
             {
+                if (i % 5 == 0) row = ui.ButtonRow(host);
                 var index = i;
-                var chip = YUCPUIToolkitHelper.CreateButton(
-                    FineTuneVisemeLabels[index],
-                    () =>
-                    {
-                        selectedFineTuneVisemeIndex = index;
-                        SessionState.SetInt(
-                            $"YUCP_AVR_FineTuneViseme_{data.GetInstanceID()}",
-                            selectedFineTuneVisemeIndex);
-                        UpdateFineTuneChipStates();
-                        BuildSelectedVisemeAdjustment();
-                    },
-                    YUCPUIToolkitHelper.ButtonVariant.Secondary);
-                chip.name = $"fine-tune-viseme-{index}";
-                chip.tooltip = $"{FineTuneVisemeLabels[index]} · Oculus {VisemeReconstructionProfile.VisemeNames[index]}";
-                chip.style.flexBasis = Length.Percent(18f);
-                chip.style.flexGrow = 1;
-                chip.style.minWidth = 52;
-                chip.style.marginLeft = 2;
-                chip.style.marginRight = 2;
-                chip.style.marginBottom = 4;
-                fineTuneVisemeButtons.Add(chip);
-                chips.Add(chip);
+                chips[i] = ui.Button(row, FineTuneVisemeLabels[i], () =>
+                {
+                    selectedFineTuneVisemeIndex = index;
+                    SessionState.SetInt(FineTuneKey, index);
+                    ShowSelection();
+                }, Toolkit.ButtonVariant.Secondary,
+                    $"Fine-tune the {FineTuneVisemeLabels[i]} sound (Oculus viseme {VisemeReconstructionProfile.VisemeNames[i]}).");
+                chips[i].name = $"fine-tune-viseme-{i}";
             }
-            fineTuneProfileHost.Add(chips);
-            fineTuneProfileHost.Add(selection);
+            edited.AddToClassList("yucp-caption");
+            host.Add(edited);
+            host.Add(selection);
 
-            void BuildSelectedVisemeAdjustment()
+            void Refresh()
+            {
+                var names = new List<string>();
+                for (var i = 0; i < chips.Length; i++)
+                {
+                    chips[i].EnableInClassList("yucp-segment--selected", i == selectedFineTuneVisemeIndex);
+                    if (!IsFineTuneAdjustmentNeutral(adjustments.GetArrayElementAtIndex(i)))
+                        names.Add(FineTuneVisemeLabels[i]);
+                }
+                var text = names.Count == 0 ? "" : "Edited: " + string.Join(", ", names) + ".";
+                if (edited.text != text) edited.text = text;
+                edited.style.display = text.Length > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+                refreshSelection?.Invoke();
+            }
+
+            void ShowSelection()
             {
                 selection.Clear();
-                profileSerializedObject.UpdateIfRequiredOrScript();
-                var currentAdjustments = profileSerializedObject.FindProperty("visemeAdjustments");
-                if (currentAdjustments == null || currentAdjustments.arraySize == 0) return;
-                selectedFineTuneVisemeIndex = Mathf.Clamp(
-                    selectedFineTuneVisemeIndex, 0, currentAdjustments.arraySize - 1);
-                var adjustment = currentAdjustments.GetArrayElementAtIndex(
-                    selectedFineTuneVisemeIndex);
-
-                var heading = new Label(
-                    $"{FineTuneVisemeLabels[selectedFineTuneVisemeIndex]}  ·  " +
-                    VisemeReconstructionProfile.VisemeNames[selectedFineTuneVisemeIndex]);
-                heading.AddToClassList("yucp-card-title");
-                heading.style.marginBottom = 2;
-                selection.Add(heading);
-                selection.Add(Caption(
-                    "100% keeps the original shape. Lower only the part that clips."));
-
-                Slider jaw = null;
-                Slider lips = null;
-                Slider tongue = null;
-                var preciseSliders = new Dictionary<string, Slider>();
-                Action refresh = null;
-
-                jaw = CreateFineTunePercentageSlider(
-                    "Jaw & Opening", adjustment, FineTuneJawFields, () => refresh?.Invoke());
-                lips = CreateFineTunePercentageSlider(
-                    "Lips", adjustment, FineTuneLipFields, () => refresh?.Invoke());
-                tongue = CreateFineTunePercentageSlider(
-                    "Tongue", adjustment, FineTuneTongueFields, () => refresh?.Invoke());
-                jaw.name = "fine-tune-jaw-opening";
-                lips.name = "fine-tune-lips";
-                tongue.name = "fine-tune-tongue";
-                selection.Add(jaw);
-                selection.Add(lips);
-                selection.Add(tongue);
-
-                var precise = YUCPUIToolkitHelper.CreateFoldout("Precise controls", false);
-                precise.name = "fine-tune-precise-controls";
-                foreach (var fieldName in FineTuneAllFields)
+                var index = selectedFineTuneVisemeIndex = Mathf.Clamp(selectedFineTuneVisemeIndex, 0, chips.Length - 1);
+                var adjustment = adjustments.GetArrayElementAtIndex(index);
+                var group = ui.Group(selection,
+                    $"{FineTuneVisemeLabels[index]} (Oculus {VisemeReconstructionProfile.VisemeNames[index]})");
+                ui.Caption(group, "Lower only the part that clips; 100% keeps the original shape.");
+                var sliders = new List<(Slider slider, string label, string[] fields)>();
+                void Add(VisualElement parent, string name, string label, string[] fields)
                 {
-                    var slider = CreateFineTunePercentageSlider(
-                        FineTuneAxisLabel(fieldName), adjustment,
-                        new[] { fieldName }, () => refresh?.Invoke());
-                    slider.name = "fine-tune-axis-" + fieldName;
-                    preciseSliders[fieldName] = slider;
-                    precise.Add(slider);
-                }
-                selection.Add(precise);
-
-                resetSelectedVisemeButton = YUCPUIToolkitHelper.CreateButton(
-                    "Reset This Viseme",
-                    () =>
+                    var slider = Align(new Slider(label, 0f, 150f) { name = name, showInputField = true });
+                    slider.RegisterValueChangedCallback(e =>
                     {
-                        ApplyFineTunePercentage(
-                            adjustment, FineTuneAllFields, 100f,
-                            "Reset Advanced Viseme Fine Tuning");
-                        refresh?.Invoke();
-                    },
-                    YUCPUIToolkitHelper.ButtonVariant.Ghost);
-                resetSelectedVisemeButton.name = "fine-tune-reset-viseme";
-                resetSelectedVisemeButton.style.marginTop = 4;
-                selection.Add(resetSelectedVisemeButton);
-
-                refresh = () =>
+                        ApplyFineTune(adjustment, fields, e.newValue);
+                        Refresh();
+                    });
+                    parent.Add(slider);
+                    sliders.Add((slider, label, fields));
+                }
+                Add(group, "fine-tune-jaw-opening", "Jaw and Opening", FineTuneJawFields);
+                Add(group, "fine-tune-lips", "Lips", FineTuneLipFields);
+                Add(group, "fine-tune-tongue", "Tongue", FineTuneTongueFields);
+                var precise = ui.Disclosure(group, "Precise Controls", "fine-tune-precise");
+                precise.name = "fine-tune-precise-controls";
+                foreach (var field in FineTuneAllFields)
+                    Add(precise, "fine-tune-axis-" + field, FineTuneAxisLabel(field), new[] { field });
+                var reset = ui.Button(group, "Reset Viseme", () =>
                 {
-                    profileSerializedObject.UpdateIfRequiredOrScript();
-                    RefreshFineTunePercentageSlider(
-                        jaw, "Jaw & Opening", adjustment, FineTuneJawFields);
-                    RefreshFineTunePercentageSlider(
-                        lips, "Lips", adjustment, FineTuneLipFields);
-                    RefreshFineTunePercentageSlider(
-                        tongue, "Tongue", adjustment, FineTuneTongueFields);
-                    foreach (var pair in preciseSliders)
-                        RefreshFineTunePercentageSlider(
-                            pair.Value, FineTuneAxisLabel(pair.Key), adjustment,
-                            new[] { pair.Key });
-                    var neutral = IsFineTuneAdjustmentNeutral(adjustment);
-                    resetSelectedVisemeButton?.SetEnabled(!neutral);
-                    UpdateFineTuneChipStates();
+                    ApplyFineTune(adjustment, FineTuneAllFields, 100f);
+                    Refresh();
+                }, Toolkit.ButtonVariant.Ghost, "Sets every part of this viseme back to 100%.");
+                reset.name = "fine-tune-reset-viseme";
+                refreshSelection = () =>
+                {
+                    foreach (var (slider, label, fields) in sliders)
+                        RefreshFineTuneSlider(slider, label, adjustment, fields);
+                    reset.SetEnabled(!IsFineTuneAdjustmentNeutral(adjustment));
                 };
-                refresh();
+                Refresh();
             }
 
-            UpdateFineTuneChipStates();
-            BuildSelectedVisemeAdjustment();
+            profileRefreshers.Add(Refresh);
+            ShowSelection();
         }
 
-        private Slider CreateFineTunePercentageSlider(
-            string label,
-            SerializedProperty adjustment,
-            IReadOnlyList<string> fields,
-            Action changed)
+        private void ApplyFineTune(SerializedProperty adjustment, IReadOnlyList<string> fields, float percentage)
         {
-            var slider = new Slider(label, 0f, 150f)
-            {
-                showInputField = true,
-                tooltip = "100% preserves this part of the selected viseme; lower values reduce only this part."
-            };
-            slider.AddToClassList("yucp-field-input");
-            slider.RegisterValueChangedCallback(evt =>
-            {
-                ApplyFineTunePercentage(
-                    adjustment, fields, evt.newValue,
-                    "Fine-tune Advanced Viseme");
-                changed?.Invoke();
-            });
-            return slider;
-        }
-
-        private void ApplyFineTunePercentage(
-            SerializedProperty adjustment,
-            IReadOnlyList<string> fields,
-            float percentage,
-            string undoName)
-        {
-            if (adjustment == null || displayedProfile == null) return;
             profileSerializedObject.UpdateIfRequiredOrScript();
-            Undo.RecordObject(displayedProfile, undoName);
             var value = Mathf.Clamp(percentage / 100f,
                 VisemeArticulationAdjustment.Minimum,
                 VisemeArticulationAdjustment.Maximum);
@@ -980,16 +635,12 @@ namespace YUCP.Components.Editor
                 if (property != null) property.floatValue = value;
             }
             profileSerializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(displayedProfile);
         }
 
-        private static void RefreshFineTunePercentageSlider(
-            Slider slider,
-            string label,
-            SerializedProperty adjustment,
+        /// <summary>Shows the average of the fields, and "(Mixed)" when they differ.</summary>
+        private static void RefreshFineTuneSlider(Slider slider, string label, SerializedProperty adjustment,
             IReadOnlyList<string> fields)
         {
-            if (slider == null || adjustment == null || fields == null || fields.Count == 0) return;
             var total = 0f;
             var count = 0;
             var first = 1f;
@@ -1003,40 +654,14 @@ namespace YUCP.Components.Editor
                 total += property.floatValue;
                 count++;
             }
-            slider.label = mixed ? label + " (Mixed)" : label;
-            slider.SetValueWithoutNotify((count == 0 ? 1f : total / count) * 100f);
-        }
-
-        private void UpdateFineTuneChipStates()
-        {
-            if (profileSerializedObject == null) return;
-            profileSerializedObject.UpdateIfRequiredOrScript();
-            var adjustments = profileSerializedObject.FindProperty("visemeAdjustments");
-            if (adjustments == null) return;
-            for (var i = 0; i < fineTuneVisemeButtons.Count; i++)
-            {
-                var button = fineTuneVisemeButtons[i];
-                if (button == null || i >= adjustments.arraySize) continue;
-                var modified = !IsFineTuneAdjustmentNeutral(
-                    adjustments.GetArrayElementAtIndex(i));
-                button.text = FineTuneVisemeLabels[i] + (modified ? "  •" : string.Empty);
-                var selected = i == selectedFineTuneVisemeIndex;
-                if (selected)
-                {
-                    button.RemoveFromClassList("yucp-button-secondary");
-                    button.AddToClassList("yucp-button-primary");
-                }
-                else
-                {
-                    button.RemoveFromClassList("yucp-button-primary");
-                    button.AddToClassList("yucp-button-secondary");
-                }
-            }
+            var text = mixed ? label + " (Mixed)" : label;
+            if (slider.label != text) slider.label = text;
+            var value = (count == 0 ? 1f : total / count) * 100f;
+            if (Mathf.Abs(slider.value - value) > 1e-4f) slider.SetValueWithoutNotify(value);
         }
 
         private static bool IsFineTuneAdjustmentNeutral(SerializedProperty adjustment)
         {
-            if (adjustment == null) return true;
             foreach (var fieldName in FineTuneAllFields)
             {
                 var property = adjustment.FindPropertyRelative(fieldName);
@@ -1057,149 +682,77 @@ namespace YUCP.Components.Editor
                 case "tongueY": return "Tongue Up / Down";
                 case "tongueX": return "Tongue Left / Right";
                 case "tongueArchY": return "Tongue Arch";
-                default: return Nicify(fieldName);
+                default: return ObjectNames.NicifyVariableName(fieldName);
             }
         }
 
-        private void BuildRigProfileFields()
+        // ---- Rig and calibration --------------------------------------------------------------------
+
+        private void BuildRigEditors(VisualElement host)
         {
-            mappingCoverageLabel = Caption("", "mapping-coverage");
-            rigProfileHost.Add(mappingCoverageLabel);
+            var so = profileSerializedObject;
+            var poses = ui.Group(host, "Viseme poses");
+            var poseCount = so.FindProperty("visemePoses")?.arraySize ?? 0;
+            if (poseCount == 0)
+                ui.Caption(poses, "Reset the profile to restore its viseme poses.");
+            else
+                Picker(poses, "Viseme", FineTuneVisemeLabels.Take(poseCount).ToList(), selectedVisemeIndex,
+                    i => SessionState.SetInt(VisemeKey, selectedVisemeIndex = i), (content, i) =>
+                    {
+                        var path = $"visemePoses.Array.data[{i}].";
+                        ui.Field(content, so, path + "animationOverride", "Animation Override");
+                        foreach (var field in PoseMouthFields.Concat(FineTuneTongueFields))
+                            ui.Field(content, so, path + field, FineTuneAxisLabel(field));
+                    });
 
-            var mappingRow = ButtonRow();
-            autoMapButton = RowButton(mappingRow, "Auto-map Missing", () => ApplyAutoMap(false),
-                YUCPUIToolkitHelper.ButtonVariant.Primary, "auto-map-rig");
-            remapAllButton = RowButton(mappingRow, "Remap All", ConfirmRemapAll,
-                YUCPUIToolkitHelper.ButtonVariant.Secondary, "remap-all");
-            rigProfileHost.Add(mappingRow);
-
-            var analysisRow = ButtonRow();
-            analyzeFitButton = RowButton(analysisRow, "Analyze Fit", AnalyzeFit,
-                YUCPUIToolkitHelper.ButtonVariant.Secondary, "analyze-fit");
-            BuildEmulatorButton(analysisRow);
-            rigProfileHost.Add(analysisRow);
-
-            var visemeEditor = YUCPUIToolkitHelper.CreateFoldout("Viseme Poses", false);
-            visemeEditor.name = "viseme-pose-editor";
-            BuildVisemePoseEditor(visemeEditor);
-            rigProfileHost.Add(visemeEditor);
-
-            var bindingEditor = YUCPUIToolkitHelper.CreateFoldout("Articulator Bindings", false);
-            bindingEditor.name = "articulator-binding-editor";
-            BuildArticulatorBindingEditor(bindingEditor);
-            rigProfileHost.Add(bindingEditor);
-        }
-
-        private void BuildVisemePoseEditor(VisualElement parent)
-        {
-            var poses = profileSerializedObject.FindProperty("visemePoses");
-            if (poses == null || poses.arraySize == 0)
+            var bindings = ui.Group(host, "Articulator bindings");
+            var bindingArray = so.FindProperty("articulatorBindings");
+            if (bindingArray == null || bindingArray.arraySize == 0)
             {
-                parent.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "This profile has no viseme poses.", YUCPUIToolkitHelper.MessageType.Warning));
+                ui.Caption(bindings, "Reset the profile to restore its articulator bindings.");
                 return;
             }
+            var names = new List<string>();
+            for (var i = 0; i < bindingArray.arraySize; i++)
+            {
+                var articulator = bindingArray.GetArrayElementAtIndex(i).FindPropertyRelative("articulator");
+                names.Add(articulator == null ? $"Binding {i + 1}" : articulator.enumDisplayNames[articulator.enumValueIndex]);
+            }
+            Picker(bindings, "Articulator", names, selectedBindingIndex,
+                i => SessionState.SetInt(BindingKey, selectedBindingIndex = i), (content, i) =>
+                {
+                    var path = $"articulatorBindings.Array.data[{i}].";
+                    ui.Field(content, so, path + "trackingParameter", "Tracking Parameter");
+                    BuildBlendShapePicker(content, so.FindProperty(path + "blendShapeName"));
+                    ui.Field(content, so, path + "animationOverride", "Positive Pose Clip");
+                    ui.Field(content, so, path + "negativeAnimationOverride", "Negative Pose Clip");
+                    ui.Field(content, so, path + "trackingScale", "Tracking Scale");
+                    ui.Field(content, so, path + "trackingOffset", "Tracking Offset");
+                    ui.Field(content, so, path + "localReliability", "Local Reliability");
+                    ui.Field(content, so, path + "remoteReliability", "Remote Reliability");
+                });
+        }
 
-            selectedVisemeIndex = Mathf.Clamp(selectedVisemeIndex, 0, poses.arraySize - 1);
-            var choices = VisemeReconstructionProfile.VisemeNames.Take(poses.arraySize).ToList();
-            var selector = new PopupField<string>("Viseme", choices, selectedVisemeIndex);
-            selector.AddToClassList("yucp-field-input");
-            parent.Add(selector);
-
+        /// <summary>A pop-up that chooses which item the fields below it edit.</summary>
+        private void Picker(VisualElement parent, string label, List<string> choices, int selected,
+            Action<int> remember, Action<VisualElement, int> build)
+        {
+            var popup = Align(new PopupField<string>(label, choices, Mathf.Clamp(selected, 0, choices.Count - 1)));
             var content = new VisualElement();
+            parent.Add(popup);
             parent.Add(content);
-            Action rebuild = () =>
+            void Show()
             {
                 content.Clear();
                 profileSerializedObject.UpdateIfRequiredOrScript();
-                var refreshed = profileSerializedObject.FindProperty("visemePoses");
-                if (refreshed == null || refreshed.arraySize == 0) return;
-                selectedVisemeIndex = Mathf.Clamp(selectedVisemeIndex, 0, refreshed.arraySize - 1);
-                var pose = refreshed.GetArrayElementAtIndex(selectedVisemeIndex);
-                AddBoundField(content, pose.FindPropertyRelative("animationOverride"), "Animation Override");
-
-                var mouth = YUCPUIToolkitHelper.CreateFoldout("Jaw, Lips & Position", true);
-                foreach (var field in new[]
-                         {
-                             "jawOpen", "lipClose", "mouthOpen", "lipFunnel", "lipPucker", "lipSuck",
-                             "smileSad", "lipBite", "jawX", "jawZ", "mouthX"
-                         })
-                    AddBoundField(mouth, pose.FindPropertyRelative(field), Nicify(field));
-                content.Add(mouth);
-
-                var tongue = YUCPUIToolkitHelper.CreateFoldout("Tongue", false);
-                foreach (var field in new[]
-                         {
-                             "tongueOut", "tongueY", "tongueX", "tongueRoll", "tongueArchY",
-                             "tongueShape", "tongueTwistRight", "tongueTwistLeft"
-                         })
-                    AddBoundField(tongue, pose.FindPropertyRelative(field), Nicify(field));
-                content.Add(tongue);
-            };
-            selector.RegisterValueChangedCallback(evt =>
-            {
-                selectedVisemeIndex = choices.IndexOf(evt.newValue);
-                SessionState.SetInt($"YUCP_AVR_Viseme_{data.GetInstanceID()}", selectedVisemeIndex);
-                rebuild();
-            });
-            rebuild();
-        }
-
-        private void BuildArticulatorBindingEditor(VisualElement parent)
-        {
-            var bindings = profileSerializedObject.FindProperty("articulatorBindings");
-            if (bindings == null || bindings.arraySize == 0)
-            {
-                parent.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "This profile has no articulator bindings.", YUCPUIToolkitHelper.MessageType.Warning));
-                return;
+                build(content, popup.index);
             }
-
-            selectedBindingIndex = Mathf.Clamp(selectedBindingIndex, 0, bindings.arraySize - 1);
-            var choices = new List<string>();
-            for (var i = 0; i < bindings.arraySize; i++)
+            popup.RegisterValueChangedCallback(_ =>
             {
-                var articulator = bindings.GetArrayElementAtIndex(i).FindPropertyRelative("articulator");
-                choices.Add(articulator == null ? $"Binding {i + 1}" : articulator.enumDisplayNames[articulator.enumValueIndex]);
-            }
-
-            var selector = new PopupField<string>("Articulator", choices, selectedBindingIndex);
-            selector.AddToClassList("yucp-field-input");
-            parent.Add(selector);
-            var content = new VisualElement();
-            parent.Add(content);
-
-            Action rebuild = () =>
-            {
-                content.Clear();
-                profileSerializedObject.UpdateIfRequiredOrScript();
-                var refreshed = profileSerializedObject.FindProperty("articulatorBindings");
-                if (refreshed == null || refreshed.arraySize == 0) return;
-                selectedBindingIndex = Mathf.Clamp(selectedBindingIndex, 0, refreshed.arraySize - 1);
-                var binding = refreshed.GetArrayElementAtIndex(selectedBindingIndex);
-
-                var articulatorField = CreateBoundField(binding.FindPropertyRelative("articulator"), "Articulator");
-                articulatorField.SetEnabled(false);
-                content.Add(articulatorField);
-                AddBoundField(content, binding.FindPropertyRelative("trackingParameter"), "VRCFT Suffix");
-                BuildBlendShapePicker(content, binding.FindPropertyRelative("blendShapeName"));
-                AddBoundField(content, binding.FindPropertyRelative("animationOverride"), "Positive Pose Clip");
-                AddBoundField(content, binding.FindPropertyRelative("negativeAnimationOverride"), "Negative Pose Clip");
-
-                var calibration = YUCPUIToolkitHelper.CreateFoldout("Calibration", false);
-                AddBoundField(calibration, binding.FindPropertyRelative("trackingScale"), "Scale");
-                AddBoundField(calibration, binding.FindPropertyRelative("trackingOffset"), "Offset");
-                AddBoundField(calibration, binding.FindPropertyRelative("localReliability"), "Local Reliability");
-                AddBoundField(calibration, binding.FindPropertyRelative("remoteReliability"), "Remote Reliability");
-                content.Add(calibration);
-            };
-            selector.RegisterValueChangedCallback(evt =>
-            {
-                selectedBindingIndex = choices.IndexOf(evt.newValue);
-                SessionState.SetInt($"YUCP_AVR_Articulator_{data.GetInstanceID()}", selectedBindingIndex);
-                rebuild();
+                remember(popup.index);
+                Show();
             });
-            rebuild();
+            Show();
         }
 
         private void BuildBlendShapePicker(VisualElement parent, SerializedProperty property)
@@ -1208,383 +761,138 @@ namespace YUCP.Components.Editor
             var mesh = renderer != null ? renderer.sharedMesh : null;
             if (mesh == null)
             {
-                AddBoundField(parent, property, "Blendshape");
+                ui.Field(parent, profileSerializedObject, property.propertyPath, "Blendshape");
                 return;
             }
 
             const string none = "<None>";
             const string missingSuffix = " (missing)";
-            var shapes = new List<string>();
-            for (var i = 0; i < mesh.blendShapeCount; i++) shapes.Add(mesh.GetBlendShapeName(i));
-            shapes = shapes.Where(name => !string.IsNullOrWhiteSpace(name))
-                .Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+            var shapes = Enumerable.Range(0, mesh.blendShapeCount).Select(mesh.GetBlendShapeName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
 
             var choices = new List<string> { none };
             var current = property.stringValue ?? string.Empty;
             var currentChoice = none;
             if (!string.IsNullOrEmpty(current))
             {
-                if (shapes.Contains(current)) currentChoice = current;
-                else
-                {
-                    currentChoice = current + missingSuffix;
-                    choices.Add(currentChoice);
-                }
+                currentChoice = shapes.Contains(current) ? current : current + missingSuffix;
+                if (currentChoice != current) choices.Add(currentChoice);
             }
             choices.AddRange(shapes);
 
-            var popup = new PopupField<string>("Blendshape", choices, currentChoice);
-            popup.AddToClassList("yucp-field-input");
+            var popup = Align(new PopupField<string>("Blendshape", choices, currentChoice) { tooltip = property.tooltip });
             popup.RegisterValueChangedCallback(evt =>
             {
-                Undo.RecordObject(displayedProfile, "Change Advanced Viseme Blendshape");
                 var value = evt.newValue == none ? string.Empty : evt.newValue;
                 if (value.EndsWith(missingSuffix, StringComparison.Ordinal))
                     value = value.Substring(0, value.Length - missingSuffix.Length);
+                profileSerializedObject.UpdateIfRequiredOrScript();
                 property.stringValue = value;
                 profileSerializedObject.ApplyModifiedProperties();
-                EditorUtility.SetDirty(displayedProfile);
-                UpdateMappingCoverage();
+                ui.Refresh();
             });
             parent.Add(popup);
         }
 
-        private void BuildExpertProfileFields()
+        private bool CanUseRigTools()
         {
-            BuildExpertComponentFields(expertProfileHost);
-
-            var voice = YUCPUIToolkitHelper.CreateFoldout("Voice Thresholds", false);
-            AddProfileField(voice, "quietSpeechFloor", "Quiet Speech Motion");
-            AddProfileField(voice, "voiceNoiseFloor", "Noise Floor");
-            AddProfileField(voice, "voiceFullScale", "Full Voice Level");
-            expertProfileHost.Insert(0, voice);
-
-            var constraints = YUCPUIToolkitHelper.CreateFoldout("Constraint Targets", false);
-            AddProfileField(constraints, "bilabialClosure", "PP Closure Target");
-            AddProfileField(constraints, "labiodentalBite", "FF Bite Target");
-            AddProfileField(constraints, "sibilantJawMaximum", "Sibilant Jaw Maximum");
-            AddProfileField(constraints, "residualMismatchFade", "Tracked Surface Yield");
-            expertProfileHost.Insert(1, constraints);
-
-            var reset = YUCPUIToolkitHelper.CreateButton(
-                "Reset Profile To Defaults", ConfirmResetProfile,
-                YUCPUIToolkitHelper.ButtonVariant.Danger);
-            reset.name = "reset-profile";
-            expertProfileHost.Add(reset);
-        }
-
-        private void BuildExpertComponentFields(VisualElement host)
-        {
-            host.Add(YUCPUIToolkitHelper.CreateField(parameterPrefixProp, "Parameter Prefix"));
-            host.Add(YUCPUIToolkitHelper.CreateField(verboseLoggingProp, "Verbose Logging"));
-            buildStatus = new VisualElement { name = "build-status" };
-            host.Add(buildStatus);
-        }
-
-        private void BuildEmulatorButton(VisualElement parent)
-        {
-            emulatorButton = YUCPUIToolkitHelper.CreateButton(
-                "Add Viseme Test Emulator", AddOrSelectEmulator,
-                YUCPUIToolkitHelper.ButtonVariant.Secondary);
-            emulatorButton.name = "viseme-test-emulator";
-            emulatorButton.style.flexGrow = 1;
-            parent.Add(emulatorButton);
-        }
-
-        private void UpdateDynamicUI()
-        {
-            var ownership = (AdvancedVisemeMouthOwnership)mouthOwnershipProp.enumValueIndex;
-            var tracking = (AdvancedVisemeTrackingInputs)trackingInputsProp.enumValueIndex;
-            var encoding = (AdvancedVisemeTrackingEncoding)trackingEncodingProp.enumValueIndex;
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
             var renderer = EffectiveRenderer();
-            var trackingEnabled = tracking != AdvancedVisemeTrackingInputs.Disabled;
-
-            validation.Clear();
-            if (descriptor == null)
-            {
-                validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "This component must be under a VRCAvatarDescriptor.",
-                    YUCPUIToolkitHelper.MessageType.Error));
-            }
-            else if (ownership == AdvancedVisemeMouthOwnership.DriveLowerFace &&
-                     (renderer == null || renderer.sharedMesh == null))
-            {
-                validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "Drive Lower Face requires an Oculus-viseme renderer.",
-                    YUCPUIToolkitHelper.MessageType.Error));
-            }
-
-            fusionContainer.style.display = trackingEnabled ? DisplayStyle.Flex : DisplayStyle.None;
-            encodingContainer.style.display = tracking == AdvancedVisemeTrackingInputs.Balanced8 ||
-                                              tracking == AdvancedVisemeTrackingInputs.Quality12 ||
-                                              tracking == AdvancedVisemeTrackingInputs.FullTongue18
-                ? DisplayStyle.Flex
-                : DisplayStyle.None;
-            var canCreateToggle = trackingEnabled && tracking != AdvancedVisemeTrackingInputs.Auto;
-            toggleContainer.style.display = canCreateToggle ? DisplayStyle.Flex : DisplayStyle.None;
-            menuPathContainer.style.display = canCreateToggle && createToggleProp.boolValue
-                ? DisplayStyle.Flex
-                : DisplayStyle.None;
-            reuseContainer.style.display = tracking == AdvancedVisemeTrackingInputs.ReuseExisting ||
-                                           tracking == AdvancedVisemeTrackingInputs.Auto
-                ? DisplayStyle.Flex
-                : DisplayStyle.None;
-
-            switch (tracking)
-            {
-                case AdvancedVisemeTrackingInputs.Balanced8:
-                case AdvancedVisemeTrackingInputs.Quality12:
-                case AdvancedVisemeTrackingInputs.FullTongue18:
-                    trackingBudgetLabel.text = $"Up to {DisplayedTrackingBits(tracking, encoding)} synced bits";
-                    break;
-                case AdvancedVisemeTrackingInputs.ReuseExisting:
-                    trackingBudgetLabel.text = "Reuses existing v2 parameters";
-                    break;
-                case AdvancedVisemeTrackingInputs.Auto:
-                    trackingBudgetLabel.text = "Reuses existing inputs; otherwise speech only";
-                    break;
-                default:
-                    trackingBudgetLabel.text = "No synced parameter cost";
-                    break;
-            }
-
-            tuningMenuOptions.style.display = createTuningMenuProp.boolValue
-                ? DisplayStyle.Flex
-                : DisplayStyle.None;
-            UpdateTuningMenuBudget();
-
-            if (coarticulationContainer != null)
-                coarticulationContainer.style.display =
-                    reconstructionModeProp.enumValueIndex == (int)AdvancedVisemeReconstructionMode.BetaCoarticulation
-                        ? DisplayStyle.Flex
-                        : DisplayStyle.None;
-
-            var canUseRigTools = displayedProfile != null && renderer != null && renderer.sharedMesh != null;
-            autoMapButton?.SetEnabled(canUseRigTools);
-            remapAllButton?.SetEnabled(canUseRigTools);
-            analyzeFitButton?.SetEnabled(canUseRigTools && descriptor != null);
-            UpdateEmulatorButton();
-            UpdateMappingCoverage();
-            UpdateBuildStatus();
-            UpdateSimpleUI(tracking, encoding);
-            UpdateInspectorMode();
+            return data.profile != null && renderer != null && renderer.sharedMesh != null;
         }
 
-        private void UpdateSimpleUI(
-            AdvancedVisemeTrackingInputs tracking,
-            AdvancedVisemeTrackingEncoding encoding)
+        private string MappingCoverage()
         {
-            var trackingIndex = SimpleTrackingModeIndex(tracking);
-            if (simpleTrackingPopup != null &&
-                simpleTrackingPopup.index != trackingIndex)
-                simpleTrackingPopup.SetValueWithoutNotify(SimpleTrackingLabels[trackingIndex]);
-
-            simpleNaturalTransitionsToggle?.SetValueWithoutNotify(
-                reconstructionModeProp.enumValueIndex ==
-                (int)AdvancedVisemeReconstructionMode.BetaCoarticulation);
-            simpleKeepSpeechClearToggle?.SetValueWithoutNotify(
-                fusionModeProp.enumValueIndex ==
-                (int)AdvancedVisemeFusionMode.PhoneticAssist);
-            var trackingEnabled = tracking != AdvancedVisemeTrackingInputs.Disabled;
-            simpleKeepSpeechClearToggle?.SetEnabled(trackingEnabled);
-            if (simpleFaceRendererContainer != null)
-                simpleFaceRendererContainer.style.display = rendererNeedsSimpleSelection()
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
-            if (simpleTrackingStatusLabel != null)
-            {
-                switch (tracking)
-                {
-                    case AdvancedVisemeTrackingInputs.Balanced8:
-                    case AdvancedVisemeTrackingInputs.Quality12:
-                    case AdvancedVisemeTrackingInputs.FullTongue18:
-                        simpleTrackingStatusLabel.text =
-                            $"Up to {DisplayedTrackingBits(tracking, encoding)} synced bits";
-                        break;
-                    case AdvancedVisemeTrackingInputs.ReuseExisting:
-                        simpleTrackingStatusLabel.text = "Uses your current face-tracking setup";
-                        break;
-                    case AdvancedVisemeTrackingInputs.Auto:
-                        simpleTrackingStatusLabel.text = "Reuses a compatible setup; otherwise speech only";
-                        break;
-                    default:
-                        simpleTrackingStatusLabel.text = "Speech only - no synced input cost";
-                        break;
-                }
-            }
-
-            if (simpleMenuOptions != null)
-                simpleMenuOptions.style.display = createTuningMenuProp.boolValue
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
-            if (simpleMenuStatusLabel != null)
-            {
-                if (!createTuningMenuProp.boolValue)
-                {
-                    simpleMenuStatusLabel.text = "No avatar-menu controls";
-                }
-                else
-                {
-                    var sections =
-                        (AdvancedVisemeTuningMenuSections)tuningMenuSectionsProp.intValue;
-                    var count = AdvancedVisemeTuning.Controls.Count(control =>
-                        (sections & AdvancedVisemeTuning.Section(control)) != 0);
-                    var bits = AdvancedVisemeTuning
-                        .CompactSyncTransportBits(count);
-                    simpleMenuStatusLabel.text =
-                        $"Shared in {bits} synced bits";
-                }
-            }
-
-            RefreshSimpleProfileSlider(
-                simpleSpeechMovementSlider, "speechMotionStrength", 1f,
-                value => CenteredLinearToSlider(value, 0f, 1f, 2f));
-            RefreshSimpleProfileSlider(
-                simpleSpeechLivelinessSlider, "speechLiveliness", 0f,
-                value => CenteredLinearToSlider(value, -1f, 0f, 1f));
-            RefreshSimpleProfileSlider(
-                simpleQuietSpeechSlider, "quietSpeechFloor", 0.55f,
-                value => CenteredLinearToSlider(value, 0f, 0.55f, 1f));
-            RefreshSimpleProfileSlider(
-                simpleReactionSpeedSlider, "visemeResponseSeconds", 0.017f,
-                ReactionSpeedFromSeconds);
-            RefreshSimpleProfileSlider(
-                simplePauseStabilitySlider, "speechHangoverSeconds", 0.16f,
-                PauseStabilityFromSeconds);
-            RefreshSimpleProfileSlider(
-                simplePronunciationHelpSlider, "phoneticConstraintStrength", 1f,
-                value => CenteredLinearToSlider(value, 0f, 1f, 2f));
-            RefreshSimpleProfileSlider(
-                simpleFaceTrackingPrioritySlider, "residualMismatchFade", 1f,
-                value => CenteredLinearToSlider(value, 0f, 1f, 2f));
-            RefreshSimpleProfileSlider(
-                simpleTongueMotionSlider, "tongueInferenceStrength", 1f,
-                value => CenteredLinearToSlider(value, 0f, 1f, 2f));
-
-            var beta = reconstructionModeProp.enumValueIndex ==
-                       (int)AdvancedVisemeReconstructionMode.BetaCoarticulation;
-            simplePronunciationHelpSlider?.SetEnabled(
-                trackingEnabled &&
-                fusionModeProp.enumValueIndex ==
-                (int)AdvancedVisemeFusionMode.PhoneticAssist);
-            if (simpleFaceTrackingPrioritySlider != null)
-                simpleFaceTrackingPrioritySlider.style.display = trackingEnabled
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
-            simpleTongueMotionSlider?.SetEnabled(
-                trackingEnabled && beta);
-            if (simpleTongueMotionSlider != null)
-                simpleTongueMotionSlider.style.display = trackingEnabled && beta
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
-
-            bool rendererNeedsSimpleSelection()
-            {
-                if (faceRendererProp.objectReferenceValue != null) return true;
-                var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-                return descriptor == null || descriptor.VisemeSkinnedMesh == null;
-            }
-        }
-
-        private void UpdateTuningMenuBudget()
-        {
-            if (!createTuningMenuProp.boolValue)
-            {
-                tuningMenuBudgetLabel.text = "0 synced bits / 0 local sliders";
-                return;
-            }
-
-            var sections = (AdvancedVisemeTuningMenuSections)tuningMenuSectionsProp.intValue;
-            var count = AdvancedVisemeTuning.Controls.Count(control =>
-                (sections & AdvancedVisemeTuning.Section(control)) != 0);
-            var bits = AdvancedVisemeTuning.CompactSyncTransportBits(count);
-            tuningMenuBudgetLabel.text = saveTuningValuesProp.boolValue
-                ? $"{bits} synced bits / up to {count} saved sliders"
-                : $"{bits} synced bits / up to {count} session sliders";
-        }
-
-        private void UpdateMappingCoverage()
-        {
-            if (mappingCoverageLabel == null) return;
-            var profile = displayedProfile;
+            var profile = data.profile;
+            if (profile == null) return "Create a profile to map the rig and edit viseme poses.";
             var renderer = EffectiveRenderer();
             var mesh = renderer != null ? renderer.sharedMesh : null;
-            if (profile == null || mesh == null)
-            {
-                mappingCoverageLabel.text = "Select a profile and face renderer to inspect mapping coverage.";
-                return;
-            }
+            if (mesh == null) return "Assign the face renderer to map the rig.";
 
-            var bindings = profile.articulatorBindings ?? Array.Empty<ArticulatorRigBinding>();
-            var validBindings = bindings.Where(binding => binding != null).ToArray();
-            var mapped = validBindings.Count(binding =>
+            var bindings = (profile.articulatorBindings ?? Array.Empty<ArticulatorRigBinding>())
+                .Where(binding => binding != null).ToArray();
+            var mapped = bindings.Count(binding =>
                 binding.animationOverride != null || binding.negativeAnimationOverride != null ||
                 !string.IsNullOrWhiteSpace(binding.blendShapeName) &&
                 mesh.GetBlendShapeIndex(binding.blendShapeName) >= 0);
-
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+            var descriptor = Descriptor();
             var visemes = descriptor != null
                 ? AdvancedVisemeReconstructorProcessor.ResolveVisemeNames(descriptor, mesh)
                 : Array.Empty<string>();
-            var visemeCount = visemes.Count(name => !string.IsNullOrEmpty(name));
-            mappingCoverageLabel.text =
-                $"{mapped}/{validBindings.Length} articulators mapped  ·  {visemeCount}/{VisemeReconstructionProfile.VisemeCount} Oculus visemes found";
+            var found = visemes.Count(name => !string.IsNullOrEmpty(name));
+            return $"{mapped} of {bindings.Length} articulators mapped, " +
+                   $"{found} of {VisemeReconstructionProfile.VisemeCount} Oculus visemes found.";
         }
 
-        private void UpdateEmulatorButton()
+        private string FitResult()
         {
-            if (emulatorButton == null) return;
-            var emulator = FindEmulator();
-            emulatorButton.text = emulator == null
-                ? "Add Viseme Test Emulator"
-                : "Select Viseme Test Emulator";
-            emulatorButton.SetEnabled(emulator != null || !EditorApplication.isPlaying);
+            var profile = data.profile;
+            return profile != null && (profile.LastReconstructionRms > 0f || profile.LastReconstructionMaximum > 0f)
+                ? $"Last fit: RMS error {profile.LastReconstructionRms:G4}, maximum {profile.LastReconstructionMaximum:G4}."
+                : "";
         }
 
-        private void UpdateBuildStatus()
+        // ---- Avatar menu ----------------------------------------------------------------------------
+
+        private void BuildAvatarMenu()
         {
-            if (buildStatus == null) return;
-            buildStatus.Clear();
-            if (displayedProfile != null &&
-                (displayedProfile.LastReconstructionRms > 0f || displayedProfile.LastReconstructionMaximum > 0f))
-                buildStatus.Add(Caption(
-                    $"Fit: RMS {displayedProfile.LastReconstructionRms:G4}, max {displayedProfile.LastReconstructionMaximum:G4}"));
-            if (!string.IsNullOrEmpty(data.GetBuildSummary()))
-                buildStatus.Add(Caption("Last build: " + data.GetBuildSummary()));
+            var menu = ui.Section("Avatar menu");
+            ui.Field(menu, "createTuningMenu", "Add Tuning Sliders");
+            var sliders = ui.Indent(menu);
+            ui.Field(sliders, "tuningMenuPath", "Menu Path");
+            ui.Field(sliders, "saveTuningValues", "Saved");
+            ui.Field(sliders, "tuningMenuSections", "Slider Groups");
+            ui.Caption(sliders, TuningBudget).name = "runtime-menu-budget";
+            ui.ShowWhen(sliders, () => data.createTuningMenu);
+
+            // The toggle only exists when this component reuses or creates the tracking inputs.
+            bool CanCreateToggle() => TrackingOn && data.trackingInputs != AdvancedVisemeTrackingInputs.Auto;
+            ui.ShowWhen(ui.Field(menu, "createFaceTrackingToggle", "Face Tracking Toggle"), CanCreateToggle);
+            var togglePath = ui.Indent(menu);
+            ui.Field(togglePath, "faceTrackingMenuPath", "Menu Path");
+            ui.ShowWhen(togglePath, () => CanCreateToggle() && data.createFaceTrackingToggle);
+
+            var parameters = ui.Disclosure(menu, "Parameters", "parameters");
+            parameters.name = "avatar-menu-settings";
+            ui.Field(parameters, "parameterPrefix", "Parameter Prefix");
+            ui.ShowWhen(ui.Field(parameters, "existingTrackingPrefix", "Existing Prefix"), () =>
+                data.trackingInputs == AdvancedVisemeTrackingInputs.Auto ||
+                data.trackingInputs == AdvancedVisemeTrackingInputs.ReuseExisting).name = "reuse-prefix-container";
+            ui.ShowWhen(ui.Field(parameters, "trackingEncoding", "Encoding"), () => CreatesInputs);
         }
 
-        private int DisplayedTrackingBits(
-            AdvancedVisemeTrackingInputs tracking,
-            AdvancedVisemeTrackingEncoding encoding)
+        private string TuningBudget()
         {
-            var bits = AdvancedVisemeMath.TrackingParameterBits(tracking, encoding);
-            return createToggleProp.boolValue ? bits : Mathf.Max(0, bits - 1);
+            var sections = data.tuningMenuSections;
+            var count = AdvancedVisemeTuning.Controls.Count(control =>
+                (sections & AdvancedVisemeTuning.Section(control)) != 0);
+            return count == 0
+                ? "Choose at least one slider group."
+                : $"Shares {count} sliders with other players in {AdvancedVisemeTuning.CompactSyncTransportBits(count)} synced bits.";
         }
 
-        private void CreateAndAssignProfile()
+        // ---- Actions --------------------------------------------------------------------------------
+
+        private void CreateProfile()
         {
-            EnsureProfileForSimpleEdit();
+            EnsureProfile();
+            ui.Refresh();
         }
 
-        private bool EnsureProfileForSimpleEdit()
+        /// <summary>The profile being edited, created and assigned on the first edit.</summary>
+        private bool EnsureProfile()
         {
-            if (displayedProfile != null && profileSerializedObject != null) return true;
-
-            serializedObject.UpdateIfRequiredOrScript();
-            var assigned = profileProp.objectReferenceValue as VisemeReconstructionProfile;
-            if (assigned == null)
+            if (profileSerializedObject != null && displayedProfile == data.profile) return true;
+            if (data.profile == null)
             {
-                Undo.RecordObject(data, "Create Viseme Reconstruction Profile");
-                assigned = CreateProfileAsset(data);
-                profileProp.objectReferenceValue = assigned;
+                var created = CreateProfileAsset(data);
+                serializedObject.Update();
+                serializedObject.FindProperty("profile").objectReferenceValue = created;
                 serializedObject.ApplyModifiedProperties();
-                EditorUtility.SetDirty(data);
             }
-
-            RebuildProfileSections(assigned, true);
-            UpdateDynamicUI();
-            return displayedProfile != null && profileSerializedObject != null;
+            RebuildProfileUI();
+            return profileSerializedObject != null;
         }
 
         private static VisemeReconstructionProfile CreateProfileAsset(AdvancedVisemeReconstructorData data)
@@ -1602,24 +910,7 @@ namespace YUCP.Components.Editor
 
         private void ApplyAutoMap(bool overwriteExisting)
         {
-            AutoMap(data, overwriteExisting);
-            serializedObject.UpdateIfRequiredOrScript();
-            if (displayedProfile != null) RebuildProfileSections(displayedProfile, true);
-            UpdateDynamicUI();
-        }
-
-        private void ConfirmRemapAll()
-        {
-            if (!EditorUtility.DisplayDialog(
-                    "Remap every articulator?",
-                    "This replaces tailored blendshape mappings wherever an automatic match is available.",
-                    "Remap All", "Cancel")) return;
-            ApplyAutoMap(true);
-        }
-
-        private static void AutoMap(AdvancedVisemeReconstructorData data, bool overwriteExisting)
-        {
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+            var descriptor = Descriptor();
             if (descriptor == null || data.profile == null) return;
             Undo.RecordObject(data, "Auto-map Advanced Viseme Renderer");
             if (data.faceRenderer == null) data.faceRenderer = descriptor.VisemeSkinnedMesh;
@@ -1640,152 +931,71 @@ namespace YUCP.Components.Editor
             }
             EditorUtility.SetDirty(data.profile);
             EditorUtility.SetDirty(data);
+            RebuildProfileUI();
+            ui.Refresh();
         }
 
         private void AnalyzeFit()
         {
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+            var descriptor = Descriptor();
             var renderer = EffectiveRenderer();
             if (descriptor == null || renderer == null || renderer.sharedMesh == null || data.profile == null) return;
 
             data.profile.EnsureDefaults();
             var names = AdvancedVisemeReconstructorProcessor.ResolveVisemeNames(descriptor, renderer.sharedMesh);
-            var indices = new int[names.Length];
-            for (var i = 0; i < names.Length; i++)
-                indices[i] = string.IsNullOrEmpty(names[i]) ? -1 : renderer.sharedMesh.GetBlendShapeIndex(names[i]);
+            var indices = names.Select(name =>
+                string.IsNullOrEmpty(name) ? -1 : renderer.sharedMesh.GetBlendShapeIndex(name)).ToArray();
             var resolved = AdvancedVisemeReconstructorProcessor.ResolveArticulatorBlendShapes(
                 renderer.sharedMesh, data.profile);
             var basis = AdvancedVisemeReconstructorProcessor.BuildCalibrationBasis(renderer.sharedMesh, resolved);
             var result = AdvancedVisemeMeshCalibrator.Build(renderer.sharedMesh, indices, basis);
-            if (!result.success)
+            fitError = result.success ? null : result.error;
+            if (result.success)
             {
-                EditorUtility.DisplayDialog("Fit analysis failed", result.error, "OK");
-                return;
+                Undo.RecordObject(data.profile, "Analyze Advanced Viseme Fit");
+                data.profile.SetDiagnostics(result.fitRms, result.fitMaximum);
+                EditorUtility.SetDirty(data.profile);
+                UnityEngine.Object.DestroyImmediate(result.mesh);
             }
-
-            Undo.RecordObject(data.profile, "Analyze Advanced Viseme Fit");
-            data.profile.SetDiagnostics(result.fitRms, result.fitMaximum);
-            EditorUtility.SetDirty(data.profile);
-            UnityEngine.Object.DestroyImmediate(result.mesh);
-            UpdateBuildStatus();
-            EditorUtility.DisplayDialog(
-                "Fit analysis complete",
-                $"RMS: {result.fitRms:G4}\nMaximum: {result.fitMaximum:G4}",
-                "OK");
+            ui.Refresh();
         }
 
         private void AddOrSelectEmulator()
         {
             var emulator = FindEmulator();
-            if (emulator == null)
-            {
-                emulator = Undo.AddComponent<VisemeTestEmulatorData>(data.gameObject);
-                EditorUtility.SetDirty(data.gameObject);
-            }
+            if (emulator == null) emulator = Undo.AddComponent<VisemeTestEmulatorData>(data.gameObject);
             Selection.activeGameObject = emulator.gameObject;
             EditorGUIUtility.PingObject(emulator);
-            UpdateEmulatorButton();
+            ui.Refresh();
         }
 
         private VisemeTestEmulatorData FindEmulator()
         {
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+            var descriptor = Descriptor();
             return descriptor != null
                 ? descriptor.GetComponentInChildren<VisemeTestEmulatorData>(true)
                 : data.GetComponent<VisemeTestEmulatorData>();
         }
 
-        private void ConfirmResetProfile()
+        // Undoable, so no confirmation dialog (DESIGN.md §5).
+        private void ResetProfile()
         {
-            if (displayedProfile == null || !EditorUtility.DisplayDialog(
-                    "Reset reconstruction profile?",
-                    "This replaces all tuning, viseme poses, and rig mappings in the selected profile with YUCP defaults.",
-                    "Reset Profile", "Cancel")) return;
-
-            Undo.RecordObject(displayedProfile, "Reset Viseme Reconstruction Profile");
-            displayedProfile.ResetToDefaults();
-            EditorUtility.SetDirty(displayedProfile);
-            RebuildProfileSections(displayedProfile, true);
-            UpdateDynamicUI();
+            if (data.profile == null) return;
+            Undo.RecordObject(data.profile, "Reset Viseme Reconstruction Profile");
+            data.profile.ResetToDefaults();
+            EditorUtility.SetDirty(data.profile);
+            RebuildProfileUI();
+            ui.Refresh();
         }
+
+        private VRCAvatarDescriptor Descriptor() => data.GetComponentInParent<VRCAvatarDescriptor>(true);
 
         private SkinnedMeshRenderer EffectiveRenderer()
         {
-            var explicitRenderer = faceRendererProp != null
-                ? faceRendererProp.objectReferenceValue as SkinnedMeshRenderer
-                : data.faceRenderer;
-            return explicitRenderer != null
-                ? explicitRenderer
-                : data.GetComponentInParent<VRCAvatarDescriptor>()?.VisemeSkinnedMesh;
+            if (data.faceRenderer != null) return data.faceRenderer;
+            var descriptor = Descriptor();
+            return descriptor != null ? descriptor.VisemeSkinnedMesh : null;
         }
-
-        private void AddProfileField(VisualElement parent, string propertyName, string label)
-        {
-            if (profileSerializedObject == null) return;
-            AddBoundField(parent, profileSerializedObject.FindProperty(propertyName), label);
-        }
-
-        private static VisualElement CreateBoundField(SerializedProperty property, string label)
-        {
-            if (property == null)
-                return YUCPUIToolkitHelper.CreateHelpBox(
-                    $"Missing profile property: {label}", YUCPUIToolkitHelper.MessageType.Error);
-            var field = YUCPUIToolkitHelper.CreateField(property, label);
-            field.BindProperty(property);
-            return field;
-        }
-
-        private static void AddBoundField(VisualElement parent, SerializedProperty property, string label)
-        {
-            parent.Add(CreateBoundField(property, label));
-        }
-
-        private Foldout RememberedFoldout(string title, string name, bool defaultExpanded)
-        {
-            var key = $"YUCP_AVR_{name}_{data.GetInstanceID()}";
-            var foldout = YUCPUIToolkitHelper.CreateFoldout(
-                title, SessionState.GetBool(key, defaultExpanded));
-            foldout.name = name;
-            foldout.RegisterValueChangedCallback(evt => SessionState.SetBool(key, evt.newValue));
-            return foldout;
-        }
-
-        private static VisualElement ButtonRow()
-        {
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginTop = 4;
-            row.style.marginBottom = 4;
-            return row;
-        }
-
-        private static Button RowButton(
-            VisualElement row,
-            string text,
-            Action action,
-            YUCPUIToolkitHelper.ButtonVariant variant,
-            string name)
-        {
-            var button = YUCPUIToolkitHelper.CreateButton(text, action, variant);
-            button.name = name;
-            button.style.flexGrow = 1;
-            button.style.marginLeft = 2;
-            button.style.marginRight = 2;
-            row.Add(button);
-            return button;
-        }
-
-        private static Label Caption(string text, string name = null)
-        {
-            var label = new Label(text) { name = name };
-            label.AddToClassList("yucp-text-caption");
-            label.style.marginTop = 4;
-            label.style.marginBottom = 4;
-            label.style.whiteSpace = WhiteSpace.Normal;
-            return label;
-        }
-
-        private static string Nicify(string value) => ObjectNames.NicifyVariableName(value);
 
         private static string Sanitize(string value)
         {

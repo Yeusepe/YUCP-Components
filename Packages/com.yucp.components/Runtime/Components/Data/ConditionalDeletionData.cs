@@ -46,65 +46,65 @@ namespace YUCP.Components
 		[Serializable]
 		public class Condition
 		{
-			[Tooltip("Type of condition to check")]
+			[Tooltip("What this condition checks for on the avatar.")]
 			public ConditionType conditionType = ConditionType.GameObjectExists;
 
-			[Tooltip("Invert the result of this condition")]
+			[Tooltip("The condition is true when the check fails.")]
 			public bool invert = false;
 
 			[Header("Mesh Exists Settings")]
-			[Tooltip("Name or path to the mesh GameObject")]
+			[Tooltip("Name or path of the mesh object.")]
 			public string meshNameOrPath = "";
 
-			[Tooltip("Type of mesh renderer to check for")]
+			[Tooltip("The kind of renderer the mesh must have.")]
 			public MeshType meshType = MeshType.Either;
 
 			[Header("Bone Exists Settings")]
-			[Tooltip("How to resolve the bone target")]
+			[Tooltip("Find the bone by humanoid bone or by path.")]
 			public BoneTargetType boneTargetType = BoneTargetType.HumanoidBone;
 
-			[Tooltip("Humanoid bone to check (when using HumanoidBone target type)")]
+			[Tooltip("The humanoid bone to look for.")]
 			public HumanBodyBones humanoidBone = HumanBodyBones.Hips;
 
-			[Tooltip("Custom path to bone/transform (when using CustomPath target type)")]
+			[Tooltip("Path of the bone or object to look for.")]
 			public string bonePath = "";
 
 			[Header("Component Exists Settings")]
-			[Tooltip("Full type name of component to check for (e.g., 'UnityEngine.Rigidbody')")]
+			[Tooltip("Full type name of the component, such as UnityEngine.Rigidbody.")]
 			public string componentTypeName = "";
 
 			[Header("GameObject Exists Settings")]
-			[Tooltip("Name or path to the GameObject")]
+			[Tooltip("Name or path of the object.")]
 			public string gameObjectNameOrPath = "";
 
 			[Header("Tag Matches Settings")]
-			[Tooltip("Name or path to the GameObject to check tag")]
+			[Tooltip("Name or path of the object whose tag is checked.")]
 			public string tagCheckGameObjectPath = "";
 
-			[Tooltip("Tag name to match")]
+			[Tooltip("The tag the object must have.")]
 			public string tagName = "Untagged";
 
 			[Header("Layer Matches Settings")]
-			[Tooltip("Name or path to the GameObject to check layer")]
+			[Tooltip("Name or path of the object whose layer is checked.")]
 			public string layerCheckGameObjectPath = "";
 
-			[Tooltip("Layer name to match")]
+			[Tooltip("The layer the object must be on.")]
 			public string layerName = "Default";
 		}
 
 	[Serializable]
 	public class ConditionGroup
 	{
-		[Tooltip("Logical operator for combining conditions in this group")]
+		[Tooltip("How the conditions and nested groups in this group combine.")]
 		public LogicalOperator groupOperator = LogicalOperator.And;
 
-		[Tooltip("Invert the entire group result")]
+		[Tooltip("The group is true when its combined result is false.")]
 		public bool invertGroup = false;
 
-		[Tooltip("List of conditions in this group")]
+		[Tooltip("The checks in this group.")]
 		public List<Condition> conditions = new List<Condition>();
 
-		[Tooltip("Nested condition groups (for complex logic). Maximum depth: 8 levels to avoid Unity serialization depth limit.")]
+		[Tooltip("Groups inside this group, for more complex logic. Up to 8 levels deep.")]
 		public List<ConditionGroup> nestedGroups = new List<ConditionGroup>();
 		
 		public void TrimExcessiveDepth(int currentDepth = 0, int maxDepth = 8)
@@ -123,19 +123,19 @@ namespace YUCP.Components
 	}
 
 		[Header("Condition Groups")]
-		[Tooltip("Top-level condition groups. If any group evaluates to true, deletion will occur (unless deleteOnTrue is false).")]
+		[Tooltip("The objects are deleted depending on whether any of these groups is true.")]
 		public List<ConditionGroup> conditionGroups = new List<ConditionGroup>();
 
 		[Header("Objects to Delete")]
-		[Tooltip("GameObjects to delete when conditions are met")]
+		[Tooltip("Objects removed from the build when the condition is met.")]
 		public List<GameObject> objectsToDelete = new List<GameObject>();
 
 		[Header("Settings")]
-		[Tooltip("If true, delete objects when conditions evaluate to true. If false, delete when conditions evaluate to false.")]
+		[Tooltip("Any Group True deletes the objects when at least one group is true. No Group True deletes them when every group is false.")]
 		public bool deleteOnTrue = true;
 
 		[Header("Debug")]
-		[Tooltip("Enable detailed logging during avatar build")]
+		[Tooltip("Logs each condition's result to the Console when the avatar builds.")]
 		public bool debugMode = false;
 
 		public int PreprocessOrder => 0;

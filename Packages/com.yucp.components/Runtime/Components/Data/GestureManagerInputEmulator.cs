@@ -46,35 +46,35 @@ namespace YUCP.Components
     }
 
     [SupportBanner]
-    [BetaWarning("This component is in BETA and may not work as intended. Gesture Manager input emulation is experimental and may require manual parameter configuration.")]
+    [BetaWarning("This component is in beta. Input emulation may need manual parameter setup.")]
     public class GestureManagerInputEmulator : MonoBehaviour
     {
         [Header("Gesture Manager Reference")]
-        [Tooltip("The GameObject containing the Gesture Manager component")]
+        [Tooltip("The object with Gesture Manager. Empty finds it on this object, its parents or its children.")]
         public GameObject gestureManager;
 
         [Header("Input Mappings")]
-        [Tooltip("List of input mappings to configure")]
+        [Tooltip("The keys and controller inputs, and the parameters they drive.")]
         public List<InputMapping> inputMappings = new List<InputMapping>();
 
         [Header("General Settings")]
-        [Tooltip("Enable debug mode for detailed logging")]
+        [Tooltip("Shows the input overlay in Play Mode and logs each input. Press F1 to hide or show the overlay.")]
         public bool debugMode = false;
 
         [Tooltip("Show debug overlay in Scene view (in addition to Game view)")]
         public bool showInSceneView = true;
 
         [Header("Controller Settings")]
-        [Tooltip("Controller deadzone for axis inputs")]
+        [Tooltip("Stick movement below this amount is ignored.")]
         [Range(0f, 1f)]
         public float controllerDeadzone = 0.1f;
 
-        [Tooltip("Sensitivity multiplier for controller axis inputs")]
+        [Tooltip("Multiplies controller stick values.")]
         [Range(0.1f, 5f)]
         public float axisSensitivity = 1f;
 
         [Header("Gesture Manager Mode")]
-        [Tooltip("Operation mode for parameter control")]
+        [Tooltip("How the avatar's parameters are set.")]
         public GestureManagerMode gestureManagerMode = GestureManagerMode.GestureManagerMode;
 
         [Header("Build Statistics")]
@@ -85,7 +85,7 @@ namespace YUCP.Components
         public int runtimeComponentsCreated = 0;
 
         [Header("Input Emulation")]
-        [Tooltip("Enable input emulation")]
+        [Tooltip("Drives the avatar's parameters from the keyboard and controller in Play Mode.")]
         public bool enableInputEmulation = true;
 
         public List<InputMapping> activeMappings => GetActiveMappings();

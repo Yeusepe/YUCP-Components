@@ -27,25 +27,32 @@ namespace YUCP.Components
         [Tooltip("Shin. Leave empty to use the humanoid Lower Leg.")]
         public Transform leftShin;
 
-        [Tooltip("Metatarsus -- the extra digitigrade segment. Leave empty to use the bone between shin and foot.")]
+        [Tooltip("The extra digitigrade segment. Leave empty to use the bone between the shin and the foot.")]
         public Transform leftMetatarsus;
 
         [Tooltip("Paw. Leave empty to use the humanoid Foot.")]
         public Transform leftFoot;
 
+        [Tooltip("Thigh. Leave empty to use the humanoid Upper Leg.")]
         public Transform rightThigh;
+
+        [Tooltip("Shin. Leave empty to use the humanoid Lower Leg.")]
         public Transform rightShin;
+
+        [Tooltip("The extra digitigrade segment. Leave empty to use the bone between the shin and the foot.")]
         public Transform rightMetatarsus;
+
+        [Tooltip("Paw. Leave empty to use the humanoid Foot.")]
         public Transform rightFoot;
 
         [Header("Joint Limits")]
-        [Tooltip("Solve the whole visible leg with knee and hock limits. Unreachable tracking poses move the paw instead of folding through the joint. Disable for the legacy two-pass solve.")]
+        [Tooltip("Solves the leg within the knee and hock limits, so an unreachable pose moves the paw instead of folding the joint. Turn off for the original two-pass fold.")]
         public bool enforceJointLimits = true;
 
-        [Tooltip("Knee included angle in degrees: minimum flexed angle, maximum extended angle. 180 is straight. Tune for the character's anatomy.")]
+        [Tooltip("Smallest (flexed) and largest (extended) knee angle, in degrees. 180 is straight.")]
         public Vector2 kneeAngleLimits = new Vector2(40f, 165f);
 
-        [Tooltip("Hock included angle in degrees: minimum flexed angle, maximum extended angle. These are joint angles, not bone Euler rotations.")]
+        [Tooltip("Smallest (flexed) and largest (extended) hock angle, in degrees. These are joint angles, not bone rotations.")]
         public Vector2 hockAngleLimits = new Vector2(40f, 165f);
 
         [Header("Limit Poses")]
@@ -58,54 +65,51 @@ namespace YUCP.Components
         public float ankleDownAngle = 25f;
 
         [Header("Tuning")]
-        [Tooltip("Extra paw pitch about the toe tip in digitigrade mode, in degrees. Leave at 0 " +
-                 "for a mesh authored digitigrade (the stance is already in the bind pose, and the " +
-                 "digi goal is exactly the tracked foot). Only raise this for a mesh authored " +
-                 "plantigrade, where the stance has to be created.")]
+        [Tooltip("Extra paw pitch about the toe tip, in degrees. Leave at 0 for a mesh modelled " +
+                 "digitigrade; raise it only for a mesh modelled plantigrade.")]
         [Range(0f, 60f)]
         public float stanceAngle = 0f;
 
-        [Tooltip("Redistributes leg lift between the knee and hock using helper proportions. " +
-                 "0 = original humanoid proportions; 1 = a longer helper thigh " +
-                 "and a helper shin at ~53% of the real shin. The helper knee moves toward " +
-                 "the ankle while the hip and ankle endpoints stay fixed.")]
+        [Tooltip("Shifts leg lift from the knee toward the hock. 0 keeps the humanoid proportions; " +
+                 "1 uses a longer helper thigh and a helper shin about half as long.")]
         [Range(0f, 1f)]
         public float kneeStraightness = 1f;
 
-        [Tooltip("Override the automatically derived bend plane. Leave zero to derive it from the metatarsus bend at rest.")]
+        [Tooltip("The plane the leg bends in. Leave at zero to derive it from the metatarsus bend at rest.")]
         public Vector3 bendNormalOverride = Vector3.zero;
 
         [Header("Wearer Defaults")]
-        [Tooltip("Thigh motion relative to the hips. 0 holds the rest orientation; 1 follows the full solved rotation. Intermediate values scale the motion continuously.")]
+        [Tooltip("How far the thigh follows the solve: 0 holds its rest orientation, 1 follows it fully.")]
         [Range(0f, 1f)]
         public float thighMovement = 1f;
 
-        [Tooltip("Knee motion. 0 holds the nearest safe rest angle; 1 follows the solved knee. Intermediate values blend locally within the configured joint limits.")]
+        [Tooltip("How far the knee follows the solve: 0 holds the nearest safe rest angle, 1 follows it fully within the joint limits.")]
         [Range(0f, 1f)]
         public float kneeMovement = 1f;
 
-        [Tooltip("Hock motion. 0 holds the nearest safe rest angle; 1 follows the solved hock. Intermediate values blend locally within the configured joint limits.")]
+        [Tooltip("How far the hock follows the solve: 0 holds the nearest safe rest angle, 1 follows it fully within the joint limits.")]
         [Range(0f, 1f)]
         public float hockMovement = 1f;
 
         [InspectorName("Contact Response")]
-        [Tooltip("Paw response to toe and ground contacts: 0 ignores contact flattening; 1 fully applies it.")]
+        [Tooltip("How much toe and ground contacts flatten the paw: 0 ignores them, 1 applies them fully.")]
         [Range(0f, 1f)]
         public float anklesWeight = 0.5f;
 
         [InspectorName("Paw Follow")]
-        [Tooltip("Paw orientation: 0 follows the hock; 1 follows the tracked foot. Contact Response can add flattening when planted.")]
+        [Tooltip("Paw orientation: 0 follows the hock, 1 follows the tracked foot. Contact Response can flatten it further when planted.")]
         [Range(0f, 1f)]
         public float pawFlattenWeight = 0.2f;
 
         [Header("Menu")]
-        [Tooltip("Submenu path for the generated toggle, e.g. \"Legs\". Empty puts it at the root.")]
+        [Tooltip("Submenu for the toggle, for example Legs. Leave empty for the menu root.")]
         public string menuPath = "Legs";
 
-        [Tooltip("Name of the generated menu toggle.")]
+        [Tooltip("Name of the toggle in the avatar menu.")]
         public string menuName = "Digitigrade";
 
         [Header("Diagnostics")]
+        [Tooltip("Logs each step of the build to the Console.")]
         public bool verboseLogging = false;
 
         [SerializeField, HideInInspector] private string lastBuildSummary;

@@ -14,28 +14,28 @@ namespace YUCP.Components
     [Serializable]
     public sealed class VisemePhraseDefinition
     {
-        [Tooltip("Stable machine identifier. It is generated once and does not change when the prompt is edited.")]
+        [Tooltip("Generated once. Recorded takes stay linked to it when the phrase text changes.")]
         public string id = string.Empty;
 
-        [Tooltip("The phrase spoken during each enrollment take.")]
+        [Tooltip("What you say. Use words with at least four distinct mouth shapes.")]
         public string prompt = string.Empty;
 
-        [Tooltip("Readable key used in public Animator parameter names. Enrollment identity continues to use the stable ID.")]
+        [Tooltip("Name used in this phrase's Matched, Confidence and Progress parameters.")]
         public string parameterKey = string.Empty;
 
-        [Tooltip("Natural Speech can occur inside a sentence. Paused Command expects a clean speech boundary around the phrase.")]
+        [Tooltip("Natural Speech matches the phrase inside a sentence. Paused Command needs a short pause before and after it, which avoids accidental matches.")]
         public VisemePhraseContextMode mode = VisemePhraseContextMode.NaturalSpeech;
 
         [Range(0f, 1f)]
-        [Tooltip("Higher values reject more timing and viseme variation.")]
+        [Tooltip("Higher rejects speech that differs more from your takes. Lower accepts more variation.")]
         public float strictness = 0.65f;
 
         [Min(0.05f)]
-        [Tooltip("Length of the generated Matched pulse.")]
+        [Tooltip("How long Matched stays on after a match, in seconds.")]
         public float pulseSeconds = 0.25f;
 
         [Min(1.25f)]
-        [Tooltip("Minimum interval between accepted matches. VRChat synchronization requires at least 1.25 seconds.")]
+        [Tooltip("The shortest time between matches, in seconds. VRChat sync needs at least 1.25.")]
         public float cooldownSeconds = 1.25f;
 
         public string PromptFingerprint =>
@@ -73,13 +73,13 @@ namespace YUCP.Components
         public const string DefaultParameterPrefix = AdvancedVisemeParameterContract.DefaultPhrasePrefix;
         public const float MinimumCooldownSeconds = 1.25f;
 
-        [Tooltip("Advanced Viseme Reconstructor parameter prefix used as the phrase input source.")]
+        [Tooltip("Parameter prefix of the Advanced Viseme Reconstructor to read. Leave empty to detect it automatically.")]
         public string sourcePrefix = string.Empty;
 
-        [Tooltip("Prefix used by generated phrase outputs.")]
+        [Tooltip("Prefix for each phrase's Matched (a short pulse), Confidence and Progress parameters.")]
         public string parameterPrefix = DefaultParameterPrefix;
 
-        [Tooltip("Reusable raw enrollment and compiled phrase models.")]
+        [Tooltip("Stores your takes as viseme and voice traces, never audio, with the compiled phrase models. Reusable.")]
         public VisemePhraseEnrollmentProfile enrollmentProfile;
 
         public List<VisemePhraseDefinition> phrases = new List<VisemePhraseDefinition>();

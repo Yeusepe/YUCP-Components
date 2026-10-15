@@ -1,100 +1,79 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.UIElements;
-using UnityEditor.UIElements;
-using YUCP.Components;
-using YUCP.Components.Editor;
 using YUCP.UI.DesignSystem.Utilities;
+using Toolkit = YUCP.UI.DesignSystem.Utilities.YUCPUIToolkitHelper;
 
 namespace YUCP.Components.Editor.UI
 {
-    /// <summary>
-    /// Custom editor for Gesture Manager Input Emulator with input mapping configuration.
-    /// Provides intuitive UI for mapping keyboard and controller inputs to Gesture Manager parameters.
-    /// </summary>
     [CustomEditor(typeof(GestureManagerInputEmulator))]
     public class GestureManagerInputEmulatorEditor : UnityEditor.Editor
     {
-        private GestureManagerInputEmulator data;
-        private bool showAdvancedOptions = false;
-        private bool showControllerSettings = false;
-        private bool showBuildStats = false;
-        private Vector2 scrollPosition;
-        private int previousMappingsCount = -1;
-        private GameObject previousGestureManager = null;
-        private GestureManagerMode previousGestureManagerMode = (GestureManagerMode)(-1);
-        private bool previousControllerConnected = false;
-
-        private void OnEnable()
-        {
-            if (target is GestureManagerInputEmulator)
-            {
-                data = (GestureManagerInputEmulator)target;
-                previousMappingsCount = data.inputMappings != null ? data.inputMappings.Count : -1;
-            }
-        }
-
         public override VisualElement CreateInspectorGUI()
         {
-            serializedObject.Update();
-            data = (GestureManagerInputEmulator)target;
+            var data = (GestureManagerInputEmulator)target;
+            var ui = YUCPInspector.Create(this, "Gesture Manager Input Emulator");
 
-            var root = new VisualElement();
-            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Gesture Manager Input Emulator"));
+            GestureManagerInputHandler Handler() => GestureManagerInputHandler.Current;
+            ui.Status(() => Application.isPlaying && Handler() == null
+                ? new[] { YUCPInspector.Message.Warning("No input handler is running. Build the avatar first.") }
+                : null);
 
-            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(GestureManagerInputEmulator));
-            if (betaWarning != null) root.Add(betaWarning);
-
-            root.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                "You have to be clicked into Game view for the inputs to be detected (I know it is a Unity thing I am working on it)",
-                YUCPUIToolkitHelper.MessageType.Info));
-
-
-            var gestureManagerCard = YUCPUIToolkitHelper.CreateCard("Gesture Manager", "Configure Gesture Manager integration");
-            var gestureManagerContent = YUCPUIToolkitHelper.GetCardContent(gestureManagerCard);
-            gestureManagerContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("gestureManager"), "Gesture Manager Component"));
-            gestureManagerContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("gestureManagerMode"), "Operation Mode"));
-
-            var gestureManagerHelp = new VisualElement();
-            gestureManagerHelp.name = "gesture-manager-help";
-            gestureManagerContent.Add(gestureManagerHelp);
-            root.Add(gestureManagerCard);
-
-
-            var generalCard = YUCPUIToolkitHelper.CreateCard("General Settings", "Configure general input emulation settings");
-            var generalContent = YUCPUIToolkitHelper.GetCardContent(generalCard);
-            generalContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("enableInputEmulation"), "Enable Input Emulation"));
-            generalContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Mode"));
-            root.Add(generalCard);
-
-
-            YUCPUIToolkitHelper.AddSpacing(root, 10);
-            var mappingsHeader = new Label("Input Mappings");
-            mappingsHeader.style.fontSize = 13;
-            mappingsHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-            mappingsHeader.style.marginBottom = 5;
-            root.Add(mappingsHeader);
-
-            var mappingsContainer = new VisualElement();
-            mappingsContainer.name = "mappings-container";
-            root.Add(mappingsContainer);
-
-
-            previousMappingsCount = data.inputMappings != null ? data.inputMappings.Count : 0;
-            UpdateMappingsContainer(mappingsContainer);
-
-
-            var mappingButtons = new VisualElement();
-            mappingButtons.style.flexDirection = FlexDirection.Row;
-            mappingButtons.style.marginBottom = 10;
-
-            var addButton = YUCPUIToolkitHelper.CreateButton("Add Mapping", () =>
+            var gestureManager = ui.Section("Gesture Manager");
+            ui.Field(gestureManager, "enableInputEmulation", "Emulate Input");
+            ui.Field(gestureManager, "gestureManager", "Gesture Manager");
+            ui.Segmented(gestureManager, "gestureManagerMode", "Mode", "Automatic", "Gesture Manager", "Animator");
+            ui.Caption(gestureManager, () => data.gestureManagerMode switch
             {
-                var newMapping = new InputMapping
+                GestureManagerMode.GestureManagerMode => "Sets parameters through Gesture Manager (recommended).",
+                GestureManagerMode.AnimatorMode => "Sets Animator parameters directly, for when Gesture Manager isn't available.",
+                _ => "Picks the mode that suits the Gesture Manager it finds."
+            });
+
+            // The mapping editor writes straight to the mapping, so every change is recorded here for undo.
+            void Change(string name, Action change)
+            {
+                Undo.RecordObject(data, name);
+                change();
+                PrefabUtility.RecordPrefabInstancePropertyModifications(data);
+            }
+
+            var mappings = ui.Section("Input mappings", "Click in the Game view in Play Mode so it receives these inputs.");
+            ui.Caption(mappings, () => data.inputMappings.Count == 0 ? "Add a mapping to drive a parameter from a key or controller input." : "");
+            var list = new VisualElement();
+            mappings.Add(list);
+            string shown = null;
+            string Key() => string.Join("\n", data.inputMappings.Select(m => JsonUtility.ToJson(m)));
+            void Rebuild()
+            {
+                list.Clear();
+                foreach (var mapping in data.inputMappings)
+                {
+                    string before = null;
+                    list.Add(new YUCPInputMappingEditor(mapping, () =>
+                    {
+                        var after = JsonUtility.ToJson(mapping);
+                        JsonUtility.FromJsonOverwrite(before, mapping);
+                        Change("Edit Input Mapping", () => JsonUtility.FromJsonOverwrite(after, mapping));
+                        before = after;
+                        shown = Key();
+                    }, () =>
+                    {
+                        Change("Remove Input Mapping", () => data.RemoveInputMapping(data.inputMappings.IndexOf(mapping)));
+                        ui.Refresh();
+                    }));
+                    before = JsonUtility.ToJson(mapping);
+                }
+                shown = Key();
+            }
+            // Rebuilt only when the mappings change outside their editors (undo, Add, Clear).
+            ui.OnRefresh(() => { if (Key() != shown) Rebuild(); });
+            Rebuild();
+            ui.Button(mappings, "Add Mapping", () =>
+            {
+                Change("Add Input Mapping", () => data.AddInputMapping(new InputMapping
                 {
                     mappingName = $"Mapping {data.inputMappings.Count + 1}",
                     inputType = InputType.Keyboard,
@@ -104,265 +83,45 @@ namespace YUCP.Components.Editor.UI
                     activeValue = 1f,
                     inactiveValue = 0f,
                     enabled = true
-                };
-                data.AddInputMapping(newMapping);
-                EditorUtility.SetDirty(data);
-                UpdateMappingsContainer(mappingsContainer);
-                previousMappingsCount = data.inputMappings.Count;
-            }, YUCPUIToolkitHelper.ButtonVariant.Primary);
-            addButton.style.height = 25;
-            addButton.style.flexGrow = 1;
-            addButton.style.marginRight = 5;
-            mappingButtons.Add(addButton);
+                }));
+                ui.Refresh();
+            }, Toolkit.ButtonVariant.Primary);
 
-            var clearButton = YUCPUIToolkitHelper.CreateButton("Clear All", () =>
+            var controller = ui.Section("Controller");
+            ui.InfoRow(controller, "Connected", () =>
             {
-                if (EditorUtility.DisplayDialog("Clear All Mappings",
-                    "Are you sure you want to remove all input mappings?", "Yes", "Cancel"))
-                {
-                    data.inputMappings.Clear();
-                    EditorUtility.SetDirty(data);
-                    UpdateMappingsContainer(mappingsContainer);
-                    previousMappingsCount = 0;
-                }
-            }, YUCPUIToolkitHelper.ButtonVariant.Danger);
-            clearButton.style.height = 25;
-            clearButton.style.flexGrow = 1;
-            clearButton.name = "clear-all-button";
-            mappingButtons.Add(clearButton);
-            root.Add(mappingButtons);
+                var names = Input.GetJoystickNames();
+                return names.Length > 0 && !string.IsNullOrEmpty(names[0]) ? names[0] : "None";
+            });
+            ui.Field(controller, "controllerDeadzone", "Deadzone");
+            ui.Field(controller, "axisSensitivity", "Axis Sensitivity");
 
-
-            var controllerFoldout = YUCPUIToolkitHelper.CreateFoldout("Controller Settings", showControllerSettings);
-            controllerFoldout.RegisterValueChangedCallback(evt => { showControllerSettings = evt.newValue; });
-
-            var controllerStatus = new VisualElement();
-            controllerStatus.name = "controller-status";
-            controllerFoldout.Add(controllerStatus);
-
-            controllerFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("controllerDeadzone"), "Controller Deadzone"));
-            controllerFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("axisSensitivity"), "Axis Sensitivity"));
-            root.Add(controllerFoldout);
-
-
-            var advancedFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced Options", showAdvancedOptions);
-            advancedFoldout.RegisterValueChangedCallback(evt => { showAdvancedOptions = evt.newValue; });
-            advancedFoldout.Add(YUCPUIToolkitHelper.CreateHelpBox("Advanced options for debugging and fine-tuning input behavior.", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(advancedFoldout);
-
-
-            var buildStatsFoldout = YUCPUIToolkitHelper.CreateFoldout("Build Statistics", showBuildStats);
-            buildStatsFoldout.RegisterValueChangedCallback(evt => { showBuildStats = evt.newValue; });
-
-            var activeMappingsField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("activeMappings"), "Active Mappings");
-            activeMappingsField.SetEnabled(false);
-            buildStatsFoldout.Add(activeMappingsField);
-
-            var detectedTypeField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("detectedGestureManagerType"), "Gesture Manager Type");
-            detectedTypeField.SetEnabled(false);
-            buildStatsFoldout.Add(detectedTypeField);
-
-            var detectedModeField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("detectedMode"), "Operation Mode");
-            detectedModeField.SetEnabled(false);
-            buildStatsFoldout.Add(detectedModeField);
-            buildStatsFoldout.name = "build-stats-foldout";
-            root.Add(buildStatsFoldout);
-
-
-            var runtimeStatus = new VisualElement();
-            runtimeStatus.name = "runtime-status";
-            root.Add(runtimeStatus);
-
-
-            previousGestureManager = data.gestureManager;
-            previousGestureManagerMode = data.gestureManagerMode;
-            previousControllerConnected = IsControllerConnected();
-
-
-            UpdateGestureManagerHelp(gestureManagerHelp);
-            UpdateControllerStatus(controllerStatus);
-
-
-            root.schedule.Execute(() =>
+            var advanced = ui.Advanced();
+            ui.Field(advanced, "debugMode", "Debug Overlay");
+            var overlay = ui.Button(advanced, "Show Debug Overlay", () =>
             {
-                serializedObject.Update();
-
-
-                if (data.gestureManager != previousGestureManager || data.gestureManagerMode != previousGestureManagerMode)
-                {
-                    UpdateGestureManagerHelp(gestureManagerHelp);
-                    previousGestureManager = data.gestureManager;
-                    previousGestureManagerMode = data.gestureManagerMode;
-                }
-
-
-                int currentMappingsCount = data.inputMappings != null ? data.inputMappings.Count : 0;
-                if (currentMappingsCount != previousMappingsCount)
-                {
-                    UpdateMappingsContainer(mappingsContainer);
-                    previousMappingsCount = currentMappingsCount;
-                }
-
-
-                clearButton.style.display = (data.inputMappings != null && data.inputMappings.Count > 0) ? DisplayStyle.Flex : DisplayStyle.None;
-
-
-                bool controllerConnected = IsControllerConnected();
-                if (controllerConnected != previousControllerConnected)
-                {
-                    UpdateControllerStatus(controllerStatus);
-                    previousControllerConnected = controllerConnected;
-                }
-
-
-                buildStatsFoldout.style.display = (data.activeMappings != null && data.activeMappings.Count > 0) ? DisplayStyle.Flex : DisplayStyle.None;
-
-
-                UpdateRuntimeStatus(runtimeStatus);
-
-                serializedObject.ApplyModifiedProperties();
-            }).Every(100);
-
-            return root;
+                var h = Handler();
+                if (h == null) return;
+                if (h.IsDebugOverlayVisible()) h.HideDebugOverlay();
+                else h.ForceShowDebugOverlay();
+                ui.Refresh();
+            }, Toolkit.ButtonVariant.Secondary, "Shows or hides the input overlay in the Game view now.");
+            ui.OnRefresh(() =>
+            {
+                var text = Handler() != null && Handler().IsDebugOverlayVisible() ? "Hide Debug Overlay" : "Show Debug Overlay";
+                if (overlay.text != text) overlay.text = text;
+            });
+            ui.ShowWhen(overlay, () => Handler() != null);
+            var clear = ui.Button(advanced, "Clear All Mappings", () =>
+            {
+                Change("Clear Input Mappings", data.inputMappings.Clear);
+                ui.Refresh();
+            }, Toolkit.ButtonVariant.Danger);
+            ui.ShowWhen(clear, () => data.inputMappings.Count > 0);
+            ui.BuildSummary(() => data.processedMappingsCount > 0
+                ? $"{data.processedMappingsCount} mappings, {data.runtimeComponentsCreated} input handler"
+                : null);
+            return ui.Root;
         }
-
-        private void UpdateMappingsContainer(VisualElement container)
-        {
-            container.Clear();
-
-            if (data.inputMappings == null || data.inputMappings.Count == 0)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("No input mappings configured. Click 'Add Mapping' to create your first mapping.", YUCPUIToolkitHelper.MessageType.Info));
-                return;
-            }
-
-
-            for (int i = 0; i < data.inputMappings.Count; i++)
-            {
-                int index = i;
-                var mapping = data.inputMappings[index];
-
-                var mappingEditor = YUCPUIToolkitHelper.CreateInputMappingEditor(
-                    mapping,
-                    () => {
-                        EditorUtility.SetDirty(data);
-                        serializedObject.Update();
-                    },
-                    () => {
-                        data.RemoveInputMapping(index);
-                        EditorUtility.SetDirty(data);
-                        serializedObject.Update();
-                        UpdateMappingsContainer(container);
-                        previousMappingsCount = data.inputMappings.Count;
-                    }
-                );
-
-                container.Add(mappingEditor);
-            }
-        }
-
-        private void UpdateRuntimeStatus(VisualElement container)
-        {
-            container.Clear();
-
-            if (!Application.isPlaying)
-                return;
-
-            YUCPUIToolkitHelper.AddSpacing(container, 10);
-
-            var inputHandler = FindObjectOfType<GestureManagerInputHandler>();
-            if (inputHandler != null)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Runtime Input Handler Active", YUCPUIToolkitHelper.MessageType.Info));
-
-                var debugButtons = new VisualElement();
-                debugButtons.style.flexDirection = FlexDirection.Row;
-                debugButtons.style.marginBottom = 5;
-
-                var enableDebugButton = YUCPUIToolkitHelper.CreateButton("Force Enable Debug Mode", () => inputHandler.ForceEnableDebugMode(), YUCPUIToolkitHelper.ButtonVariant.Secondary);
-                enableDebugButton.style.flexGrow = 1;
-                enableDebugButton.style.marginRight = 5;
-                debugButtons.Add(enableDebugButton);
-
-                var showOverlayButton = YUCPUIToolkitHelper.CreateButton("Force Show Debug Overlay", () => inputHandler.ForceShowDebugOverlay(), YUCPUIToolkitHelper.ButtonVariant.Secondary);
-                showOverlayButton.style.flexGrow = 1;
-                showOverlayButton.style.marginRight = 5;
-                debugButtons.Add(showOverlayButton);
-
-                var hideOverlayButton = YUCPUIToolkitHelper.CreateButton("Hide Debug Overlay", () => inputHandler.HideDebugOverlay(), YUCPUIToolkitHelper.ButtonVariant.Secondary);
-                hideOverlayButton.style.flexGrow = 1;
-                debugButtons.Add(hideOverlayButton);
-
-                container.Add(debugButtons);
-
-                var sceneViewButton = YUCPUIToolkitHelper.CreateButton("Toggle Scene View Overlay", () => inputHandler.showInSceneView = !inputHandler.showInSceneView, YUCPUIToolkitHelper.ButtonVariant.Secondary);
-                sceneViewButton.style.marginBottom = 5;
-                container.Add(sceneViewButton);
-
-                var debugLabel = new Label($"Debug Overlay Visible: {inputHandler.IsDebugOverlayVisible()}");
-                debugLabel.style.fontSize = 11;
-                container.Add(debugLabel);
-
-                var sceneLabel = new Label($"Scene View Overlay: {(inputHandler.showInSceneView ? "Enabled" : "Disabled")}");
-                sceneLabel.style.fontSize = 11;
-                container.Add(sceneLabel);
-            }
-            else
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Runtime Input Handler Not Found - Build avatar first", YUCPUIToolkitHelper.MessageType.Warning));
-            }
-        }
-
-        public override void OnInspectorGUI()
-        {
-
-        }
-
-        private void UpdateGestureManagerHelp(VisualElement container)
-        {
-            container.Clear();
-            if (data.gestureManager == null)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("No Gesture Manager assigned. The component will attempt to auto-detect one on this avatar.", YUCPUIToolkitHelper.MessageType.Info));
-            }
-            else
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Using Gesture Manager: {data.gestureManager.GetType().Name}", YUCPUIToolkitHelper.MessageType.None));
-            }
-
-            if (data.gestureManagerMode == GestureManagerMode.GestureManagerMode)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Gesture Manager Mode: Uses Vrc3Param system for parameter control. Recommended for full Gesture Manager integration.", YUCPUIToolkitHelper.MessageType.Info));
-            }
-            else if (data.gestureManagerMode == GestureManagerMode.AnimatorMode)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Animator Mode: Directly controls Animator parameters. Use when Gesture Manager is not available.", YUCPUIToolkitHelper.MessageType.Info));
-            }
-            else
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Auto Detect: Will automatically determine the best mode based on the detected Gesture Manager.", YUCPUIToolkitHelper.MessageType.Info));
-            }
-        }
-
-        private void UpdateControllerStatus(VisualElement container)
-        {
-            container.Clear();
-            bool controllerConnected = IsControllerConnected();
-            string[] joystickNames = Input.GetJoystickNames();
-            string statusText = controllerConnected ?
-                $"Controller Connected: {joystickNames[0]}" :
-                "No Controller Detected";
-            container.Add(YUCPUIToolkitHelper.CreateHelpBox(statusText, controllerConnected ? YUCPUIToolkitHelper.MessageType.Info : YUCPUIToolkitHelper.MessageType.Warning));
-        }
-
-        private bool IsControllerConnected()
-        {
-
-            string[] joystickNames = Input.GetJoystickNames();
-            return joystickNames.Length > 0 && !string.IsNullOrEmpty(joystickNames[0]);
-        }
-
-
-
     }
 }

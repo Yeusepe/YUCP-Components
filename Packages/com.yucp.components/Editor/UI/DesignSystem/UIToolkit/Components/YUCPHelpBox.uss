@@ -1,7 +1,0 @@
-/* YUCP HelpBox Component - Uses YUCPAlert internally */
-.yucp-helpbox {
-    margin-top: var(--yucp-spacing-xs);
-    margin-bottom: var(--yucp-spacing-xs);
-}
-
-

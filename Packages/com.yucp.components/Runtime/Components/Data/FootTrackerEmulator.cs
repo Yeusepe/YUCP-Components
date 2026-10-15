@@ -20,25 +20,26 @@ namespace YUCP.Components
     [RequireComponent(typeof(Animator))]
     public class FootTrackerEmulator : MonoBehaviour
     {
-        [Tooltip("Drag this in Play Mode. The left humanoid foot is pinned to it.")]
+        [Tooltip("The left foot follows this object in Play Mode.")]
         public Transform leftTracker;
 
-        [Tooltip("Drag this in Play Mode. The right humanoid foot is pinned to it.")]
+        [Tooltip("The right foot follows this object in Play Mode.")]
         public Transform rightTracker;
 
         [Range(0f, 1f)]
-        [Tooltip("How strongly the feet are pinned. 0 hands the legs back to the animator.")]
+        [Tooltip("How strongly the feet follow the trackers. 0 leaves the legs to the animator.")]
         public float weight = 1f;
 
-        [Tooltip("Also pin foot rotation, which is what a real puck gives you. Off leaves rotation to the animator.")]
+        [Tooltip("The feet also turn with the trackers, like real trackers. Off leaves rotation to the animator.")]
         public bool applyRotation = true;
 
-        [Tooltip("Create the tracker handles at the avatar's feet on the first Play Mode frame.")]
+        [Tooltip("When Play Mode starts, creates a tracker at the foot of each side that has none.")]
         public bool autoCreateHandles = true;
 
         [Header("Readout")]
-        [Tooltip("Distance between the visible paw and the tracked foot. This is the number that says whether the rig is holding together -- it should stay near zero however you drag the trackers.")]
+        [Tooltip("Distance from the left visible paw to the tracked foot. It stays near zero while the rig holds together.")]
         public float leftPawError;
+        [Tooltip("Distance from the right visible paw to the tracked foot. It stays near zero while the rig holds together.")]
         public float rightPawError;
 
         private Animator animator;

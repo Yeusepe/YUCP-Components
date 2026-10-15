@@ -1,9 +1,5 @@
-using System;
 using UnityEditor;
-using UnityEditor.UIElements;
-using UnityEngine;
 using UnityEngine.UIElements;
-using VRC.SDK3.Avatars.Components;
 using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
@@ -11,228 +7,22 @@ namespace YUCP.Components.Editor
     [CustomEditor(typeof(FollowerData))]
     public class FollowerDataEditor : UnityEditor.Editor
     {
-        private FollowerData data;
-        private string previousBuildSummary = null;
-        private bool previousIncludeCredits = false;
-
-        private SerializedProperty appliedObjectOverrideProp;
-        private SerializedProperty positionTargetProp;
-        private SerializedProperty lookTargetProp;
-        private SerializedProperty generateMenuProp;
-        private SerializedProperty menuLocationProp;
-        private SerializedProperty globalParameterStopProp;
-        private SerializedProperty followSpeedProp;
-        private SerializedProperty enableGroupingProp;
-        private SerializedProperty followerGroupIdProp;
-        private SerializedProperty verboseLoggingProp;
-        private SerializedProperty includeCreditsProp;
-
-        private static readonly string WikiUrl = "https://github.com/Yeusepe/Yeusepes-Modules/wiki/Follower";
-
-        private void OnEnable()
-        {
-            data = (FollowerData)target;
-
-            appliedObjectOverrideProp = serializedObject.FindProperty("appliedObjectOverride");
-            positionTargetProp = serializedObject.FindProperty("positionTarget");
-            lookTargetProp = serializedObject.FindProperty("lookTarget");
-            generateMenuProp = serializedObject.FindProperty("generateMenu");
-            menuLocationProp = serializedObject.FindProperty("menuLocation");
-            globalParameterStopProp = serializedObject.FindProperty("globalParameterStop");
-            followSpeedProp = serializedObject.FindProperty("followSpeed");
-            enableGroupingProp = serializedObject.FindProperty("enableGrouping");
-            followerGroupIdProp = serializedObject.FindProperty("followerGroupId");
-            verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
-            includeCreditsProp = serializedObject.FindProperty("includeCredits");
-        }
-
         public override VisualElement CreateInspectorGUI()
         {
-            serializedObject.Update();
-            
-            var root = new VisualElement();
-            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Follower"));
-            
-            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(FollowerData));
-            if (betaWarning != null) root.Add(betaWarning);
-            
-            var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(FollowerData));
-            if (supportBanner != null) root.Add(supportBanner);
-            
-            var creditBanner = new VisualElement();
-            creditBanner.name = "credit-banner";
-            root.Add(creditBanner);
-            
-            var buildSummary = new VisualElement();
-            buildSummary.name = "build-summary";
-            root.Add(buildSummary);
-            
-            var descriptorWarnings = new VisualElement();
-            descriptorWarnings.name = "descriptor-warnings";
-            root.Add(descriptorWarnings);
-            
-            var overviewCard = new VisualElement();
-            overviewCard.name = "overview-card";
-            root.Add(overviewCard);
-            
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Applied Object", "Configure what follows the player and what it looks at.");
-            var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("This component applies the follower to an object. If no Applied Object override is set, it uses the GameObject this component is attached to.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(appliedObjectOverrideProp, "Applied Object (Override)"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object: The object that will be moved into the Follower's Container. If empty, the component's GameObject is used.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(positionTargetProp, "Position Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("POSITION TARGET: The object the follower should move toward. If not set, will use the applied object.", YUCPUIToolkitHelper.MessageType.Info));
-            targetContent.Add(YUCPUIToolkitHelper.CreateField(lookTargetProp, "Look Target"));
-            targetContent.Add(YUCPUIToolkitHelper.CreateHelpBox("LOOK TARGET: The object the follower looks at (for look constraint). This determines what direction the follower faces. If not set, will use Follower Target/Look Target from prefab.", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(targetCard);
-            
-            var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure follower behavior.");
-            var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(generateMenuProp, "Generate Menu"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterStopProp, "Global Parameter (Stop)"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("OPTIONAL: When set, this parameter will be registered as a global parameter that can be controlled by VRChat worlds or external sources. Leave empty to use local parameter only.", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(optionsCard);
-            
-            var followCard = YUCPUIToolkitHelper.CreateCard("Follow Settings", "Configure follow speed.");
-            var followContent = YUCPUIToolkitHelper.GetCardContent(followCard);
-            followContent.Add(YUCPUIToolkitHelper.CreateField(followSpeedProp, "Follow Speed"));
-            followContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Follow speed multiplier. Higher values = faster following. This affects the Follow animation clip.", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(followCard);
-            
-            var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
-            var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
-            groupingContent.Add(YUCPUIToolkitHelper.CreateField(enableGroupingProp, "Enable Grouping"));
-            
-            var groupIdField = YUCPUIToolkitHelper.CreateField(followerGroupIdProp, "Group ID");
-            groupIdField.name = "group-id";
-            groupingContent.Add(groupIdField);
-            
-            var groupingHelp = new VisualElement();
-            groupingHelp.name = "grouping-help";
-            groupingContent.Add(groupingHelp);
-            root.Add(groupingCard);
-            
-            var diagnosticsCard = YUCPUIToolkitHelper.CreateCard("Diagnostics & Debug", "Surface build output and logging helpers.");
-            var diagnosticsContent = YUCPUIToolkitHelper.GetCardContent(diagnosticsCard);
-            diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(verboseLoggingProp, "Verbose Logging"));
-            diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(includeCreditsProp, "Include Credits Banner"));
-            root.Add(diagnosticsCard);
-            
-            YUCPUIToolkitHelper.AddSpacing(root, 6);
-            var helpLinks = new VisualElement();
-            helpLinks.style.flexDirection = FlexDirection.Row;
-            helpLinks.style.marginBottom = 10;
-            
-            var docButton = YUCPUIToolkitHelper.CreateButton("Open Documentation", () => Application.OpenURL(WikiUrl), YUCPUIToolkitHelper.ButtonVariant.Secondary);
-            docButton.style.flexGrow = 1;
-            docButton.style.marginRight = 5;
-            helpLinks.Add(docButton);
-            
-            root.Add(helpLinks);
-            
-            previousBuildSummary = data.GetBuildSummary();
-            previousIncludeCredits = includeCreditsProp.boolValue;
-            
-            UpdateCreditBanner(creditBanner);
-            YUCPUIToolkitHelper.UpdateBuildSummary(buildSummary, data.GetBuildSummary(), data.GetLastBuildTimeUtc());
-            UpdateDescriptorWarnings(descriptorWarnings);
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            UpdateOverviewCard(overviewCard, data, descriptor);
-            UpdateGroupingHelp(groupingHelp);
-            
-            root.schedule.Execute(() =>
-            {
-                serializedObject.Update();
-                
-                bool currentIncludeCredits = includeCreditsProp.boolValue;
-                if (currentIncludeCredits != previousIncludeCredits)
-                {
-                    UpdateCreditBanner(creditBanner);
-                    previousIncludeCredits = currentIncludeCredits;
-                }
-                
-                string currentBuildSummary = data.GetBuildSummary();
-                if (currentBuildSummary != previousBuildSummary)
-                {
-                    YUCPUIToolkitHelper.UpdateBuildSummary(buildSummary, data.GetBuildSummary(), data.GetLastBuildTimeUtc());
-                    previousBuildSummary = currentBuildSummary;
-                }
-                
-                UpdateDescriptorWarnings(descriptorWarnings);
-                descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-                UpdateOverviewCard(overviewCard, data, descriptor);
-                
-                groupIdField.SetEnabled(enableGroupingProp.boolValue);
-                
-                UpdateGroupingHelp(groupingHelp);
-                
-                serializedObject.ApplyModifiedProperties();
-            }).Every(100);
-            
-            return root;
-        }
-        
-        private void UpdateOverviewCard(VisualElement container, FollowerData data, VRCAvatarDescriptor descriptor)
-        {
-            container.Clear();
+            var data = (FollowerData)target;
+            var ui = YUCPInspector.Create(this, "Follower");
+            ui.Status(() => VRLabsInspector.Placement(data, data.appliedObjectOverride != null ? data.appliedObjectOverride : data.transform));
 
-            var appliedTransform = data.appliedObjectOverride != null ? data.appliedObjectOverride : data.transform;
-            string targetPath = descriptor != null ? UnityEditor.AnimationUtility.CalculateTransformPath(appliedTransform, descriptor.transform) : appliedTransform.gameObject.name;
-            var groupingLabel = enableGroupingProp.boolValue
-                ? FollowerData.NormalizeGroupId(followerGroupIdProp.stringValue)
-                : "Isolated (per-object)";
-            
-            var overviewCard = YUCPUIToolkitHelper.CreateCard("Follower Overview", null);
-            var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
-            
-            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Followed Object", targetPath);
-            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Group", groupingLabel);
-            
-            container.Add(overviewCard);
-        }
-        
-        
-        private void UpdateCreditBanner(VisualElement container)
-        {
-            container.Clear();
-            if (includeCreditsProp.boolValue)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Powered by VRLabs Follower (MIT). Please credit VRLabs when shipping your avatar.", YUCPUIToolkitHelper.MessageType.Info));
-            }
-        }
-        
-        
-        private void UpdateDescriptorWarnings(VisualElement container)
-        {
-            container.Clear();
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            if (descriptor == null)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("This component must be placed under a VRCAvatarDescriptor in order for the builder to configure the follower.", YUCPUIToolkitHelper.MessageType.Error));
-            }
-            else if (data.transform == descriptor.transform)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Attach Follower to the object you want to follow the player, not the descriptor root.", YUCPUIToolkitHelper.MessageType.Warning));
-            }
-            else
-            {
-                var appliedTransform = data.appliedObjectOverride != null ? data.appliedObjectOverride : data.transform;
-                if (!appliedTransform.IsChildOf(descriptor.transform))
-                {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Applied object must be within the avatar hierarchy. Please move it inside the descriptor object.", YUCPUIToolkitHelper.MessageType.Error));
-                }
-            }
-        }
-        
-        private void UpdateGroupingHelp(VisualElement container)
-        {
-            container.Clear();
-            var groupingInfo = enableGroupingProp.boolValue
-                ? "Components with the same Group ID share one follower setup to reduce overhead."
-                : "Grouping disabled: this component will get its own follower setup.";
-            container.Add(YUCPUIToolkitHelper.CreateHelpBox(groupingInfo, YUCPUIToolkitHelper.MessageType.Info));
+            var follow = ui.Section("Follow");
+            ui.Field(follow, "appliedObjectOverride", "Followed Object");
+            ui.Field(follow, "positionTarget");
+            ui.Field(follow, "lookTarget");
+            ui.Field(follow, "followSpeed");
+
+            VRLabsInspector.Menu(ui, "generateMenu", "menuLocation", ("globalParameterStop", "Stop Parameter"));
+            VRLabsInspector.Advanced(ui, "followerGroupId", "Based on VRLabs Follower (MIT). Credit VRLabs when you share the avatar.",
+                data.GetBuildSummary, () => data.GetLastBuildTimeUtc());
+            return ui.Root;
         }
     }
 }

@@ -20,37 +20,37 @@ namespace YUCP.Components
         [SerializeField, HideInInspector]
         private GameObject _trackedObjectInfo;
         
-        [Tooltip("Applied object (transform): The object that will be moved outside the prefab and positioned based on contact detection. This is the visual/functional object that follows the tracked contacts (e.g., a hand tracker that follows hand contacts).")]
+        [Tooltip("Where the tracker is anchored. Empty keeps the prefab's default position.")]
         [FormerlySerializedAs("trackerTarget")]
         public Transform appliedTransform;
 
         [Header("Options")]
-        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Tracker\"). Leave blank to place it at the root menu.")]
+        [Tooltip("Submenu for the tracker toggle, e.g. Utility/Tracker. Empty adds no toggle.")]
         public string menuLocation = "Utility/Tracker";
 
-        [Tooltip("OPTIONAL: Base parameter name for ContactTracker/Control. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
+        [Tooltip("Optional global parameter that controls the tracker. /<object> is appended to keep it unique.")]
         public string globalParameterControl = "";
 
         [Header("Contact Settings")]
-        [Tooltip("Collision tags for the 6 proximity contacts. Order: X+, X-, Y+, Y-, Z+, Z-")]
+        [Tooltip("The collision tag each direction's contact detects.")]
         public string[] collisionTags = new string[6] { "Head", "Head", "Head", "Head", "Head", "Head" };
 
-        [Tooltip("Size parameter value for ContactTracker/Size. This sets the default size when not tracking.")]
+        [Tooltip("Size of the tracker while it isn't tracking.")]
         [Range(0f, 1f)]
         public float sizeParameter = 0f;
 
         [Header("Grouping")]
-        [Tooltip("Enable to combine multiple components into a shared contact tracker setup.")]
+        [Tooltip("Shares one contact tracker setup between components with the same group ID.")]
         public bool enableGrouping = false;
 
-        [Tooltip("Identifier used when grouping is enabled. Components with matching IDs are merged into the same setup.")]
+        [Tooltip("Components with the same group ID share one setup.")]
         public string trackerGroupId = "Default";
 
         [Header("Diagnostics")]
-        [Tooltip("Print additional information while building.")]
+        [Tooltip("Logs extra detail while the avatar builds.")]
         public bool verboseLogging = false;
 
-        [Tooltip("Include the automatic credit banner in the inspector and documentation.")]
+        [Tooltip("Shows the credit line for the VRLabs prefab this component is based on.")]
         public bool includeCredits = true;
 
 #if UNITY_EDITOR

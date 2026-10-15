@@ -27,27 +27,29 @@ namespace YUCP.Components
     [DisallowMultipleComponent, AddComponentMenu("YUCP/FT Blendsync"), SupportBanner]
     public class FTBlendSyncData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Tooltip("Mesh to adapt. Empty uses the SkinnedMeshRenderer on this object. Original mesh assets are never edited.")]
+        [Tooltip("The face mesh. Empty uses the mesh on this object; the original mesh is never changed.")]
         public SkinnedMeshRenderer targetRenderer;
+        [Tooltip("Expression sets added to the mesh when the avatar builds. Use one face-tracking controller that matches.")]
         public FTBlendSyncStandard outputStandards = FTBlendSyncStandard.UnifiedExpressions | FTBlendSyncStandard.MMD;
-        [Tooltip("Allow geometric left/right splits of combined shapes and approximate expression combinations. The inspector identifies these mappings.")]
+        [Tooltip("Splits combined shapes into left and right, and combines shapes to approximate missing expressions. Shape coverage lists them.")]
         public bool allowApproximations = true;
-        [Tooltip("Coordinates for left/right splitting and generated tongue directions. Empty uses the avatar root. +X is the character's right, +Y up, +Z forward.")]
+        [Tooltip("Space for left/right splits and tongue directions, with +X to the character's right, +Y up and +Z forward. Empty uses the avatar root.")]
         public Transform faceSpace;
-        [Min(0.00001f), Tooltip("Soft seam width in face-space units when splitting a combined shape.")]
+        [Min(0.00001f), Tooltip("Width of the soft seam where a combined shape is split, in face-space units.")]
         public float splitFeather = 0.002f;
-        [Tooltip("Reverse left/right for models whose face-space X axis points left.")]
+        [Tooltip("Swaps left and right, for models whose face-space X axis points left.")]
         public bool reverseLeftRight;
-        [Tooltip("Optional explicit mappings for custom names. Source names must exist on the original mesh. Existing target shapes are always preserved.")]
+        [Tooltip("Optional. Builds each target shape from shapes on the original mesh; existing target shapes are kept.")]
         public List<FTBlendSyncMapping> customMappings = new List<FTBlendSyncMapping>();
 
-        [Tooltip("Generate missing tongue direction shapes using the tongue bone's skin weights. Requires a tongue-out shape and an explicitly assigned bone.")]
+        [Tooltip("Creates the missing tongue direction shapes from the tongue bone's skin weights. They move only with TongueX and TongueY tracking; iPhone ARKit tracks tongue-out only.")]
         public bool generateTongueDirections;
+        [Tooltip("The tongue's root bone. Its skin weights shape the generated directions.")]
         public Transform tongueRoot;
-        [Range(0, 60)] public float tongueSideAngle = 25;
-        [Range(0, 60)] public float tongueUpDownAngle = 20;
+        [Range(0, 60), Tooltip("How far the tongue turns left and right, in degrees.")] public float tongueSideAngle = 25;
+        [Range(0, 60), Tooltip("How far the tongue turns up and down, in degrees.")] public float tongueUpDownAngle = 20;
 
-        [Tooltip("Add VRCFury MMD Compatibility during build so its optimizer retains the MMD shapes. MMD worlds generally expect a renderer at avatar-root/Body. Disable face tracking in its menu when dancing.")]
+        [Tooltip("Keeps the MMD shapes through VRCFury's optimizer. Dance worlds expect the face mesh at avatar-root/Body; turn face tracking off while dancing.")]
         public bool preserveMmdShapes = true;
 
         public SkinnedMeshRenderer GetRenderer() => targetRenderer != null ? targetRenderer : GetComponent<SkinnedMeshRenderer>();

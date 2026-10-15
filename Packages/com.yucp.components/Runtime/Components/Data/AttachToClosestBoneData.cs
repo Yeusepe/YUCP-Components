@@ -9,25 +9,25 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     public class AttachToClosestBoneData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Tooltip("Optional offset string for fine tuning the attachment.")]
+        [Tooltip("Optional. Links to this child path under the bone instead of the bone itself.")]
         public string offset = "";
 
-        [Tooltip("Search radius in meters. Only bones within this distance will be considered. Set to 0 for unlimited range.")]
+        [Tooltip("Only bones within this many meters are considered. 0 searches the whole avatar.")]
         [Min(0f)]
         public float maxDistance = 0f;
 
         [Header("Bone Filtering")]
-        [Tooltip("If set, only consider bones whose names contain this text (case-insensitive).")]
+        [Tooltip("Optional. Only bones whose names contain this text are considered. Not case-sensitive.")]
         public string includeNameFilter = "";
 
-        [Tooltip("If set, ignore bones whose names contain this text (case-insensitive).")]
+        [Tooltip("Optional. Bones whose names contain this text are skipped. Not case-sensitive.")]
         public string excludeNameFilter = "";
 
-        [Tooltip("If true, ignore humanoid bones and only consider extra bones.")]
+        [Tooltip("Considers only bones that aren't part of the humanoid rig.")]
         public bool ignoreHumanoidBones = false;
 
         [Header("Debug")]
-        [Tooltip("The bone path that was selected at build time (read-only, populated by processor).")]
+        [Tooltip("The bone this object was linked to in the last build.")]
         [SerializeField] private string selectedBonePath = "";
 
         public string SelectedBonePath => selectedBonePath;

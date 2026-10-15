@@ -115,50 +115,30 @@ namespace YUCP.Components.Editor
             var candidates = eligible.Select(entry =>
                 new ParameterCompressionCandidate(
                     entry.parameter.name,
-                    ValueKind(entry.parameter.valueType),
-                    entry.minimumLevels,
                     entry.desiredLevels,
-
-
-
                     (int)entry.priority,
                     entry.CurrentBits,
                     entry.explicitlyIncluded)).ToArray();
 
-            var maximumWires = component.optimizationBias >= 0.82f
-                ? 4
-                : component.optimizationBias >= 0.64f
-                    ? 5
-                    : 7;
-
-
-
-
-
-
-            var policy = new ParameterCompressionBusPolicy(
-                3, maximumWires, 16, 0.1f);
-            phases.Begin("Planning the time-multiplexed bus", 0.1f);
+            phases.Begin("Planning the event bus", 0.1f);
             var precision = ParameterPrecisionPlan.None;
             var measureSeconds = 0d;
             if (!ParameterCompressionPlanner.TryCreatePlan(
-                    reducedBits, targetBits, candidates, policy,
+                    reducedBits, targetBits, candidates,
                     out var plan, out var planningError))
             {
-
-
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 var lossyBase = reducedBits;
                 precision = PlanPrecision(avatarRoot, descriptor, sourceParameters,
                     component, catalog, reductions, phases, saved =>
                         ParameterCompressionPlanner.TryCreatePlan(
-                            lossyBase - saved, targetBits, candidates, policy,
+                            lossyBase - saved, targetBits, candidates,
                             out _, out _));
                 measureSeconds = watch.Elapsed.TotalSeconds;
                 if (precision == null ||
                     !ParameterCompressionPlanner.TryCreatePlan(
                         reducedBits - precision.SavedBits, targetBits, candidates,
-                        policy, out plan, out _))
+                        out plan, out _))
                 {
                     var safeBits = eligible.Sum(entry => entry.CurrentBits);
                     return Fail(component,
@@ -188,14 +168,10 @@ namespace YUCP.Components.Editor
 
             var byName = eligible.ToDictionary(
                 entry => entry.parameter.name, StringComparer.Ordinal);
-            var selected = plan.Allocations.Select(allocation =>
+            var selected = plan.Allocations.Select(allocation => new SelectedParameter
             {
-                var source = byName[allocation.Name];
-                return new SelectedParameter
-                {
-                    source = source,
-                    levels = allocation.Levels
-                };
+                source = byName[allocation.Name],
+                allocation = allocation
             }).ToArray();
 
             var contentIdentity = component.StableId + "|prefix:" +
@@ -205,7 +181,7 @@ namespace YUCP.Components.Editor
                 .OrderBy(item => item.source.parameter.name, StringComparer.Ordinal)
                 .Select(item => item.source.parameter.name + ":" +
                                 item.source.parameter.valueType + ":" +
-                                item.levels + ":" + item.source.minimum + ":" +
+                                item.allocation.Levels + ":" + item.source.minimum + ":" +
                                 item.source.maximum + ":" +
                                 item.source.priority + ":" +
                                 item.source.group)) +
@@ -215,7 +191,7 @@ namespace YUCP.Components.Editor
                     group.Carrier + "=" + string.Join(",", group.Members.Select(member =>
                         member.Candidate.Name + "*" + member.Observation.CellCount)))) +
                 "|precision:" + precision.Identity +
-                "|bus:" + plan.BusBits + "|block:" + BlockSize(component) +
+                "|bus:" + plan.BusBits +
                 "|contract:" + ParameterCompressionContract.ContractVersion;
             var hash = ParameterCompressionContract.StableFingerprint(
                 contentIdentity);
@@ -260,17 +236,16 @@ namespace YUCP.Components.Editor
                         new ParameterCompressorAnimatorBuilder.Entry
                         {
                             name = item.source.parameter.name,
-
-
                             type = fxTypes.TryGetValue(item.source.parameter.name,
                                 out var declared)
                                 ? declared
                                 : AnimatorType(item.source.parameter.valueType),
-                            levels = item.levels,
+                            levels = item.allocation.Levels,
                             minimum = item.source.minimum,
                             maximum = item.source.maximum,
-                            priority = (int)item.source.priority,
-                            group = item.source.group
+                            defaultValue = item.source.parameter.defaultValue,
+                            page = item.allocation.Page,
+                            offset = item.allocation.Offset
                         }).ToArray();
                     phases.Begin("Building the bus for " + builderEntries.Length + " values", 0.65f);
                     built = ParameterCompressorAnimatorBuilder.Build(
@@ -278,11 +253,8 @@ namespace YUCP.Components.Editor
                         {
                             controller = clonedController,
                             prefix = component.NormalizedPrefix,
-                            busBits = plan.BusBits,
-                            entries = builderEntries,
-                            blockSize = BlockSize(component),
-                            signalSeconds = 0.1f,
-                            spacerSeconds = 0.1f
+                            pageBits = plan.PageBits,
+                            entries = builderEntries
                         });
                 }
 
@@ -300,7 +272,7 @@ namespace YUCP.Components.Editor
                 AddPackCarrierDeclarations(clonedParameters, reductions.packs);
                 if (built != null)
                     AddCarrierDeclarations(
-                        clonedParameters, built.carrierParameters,
+                        clonedParameters, clonedController, built.carrierParameters,
                         component.NormalizedPrefix);
 
                 var expectedBits = plan.UsesCompression ? plan.FinalBits : reducedBits;
@@ -326,8 +298,6 @@ namespace YUCP.Components.Editor
                 AssetDatabase.SaveAssetIfDirty(clonedParameters);
                 CommitStagingFolder(folder, finalFolder);
 
-                var reducedPrecision = selected.Count(item =>
-                    item.levels < item.source.desiredLevels);
                 var packedCount = reductions.packs.Sum(group => group.Members.Count);
                 var droppedPlanes = precision.UnsyncedNames.Count();
                 var lossless = reductions.Any
@@ -337,12 +307,13 @@ namespace YUCP.Components.Editor
                       reductions.packs.Count + " carriers (" +
                       reductions.packs.Sum(group => group.SavedBits) + " bits). "
                     : string.Empty;
-                var busMessage = !plan.UsesCompression
-                    ? "No time-multiplexed transport was needed."
-                    : reducedPrecision == 0
-                        ? "Bus values keep native VRChat precision. Blocks commit atomically and replay for late joiners."
-                        : reducedPrecision +
-                          " values use planned lower precision to cross a radix boundary.";
+                var busMessage = built == null
+                    ? "No event bus was needed."
+                    : "Bus values keep native VRChat precision. A change cuts in on the next " +
+                      "VRChat sync (at most " +
+                      ParameterCompressorAnimatorBuilder.HoldSeconds.ToString("0.0") +
+                      " s plus a few frames); idle ticks refresh all " + selected.Length + " values for late " +
+                      "joiners in about " + built.estimatedFullRefreshSeconds.ToString("0.0") + " s.";
                 var summary = new ParameterCompressionBuildSummary
                 {
                     hasResult = true,
@@ -357,7 +328,7 @@ namespace YUCP.Components.Editor
                                           droppedPlanes,
                     nominalFullRefreshSeconds = built?.estimatedFullRefreshSeconds ?? 0f,
                     transportName = plan.UsesCompression
-                        ? plan.BusBits + "-Bool delay-insensitive radix-" + plan.Radix
+                        ? "Event bus: one Int code and " + plan.PageBits + " page Bools"
                         : precision.Any ? "Reduced remote precision" : "Exact packing",
                     message = lossless + (precision.Any
                         ? precision.Describe() + " Measured in " +
@@ -366,12 +337,7 @@ namespace YUCP.Components.Editor
                 };
                 component.SetBuildSummary(summary);
                 Debug.Log("[YUCP Parameter Compressor] " + currentBits + " -> " +
-                          afterBits + " synced bits. " + summary.message +
-                          (built != null
-                              ? " The bus carries " + selected.Length +
-                                " values and refreshes them all in about " +
-                                built.estimatedFullRefreshSeconds.ToString("0.0") + " s."
-                              : string.Empty), component);
+                          afterBits + " synced bits. " + summary.message, component);
                 EditorUtility.SetDirty(component);
                 ParameterCompressorFinalValidator.Mark(avatarRoot, targetBits);
                 return true;
@@ -390,7 +356,7 @@ namespace YUCP.Components.Editor
         private sealed class SelectedParameter
         {
             internal ParameterCompressionCatalogEntry source;
-            internal int levels;
+            internal ParameterCompressionAllocation allocation;
         }
 
         private sealed class LosslessReductions
@@ -576,13 +542,6 @@ namespace YUCP.Components.Editor
             parameters.parameters = list.ToArray();
         }
 
-        private static int BlockSize(ParameterCompressorData component)
-        {
-            return Mathf.Clamp(
-                Mathf.RoundToInt(Mathf.Lerp(4f, 12f, component.optimizationBias)),
-                4, 12);
-        }
-
         private static bool ValidateRules(
             ParameterCompressorData component,
             VRCExpressionParameters parameters,
@@ -647,6 +606,7 @@ namespace YUCP.Components.Editor
 
         private static void AddCarrierDeclarations(
             VRCExpressionParameters parameters,
+            AnimatorController controller,
             IReadOnlyList<string> carriers,
             string prefix)
         {
@@ -664,11 +624,16 @@ namespace YUCP.Components.Editor
                 if (!names.Add(carrier))
                     throw new InvalidOperationException(
                         "Carrier '" + carrier + "' already exists.");
+                var declared = controller.parameters.First(parameter => parameter.name == carrier);
                 list.Add(new VRCExpressionParameters.Parameter
                 {
                     name = carrier,
-                    valueType = VRCExpressionParameters.ValueType.Bool,
-                    defaultValue = 0f,
+                    valueType = declared.type == AnimatorControllerParameterType.Int
+                        ? VRCExpressionParameters.ValueType.Int
+                        : VRCExpressionParameters.ValueType.Bool,
+                    defaultValue = declared.type == AnimatorControllerParameterType.Int
+                        ? declared.defaultInt
+                        : 0f,
                     saved = false,
                     networkSynced = true
                 });
@@ -838,20 +803,6 @@ namespace YUCP.Components.Editor
                 layer.type == VRCAvatarDescriptor.AnimLayerType.FX);
             Add(fx.animatorController);
             return string.Join(";", parts);
-        }
-
-        private static ParameterCompressionValueKind ValueKind(
-            VRCExpressionParameters.ValueType type)
-        {
-            switch (type)
-            {
-                case VRCExpressionParameters.ValueType.Bool:
-                    return ParameterCompressionValueKind.Bool;
-                case VRCExpressionParameters.ValueType.Int:
-                    return ParameterCompressionValueKind.Int;
-                default:
-                    return ParameterCompressionValueKind.Float;
-            }
         }
 
         private static AnimatorControllerParameterType AnimatorType(

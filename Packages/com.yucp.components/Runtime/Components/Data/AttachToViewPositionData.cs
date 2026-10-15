@@ -14,10 +14,10 @@ namespace YUCP.Components
     [DisallowMultipleComponent]
     public class AttachToViewPositionData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Tooltip("Offset from the avatar's ViewPosition in local space.")]
+        [Tooltip("Offset from the avatar's view position, in the avatar's local space.")]
         public Vector3 offset = Vector3.zero;
 
-        [Tooltip("Optionally align the X-axis toward a specific eye bone.")]
+        [Tooltip("Matches this eye's depth instead of the view position's.")]
         public EyeAlignment eyeAlignment = EyeAlignment.None;
 
         public int PreprocessOrder => 0;

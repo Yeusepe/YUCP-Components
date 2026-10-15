@@ -15,7 +15,7 @@ namespace YUCP.Components
 	public class MoveAllUnderData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
 	{
 		[Header("Target")]
-		[Tooltip("Menu path prefix. All toggles and menu items under this object will appear under this path. E.g. \"Customizables\" makes Body/Fluff become Customizables/Body/Fluff. Use slashes for subfolders.")]
+		[Tooltip("The folder the menu items move into. With \"Customizables\", Body/Fluff becomes Customizables/Body/Fluff; use slashes for subfolders.")]
 		public string targetMenuPath = "Customizables";
 
 		public int PreprocessOrder => 0;

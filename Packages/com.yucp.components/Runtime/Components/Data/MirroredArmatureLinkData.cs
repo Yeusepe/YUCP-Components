@@ -40,52 +40,52 @@ namespace YUCP.Components
 		[Serializable]
 		public class CustomTarget
 		{
-			[Tooltip("Display name for the toggle/menu item")] public string displayName = "Custom";
-			[Tooltip("Global bool parameter name to expose for this option")] public string globalBoolParam = "";
-			[Tooltip("How to resolve the target transform")] public TargetType targetType = TargetType.Transform;
-			[Tooltip("Humanoid bone when TargetType is HumanoidBone")] public HumanBodyBones humanoidBone = HumanBodyBones.Hips;
-			[Tooltip("Transform reference when TargetType is Transform")] public Transform transform;
-			[Tooltip("Path under the avatar's armature root when TargetType is ArmaturePath")] public string armaturePath = "";
-			[Tooltip("Optional child path under the resolved target")] public string offsetPath = "";
-			[Tooltip("Toggle starts ON by default")] public bool defaultOn = false;
-			[Tooltip("If true, maintain the current world placement when switching to this target (stores offsets).")]
+			[Tooltip("The toggle's name in the avatar menu.")] public string displayName = "Custom";
+			[Tooltip("A global bool parameter for this target, so other systems can select it. Empty generates one.")] public string globalBoolParam = "";
+			[Tooltip("How the target is found: a humanoid bone, an object, or a path from the avatar root.")] public TargetType targetType = TargetType.Transform;
+			[Tooltip("The humanoid bone to link to.")] public HumanBodyBones humanoidBone = HumanBodyBones.Hips;
+			[Tooltip("The object to link to.")] public Transform transform;
+			[Tooltip("The target's path from the avatar root, e.g. Armature/Hips/Spine.")] public string armaturePath = "";
+			[Tooltip("A child of the target to link to instead, as a path. Empty uses the target.")] public string offsetPath = "";
+			[Tooltip("This toggle starts on.")] public bool defaultOn = false;
+			[Tooltip("Keeps the object where it is relative to the target. Off snaps it onto the target.")]
 			public bool keepTransforms = true;
-			[Tooltip("If enabled, this toggle uses Exclusive Off State within the exclusive group")]
+			[Tooltip("This toggle turns on when every other toggle in the group is off.")]
 			public bool exclusiveOffState = false;
-			[Tooltip("Optional animation clip to play when this toggle is activated")]
+			[Tooltip("An animation that plays while this target is selected.")]
 			public AnimationClip animationClip;
 		}
 
 		[Header("Symmetric Part (Built-ins)")]
-		[Tooltip("Which symmetric body part to reference for Left/Right options")] public BodyPart part = BodyPart.Hand;
-		[Tooltip("Optional offset string (child path) under the resolved bone")] public string offset = "";
-		[Tooltip("Include a Left option referencing the left-side humanoid bone")] public bool includeLeft = true;
-		[Tooltip("Include a Right option referencing the right-side humanoid bone")] public bool includeRight = true;
-		[Tooltip("Optional global bool parameter for the Left option")] public string leftParam = "";
-		[Tooltip("Optional global bool parameter for the Right option")] public string rightParam = "";
-		[Tooltip("Toggle starts ON by default (Left)")] public bool leftDefaultOn = false;
-		[Tooltip("Toggle starts ON by default (Right)")] public bool rightDefaultOn = false;
-		[Tooltip("If enabled, the Left toggle uses Exclusive Off State within the exclusive group")] public bool leftExclusiveOffState = false;
-		[Tooltip("If enabled, the Right toggle uses Exclusive Off State within the exclusive group")] public bool rightExclusiveOffState = false;
-		[Tooltip("Optional animation clip to play when Left toggle is activated")] public AnimationClip leftAnimation;
-		[Tooltip("Optional animation clip to play when Right toggle is activated")] public AnimationClip rightAnimation;
+		[Tooltip("The body part the object moves between, on the left and right sides.")] public BodyPart part = BodyPart.Hand;
+		[Tooltip("A child of the bone to link to instead, as a path. Empty uses the bone.")] public string offset = "";
+		[Tooltip("Adds a toggle that links the object to the left side.")] public bool includeLeft = true;
+		[Tooltip("Adds a toggle that links the object to the right side.")] public bool includeRight = true;
+		[Tooltip("A global bool parameter for this side, so other systems can select it. Empty generates one.")] public string leftParam = "";
+		[Tooltip("A global bool parameter for this side, so other systems can select it. Empty generates one.")] public string rightParam = "";
+		[Tooltip("This toggle starts on.")] public bool leftDefaultOn = false;
+		[Tooltip("This toggle starts on.")] public bool rightDefaultOn = false;
+		[Tooltip("This toggle turns on when every other toggle in the group is off.")] public bool leftExclusiveOffState = false;
+		[Tooltip("This toggle turns on when every other toggle in the group is off.")] public bool rightExclusiveOffState = false;
+		[Tooltip("An animation that plays while the object is on the left.")] public AnimationClip leftAnimation;
+		[Tooltip("An animation that plays while the object is on the right.")] public AnimationClip rightAnimation;
 
 		[Header("Custom Options (Unlimited)")]
 		public List<CustomTarget> customTargets = new List<CustomTarget>();
 
 		[Header("Toggles & Menu")]
-		[Tooltip("Menu path used for the generated toggles (eg: Tools/Thing)")] public string menuPath = "";
-		[Tooltip("If enabled, VRCFury toggles will be saved")]
+		[Tooltip("The menu folder for the generated toggles, e.g. Accessories/Watch. Empty puts them at the top level.")] public string menuPath = "";
+		[Tooltip("Remembers the selected target between worlds and avatar reloads.")]
 		public bool saved = true;
-		[Tooltip("Shared exclusive tag applied to all generated toggles (auto if empty)")]
+		[Tooltip("Toggles that share a tag can't be on together. Empty uses a tag unique to this object.")]
 		public string exclusiveTag = "";
 
 		[Header("Constraint Mode")]
-		[Tooltip("Choose how the object should be constrained when toggling between targets")]
+		[Tooltip("Parent follows the target's position and rotation. Position and Rotation follow only one.")]
 		public ConstraintMode constraintMode = ConstraintMode.Parent;
 
 		[Header("Debug")]
-		[Tooltip("Enable additional build-time logging")] public bool debugMode = false;
+		[Tooltip("Logs extra detail while the avatar builds.")] public bool debugMode = false;
 
 		public int PreprocessOrder => 0;
 		public bool OnPreprocess() => true;

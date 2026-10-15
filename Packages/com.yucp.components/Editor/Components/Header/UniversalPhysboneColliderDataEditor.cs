@@ -2,7 +2,6 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 using VRC.SDK3.Avatars.Components;
-using YUCP.Components;
 using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
@@ -11,142 +10,44 @@ namespace YUCP.Components.Editor
 	[CanEditMultipleObjects]
 	public class UniversalPhysboneColliderDataEditor : UnityEditor.Editor
 	{
-		private UniversalPhysboneColliderData data;
-		private SerializedProperty colliderProp;
-		private SerializedProperty excludeProp;
-		private SerializedProperty verboseLoggingProp;
-
-		private void OnEnable()
-		{
-			data = (UniversalPhysboneColliderData)target;
-			colliderProp = serializedObject.FindProperty("collider");
-			excludeProp = serializedObject.FindProperty("exclude");
-			verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
-		}
+		private const string ColliderType = "VRC.SDK3.Dynamics.PhysBone.Components.VRCPhysBoneCollider";
 
 		public override VisualElement CreateInspectorGUI()
 		{
-			serializedObject.Update();
+			var data = (UniversalPhysboneColliderData)target;
+			var ui = YUCPInspector.Create(this, "Universal PhysBone Collider");
+			ui.Status(() => Avatar(data) == null ? new[] { YUCPInspector.Message.Error("Put this inside an avatar.") } : null);
 
-			var root = new VisualElement();
-			YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-			root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Universal Physbone Collider"));
+			var collider = ui.Section("Collider", "Added to every PhysBone on the avatar when it builds.");
+			ui.Field(collider, "collider", "Collider");
+			ui.Messages(collider, () => new[] { YUCPInspector.Message.Warning(ColliderProblem(data)) });
+			ui.Field(collider, "exclude", "Excluded PhysBones");
 
-			var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(UniversalPhysboneColliderData));
-			if (supportBanner != null) root.Add(supportBanner);
-
-			var overviewCard = YUCPUIToolkitHelper.CreateCard("Overview", "Add PhysBone Colliders to every PhysBone on the avatar at build time.");
-			var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
-			overviewContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
-				"At avatar build, all VRC PhysBone components will have the selected collider(s) added to their collider list. " +
-				"Use Exclusions to skip specific PhysBones. Assign a GameObject (all PhysBone Colliders on it and its children are used) or a single PhysBone Collider component.",
-				YUCPUIToolkitHelper.MessageType.Info));
-			root.Add(overviewCard);
-
-			var colliderCard = YUCPUIToolkitHelper.CreateCard("Collider", "GameObject or PhysBone Collider to add to all PhysBones.");
-			var colliderContent = YUCPUIToolkitHelper.GetCardContent(colliderCard);
-			colliderContent.Add(YUCPUIToolkitHelper.CreateField(colliderProp, "Collider Source"));
-			colliderContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
-				"GameObject: every VRC PhysBone Collider on this object and its children will be added to every PhysBone. Or assign a single PhysBone Collider component.",
-				YUCPUIToolkitHelper.MessageType.None));
-			root.Add(colliderCard);
-
-			var excludeCard = YUCPUIToolkitHelper.CreateCard("Exclusions", "PhysBones to exclude from receiving the collider.");
-			var excludeContent = YUCPUIToolkitHelper.GetCardContent(excludeCard);
-			excludeContent.Add(YUCPUIToolkitHelper.CreateField(excludeProp, "Exclude PhysBones"));
-			excludeContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
-				"Assign VRCPhysBone components to exclude specific bones, or GameObjects/Transforms to exclude all PhysBones whose root is that transform or a descendant.",
-				YUCPUIToolkitHelper.MessageType.None));
-			root.Add(excludeCard);
-
-			var diagnosticsCard = YUCPUIToolkitHelper.CreateCard("Diagnostics", "Build logging.");
-			var diagnosticsContent = YUCPUIToolkitHelper.GetCardContent(diagnosticsCard);
-			diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(verboseLoggingProp, "Verbose Logging"));
-			root.Add(diagnosticsCard);
-
-			var warningsContainer = new VisualElement();
-			warningsContainer.name = "descriptor-warnings";
-			root.Add(warningsContainer);
-
-			YUCPUIToolkitHelper.AddSpacing(root, 6);
-
-			UpdateWarnings(warningsContainer);
-
-			root.schedule.Execute(() =>
-			{
-				serializedObject.Update();
-				UpdateWarnings(warningsContainer);
-				serializedObject.ApplyModifiedProperties();
-			}).Every(100);
-
-			return root;
+			ui.Field(ui.Advanced(), "verboseLogging", "Verbose Logging");
+			return ui.Root;
 		}
 
-		private void UpdateWarnings(VisualElement container)
+		private static VRCAvatarDescriptor Avatar(Component data) => data.GetComponentInParent<VRCAvatarDescriptor>(true);
+
+		/// <summary>What is wrong with the assigned collider, or null.</summary>
+		private static string ColliderProblem(UniversalPhysboneColliderData data)
 		{
-			container.Clear();
-
-			var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-			if (descriptor == null)
+			var avatar = Avatar(data);
+			if (avatar == null) return null;
+			if (data.collider == null) return "Assign a PhysBone Collider, or an object with PhysBone Colliders.";
+			switch (data.collider)
 			{
-				container.Add(YUCPUIToolkitHelper.CreateHelpBox(
-					"This component must be placed under a VRCAvatarDescriptor so the collider can be applied to the avatar's PhysBones.",
-					YUCPUIToolkitHelper.MessageType.Error));
-				return;
+				case GameObject go when !go.transform.IsChildOf(avatar.transform):
+					return "Choose an object on this avatar.";
+				case GameObject go:
+					var type = System.Type.GetType(ColliderType + ", VRC.SDK3.Dynamics.PhysBone");
+					return type != null && go.GetComponentsInChildren(type, true).Length == 0
+						? "Add a PhysBone Collider to this object or its children." : null;
+				case Component c when c.GetType().FullName == ColliderType || c.GetType().Name == "VRCPhysBoneCollider":
+					return c.transform.IsChildOf(avatar.transform) ? null : "Choose a PhysBone Collider on this avatar.";
+				default:
+					return "Assign a PhysBone Collider, or an object with PhysBone Colliders.";
 			}
-
-			if (data.collider == null)
-			{
-				container.Add(YUCPUIToolkitHelper.CreateHelpBox(
-					"Assign a GameObject (with PhysBone Colliders on it or its children) or a single VRC PhysBone Collider component.",
-					YUCPUIToolkitHelper.MessageType.Warning));
-				return;
-			}
-
-			if (data.collider is GameObject go)
-			{
-				if (!go.transform.IsChildOf(descriptor.transform))
-				{
-					container.Add(YUCPUIToolkitHelper.CreateHelpBox(
-						"The assigned GameObject must be under the avatar hierarchy (VRCAvatarDescriptor).",
-						YUCPUIToolkitHelper.MessageType.Warning));
-					return;
-				}
-				int count = CountPhysBoneCollidersOn(go);
-				if (count == 0)
-				{
-					container.Add(YUCPUIToolkitHelper.CreateHelpBox(
-						"This GameObject has no VRC PhysBone Collider components on it or its children. Add at least one PhysBone Collider.",
-						YUCPUIToolkitHelper.MessageType.Warning));
-				}
-				return;
-			}
-
-			if (data.collider is Component comp)
-			{
-				var colliderType = comp.GetType();
-				if (colliderType.FullName != "VRC.SDK3.Dynamics.PhysBone.Components.VRCPhysBoneCollider" &&
-				    colliderType.Name != "VRCPhysBoneCollider")
-				{
-					container.Add(YUCPUIToolkitHelper.CreateHelpBox(
-						"The assigned component is not a VRC PhysBone Collider. Assign a GameObject with PhysBone Colliders or a PhysBone Collider component.",
-						YUCPUIToolkitHelper.MessageType.Warning));
-				}
-				else if (!comp.transform.IsChildOf(descriptor.transform))
-				{
-					container.Add(YUCPUIToolkitHelper.CreateHelpBox(
-						"The assigned PhysBone Collider must be on the same avatar hierarchy (under the VRCAvatarDescriptor).",
-						YUCPUIToolkitHelper.MessageType.Warning));
-				}
-			}
-		}
-
-		private static int CountPhysBoneCollidersOn(GameObject root)
-		{
-			var pbColliderType = System.Type.GetType("VRC.SDK3.Dynamics.PhysBone.Components.VRCPhysBoneCollider, VRC.SDK3.Dynamics.PhysBone");
-			if (pbColliderType == null) return 0;
-			var components = root.GetComponentsInChildren(pbColliderType, true);
-			return components != null ? components.Length : 0;
 		}
 	}
 }

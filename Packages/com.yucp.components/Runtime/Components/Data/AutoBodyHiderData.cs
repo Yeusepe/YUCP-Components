@@ -35,320 +35,178 @@ namespace YUCP.Components
     public class AutoBodyHiderData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Meshes")]
-        [Tooltip("The body mesh that should have parts hidden (usually the avatar body).")]
+        [Tooltip("The body mesh to hide parts of, usually the avatar's body.")]
         public SkinnedMeshRenderer targetBodyMesh;
 
-        [Tooltip("The clothing mesh(es) that cover the body. Can specify multiple meshes for layered clothing.\n\n" +
-                 "For single clothing piece: Add one mesh\n" +
-                 "For layered clothing: Add multiple meshes (e.g., shirt + jacket)\n" +
-                 "All meshes will be used together to detect hidden body parts.")]
+        [Tooltip("The clothing that covers the body. Add every layer, such as a shirt and a jacket, to detect them together.")]
         public SkinnedMeshRenderer[] clothingMeshes = new SkinnedMeshRenderer[0];
 
         [Header("Detection Settings")]
-        [Tooltip("Choose how to detect which body parts to hide.\n\n" +
-                 "• Raycast: Fast single-direction raycasting (recommended)\n" +
-                 "• Proximity: Distance-based (fastest)\n" +
-                 "• Hybrid: Proximity + raycasting (balanced)\n" +
-                 "• Smart: Multi-directional with bidirectional check (best for open clothing)\n" +
-                 "• Manual: Use texture mask for full control")]
+        [Tooltip("How covered body parts are found. Raycast suits most clothing, Smart suits open clothing, and Manual uses a painted mask.")]
         public DetectionMethod detectionMethod = DetectionMethod.Raycast;
 
-        [Tooltip("Safety margin - buffer inward from edges (in meters).\n\n" +
-                 "Creates a buffer zone that REDUCES deletion near edges.\n" +
-                 "Higher margin = LESS deletion (more conservative)\n\n" +
-                 "• 0.00m: No margin (delete everything detected)\n" +
-                 "• 0.01m: Small buffer (recommended)\n" +
-                 "• 0.03m: Medium buffer (safer, less deletion)\n" +
-                 "• 0.05m: Large buffer (very safe, minimal deletion)\n\n" +
-                 "Prevents deleting polygons too close to visible edges.")]
+        [Tooltip("Keeps body faces within this distance of a clothing edge visible, in meters. Raise it if gaps show at the clothing's edges.")]
         [Range(0.0f, 0.1f)]
         public float safetyMargin = 0.01f;
 
-        [Tooltip("Distance in meters. Body vertices within this distance from clothing will be hidden.\n\n" +
-                 "For tight clothing: 0.01-0.02m\n" +
-                 "For loose clothing: 0.02-0.05m")]
+        [Tooltip("Hides body vertices within this distance of the clothing, in meters. Use about 0.01 to 0.02 for tight clothing and up to 0.05 for loose clothing.")]
         [Range(0.001f, 0.1f)]
         public float proximityThreshold = 0.02f;
 
-        [Tooltip("Number of vertices to sample per unit area. Higher = more accurate but slower.\n\n" +
-                 "Only used for certain detection methods. Usually can be left at default.")]
+        [Tooltip("Samples per unit area for some detection methods. Higher is more accurate but slower.")]
         [Range(1, 100)]
         public int samplingDensity = 10;
 
-        [Tooltip("For raycast method: maximum distance to check for occlusion.\n\n" +
-                 "Should be slightly larger than your clothing thickness.\n" +
-                 "Typical range: 0.05-0.15m")]
+        [Tooltip("How far to look for clothing over each body vertex, in meters. Set it a little above the clothing's thickness.")]
         [Range(0.01f, 0.5f)]
         public float raycastDistance = 0.05f;
 
-        [Tooltip("For hybrid method: how much to expand proximity detection before raycasting.\n\n" +
-                 "Higher values = more initial candidates = slower but more thorough.\n" +
-                 "1.5x is a good balance for most cases.")]
+        [Tooltip("How much wider the proximity pass looks before raycasting. Higher finds more candidates but is slower.")]
         [Range(1.0f, 3.0f)]
         public float hybridExpansionFactor = 1.5f;
 
         [Header("Smart Detection Settings")]
-        [Tooltip("Number of ray directions to test per vertex (more = more accurate but slower).\n\n" +
-                 "• 4 rays: Very fast, basic coverage\n" +
-                 "• 8 rays: Balanced (recommended)\n" +
-                 "• 12-16 rays: Most accurate, slower\n\n" +
-                 "Use higher values for complex clothing with many openings.")]
+        [Tooltip("Rays cast from each vertex. More rays are more accurate but slower; use 12 to 16 for clothing with many openings.")]
         [Range(4, 16)]
         public int smartRayDirections = 8;
 
-        [Tooltip("Percentage of rays that must hit clothing for vertex to be hidden (0.0 - 1.0).\n\n" +
-                 "• 0.5 (50%): More aggressive hiding\n" +
-                 "• 0.75 (75%): Balanced (recommended)\n" +
-                 "• 0.9 (90%): Conservative, less hiding\n\n" +
-                 "Lower values hide more; higher values are safer for open clothing.")]
+        [Tooltip("The share of rays that must hit clothing to hide a vertex. Lower hides more; higher is safer for open clothing.")]
         [Range(0.0f, 1.0f)]
         public float smartOcclusionThreshold = 0.75f;
 
-        [Tooltip("Consider surface normals when determining occlusion.\n\n" +
-                 "When enabled, only tests rays facing outward from the body surface.\n" +
-                 "Recommended: ON (prevents testing rays pointing into the body)")]
+        [Tooltip("Casts rays only outward from the body surface.")]
         public bool smartUseNormals = true;
 
-        [Tooltip("Require bidirectional occlusion (clothing must surround the vertex).\n\n" +
-                 "When enabled, checks if clothing blocks the vertex from BOTH sides.\n" +
-                 "Essential for open jackets and clothing with gaps.\n" +
-                 "Recommended: ON for any clothing with openings")]
+        [Tooltip("Hides a vertex only when clothing covers it from both sides. Use it for open jackets and clothing with gaps.")]
         public bool smartRequireBidirectional = true;
         
-        [Tooltip("Ray offset distance from body surface (in meters).\n\n" +
-                 "Prevents false positives by starting rays slightly away from the body.\n" +
-                 "• 0.001m: Minimal offset\n" +
-                 "• 0.005m: Recommended for most cases\n" +
-                 "• 0.01m: Higher offset for problem areas\n\n" +
-                 "Increase if visible areas are being deleted incorrectly.")]
+        [Tooltip("Starts rays this far from the body, in meters. Raise it if visible areas are hidden by mistake.")]
         [Range(0.0001f, 0.02f)]
         public float smartRayOffset = 0.005f;
         
-        [Tooltip("Conservative mode - more strict about hiding vertices.\n\n" +
-                 "When enabled:\n" +
-                 "• Increases occlusion threshold automatically\n" +
-                 "• Requires more rays to agree before hiding\n" +
-                 "• Adds distance-based weighting (closer = more likely to hide)\n\n" +
-                 "Use when visible polygons are being deleted incorrectly.")]
+        [Tooltip("Hides fewer vertices: more rays must agree, and nearer clothing counts more. Use it if visible areas are hidden by mistake.")]
         public bool smartConservativeMode = false;
         
-        [Tooltip("Minimum distance from clothing to hide (in meters).\n\n" +
-                 "Vertices must be at least this close to clothing to be hidden.\n" +
-                 "• 0.0m: No minimum (hide anything occluded)\n" +
-                 "• 0.01m: Only hide if very close to clothing\n" +
-                 "• 0.05m: Conservative (recommended for open clothing)\n\n" +
-                 "Higher values are safer but may leave visible body parts.")]
+        [Tooltip("Only hides vertices within this distance of the clothing, in meters. At 0, any vertex the rays find covered is hidden.")]
         [Range(0.0f, 0.1f)]
         public float smartMinDistanceToClothing = 0.01f;
 
         [Header("Manual Mask (Manual Method Only)")]
-        [Tooltip("Manually painted texture mask. White = hide, Black = show. Use UV0 of body mesh.\n\n" +
-                 "Create a texture where:\n" +
-                 "• White/bright areas = hide these vertices\n" +
-                 "• Black/dark areas = keep these vertices visible\n\n" +
-                 "Paint directly on your body UV layout.")]
+        [Tooltip("A mask painted on the body's UV0 layout. White areas are hidden; black areas stay visible.")]
         public Texture2D manualMask;
 
-        [Tooltip("Threshold for manual mask. Pixels brighter than this will be hidden.\n\n" +
-                 "• 0.1: Hide almost everything (aggressive)\n" +
-                 "• 0.5: Balanced (recommended)\n" +
-                 "• 0.9: Only hide very bright areas (conservative)")]
+        [Tooltip("Hides the areas of the mask brighter than this. Lower hides more.")]
         [Range(0f, 1f)]
         public float manualMaskThreshold = 0.5f;
 
         [Header("Application Mode")]
-        [Tooltip("How to hide the body parts. Auto-detect will choose based on shader.\n\n" +
-                 "• Auto-Detect: Automatically uses UV for Poiyomi/FastFur, mesh deletion for others\n" +
-                 "• UV Discard: Non-destructive, requires Poiyomi or FastFur shader\n" +
-                 "• Mesh Deletion: Works with any shader, reduces poly count")]
+        [Tooltip("How hidden faces are removed. Automatic uses UV Discard on Poiyomi and FastFur materials and Mesh Deletion on others.")]
         public ApplicationMode applicationMode = ApplicationMode.AutoDetect;
         
-        [Tooltip("Optional: Select specific material(s) from the body mesh to configure.\n\n" +
-                 "If empty, the component will automatically find all compatible materials (Poiyomi/FastFur).\n" +
-                 "You can select multiple materials if your body mesh uses multiple Poiyomi/FastFur materials.\n" +
-                 "All selected materials will have UV discard configured.")]
+        [Tooltip("The body materials that get UV discard. Leave it empty to use every Poiyomi or FastFur material with UV support.")]
         public Material[] targetMaterials = new Material[0];
 
         [Header("UV Discard Settings (Poiyomi/FastFur)")]
-        [Tooltip("Automatically detect the best UV channel for discard.\n\n" +
-                 "The system will prefer UV1 (where discard coordinates are written) and fall back to UV0 if needed.\n" +
-                 "Disable this to manually specify a UV channel in Advanced Options.")]
+        [Tooltip("Picks the UV channel for discard automatically, preferring UV1. Turn it off to choose the channel yourself.")]
         public bool autoDetectUVChannel = true;
         
-        [Tooltip("Which UV channel to use for UV discard (only used when Auto Detect is disabled).\n\n" +
-                 "• UV1 (Channel 1): Recommended - where discard coordinates are written\n" +
-                 "• UV0 (Channel 0): Main texture UV, use only if UV1 is unavailable\n" +
-                 "• UV2-3: Alternative channels if needed\n\n" +
-                 "Note: The system always writes discard coordinates to UV1, so UV1 is the recommended channel.")]
+        [Tooltip("The UV channel used for discard. UV1 is recommended.")]
         [Range(0, 3)]
         [FormerlySerializedAs("udimUVChannel")]
         public int uvChannel = 1;
 
-        [Tooltip("Automatically assign UV tile row/column via the orchestrator.\n\n" +
-                 "When enabled:\n" +
-                 "• The orchestrator automatically assigns unique tiles to each clothing piece\n" +
-                 "• Prevents tile conflicts when multiple clothing pieces share the same body mesh\n" +
-                 "• Tile assignment is optimized for layered clothing\n\n" +
-                 "When disabled:\n" +
-                 "• You can manually specify the tile row/column in Advanced Options\n" +
-                 "• Use when you need specific tile assignments for compatibility reasons")]
+        [Tooltip("Gives each clothing piece on the same body its own UV tile at build. Turn it off to choose the tile yourself.")]
         [FormerlySerializedAs("autoAssignUDIMTile")]
         public bool autoAssignUVTile = true;
 
-        [Tooltip("Which UV tile row to use for discarding (0-3).\n\n" +
-                 "Only used when 'Auto Assign UV Tile' is disabled.\n" +
-                 "The shader will hide vertices with UVs in this tile.\n" +
-                 "When auto-assigned, this value is set by the orchestrator.")]
+        [Tooltip("The UV tile row to discard, 0 to 3. Make sure no other clothing on the same body uses this tile.")]
         [Range(0, 3)]
         [FormerlySerializedAs("udimDiscardRow")]
         public int uvDiscardRow = 3;
 
-        [Tooltip("Which UV tile column to use for discarding (0-3).\n\n" +
-                 "Only used when 'Auto Assign UV Tile' is disabled.\n" +
-                 "The shader will hide vertices with UVs in this tile.\n" +
-                 "When auto-assigned, this value is set by the orchestrator.")]
+        [Tooltip("The UV tile column to discard, 0 to 3. Make sure no other clothing on the same body uses this tile.")]
         [Range(0, 3)]
         [FormerlySerializedAs("udimDiscardColumn")]
         public int uvDiscardColumn = 3;
 
         [Header("UV Toggle Settings (Optional)")]
-        [Tooltip("Use an existing VRCFury toggle component instead of creating a new one.\n\n" +
-                 "When enabled, you can select a VRCFury toggle from this GameObject or its children.\n" +
-                 "The UV discard animation will be added to the selected toggle automatically.")]
+        [Tooltip("Adds body hiding to a VRCFury toggle on this object or a child instead of creating a toggle.")]
         public bool useExistingToggle = false;
         
-        [Tooltip("The VRCFury toggle component to use (from this GameObject or its children).\n\n" +
-                 "Only used when 'Use Existing Toggle' is enabled.\n" +
-                 "Leave empty to auto-detect the first VRCFury toggle on this GameObject.")]
+        [Tooltip("The VRCFury toggle that turns body hiding on and off. Automatic uses the first toggle on this object or its children.")]
         public Component selectedToggle;
         
-        [Tooltip("Create a toggle to enable/disable the body hiding effect.\n\n" +
-                 "When enabled, adds a menu toggle that can turn the UV discard on/off.\n\n" +
-                 "Note: Only works with UV Discard mode, not Mesh Deletion.\n" +
-                 "Disabled when 'Use Existing Toggle' is enabled.")]
+        [Tooltip("Adds an avatar menu toggle that turns body hiding on and off. Needs UV discard.")]
         public bool createToggle = false;
 
-        [Tooltip("Save generated animation clip as asset for debugging.\n\n" +
-                 "When enabled, the animation will be saved to Assets/Generated for inspection.")]
+        [Tooltip("Saves the generated toggle animation to Assets/Generated for inspection.")]
         public bool debugSaveAnimation = false;
 
-        [Tooltip("Toggle type:\n\n" +
-                 "• Object Toggle: Toggles clothing object ON/OFF + UV discard\n" +
-                 "  (Clothing visible = body hidden, clothing hidden = body visible)\n\n" +
-                 "• Hidden Toggle: Only toggles UV discard, clothing always visible\n" +
-                 "  (Useful for toggling body hiding while keeping clothing on)")]
+        [Tooltip("Object Toggle turns the clothing and body hiding on and off together. Hidden Toggle turns only body hiding on and off.")]
         public ToggleType toggleType = ToggleType.ObjectToggle;
 
-        [Tooltip("Menu path for the toggle (e.g., 'Clothing/Hide Body').\n\n" +
-                 "This is where the toggle will appear in your avatar menu.\n" +
-                 "Leave empty to use global parameter control only (no menu item).")]
+        [Tooltip("Where the toggle appears in the avatar menu, such as Clothing/Hide Body. Leave it empty for a toggle driven only by its global parameter.")]
         public string toggleMenuPath = "Clothing/Hide Body";
 
-        [Tooltip("Save toggle state across avatar reloads.")]
+        [Tooltip("Remembers the toggle's state when you change worlds or reload the avatar.")]
         public bool toggleSaved = true;
 
-        [Tooltip("Toggle starts in the ON state by default.\n\n" +
-                 "When ON: Clothing visible, body hidden (discard applied)\n" +
-                 "When OFF: Clothing hidden, body visible (no discard)\n\n" +
-                 "Note: Due to VRCFury's resting state system, this MUST be false for material animations to work correctly.")]
+        [Tooltip("Starts with the toggle on: clothing visible and body hidden. Leave it off for material animations to work with VRCFury.")]
         public bool toggleDefaultOn = false;
 
-        [Tooltip("Sync toggle state across all players in the instance.\n\n" +
-                 "When OFF (default):\n" +
-                 "• Toggle state is local to your client only\n" +
-                 "• VRCFury creates a local parameter (not synced)\n\n" +
-                 "When ON:\n" +
-                 "• Toggle state is synced across all players\n" +
-                 "• VRCFury auto-generates a synced parameter name, or uses the one you specify below\n" +
-                 "• Useful for outfit coordination or showing clothing state to others")]
+        [Tooltip("Syncs the toggle's state to other players. Off keeps it local to you.")]
         public bool toggleSynced = false;
 
-        [Tooltip("OPTIONAL: Custom parameter name for synced toggle.\n\n" +
-                 "When EMPTY:\n" +
-                 "• VRCFury auto-generates a unique parameter name\n" +
-                 "• Each toggle gets its own synced parameter\n\n" +
-                 "When SET:\n" +
-                 "• Uses this exact parameter name\n" +
-                 "• Multiple clothing pieces can share the same parameter for outfit groups\n\n" +
-                 "Examples:\n" +
-                 "• 'Outfit1' - All Outfit 1 pieces share this (outfit group)\n" +
-                 "• 'JacketSync' - Specific name for this jacket\n\n" +
-                 "Advanced: If menuPath is also empty, ONLY this parameter controls the toggle (no menu item).")]
+        [Tooltip("The global parameter that drives the toggle. Leave it empty for a generated name, or share a name to group clothing into an outfit.")]
         public string toggleParameterName = "";
 
         [Header("Advanced Toggle Options")]
-        [Tooltip("Use slider instead of button.")]
+        [Tooltip("Shows a slider instead of a button.")]
         public bool toggleSlider = false;
 
-        [Tooltip("Hold button instead of latching toggle.")]
+        [Tooltip("Stays on only while held.")]
         public bool toggleHoldButton = false;
 
-        [Tooltip("Enable exclusive off state (only one toggle in the group can be on at a time).")]
+        [Tooltip("Makes this toggle the one that's on when every other toggle with the same exclusive tags is off.")]
         public bool toggleExclusiveOffState = false;
 
-        [Tooltip("Enable exclusive tags (mutually exclusive with other toggles sharing the same tags).")]
+        [Tooltip("Turns off other toggles that share a tag with this one when it turns on.")]
         public bool toggleEnableExclusiveTag = false;
 
-        [Tooltip("Exclusive tags (comma-separated). Toggles sharing tags are mutually exclusive.")]
+        [Tooltip("Comma-separated tags. Toggles that share a tag can't be on at the same time.")]
         public string toggleExclusiveTag = "";
 
-        [Tooltip("Enable custom menu icon.")]
+        [Tooltip("Shows a custom icon in the avatar menu.")]
         public bool toggleEnableIcon = false;
 
-        [Tooltip("Custom menu icon texture.")]
+        [Tooltip("The avatar menu icon.")]
         public Texture2D toggleIcon;
 
         [Header("Advanced Options")]
-        [Tooltip("If true, only process vertices that are weighted to specific bones.\n\n" +
-                 "Useful if you want to limit which body parts can be hidden.\n" +
-                 "For example: only hide chest/torso bones but not head/limbs.")]
+        [Tooltip("Hides only vertices weighted to the filter bones. Use it to keep parts such as the head or limbs visible.")]
         public bool useBoneFiltering = false;
 
-        [Tooltip("Only hide vertices weighted to these bones (if bone filtering is enabled).\n\n" +
-                 "Drag bones from your avatar armature into this list.\n" +
-                 "Only vertices influenced by these bones will be considered for hiding.")]
+        [Tooltip("The bones whose vertices can be hidden.")]
         public Transform[] filterBones = new Transform[0];
 
-        [Tooltip("If true, mirror the detection across the X axis (for symmetric clothing).\n\n" +
-                 "When enabled, if a vertex on one side is hidden, its mirror on the opposite side is also hidden.\n" +
-                 "Useful for symmetric jackets, shirts, etc.")]
+        [Tooltip("Also hides the mirrored vertex on the other side of the X axis. Use it for symmetric clothing.")]
         public bool mirrorSymmetry = false;
 
         [Header("Multi-Clothing Optimization")]
-        [Tooltip("Optimize UV tile usage for multiple clothing pieces (UV Discard mode only).\n\n" +
-                 "When enabled:\n" +
-                 "• Clothing is processed from most coverage to least coverage\n" +
-                 "• Outer layers 'claim' body areas first\n" +
-                 "• Inner layers without toggles that are fully covered won't get tiles\n" +
-                 "• Dramatically reduces tile usage for layered outfits\n\n" +
-                 "Example: If jacket covers entire shirt:\n" +
-                 "  ON: Jacket gets tile, shirt skipped (saves 1 tile)\n" +
-                 "  OFF: Both get tiles (works like before)\n\n" +
-                 "Recommended: ON for complex multi-layer outfits")]
+        [Tooltip("Saves UV tiles on layered outfits: an inner layer fully covered by an outer one, and without its own toggle, gets no tile.")]
         public bool optimizeTileUsage = true;
 
         [Header("Debug & Preview")]
-        [Tooltip("Show debug information during build.\n\n" +
-                 "Displays:\n" +
-                 "• Cache hit/miss status\n" +
-                 "• Vertex counts\n" +
-                 "• Detection time\n" +
-                 "• Applied settings\n\n" +
-                 "Enable this if you're troubleshooting or optimizing settings.")]
+        [Tooltip("Logs cache use, vertex counts, timing and settings during the build.")]
         public bool debugMode = false;
         
-        [Tooltip("Show preview visualization in Scene view.\n\n" +
-                 "When enabled, displays:\n" +
-                 "• Red spheres = vertices that will be hidden\n" +
-                 "• Green spheres = vertices that will remain visible\n" +
-                 "• Ray directions (if using Smart detection)\n\n" +
-                 "Use 'Generate Preview' button to test without building.")]
+        [Tooltip("Shows the generated preview in the Scene view.")]
         public bool showPreview = false;
 
-        [Tooltip("The number of vertices that were hidden (read-only, populated at build time).")]
+        [Tooltip("Vertices hidden by the last build.")]
         [SerializeField] private int hiddenVertexCount = 0;
 
-        [Tooltip("The application mode that was used (read-only, populated at build time).")]
+        [Tooltip("How the last build hid them.")]
         [SerializeField] private string appliedMode = "";
 
         public int HiddenVertexCount => hiddenVertexCount;

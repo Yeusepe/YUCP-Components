@@ -9,7 +9,8 @@
         "VRCFury-Editor-Common",
         "VRCFury-Editor-Avatars",
         "VRCFury",
-        "com.vrcfury.api"
+        "com.vrcfury.api",
+        "com.yucp.ui.Editor"
     ],
     "includePlatforms": [
         "Editor"

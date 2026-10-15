@@ -1,0 +1,229 @@
+/* Inspectors (YUCPInspector.cs adds .yucp-inspector to its root). The controls are the DevTools
+   ones from YUCPDesignSystem.uss at inspector density, so they line up with Unity's own rows.
+   Scoped here so windows never pick these sizes up. */
+
+/* Controls sit on Unity's inspector background, not on a dark section, so neutral controls use
+   Unity's own button greys to stand out from it (HIG Buttons: people need to "visually
+   distinguish it from surrounding components"). */
+.yucp-inspector {
+    --yucp-bg-control: #585858;
+    --yucp-bg-control-hover: #676767;
+}
+
+.yucp-root--light.yucp-inspector {
+    --yucp-bg-control: #e4e4e4;
+    --yucp-bg-control-hover: #ececec;
+}
+
+/* Sections are compartments: each is a card that holds related settings (HIG Boxes: "A box creates
+   a visually distinct group of logically related information and components"). On macOS a box's
+   title sits above it ("By default, macOS displays a box's title above it"), the way System
+   Settings heads each group. The title lines up with the labels inside the card (card padding
+   10 px + Unity's 3 px label inset), so titles, labels, checkboxes, captions and messages share
+   one leading edge (HIG Layout: "Align elements to make them easier to scan"). */
+.yucp-inspector .yucp-section {
+    margin: 10px 0 0 0;
+    padding: 0;
+    border-width: 0;
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+    overflow: visible;
+}
+
+.yucp-inspector .yucp-section-title {
+    margin: 0 0 4px 13px;
+    font-size: 13px;
+    letter-spacing: 0;
+}
+
+.yucp-inspector .yucp-section-description {
+    margin: -2px 0 4px 13px;
+}
+
+.yucp-inspector .yucp-section-content,
+.yucp-inspector .yucp-advanced > .unity-foldout__content {
+    padding: 6px 10px 8px 10px;
+    border-radius: var(--yucp-radius-card);
+    background-color: var(--yucp-bg-secondary);
+}
+
+/* A group inside a card sits one step below the section title (HIG Labels: secondary label). */
+.yucp-inspector .yucp-group {
+    margin-top: 8px;
+}
+
+.yucp-inspector .yucp-group-title {
+    margin: 0 0 2px 3px;
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+}
+
+/* The one Advanced Options disclosure looks like a section: its title above, its settings in a card. */
+.yucp-inspector .yucp-advanced {
+    margin-top: 10px;
+}
+
+.yucp-inspector .yucp-advanced > .unity-foldout__content {
+    margin: 4px 0 0 0;
+}
+
+/* Its triangle points in from the card's edge, so its title lines up with the section titles. */
+.yucp-inspector .yucp-advanced > .unity-foldout__toggle {
+    margin-left: 10px;
+}
+
+/* Checkboxes (HIG Toggles, macOS): the box on the leading edge with its title trailing; dependent
+   settings indent under it. */
+.yucp-inspector .yucp-checkbox .unity-base-field__label {
+    display: none;
+}
+
+.yucp-inspector .yucp-checkbox .unity-toggle__text {
+    margin-left: 4px;
+    color: var(--yucp-text-primary);
+}
+
+/* Lists. Unity's own array field and ui.List look and work the same: a bordered list, with the
+   add and remove buttons beneath it on the leading edge (HIG Buttons, square buttons). */
+.yucp-inspector .unity-list-view__size-field {
+    display: none;
+}
+
+.yucp-inspector .unity-list-view__footer {
+    align-self: flex-start;
+    margin: 4px 0 0 3px;
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.yucp-inspector .unity-list-view__footer > Button {
+    width: 28px;
+    height: 22px;
+    margin: 0 4px 0 0;
+    border-width: 0;
+    border-radius: var(--yucp-radius-small);
+    background-color: var(--yucp-bg-control);
+}
+
+.yucp-inspector .unity-list-view__footer > Button:hover {
+    background-color: var(--yucp-bg-control-hover);
+}
+
+.yucp-inspector .unity-list-view__scroll-view {
+    border-width: 1px;
+    border-color: var(--yucp-border-input);
+    border-radius: var(--yucp-radius-small);
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+.yucp-inspector .unity-list-view__empty-label {
+    padding: 4px 6px;
+    color: var(--yucp-text-tertiary);
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.yucp-inspector .yucp-list {
+    margin-left: 3px;
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+.yucp-inspector .yucp-list-footer {
+    margin-left: 3px;
+}
+
+.yucp-inspector .yucp-list-empty {
+    margin-left: 3px;
+}
+
+.yucp-inspector .yucp-button,
+.yucp-inspector .yucp-button-primary,
+.yucp-inspector .yucp-button-build {
+    height: auto;
+    min-height: 24px;
+    margin: 4px 0 0 0;
+    padding: 2px 12px;
+}
+
+.yucp-inspector .yucp-button-small {
+    min-height: 20px;
+    padding: 0 10px;
+}
+
+.yucp-inspector .yucp-button-icon {
+    width: 28px;
+    min-width: 28px;
+    height: 24px;
+    min-height: 24px;
+    margin: 0 4px 0 0;
+    padding: 0;
+}
+
+.yucp-inspector .yucp-button-row > .yucp-button {
+    margin-right: 4px;
+}
+
+.yucp-inspector .yucp-help-box,
+.yucp-inspector .yucp-help-box-warning,
+.yucp-inspector .yucp-help-box-error,
+.yucp-inspector .yucp-help-box-success {
+    margin: 4px 3px;
+    padding: 8px 10px;
+}
+
+.yucp-inspector .yucp-section .yucp-button-row {
+    margin-left: 3px;
+    margin-right: 3px;
+}
+
+/* Sections own grouping and titles; [Header]/[Space] attributes on fields would repeat them. */
+.yucp-root .unity-decorator-drawers-container {
+    display: none;
+}
+
+/* Status: component-level messages directly under the header. */
+.yucp-status {
+    flex-direction: column;
+}
+
+/* Dependent settings sit indented under the control that enables them (HIG Toggles). */
+.yucp-indent {
+    flex-direction: column;
+    margin-left: 15px;
+}
+
+/* Caption: one sentence of secondary text under a field or group. */
+.yucp-caption {
+    margin: 2px 0 var(--yucp-spacing-xs) 3px;
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+    white-space: normal;
+}
+
+/* Read-only value rows share the field label column. */
+.yucp-info-row {
+    flex-direction: row;
+    min-height: 18px;
+    margin: 1px 0 1px 3px;
+}
+
+.yucp-info-label {
+    width: 40%;
+    min-width: 120px;
+    padding-right: 4px;
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-info-value {
+    flex-grow: 1;
+    flex-shrink: 1;
+    color: var(--yucp-text-primary);
+    white-space: normal;
+}
+
+/* Build summary: passive status inside Advanced Options. */
+.yucp-build-summary {
+    margin: var(--yucp-spacing-sm) 0 0 3px;
+    font-size: 11px;
+    color: var(--yucp-text-tertiary);
+    white-space: normal;
+}

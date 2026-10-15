@@ -102,7 +102,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                         StringComparison.Ordinal))
                 {
                     error = "Phrase enrollment must be personal creator data under " +
-                            "'Assets/YUCP/UserData/PhraseEnrollments/'. Use Record / Improve " +
+                            "'Assets/YUCP/UserData/PhraseEnrollments/'. Use Record Takes " +
                             "to create your own profile instead of shipping a prefab or package " +
                             "author's voice enrollment.";
                     return false;
@@ -110,7 +110,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                 if (UsesInheritedPrefabEnrollment(component, out var prefabPath))
                 {
                     error = "Phrase enrollment is inherited from prefab source '" +
-                            prefabPath + "'. Record / Improve must create and assign a " +
+                            prefabPath + "'. Record Takes must create and assign a " +
                             "personal per-instance enrollment profile before building.";
                     return false;
                 }

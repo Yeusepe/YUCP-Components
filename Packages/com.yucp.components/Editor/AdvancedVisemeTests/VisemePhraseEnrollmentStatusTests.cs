@@ -128,7 +128,7 @@ namespace YUCP.Components.Editor.Tests
                     VisemePhraseEnrollmentFlow.StepFor(status.issues[0]),
                     Is.EqualTo(VisemePhraseEnrollmentStep.Review));
                 Assert.That(status.issues[0].message, Is.EqualTo(
-                    "This enrollment profile uses a different package data format. Open Record / Improve to create a current personal enrollment."));
+                    "This enrollment profile uses a different package data format. Click Record Takes to create a current personal enrollment."));
             }
             finally
             {

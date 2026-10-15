@@ -9,7 +9,6 @@ using VRC.Dynamics;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
 using VRC.SDK3.Dynamics.Constraint.Components;
-using VRC.SDK3.Dynamics.Contact.Components;
 using VRC.SDKBase.Editor.BuildPipeline;
 using YUCP.Components.Editor.MeshUtils;
 
@@ -25,11 +24,10 @@ namespace YUCP.Components.Editor
     ///
     /// Runtime: per grip and finger a point anchored to the hand is projected by a VRC Position
     /// Constraint onto the plane the finger touched, carried by the object, and one Final IK LimbIK
-    /// per finger follows the blend of its grips' goals on a hidden copy of the finger, which the real
-    /// bones follow through VRC Rotation Constraints. With grip points the object hangs from a
+    /// per finger follows the blend of its grips' goals. With grip points the object hangs from a
     /// socket on the hand that blends between the grips' placements. FX layers drive the blends from
-    /// the grip parameter and multiply the menu toggle by a hand/object proximity contact into the
-    /// follow weights; the solvers sit under the object, so hiding it also releases the hand.
+    /// the grip parameter and enable the solvers while the toggle is on; the solvers sit under the
+    /// object, so hiding it also releases the hand.
     /// </summary>
     public class LiveGripProcessor : IVRCSDKPreprocessAvatarCallback
     {
@@ -149,26 +147,6 @@ namespace YUCP.Components.Editor
                 }
             }
 
-            var tag = "YUCPLiveGrip" + index + "_" + data.GetInstanceID();
-            var center = mesh.transform.TransformPoint(mesh.sharedMesh.bounds.center);
-            var senderHost = DigitigradeRigBuilder.MakeBone("YUCP Live Grip Sender", data.transform, center, data.transform.rotation);
-            var sender = senderHost.gameObject.AddComponent<VRCContactSender>();
-            sender.radius = 0.001f / Mathf.Abs(senderHost.lossyScale.x);
-            sender.collisionTags = new List<string> { tag };
-
-
-            var near = "YUCPLiveGrip" + index + "Near";
-            var heldCenter = (grips[0].placement * Rigid(data.transform).inverse).MultiplyPoint3x4(center);
-            var receiverHost = DigitigradeRigBuilder.MakeBone("YUCP Live Grip Zone " + data.name,
-                socket != null ? socket.transform : hand, heldCenter, hand.rotation);
-            var receiver = receiverHost.gameObject.AddComponent<VRCContactReceiver>();
-            receiver.receiverType = ContactReceiver.ReceiverType.Proximity;
-            receiver.parameter = near;
-            receiver.radius = data.releaseDistance / Mathf.Abs(receiverHost.lossyScale.x);
-            receiver.collisionTags = new List<string> { tag };
-            receiver.allowSelf = true;
-            receiver.allowOthers = false;
-            receiver.localOnly = false;
 
             var position = grips.Count < 2 ? null
                 : string.IsNullOrWhiteSpace(data.gripParameter) ? "LiveGrip/" + data.name : data.gripParameter.Trim();
@@ -185,7 +163,6 @@ namespace YUCP.Components.Editor
                     defaultBool = existing == null && data.defaultOn,
                     defaultFloat = existing == null && data.defaultOn ? 1f : 0f
                 });
-                DigitigradeControllerBuilder.AddFloat(c, near, 0f);
                 if (position != null) DigitigradeControllerBuilder.AddFloat(c, position, 0f);
                 return c;
             }
@@ -197,17 +174,12 @@ namespace YUCP.Components.Editor
             var fx = NewController("YUCP_LiveGrip");
             if (ik != null)
             {
-                IEnumerable<(Component, string, float)> Weights(int f, float weight) => ik.follows[f] == null
-                    ? Enumerable.Empty<(Component, string, float)>()
-                    : ik.follows[f].Select(c => ((Component)c, "GlobalWeight", weight));
-                var off = Clip(fx, avatarRoot, "Live Grip Off", Enumerable.Range(0, FingerNames.Length).SelectMany(f => Weights(f, 0f)));
-
+                IEnumerable<(Component, string, float)> Enabled(Func<int, bool> on) => Enumerable.Range(0, FingerNames.Length)
+                    .Where(f => ik.limbs[f] != null).Select(f => ((Component)ik.limbs[f], "m_Enabled", on(f) ? 1f : 0f));
+                var off = Clip(fx, avatarRoot, "Live Grip Off", Enabled(_ => false));
                 var holding = Across(fx, "Live Grip Fingers", grips.Select((grip, g) => (Motion)Clip(fx, avatarRoot, "Live Grip " + grip.name,
-                    Enumerable.Range(0, FingerNames.Length).SelectMany(f => Weights(f, ik.goals[f].Any(x => x.grip == g) ? 1f : 0f)))).ToArray());
-
-
-                var reach = DigitigradeControllerBuilder.Tree(fx, "Live Grip Near", near, (0f, off), (0.5f, holding));
-                AddGate(fx, "Live Grip " + data.name, toggle, null, off, reach, null, 1f, 0.2f);
+                    Enabled(f => ik.goals[f].Any(x => x.grip == g)))).ToArray());
+                AddGate(fx, "Live Grip " + data.name, toggle, off, holding, null, 1f);
             }
             if (position != null)
             {
@@ -235,7 +207,7 @@ namespace YUCP.Components.Editor
                     mask.SetHumanoidBodyPartActive(part, part == (data.hand == LiveGripData.Hand.Left ? AvatarMaskBodyPart.LeftFingers : AvatarMaskBodyPart.RightFingers));
                 AssetDatabase.AddObjectToAsset(mask, gesture);
                 var poses = grips.Select(g => (Motion)PoseClip(gesture, "Live Grip " + g.name, g.pose)).ToArray();
-                var (released, held) = AddGate(gesture, "Live Grip " + data.name, toggle, near, null, Across(gesture, "Live Grip Poses", poses), mask, 0f, 0f);
+                var (released, held) = AddGate(gesture, "Live Grip " + data.name, toggle, null, Across(gesture, "Live Grip Poses", poses), mask, 0f);
                 var left = data.hand == LiveGripData.Hand.Left;
                 foreach (var (state, on) in new[] { (released, false), (held, true) })
                 {
@@ -316,21 +288,21 @@ namespace YUCP.Components.Editor
         private sealed class Ik
         {
             public List<(int grip, Transform goal, Transform bend)>[] goals;
-            public VRCRotationConstraint[][] follows;
+            public MonoBehaviour[] limbs;
             public VRCParentConstraint[] targets;
             public VRCPositionConstraint[] bends;
         }
 
         /// <summary>
         /// Live mode: per grip and finger a surface goal on the object and a bend goal on the hand;
-        /// per finger one LimbIK on a hidden copy of the finger, which the real bones follow.
+        /// per finger one LimbIK on its bones, off until the FX layer enables it.
         /// </summary>
         private static Ik BuildIk(GameObject avatarRoot, LiveGripData data, Transform hand, List<Grip> grips)
         {
             var ik = new Ik
             {
                 goals = FingerNames.Select(_ => new List<(int grip, Transform goal, Transform bend)>()).ToArray(),
-                follows = new VRCRotationConstraint[FingerNames.Length][],
+                limbs = new MonoBehaviour[FingerNames.Length],
                 targets = new VRCParentConstraint[FingerNames.Length],
                 bends = new VRCPositionConstraint[FingerNames.Length]
             };
@@ -378,30 +350,12 @@ namespace YUCP.Components.Editor
                 Constrain(ik.bends[f], ik.goals[f].Select(x => x.bend).ToArray());
 
                 var finger = grips[first.grip].fingers.First(x => x.index == f);
-                var bones = new[] { finger.proximal, finger.intermediate, finger.distal };
-                var copy = new Transform[3];
-                for (var j = 0; j < 3; j++)
-                {
-                    copy[j] = new GameObject(bones[j].name + " (Live Grip)").transform;
-                    copy[j].SetParent(j == 0 ? bones[0].parent : copy[j - 1], false);
-                    copy[j].localScale = bones[j].localScale;
-                    copy[j].SetPositionAndRotation(bones[j].position, bones[j].rotation);
-                }
                 var host = Bone(FingerNames[f], solvers, Rigid(solvers));
-                var limb = FinalIkBridge.AddLimbIk(host.gameObject, copy[0], copy[1], copy[2], target,
+                ik.limbs[f] = FinalIkBridge.AddLimbIk(host.gameObject, finger.proximal, finger.intermediate, finger.distal, target,
                     Vector3.Cross(finger.chain[1] - finger.chain[0], finger.bendGoal - finger.chain[0]));
-                FinalIkBridge.UseBendGoal(limb, bend);
-
-                ik.follows[f] = new VRCRotationConstraint[3];
-                for (var j = 0; j < 3; j++)
-                {
-                    ik.follows[f][j] = bones[j].gameObject.AddComponent<VRCRotationConstraint>();
-
-                    ik.follows[f][j].SolveInLocalSpace = true;
-                    Constrain(ik.follows[f][j], copy[j]);
-
-                    ik.follows[f][j].GlobalWeight = 0f;
-                }
+                FinalIkBridge.UseBendGoal(ik.limbs[f], bend);
+                // OJO: a VRC constraint at weight 0 pins the bone at RotationAtRest, it does not pass the animation through, so the IK is switched with m_Enabled instead https://docs.unity3d.com/Manual/class-RotationConstraint.html
+                ik.limbs[f].enabled = false;
             }
             return ik;
         }
@@ -432,11 +386,11 @@ namespace YUCP.Components.Editor
         }
 
         /// <summary>
-        /// Two states: Held while the toggle is on and, when <paramref name="near"/> is given, the
-        /// object is in the hand; Released otherwise. A float toggle (a slider) counts as on above 0.5.
+        /// Two states: Held while the toggle is on, Released otherwise. A float toggle (a slider)
+        /// counts as on above 0.5.
         /// </summary>
         private static (AnimatorState released, AnimatorState held) AddGate(AnimatorController controller, string name,
-            (string, bool) toggle, string near, Motion released, Motion held, AvatarMask mask, float weight, float fade)
+            (string, bool) toggle, Motion released, Motion held, AvatarMask mask, float weight)
         {
             var machine = new AnimatorStateMachine { name = name, hideFlags = HideFlags.HideInHierarchy };
             AssetDatabase.AddObjectToAsset(machine, controller);
@@ -452,7 +406,7 @@ namespace YUCP.Components.Editor
             {
                 var t = from.AddTransition(to);
                 t.hasExitTime = false;
-                t.duration = fade;
+                t.duration = 0f;
                 return t;
             }
             void Toggled(AnimatorStateTransition t, bool value)
@@ -460,15 +414,8 @@ namespace YUCP.Components.Editor
                 if (toggle.Item2) t.AddCondition(value ? AnimatorConditionMode.Greater : AnimatorConditionMode.Less, 0.5f, toggle.Item1);
                 else t.AddCondition(value ? AnimatorConditionMode.If : AnimatorConditionMode.IfNot, 0f, toggle.Item1);
             }
-            var grab = Transition(off, on);
-            Toggled(grab, true);
+            Toggled(Transition(off, on), true);
             Toggled(Transition(on, off), false);
-            if (near != null)
-            {
-                // A little hysteresis so a hand at the edge of the zone doesn't flicker.
-                grab.AddCondition(AnimatorConditionMode.Greater, 0.5f, near);
-                Transition(on, off).AddCondition(AnimatorConditionMode.Less, 0.45f, near);
-            }
             controller.AddLayer(new AnimatorControllerLayer { name = name, defaultWeight = weight, stateMachine = machine, avatarMask = mask });
             return (off, on);
         }

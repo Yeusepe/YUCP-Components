@@ -9,32 +9,32 @@ namespace YUCP.Components
     [Serializable]
     public sealed class ParameterCompressionRule
     {
-        [Tooltip("Final Animator parameter name. Automatic rules may also be matched by a processor-provided stable identity.")]
+        [Tooltip("The Animator parameter this rule applies to, by its final name.")]
         public string parameterName = string.Empty;
 
-        [Tooltip("Choose whether this parameter follows automatic safety rules, is explicitly included as persistent state, uses the unverified advanced override, or remains directly synced.")]
+        [Tooltip("Automatic follows the safety checks. Include compresses it as saved state, Include Unverified skips the checks, and Keep Direct syncs it as is.")]
         public ParameterCompressionRuleSelection selection =
             ParameterCompressionRuleSelection.Automatic;
 
-        [Tooltip("Controls how quickly this parameter is refreshed relative to other compressed values.")]
+        [Tooltip("How often this parameter updates compared with other compressed values.")]
         public ParameterCompressionPriority priority =
             ParameterCompressionPriority.Normal;
 
-        [Tooltip("Quantization precision for numeric parameters. Automatic chooses a suitable precision from the parameter's use.")]
+        [Tooltip("Bits per value for numbers. Automatic chooses from how the parameter is used.")]
         public ParameterCompressionPrecision precision =
             ParameterCompressionPrecision.Automatic;
 
-        [Tooltip("Expected numeric range. Automatic follows the VRChat parameter type and its observed menu use.")]
+        [Tooltip("The values the parameter can take. Automatic follows its type and how the menu uses it.")]
         public ParameterCompressionRangeMode range =
             ParameterCompressionRangeMode.Automatic;
 
-        [Tooltip("Minimum value when Range is Custom.")]
+        [Tooltip("The lowest value when Range is Custom.")]
         public float minimum;
 
-        [Tooltip("Maximum value when Range is Custom.")]
+        [Tooltip("The highest value when Range is Custom.")]
         public float maximum = 1f;
 
-        [Tooltip("Optional scheduling group. Values in the same group are kept together when practical.")]
+        [Tooltip("Values in the same group are sent together when possible. Optional.")]
         public string group = ParameterCompressionContract.DefaultGroup;
 
         [SerializeField, HideInInspector]
@@ -98,26 +98,26 @@ namespace YUCP.Components
         IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Automatic Setup")]
-        [Tooltip("Choose safe, persistent menu parameters automatically. Turn this off to compress only parameters explicitly included by rules.")]
+        [Tooltip("Compresses safe, saved menu parameters automatically. When off, only parameters a rule includes are compressed.")]
         public bool automaticSelection = true;
 
-        [Tooltip("Leave this many synced bits unused for features added later in the build.")]
+        [Tooltip("Synced bits kept free for parameters other tools add later in the build.")]
         [Range(0, ParameterCompressionContract.MaximumReservedBits)]
         public int reserveSyncedBits;
 
-        [Tooltip("0 favors faster remote updates. 1 favors the smallest possible synced footprint.")]
+        [Tooltip("How the compressor trades update speed for synced bits.")]
         [Range(0f, 1f)]
         public float optimizationBias = 0.5f;
 
         [Header("Transport")]
-        [Tooltip("Prefix used by generated carrier, framing, latch, and diagnostic parameters.")]
+        [Tooltip("Prefix for the parameters the compressor generates.")]
         public string parameterPrefix = ParameterCompressionContract.DefaultPrefix;
 
         [Header("Rules")]
-        [Tooltip("Optional reusable policy shared by multiple avatars or prefabs.")]
+        [Tooltip("Rules shared by several avatars or prefabs. They apply before this component's rules. Optional.")]
         public ParameterCompressionProfile profile;
 
-        [Tooltip("Per-avatar overrides and explicit parameter policies. Component rules are applied after profile rules.")]
+        [Tooltip("Rules for this avatar. They apply after the profile's rules.")]
         public List<ParameterCompressionRule> rules =
             new List<ParameterCompressionRule>();
 

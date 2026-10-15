@@ -1,4 +1,17 @@
-# Changelog## [2026-06-29]### com.yucp.importer
+# Changelog
+
+## [2026-10-15]
+
+### com.yucp.ui 0.1.0
+- First standalone release of the shared YUCP inspector and window UI, including controls, styles, and the material picker.
+- Available through VCC and as a download from this page; required by Components and DevTools.
+
+### com.yucp.components 0.3.45
+- Migrate inspectors to YUCP UI 0.1.0 and remove duplicate UI assets.
+- Update Parameter Compressor transport, Live Grip authoring, and viseme enrollment.
+- See the package changelog for the full update notes.
+
+## [2026-06-29]### com.yucp.importer
 - Refined `AttestationClient` attestation flow.
 - Expanded `CouplingRuntimeService` internals for improved reliability.## [2026-06-22]### com.yucp.importer
 - Added `AttestationClient` and `AttestationConfig` for package attestation and integrity verification.

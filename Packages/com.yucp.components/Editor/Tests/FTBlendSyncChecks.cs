@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 
 namespace YUCP.Components.Editor.Tests
@@ -8,7 +7,6 @@ namespace YUCP.Components.Editor.Tests
 
     public static class FTBlendSyncChecks
     {
-        [MenuItem("Tools/YUCP/Tests/FT Blendsync")]
         public static void Run()
         {
             var root = new GameObject("FT Blendsync test");

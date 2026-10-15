@@ -25,15 +25,8 @@ namespace YUCP.Components.Editor.Header
 
         private static void OnSceneGUI(SceneView sceneView)
         {
-            if (!showOverlay) return;
-
-            var handlers = Object.FindObjectsOfType<YUCP.Components.GestureManagerInputHandler>();
-            if (handlers.Length == 0) return;
-
-            var activeHandler = handlers.FirstOrDefault(h => h.enabled && h.gameObject.activeInHierarchy);
-            if (activeHandler == null) return;
-
-            if (!activeHandler.debugMode) return;
+            var activeHandler = YUCP.Components.GestureManagerInputHandler.Current;
+            if (!showOverlay || activeHandler == null || !activeHandler.debugMode) return;
 
             InitializeStyles();
             DrawModernOverlay(activeHandler, sceneView);

@@ -20,41 +20,41 @@ namespace YUCP.Components
         private GameObject _appliedObjectInfo;
         
         [Header("Options")]
-        [Tooltip("Whether IsColliding should reset immediately after stopping collision, or stay on until Reset is enabled.")]
+        [Tooltip("Clears the collision as soon as contact ends, instead of waiting for a reset.")]
         public bool alwaysReset = false;
 
-        [Tooltip("Expressions menu path where the reset toggle should be created (e.g. \"Utility/Collision\"). Leave blank to place it at the root menu.")]
+        [Tooltip("Submenu for the reset toggles, e.g. Utility/Collision. Empty adds no toggles.")]
         public string menuLocation = "Utility/Collision";
 
-        [Tooltip("OPTIONAL: Base parameter name for CollisionDetection/Reset. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
+        [Tooltip("Optional global parameter that resets the collision. /<object> is appended to keep it unique.")]
         public string globalParameterReset = "";
 
-        [Tooltip("OPTIONAL: Base parameter name for CollisionDetection/AlwaysReset. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
+        [Tooltip("Optional global parameter that turns Always Reset on. /<object> is appended to keep it unique.")]
         public string globalParameterAlwaysReset = "";
 
         [Header("Collision Settings")]
-        [Tooltip("Layers that the particle system will detect collisions with.")]
+        [Tooltip("Layers that count as a collision.")]
         public LayerMask collisionLayers = -1;
 
-        [Tooltip("Use trigger colliders instead of collision detection. When enabled, the collision module is disabled and triggers module is enabled.")]
+        [Tooltip("Detects trigger colliders instead of solid ones.")]
         public bool useTriggers = false;
 
-        [Tooltip("Scale of the collision detection area. This affects the size of the particle system bounds.")]
+        [Tooltip("Size of the area that detects collisions.")]
         [Range(0.1f, 10f)]
         public float particleScale = 1f;
 
         [Header("Grouping")]
-        [Tooltip("Enable to combine multiple components into a shared collision detection setup.")]
+        [Tooltip("Shares one collision detection setup between components with the same group ID.")]
         public bool enableGrouping = false;
 
-        [Tooltip("Identifier used when grouping is enabled. Components with matching IDs are merged into the same setup.")]
+        [Tooltip("Components with the same group ID share one setup.")]
         public string collisionGroupId = "Default";
 
         [Header("Diagnostics")]
-        [Tooltip("Print additional information while building.")]
+        [Tooltip("Logs extra detail while the avatar builds.")]
         public bool verboseLogging = false;
 
-        [Tooltip("Include the automatic credit banner in the inspector and documentation.")]
+        [Tooltip("Shows the credit line for the VRLabs prefab this component is based on.")]
         public bool includeCredits = true;
 
 #if UNITY_EDITOR

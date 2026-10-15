@@ -35,27 +35,34 @@ namespace YUCP.Components
     public class PrettyHierarchyData : MonoBehaviour, IEditorOnly
     {
         [Header("Preset")]
+        [Tooltip("Applies a ready-made background style. Custom keeps your own colors.")]
         [SerializeField] private PrettyHierarchyPreset preset = PrettyHierarchyPreset.Custom;
 
         [Header("Background")]
         [SerializeField] private bool useDefaultBackgroundColor = false;
         [SerializeField] private Color backgroundColor = new Color(0.235f, 0.235f, 0.314f, 1f);
+        [Tooltip("Opacity of the row background.")]
         [SerializeField] [Range(0f, 1f)] private float backgroundAlpha = 1f;
 
         [Header("Background Gradient")]
         [SerializeField] private bool useBackgroundGradient;
         [SerializeField] private Gradient backgroundGradient = new Gradient();
+        [Tooltip("Direction of the gradient, in degrees.")]
         [SerializeField] [Range(0f, 360f)] private float gradientAngle = 0f;
 
         [Header("Shadow")]
+        [Tooltip("Draws a shadow under the row background.")]
         [SerializeField] private bool showShadow = false;
         [SerializeField] private Color shadowColor = new Color(0, 0, 0, 0.5f);
+        [Tooltip("Shadow offset, in pixels.")]
         [SerializeField] private Vector2 shadowOffset = new Vector2(2, 2);
+        [Tooltip("Shadow softness, in pixels.")]
         [SerializeField] [Range(0f, 16f)] private float shadowBlur = 4f;
 
         [Header("Row height")]
-        [Tooltip("Use a custom row height so this row takes more space and other rows move down.")]
+        [Tooltip("Sets this row's height. Rows below move to fit.")]
         [SerializeField] private bool useCustomRowHeight;
+        [Tooltip("Row height, in pixels.")]
         [SerializeField] [Range(16f, 64f)] private float customRowHeight = 24f;
 
         [Header("Margins - Row")]
@@ -77,27 +84,41 @@ namespace YUCP.Components
         [SerializeField] private float textMarginBottom;
 
         [Header("Icons")]
+        [Tooltip("Shows the object's icon before its name.")]
         [SerializeField] private bool showIcon = true;
+        [Tooltip("Replaces the object's icon with one you choose.")]
         [SerializeField] private bool useCustomIcon;
+        [Tooltip("Built-in uses a Unity editor icon by name. Texture uses your own image.")]
         [SerializeField] private bool useCustomIconAsTexture;
+        [Tooltip("The image to show as the icon.")]
         [SerializeField] private Texture2D customIcon;
+        [Tooltip("The name of a Unity editor icon, such as d_GameObject Icon.")]
         [SerializeField] private string customIconBuiltInName = "d_GameObject Icon";
         [SerializeField] private bool showCollapseIcon = true;
-        [Tooltip("Show closed folder when collapsed and open folder when expanded (only for objects with children).")]
+        [Tooltip("Shows a folder icon on objects with children, open while expanded. Click it to expand or collapse.")]
         [SerializeField] private bool showExpandCollapseFolderIcon = true;
+        [Tooltip("The name of a Unity editor icon to show while the object is collapsed.")]
         [SerializeField] private string closedFolderIconName = "d_Folder Icon";
+        [Tooltip("The name of a Unity editor icon to show while the object is expanded.")]
         [SerializeField] private string openFolderIconName = "d_FolderOpened Icon";
+        [Tooltip("Your own image to show while the object is collapsed. Overrides the icon name.")]
         [SerializeField] private Texture2D closedFolderCustomIcon;
+        [Tooltip("Your own image to show while the object is expanded. Overrides the icon name.")]
         [SerializeField] private Texture2D openFolderCustomIcon;
-        [Tooltip("Offset the expand/collapse folder icon from its default position (pixels).")]
+        [Tooltip("Moves the folder icon right, in pixels.")]
         [SerializeField] private float folderIconOffsetX;
+        [Tooltip("Moves the folder icon down, in pixels.")]
         [SerializeField] private float folderIconOffsetY;
         [SerializeField] private bool showPrefabIcon = true;
+        [Tooltip("Shows the arrow that opens a prefab at the end of the row.")]
         [SerializeField] private bool showEditPrefabIcon = true;
+        [Tooltip("Icon size, in pixels.")]
         [SerializeField] private float iconSize = 16f;
 
         [Header("Corners")]
+        [Tooltip("Uniform uses one radius for every corner. Independent sets each corner.")]
         [SerializeField] private bool cornerRadiusUniform = true;
+        [Tooltip("Corner radius, in pixels.")]
         [SerializeField] private float cornerRadius;
         [SerializeField] private float cornerRadiusTopLeft;
         [SerializeField] private float cornerRadiusTopRight;
@@ -109,16 +130,24 @@ namespace YUCP.Components
         [SerializeField] private Color textColor = Color.white;
         [SerializeField] private bool useTextGradient;
         [SerializeField] private Gradient textGradient = new Gradient();
+        [Tooltip("Direction of the gradient, in degrees.")]
         [SerializeField] [Range(0f, 360f)] private float textGradientAngle = 0f;
+        [Tooltip("Leave empty to use the editor font.")]
         [SerializeField] private Font font;
+        [Tooltip("Text size, in pixels.")]
         [SerializeField] private int fontSize = 12;
         [SerializeField] private FontStyle fontStyle = FontStyle.Normal;
+        [Tooltip("Horizontal alignment of the name. The name is always centered vertically.")]
         [SerializeField] private TextAnchor alignment = TextAnchor.UpperLeft;
+        [Tooltip("Draws a shadow behind the name.")]
         [SerializeField] private bool textDropShadow;
+        [Tooltip("Extra space before the name, in pixels.")]
         [SerializeField] private float paddingLeft;
+        [Tooltip("Extra space after the name, in pixels.")]
         [SerializeField] private float paddingRight;
 
         [Header("Border")]
+        [Tooltip("Border thickness, in pixels. 0 turns the border off.")]
         [SerializeField] private float borderWidth;
         [SerializeField] private Color borderColor = new Color(0.4f, 0.4f, 0.47f, 1f);
 

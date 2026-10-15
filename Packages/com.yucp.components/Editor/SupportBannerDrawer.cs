@@ -16,45 +16,42 @@ namespace YUCP.Components.Editor
         private const string PrefCounterKey = "com.yucp.components.support.counter";
         private const string PrefCadenceKey = "com.yucp.components.support.cadence";
         private const string SessionDismissKey = "com.yucp.components.support.dismissed.session";
-        
+
+        // PERF: el header se dibuja en cada repaint https://docs.unity3d.com/ScriptReference/Editor-finishedDefaultHeaderGUI.html
+        private static readonly System.Collections.Generic.Dictionary<Type, SupportBannerAttribute> Attributes =
+            new System.Collections.Generic.Dictionary<Type, SupportBannerAttribute>();
+        private static int _count = EditorPrefs.GetInt(PrefCounterKey, 0);
+        private static readonly int Cadence = Mathf.Max(1, EditorPrefs.GetInt(PrefCadenceKey, 1000));
+
         static SupportBannerDrawer()
         {
             UnityEditor.Editor.finishedDefaultHeaderGUI += OnPostHeaderGUI;
+            AssemblyReloadEvents.beforeAssemblyReload += SaveCount;
+            EditorApplication.quitting += SaveCount;
         }
+
+        private static void SaveCount() => EditorPrefs.SetInt(PrefCounterKey, _count);
 
         private static void OnPostHeaderGUI(UnityEditor.Editor editor)
         {
             if (editor.target == null) return;
 
-            // Check if this component has the SupportBanner attribute
             Type targetType = editor.target.GetType();
-            var supportAttribute = (SupportBannerAttribute)Attribute.GetCustomAttribute(
-                targetType, 
-                typeof(SupportBannerAttribute)
-            );
-
+            if (!Attributes.TryGetValue(targetType, out var supportAttribute))
+                Attributes[targetType] = supportAttribute = (SupportBannerAttribute)Attribute.GetCustomAttribute(targetType, typeof(SupportBannerAttribute));
             if (supportAttribute == null) return;
 
-            // Check if user has permanently dismissed
             if (EditorPrefs.GetBool(PrefNeverKey, false)) return;
             
-            // Check if dismissed for this session
             if (SessionState.GetBool(SessionDismissKey, false)) return;
 
-            // Count inspector draws and check cadence
-            int count = EditorPrefs.GetInt(PrefCounterKey, 0) + 1;
-            EditorPrefs.SetInt(PrefCounterKey, count);
+            if (++_count % Cadence != 0) return;
 
-            int cadence = Mathf.Max(1, EditorPrefs.GetInt(PrefCadenceKey, 1000));
-            if (count % cadence != 0) return;
-
-            // Display support banner
             EditorGUILayout.Space(8);
             
             var originalBgColor = GUI.backgroundColor;
             var originalColor = GUI.color;
             
-            // Outer container with border and rounded corners
             var boxStyle = new GUIStyle(GUI.skin.box);
             boxStyle.padding = new RectOffset(0, 0, 0, 0);
             boxStyle.margin = new RectOffset(4, 4, 0, 0);
@@ -62,10 +59,8 @@ namespace YUCP.Components.Editor
             EditorGUILayout.BeginVertical(boxStyle);
             GUI.backgroundColor = originalBgColor;
             
-            // Inner card with left accent
             GUILayout.BeginHorizontal();
             
-            // Left teal accent bar - same color as heart
             var oldColor = GUI.color;
             GUI.color = new Color(0.212f, 0.749f, 0.694f, 1f); // YUCP Teal #36BFB1
             GUILayout.Box("", GUILayout.Width(4), GUILayout.ExpandHeight(true));
@@ -73,11 +68,9 @@ namespace YUCP.Components.Editor
             
             GUILayout.Space(10);
             
-            // Content area
             GUILayout.BeginVertical();
             GUILayout.Space(8);
             
-            // Header row: heart + title + close button
             GUILayout.BeginHorizontal();
             
             var heartStyle = new GUIStyle(EditorStyles.label);
@@ -92,7 +85,6 @@ namespace YUCP.Components.Editor
             
             GUILayout.FlexibleSpace();
             
-            // Close X button - text button style
             var closeStyle = new GUIStyle(EditorStyles.label);
             closeStyle.fontSize = 16;
             closeStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f, 1f);
@@ -110,7 +102,6 @@ namespace YUCP.Components.Editor
             
             GUILayout.Space(6);
             
-            // Message
             var messageStyle = new GUIStyle(EditorStyles.label);
             messageStyle.wordWrap = true;
             messageStyle.fontSize = 11;
@@ -119,10 +110,8 @@ namespace YUCP.Components.Editor
             
             GUILayout.Space(10);
             
-            // Buttons row
             GUILayout.BeginHorizontal();
             
-            // Support button - teal, prominent (same as heart)
             GUI.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 1f); // YUCP Teal #36BFB1
             if (GUILayout.Button("Support", GUILayout.Height(30), GUILayout.Width(100)))
             {
@@ -132,7 +121,6 @@ namespace YUCP.Components.Editor
             
             GUILayout.FlexibleSpace();
             
-            // Never show again - subtle text button
             var neverStyle = new GUIStyle(EditorStyles.label);
             neverStyle.fontSize = 10;
             neverStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f, 1f);

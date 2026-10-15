@@ -35,9 +35,9 @@ Advanced VRChat avatar components with VRCFury integration.
 ### Parameter Memory
 - **Parameter Compressor** - Compresses safe persistent settings from the final merged avatar into one small shared network transport.
   - Automatically recognizes menu toggles and radial settings while protecting buttons, contacts, PhysBones, random/additive drivers, and live puppet axes.
-  - Uses 3-7 synchronized Bool wires with a delay-insensitive constant-weight alphabet, explicit framing, atomic block commits, and continuous late-join repair.
+  - Sends one whole message per VRChat sync tick, one Int code plus a few page Bools, so a changed value cuts in on VRChat's next sync and reaches remote players in about 0.09 s; idle ticks refresh every value for late joiners.
   - Keeps the wearer's original parameters immediate, full precision, and saved; only hidden carriers are synchronized and unsaved.
-  - Adds one zero-weight state-machine layer with no BlendTrees and never modifies source controllers or parameter assets.
+  - Adds one zero-weight state-machine layer plus a local-only Direct BlendTree layer that detects changed Floats, and never modifies source controllers or parameter assets.
 
 ## Installation
 
@@ -45,24 +45,25 @@ Advanced VRChat avatar components with VRCFury integration.
 
 1. Add this VPM repository to your VRChat Creator Companion:
    ```
-   http://vpm.yucp.club/index.json
+   https://vpm.yucp.club/index.json
    ```
 
 2. Open your avatar project in VCC
 3. Click "Manage Project"
 4. Find "YUCP Components" and click "+" to install
-5. VRCFury will be installed automatically as a dependency
+5. VRCFury and YUCP UI will be installed automatically as dependencies
 
 ### Manual Installation
 
 1. Download the latest `.unitypackage` from [Releases](https://github.com/Yeusepe/YUCP-Components/releases)
 2. Import into your Unity project
-3. Install VRCFury from https://vrcfury.com/download
+3. Install [VRCFury](https://vrcfury.com/download) and [YUCP UI](https://vpm.yucp.club/) as dependencies
 
 ## Dependencies
 
 This package requires:
 - **VRCFury** (automatically installed via VPM)
+- **YUCP UI** >= 0.1.0 (automatically installed via VPM)
 - **VRChat SDK3 Avatars** (automatically installed via VPM)
 - Unity 2022.3.x
 
@@ -86,11 +87,11 @@ For `Blendshape Markdown`, add the component to the renderer you want to organiz
 
 #### Parameter Compressor
 
-Add one `YUCP/Parameter Compressor` anywhere below the avatar descriptor. In Simple mode, leave automatic selection enabled, choose how much parameter space to keep free, and move the preference toward faster updates or a smaller transport. The build-time summary reports the final before/after cost and nominal reference refresh. Advanced mode can force a stable parameter in or out, choose its precision and range, change update priority, and place related values in the same transaction group.
+Add one `YUCP/Parameter Compressor` anywhere below the avatar descriptor. In Simple mode, leave automatic selection enabled, and choose how much parameter space to keep free. The build-time summary reports the final before/after cost and how long a late joiner waits for every value. Advanced mode can force a stable parameter in or out, choose its precision and range, change update priority, and place related values in the same transaction group.
 
 The processor runs after VRCFury has produced the real merged menu, Expression Parameters asset, and FX controller. It compresses only persistent state that it can classify safely. Momentary buttons, submenu gates, contacts, PhysBones, random/additive driver outputs, conflicting types, existing carriers, OSC-like unowned inputs, and continuous puppet axes remain direct unless an applicable safe override exists. Original parameters retain their names, defaults, Saved behavior, and full local values; the build clone marks selected declarations unsynced and adds unsaved carrier Bools. Other prefab controllers and VRCFury BlendShape Links continue reading the original parameter names.
 
-With `B` Bool wires, the conservative transport uses every word with Hamming weight `floor(B/2)` and an all-zero spacer. Torn wire updates have a lower weight and therefore cannot become another valid symbol. One word is reserved for synchronization, leaving radix `C(B,floor(B/2))-1`. Parameter identity and quantized value share one enumerative interval instead of paying separate index bits. Six wires therefore provide radix 19; `26 * 255 = 6630 < 19^3 = 6859`, so 26 native VRChat Float domains fit in three payload digits. Background snapshots omit repeated identities, stage values privately, and publish a complete block only at a valid closing frame. The design follows [delay-insensitive unordered codes](https://past.date-conference.com/proceedings-archive/2011/DATE11/PDFFILES/11.3_2.PDF), [Sperner's optimal antichain bound](https://ocw.mit.edu/courses/18-318-topics-in-algebraic-combinatorics-spring-2006/resources/sperner/), and [successive-refinement](https://isl.stanford.edu/~cover/papers/transIT/0269equi.pdf) principles. VRChat's Playable synchronization is slow and not lossless, so the controller rejects partial frames and replays snapshots forever rather than relying on pulse timing.
+VRChat sends all synced parameters in one update, at most every 0.1 s while values change ([Playable sync](https://creators.vrchat.com/avatars/animator-parameters/); VRCFury's [compressor](https://github.com/VRCFury/VRCFury/blob/2863a3fea5f2a4f36808a4b7dc8f7e8f106dbc0d/com.vrcfury.vrcfury/Editor-Avatars/Service/Compressor/ParameterCompressorLayerService.cs) relies on the same index-plus-values atomicity), so the event bus makes each tick one complete, absolute message: which value, and its level. Parameter identity and level share one [enumerative](https://isl.stanford.edu/~cover/papers/transIT/0073cove.pdf) code space of `sum(levels)`, packed into 256-code pages; the Int carries the code and `ceil(log2(pages))` Bools pick the page. Thirty-two `[0,1]` radials at VRChat's native 128 levels need exactly `log2(32 * 128) = 12` bits. The wearer keeps a shadow of what remotes show and sends any value whose remote copy is more than half a level off first ([send-on-delta](https://doi.org/10.3390/s6010049)); otherwise it refreshes values in turn, which is [max-age-first](https://arxiv.org/abs/1801.01803) for equal weights. A changed value preempts a refresh still on the wire (the freshest update goes first, [Yates and Kaul](https://arxiv.org/abs/1608.08622)) but never another changed value, so it waits only for VRChat's next sync, not for a whole refresh cycle. A remote decodes every tick on its own, so a lost or coalesced update only delays that value until its next refresh and can never mix two messages.
 
 For `Advanced Viseme Reconstructor`, add the component anywhere under the avatar descriptor, assign the face renderer or use the descriptor renderer, and optionally create a reusable reconstruction profile. The default `Auto` input mode reuses a compatible decoded/proxy Unified Expressions stream when its Animator controller and synced tracking-active declaration are referenced under the avatar. If none exists, `Auto` stays speech-only and adds **zero face-tracking bits**. On avatars without a Parameter Compressor, Compact Synced avatar-menu sharing retains its fixed 13-bit private transport. When a Parameter Compressor is present, those saved tuning values join the generic shared plan instead, allowing a six-wire build when only six bits remain. Choose Balanced8, Quality12, or FullTongue18 only when this component should create new tracking inputs. Use `Outputs Only` to consume the generated `YUCP/AdvancedViseme/...` parameters without changing the avatar's mouth configuration.
 

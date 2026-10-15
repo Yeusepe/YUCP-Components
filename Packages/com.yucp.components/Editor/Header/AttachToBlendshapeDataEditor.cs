@@ -1,69 +1,43 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.UIElements;
-using UnityEditor.UIElements;
-using YUCP.Components;
+using YUCP.Components.Editor;
 using YUCP.Components.Editor.MeshUtils;
 using YUCP.Components.Editor.Utils;
 using YUCP.UI.DesignSystem.Utilities;
-using YUCP.Components.Editor;
-using static YUCP.Components.Editor.MeshUtils.BlendshapeTransfer;
+using Toolkit = YUCP.UI.DesignSystem.Utilities.YUCPUIToolkitHelper;
 
 namespace YUCP.Components.Resources
 {
     /// <summary>
-    /// Custom editor for Attach to Blendshape component.
-    /// Provides preview visualization, blendshape list, and configuration UI
+    /// Attach to Blendshape inspector (DESIGN.md). Generate Preview transfers the tracked blendshapes
+    /// for real, so the attachment follows the body in the Scene view; Clear Preview restores every
+    /// mesh, weight and pose it changed.
     /// </summary>
     [CustomEditor(typeof(AttachToBlendshapeData))]
     public class AttachToBlendshapeDataEditor : UnityEditor.Editor
     {
+        private const int SliderHeight = 22;
+
         private AttachToBlendshapeData data;
-
-
-        private bool showTargetSettings = true;
-        private bool showBlendshapeTracking = true;
-        private bool showSurfaceCluster = false;
-        private bool showSolverConfiguration = true;
-        private bool showBoneAttachment = false;
-        private bool showAnimationSettings = false;
-        private bool showAdvancedOptions = false;
-        private bool showBuildStats = false;
-
-        private Vector2 blendshapeScrollPos;
-        private Vector2 previewSliderScrollPos;
+        private YUCPInspector ui;
         private Mesh previewBakeMesh;
+        private string previewError;
 
-
-        private List<string> cachedDetectedVisemes;
-        private int cachedVisemeFrameCount = -1;
-
-
-        private SkinnedMeshRenderer previousTargetMesh = null;
-        private int previousManualTriangleIndex = -2;
-        private SolverMode previousSolverMode = (SolverMode)(-1);
-        private bool previousAttachToClosestBone = false;
-        private BlendshapeTrackingMode previousTrackingMode = (BlendshapeTrackingMode)(-1);
-        private int previousSamplesPerBlendshape = -1;
-        private string previousValidationError = null;
-        private int previousTrackedBlendshapesCount = -1;
-        private int previousGeneratedAnimationCount = -1;
-        private string previousSelectedBonePath = null;
-        private bool previousPreviewGenerated = false;
-        private int previousPreviewBlendshapeCount = -1;
+        private Mesh BodyMesh => data.targetMesh != null ? data.targetMesh.sharedMesh : null;
 
         private void OnEnable()
         {
             data = (AttachToBlendshapeData)target;
-            LoadFoldoutStates();
+            SceneView.duringSceneGui += DrawPreview;
         }
 
         private void OnDisable()
         {
-            SaveFoldoutStates();
+            SceneView.duringSceneGui -= DrawPreview;
             if (data != null)
             {
                 if (data.previewGenerated) ClearPreview();
@@ -76,713 +50,333 @@ namespace YUCP.Components.Resources
             ReleasePreviewBakeMesh();
         }
 
-        private void LoadFoldoutStates()
-        {
-            int id = data.GetInstanceID();
-            showTargetSettings = SessionState.GetBool($"AttachBlendshape_Target_{id}", true);
-            showBlendshapeTracking = SessionState.GetBool($"AttachBlendshape_Tracking_{id}", true);
-            showSurfaceCluster = SessionState.GetBool($"AttachBlendshape_Cluster_{id}", false);
-            showSolverConfiguration = SessionState.GetBool($"AttachBlendshape_Solver_{id}", true);
-            showBoneAttachment = SessionState.GetBool($"AttachBlendshape_Bone_{id}", false);
-            showAnimationSettings = SessionState.GetBool($"AttachBlendshape_Anim_{id}", false);
-            showAdvancedOptions = SessionState.GetBool($"AttachBlendshape_Advanced_{id}", false);
-            showBuildStats = SessionState.GetBool($"AttachBlendshape_Stats_{id}", false);
-        }
-
-        private void SaveFoldoutStates()
-        {
-            int id = data.GetInstanceID();
-            SessionState.SetBool($"AttachBlendshape_Target_{id}", showTargetSettings);
-            SessionState.SetBool($"AttachBlendshape_Tracking_{id}", showBlendshapeTracking);
-            SessionState.SetBool($"AttachBlendshape_Cluster_{id}", showSurfaceCluster);
-            SessionState.SetBool($"AttachBlendshape_Solver_{id}", showSolverConfiguration);
-            SessionState.SetBool($"AttachBlendshape_Bone_{id}", showBoneAttachment);
-            SessionState.SetBool($"AttachBlendshape_Anim_{id}", showAnimationSettings);
-            SessionState.SetBool($"AttachBlendshape_Advanced_{id}", showAdvancedOptions);
-            SessionState.SetBool($"AttachBlendshape_Stats_{id}", showBuildStats);
-        }
-
         public override VisualElement CreateInspectorGUI()
         {
-            serializedObject.Update();
             data = (AttachToBlendshapeData)target;
+            ui = YUCPInspector.Create(this, "Attach to Blendshape");
+            var meshes = ui.Section("Meshes");
+            ui.Field(meshes, "targetMesh", "Body Mesh");
+            ui.Messages(meshes, () => new[] { YUCPInspector.Message.Error(BodyProblem()) });
+            ui.Field(meshes, "targetMeshToModify", "Attachment Mesh");
+            ui.Messages(meshes, () => new[] { YUCPInspector.Message.Error(AttachmentProblem()) });
 
-            var root = new VisualElement();
-            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Attach to Blendshape"));
+            var blendshapes = ui.Section("Blendshapes");
+            BuildBlendshapes(blendshapes);
+            ui.Messages(blendshapes, () => new[] { YUCPInspector.Message.Error(BodyProblem() == null ? TrackingProblem() : null) });
 
-            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(AttachToBlendshapeData));
-            if (betaWarning != null) root.Add(betaWarning);
-
-
-            var validationBanner = new VisualElement();
-            validationBanner.name = "validation-banner";
-            root.Add(validationBanner);
-
-
-            var sourceCard = YUCPUIToolkitHelper.CreateCard("Source Mesh", "The mesh with blendshapes to attach to (usually avatar head/body)");
-            var sourceContent = YUCPUIToolkitHelper.GetCardContent(sourceCard);
-            sourceContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("targetMesh"), "Source Mesh"));
-
-            var sourceMeshHelp = new VisualElement();
-            sourceMeshHelp.name = "target-mesh-help";
-            sourceContent.Add(sourceMeshHelp);
-            root.Add(sourceCard);
-
-
-            var targetCard = YUCPUIToolkitHelper.CreateCard("Target Mesh", "The mesh that will receive transferred blendshapes (e.g., piercing, accessory)");
-            var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-
-            var targetMeshField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("targetMeshToModify"), "Target Mesh");
-            targetContent.Add(targetMeshField);
-
-            var targetMeshHelp = new VisualElement();
-            targetMeshHelp.name = "target-mesh-to-modify-help";
-            targetContent.Add(targetMeshHelp);
-            root.Add(targetCard);
-
-
-            var trackingCard = YUCPUIToolkitHelper.CreateCard("Blendshape Tracking", "Configure which blendshapes to transfer");
-            var trackingContent = YUCPUIToolkitHelper.GetCardContent(trackingCard);
-
-            var trackingModeSelector = YUCPUIToolkitHelper.CreateTrackingModeSelector(
-                data.trackingMode,
-                (mode) => {
-                    data.trackingMode = mode;
-                    EditorUtility.SetDirty(data);
-                }
-            );
-            trackingContent.Add(trackingModeSelector);
-
-            YUCPUIToolkitHelper.AddSpacing(trackingContent, 8);
-
-            var trackingModeContent = new VisualElement();
-            trackingModeContent.name = "tracking-mode-content";
-            trackingContent.Add(trackingModeContent);
-
-            root.Add(trackingCard);
-
-
-            var clusterCard = YUCPUIToolkitHelper.CreateCard("Surface Attachment", "Configure attachment point on source mesh");
-            var clusterContent = YUCPUIToolkitHelper.GetCardContent(clusterCard);
-            clusterContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Surface cluster uses multiple triangles for stable attachment during deformation.", YUCPUIToolkitHelper.MessageType.None));
-
-            YUCPUIToolkitHelper.AddSpacing(clusterContent, 5);
-            clusterContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("clusterTriangleCount"), "Triangle Count"));
-            clusterContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("searchRadius"), "Search Radius"));
-
-            YUCPUIToolkitHelper.AddSpacing(clusterContent, 3);
-            clusterContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("manualTriangleIndex"), "Manual Triangle"));
-
-            var manualTriangleHelp = new VisualElement();
-            manualTriangleHelp.name = "manual-triangle-help";
-            clusterContent.Add(manualTriangleHelp);
-            root.Add(clusterCard);
-
-
-            var solverCard = YUCPUIToolkitHelper.CreateCard("Solver Configuration", "How to calculate vertex deformation");
-            var solverContent = YUCPUIToolkitHelper.GetCardContent(solverCard);
-            solverContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("solverMode"), "Solver Mode"));
-
-            var solverModeCardContainer = new VisualElement();
-            solverModeCardContainer.name = "solver-mode-card";
-            solverContent.Add(solverModeCardContainer);
-
-            YUCPUIToolkitHelper.AddSpacing(solverContent, 5);
-            solverContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("alignRotationToSurface"), "Align to Surface"));
-
-            var normalOffsetCard = YUCPUIToolkitHelper.CreateCard("Normal Offset Settings", "Configure offset distance");
-            normalOffsetCard.name = "normal-offset-card";
-            var normalOffsetContent = YUCPUIToolkitHelper.GetCardContent(normalOffsetCard);
-            normalOffsetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("normalOffset"), "Offset Distance"));
-            solverContent.Add(normalOffsetCard);
-
-            YUCPUIToolkitHelper.AddSpacing(solverContent, 5);
-            solverContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rotationSmoothingFactor"), "Rotation Smoothing"));
-            root.Add(solverCard);
-
-
-            var boneCard = YUCPUIToolkitHelper.CreateCard("Bone Attachment", "Optional base positioning relative to bone");
-            var boneContent = YUCPUIToolkitHelper.GetCardContent(boneCard);
-            boneContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("attachToClosestBone"), "Enable Bone Attachment"));
-
-            var boneSettingsCard = YUCPUIToolkitHelper.CreateCard("Bone Detection Settings", "Configure bone detection parameters");
-            boneSettingsCard.name = "bone-settings-card";
-            var boneSettingsContent = YUCPUIToolkitHelper.GetCardContent(boneSettingsCard);
-            boneSettingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("boneSearchRadius"), "Search Radius"));
-            boneSettingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("boneNameFilter"), "Name Filter"));
-            boneSettingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("ignoreHumanoidBones"), "Ignore Humanoid Bones"));
-            boneSettingsContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("boneOffset"), "Bone Offset Path"));
-            boneContent.Add(boneSettingsCard);
-
-            var boneHelp = new VisualElement();
-            boneHelp.name = "bone-help";
-            boneContent.Add(boneHelp);
-            root.Add(boneCard);
-
-
-            var transferCard = YUCPUIToolkitHelper.CreateCard("Blendshape Transfer", "Configure blendshape transfer settings");
-            var transferContent = YUCPUIToolkitHelper.GetCardContent(transferCard);
-
-            transferContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("samplesPerBlendshape"), "Keyframes Per Blendshape"));
-
-            var samplesHelp = new VisualElement();
-            samplesHelp.name = "samples-help";
-            transferContent.Add(samplesHelp);
-            root.Add(transferCard);
-
-
-            var outputCard = YUCPUIToolkitHelper.CreateCard("Output (Advanced)", "How this attachment is baked at build time");
-            var outputContent = YUCPUIToolkitHelper.GetCardContent(outputCard);
-
-            outputContent.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                "Default is Auto.\n\n" +
-                "Auto will choose the safest mode and avoid merge if it detects complex transform/material animations on this object.\n" +
-                "Use Merge Into Base Mesh only when you need built-in VRChat blendshape systems (like default visemes) to affect the attachment.",
-                YUCPUIToolkitHelper.MessageType.Info));
-
-            YUCPUIToolkitHelper.AddSpacing(outputContent, 4);
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("outputMode"), "Output Mode"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("bakeMethod"), "Bake Method"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("unmatchedHandling"), "Unmatched Handling"));
-            YUCPUIToolkitHelper.AddSpacing(outputContent, 4);
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoAvoidMergeIfComplexTransformAnimation"), "Auto: Avoid Merge if Transform Animations"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoAvoidMergeIfMaterialAnimation"), "Auto: Avoid Merge if Material Animations"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("preserveToggleStyleTransformAnimationsOnMerge"), "Merge: Preserve Toggle-Style Transform Animations"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("disableOriginalRendererOnMerge"), "Merge: Disable Original Renderer"));
-
-            YUCPUIToolkitHelper.AddSpacing(outputContent, 6);
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("visibilityMode"), "Merged Visibility"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("remapVisibilityAnimations"), "Remap Existing Visibility Animations"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("autoDetectUVChannel"), "UV: Auto Detect Channel"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvChannel"), "UV: Channel"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvDiscardRow"), "UV: Tile Row"));
-            outputContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("uvDiscardColumn"), "UV: Tile Column"));
-
-            root.Add(outputCard);
-
-
-            var advancedCard = YUCPUIToolkitHelper.CreateCard("Advanced Options", "Debug and preview settings");
-            var advancedContent = YUCPUIToolkitHelper.GetCardContent(advancedCard);
-            advancedContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Logging"));
-            advancedContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("showPreview"), "Show Preview Gizmos"));
-            root.Add(advancedCard);
-
-
-            YUCPUIToolkitHelper.AddSpacing(root, 15);
-            root.Add(YUCPUIToolkitHelper.CreateDivider());
-            YUCPUIToolkitHelper.AddSpacing(root, 5);
-
-            var previewHeader = new Label("PREVIEW & DETECTION");
-            previewHeader.style.fontSize = 13;
-            previewHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-            previewHeader.style.color = new StyleColor(new Color(0.212f, 0.749f, 0.694f));
-            previewHeader.style.marginBottom = 8;
-            root.Add(previewHeader);
-
-            var previewToolsContainer = new VisualElement();
-            previewToolsContainer.name = "preview-tools-container";
-            root.Add(previewToolsContainer);
-
-
-            var buildStatsFoldout = YUCPUIToolkitHelper.CreateFoldout("Build Statistics", showBuildStats);
-            buildStatsFoldout.RegisterValueChangedCallback(evt => { showBuildStats = evt.newValue; });
-            buildStatsFoldout.name = "build-stats-foldout";
-
-            var buildStatsCard = YUCPUIToolkitHelper.CreateCard("Last Build Results", null);
-            var buildStatsContent = YUCPUIToolkitHelper.GetCardContent(buildStatsCard);
-            buildStatsContent.name = "build-stats-content";
-            buildStatsFoldout.Add(buildStatsCard);
-            root.Add(buildStatsFoldout);
-
-
-            previousTargetMesh = data.targetMesh;
-            previousManualTriangleIndex = data.manualTriangleIndex;
-            previousSolverMode = data.solverMode;
-            previousAttachToClosestBone = data.attachToClosestBone;
-            previousTrackingMode = data.trackingMode;
-            previousSamplesPerBlendshape = data.samplesPerBlendshape;
-            previousValidationError = ValidateData() ? null : GetValidationError();
-            previousTrackedBlendshapesCount = data.TrackedBlendshapes?.Count ?? -1;
-            previousGeneratedAnimationCount = data.TransferredBlendshapeCount;
-            previousSelectedBonePath = data.SelectedBonePath;
-            previousPreviewGenerated = data.previewGenerated;
-            previousPreviewBlendshapeCount = data.previewBlendshapes?.Count ?? -1;
-
-
-            UpdateValidationBanner(validationBanner);
-            UpdateTargetMeshHelp(targetMeshHelp);
-            UpdateTargetMeshToModifyHelp(root.Q<VisualElement>("target-mesh-to-modify-help"));
-            UpdateManualTriangleHelp(manualTriangleHelp);
-            UpdateSolverModeCard(root.Q<VisualElement>("solver-mode-card"));
-            UpdateBoneHelp(boneHelp);
-            UpdateSamplesHelp(samplesHelp);
-            UpdateTrackingModeContent(root.Q<VisualElement>("tracking-mode-content"));
-            UpdatePreviewTools(root.Q<VisualElement>("preview-tools-container"));
-            UpdateBuildStatistics(buildStatsFoldout, buildStatsContent);
-
-
-            root.schedule.Execute(() =>
+            var motion = ui.Section("Motion");
+            ui.Segmented(motion, "solverMode", "Solver", "Rigid", "Rigid Offset", "Affine");
+            ui.Caption(motion, () => data.solverMode switch
             {
-                serializedObject.Update();
+                SolverMode.RigidNormalOffset => "Rigid, pushed out along the surface normal. For studs and raised jewelry.",
+                SolverMode.Affine => "Also stretches with the skin. For stickers and patches.",
+                _ => "Moves and turns with the surface. For piercings and hard jewelry."
+            });
+            var offset = ui.Indent(motion);
+            ui.Field(offset, "normalOffset", "Normal Offset");
+            ui.ShowWhen(offset, () => data.solverMode == SolverMode.RigidNormalOffset);
+            ui.Field(motion, "alignRotationToSurface", "Align to Surface");
 
+            var output = ui.Section("Output");
+            ui.Segmented(output, "outputMode", "Output", "Automatic", "Linked", "Merged");
+            ui.Caption(output, () => data.outputMode switch
+            {
+                AttachToBlendshapeOutputMode.LinkedRendererBake => "Keeps the attachment a separate mesh with its blendshapes linked to the body's.",
+                AttachToBlendshapeOutputMode.MergeIntoBaseMesh => "Merges the attachment into the body mesh, so visemes and other built-in blendshapes move it.",
+                _ => "Chooses Merged or Linked at build time from the avatar's animations."
+            });
+            var merged = ui.Indent(output);
+            ui.Field(merged, "bakeMethod", "Bake Method");
+            ui.Field(merged, "visibilityMode", "Visibility");
+            ui.ShowWhen(merged, Merges);
 
-                string currentValidationError = ValidateData() ? null : GetValidationError();
-                if (currentValidationError != previousValidationError)
-                {
-                    UpdateValidationBanner(validationBanner);
-                    previousValidationError = currentValidationError;
-                }
-
-
-                if (data.targetMesh != previousTargetMesh)
-                {
-                    UpdateTargetMeshHelp(targetMeshHelp);
-                    previousTargetMesh = data.targetMesh;
-                }
-
-
-                UpdateTargetMeshToModifyHelp(root.Q<VisualElement>("target-mesh-to-modify-help"));
-
-
-                if (data.manualTriangleIndex != previousManualTriangleIndex)
-                {
-                    UpdateManualTriangleHelp(manualTriangleHelp);
-                    previousManualTriangleIndex = data.manualTriangleIndex;
-                }
-
-
-                var solverCardContainer = root.Q<VisualElement>("solver-mode-card");
-                if (data.solverMode != previousSolverMode)
-                {
-                    UpdateSolverModeCard(solverCardContainer);
-                    previousSolverMode = data.solverMode;
-                }
-
-                normalOffsetCard.style.display = (data.solverMode == SolverMode.RigidNormalOffset) ? DisplayStyle.Flex : DisplayStyle.None;
-
-                boneSettingsCard.style.display = data.attachToClosestBone ? DisplayStyle.Flex : DisplayStyle.None;
-
-
-                if (data.attachToClosestBone != previousAttachToClosestBone)
-                {
-                    UpdateBoneHelp(boneHelp);
-                    previousAttachToClosestBone = data.attachToClosestBone;
-                }
-
-
-                if (data.samplesPerBlendshape != previousSamplesPerBlendshape)
-                {
-                    UpdateSamplesHelp(samplesHelp);
-                    previousSamplesPerBlendshape = data.samplesPerBlendshape;
-                }
-
-
-                if (data.trackingMode != previousTrackingMode || data.targetMesh != previousTargetMesh)
-                {
-                    UpdateTrackingModeContent(root.Q<VisualElement>("tracking-mode-content"));
-                }
-
-
-                bool previewStateChanged = data.previewGenerated != previousPreviewGenerated ||
-                    (data.previewBlendshapes?.Count ?? -1) != previousPreviewBlendshapeCount;
-                if (previewStateChanged)
-                {
-                    UpdatePreviewTools(root.Q<VisualElement>("preview-tools-container"));
-                    previousPreviewGenerated = data.previewGenerated;
-                    previousPreviewBlendshapeCount = data.previewBlendshapes?.Count ?? -1;
-                }
-
-
-                if (previewToolsInstance != null)
-                {
-                    previewToolsInstance.RefreshButtons();
-                }
-
-
-
-
-                int currentTrackedCount = data.TrackedBlendshapes?.Count ?? -1;
-                if (currentTrackedCount != previousTrackedBlendshapesCount ||
-                    data.TransferredBlendshapeCount != previousGeneratedAnimationCount ||
-                    data.SelectedBonePath != previousSelectedBonePath)
-                {
-                    UpdateBuildStatistics(buildStatsFoldout, buildStatsContent);
-                    previousTrackedBlendshapesCount = currentTrackedCount;
-                    previousGeneratedAnimationCount = data.TransferredBlendshapeCount;
-                    previousSelectedBonePath = data.SelectedBonePath;
-                }
-
-                serializedObject.ApplyModifiedProperties();
-            }).Every(100);
-
-            return root;
+            BuildPreview(ui.Section("Preview"));
+            BuildAdvanced(ui.Advanced());
+            ui.Refresh();
+            return ui.Root;
         }
 
-        private void UpdateValidationBanner(VisualElement container)
+        private bool Merges() => data.outputMode != AttachToBlendshapeOutputMode.LinkedRendererBake;
+
+        private void BuildBlendshapes(VisualElement section)
         {
-            container.Clear();
-            if (!ValidateData())
+            ui.Segmented(section, "trackingMode", "Tracking", "All", "Specific", "Visemes", "Smart");
+            ui.Caption(section, () => data.trackingMode switch
             {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Configuration Error\n\n{GetValidationError()}", YUCPUIToolkitHelper.MessageType.Error));
-            }
+                BlendshapeTrackingMode.All => "Tracks every body blendshape. For face tracking.",
+                BlendshapeTrackingMode.VisemsOnly => "Tracks the avatar's visemes. For lip piercings and mouth jewelry.",
+                BlendshapeTrackingMode.Smart => "Tracks the blendshapes that move the surface under the attachment.",
+                _ => null
+            });
+
+            var specific = ui.Indent(section);
+            BuildSpecificList(specific);
+            ui.ShowWhen(specific, () => data.trackingMode == BlendshapeTrackingMode.Specific);
+
+            var visemes = new List<string>();
+            void FindVisemes() => visemes = data.trackingMode == BlendshapeTrackingMode.VisemsOnly && BodyMesh != null
+                ? VRChatVisemeDetector.GetVisemeBlendshapes(data.targetMesh, AvatarRoot())
+                : new List<string>();
+            FindVisemes();
+            ui.OnRefresh(FindVisemes);
+            var visemeList = ui.Indent(section);
+            ui.ShowWhen(ui.InfoRow(visemeList, "Visemes", () => string.Join(", ", visemes)), () => visemes.Count > 0);
+            ui.Messages(visemeList, () => new[]
+            {
+                YUCPInspector.Message.Warning(BodyMesh != null && visemes.Count == 0
+                    ? "No visemes found. Set the avatar's lip sync to viseme blendshapes, or use VRChat's viseme names."
+                    : null)
+            });
+            ui.ShowWhen(visemeList, () => data.trackingMode == BlendshapeTrackingMode.VisemsOnly);
+
+            var smart = ui.Indent(section);
+            ui.Field(smart, "smartDetectionThreshold", "Detection Threshold");
+            ui.ShowWhen(smart, () => data.trackingMode == BlendshapeTrackingMode.Smart);
+
+            ui.Field(section, "samplesPerBlendshape", "Keyframes per Blendshape");
         }
 
-        private void UpdateTargetMeshHelp(VisualElement container)
+        /// <summary>Specific blendshapes: picked from the body mesh's own names, so there's nothing to misspell.</summary>
+        private void BuildSpecificList(VisualElement parent)
         {
-            container.Clear();
-            if (data.targetMesh != null)
+            var names = new List<string>();
+            var list = ui.List(parent, names, () =>
             {
-                if (!PoseSampler.HasBlendshapes(data.targetMesh))
-                {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Source mesh has no blendshapes!", YUCPUIToolkitHelper.MessageType.Error));
-                }
-                else
-                {
-                    int blendshapeCount = data.targetMesh.sharedMesh.blendShapeCount;
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Found {blendshapeCount} blendshape{(blendshapeCount != 1 ? "s" : "")} on source mesh", YUCPUIToolkitHelper.MessageType.Info));
-                }
-            }
+                var row = new VisualElement();
+                row.AddToClassList("yucp-list-item");
+                var name = new Label();
+                name.AddToClassList("yucp-list-item-name");
+                row.Add(name);
+                var missing = new Label("Not on Body Mesh");
+                missing.AddToClassList("yucp-badge");
+                missing.AddToClassList("yucp-badge-warning");
+                row.Add(missing);
+                return row;
+            }, (row, i) =>
+            {
+                row.Q<Label>(className: "yucp-list-item-name").text = names[i];
+                var onBody = BodyMesh != null && BodyMesh.GetBlendShapeIndex(names[i]) >= 0;
+                row.Q<Label>(className: "yucp-badge").style.display = onBody ? DisplayStyle.None : DisplayStyle.Flex;
+            },
+                "Add the body blendshapes that move the attachment.",
+                AddSpecificBlendshape,
+                i => EditSpecificBlendshapes(p => p.DeleteArrayElementAtIndex(i)),
+                "Add Blendshape", "Remove Blendshape");
+            list.View.itemIndexChanged += (_, __) => EditSpecificBlendshapes(p =>
+            {
+                p.arraySize = names.Count;
+                for (var i = 0; i < names.Count; i++) p.GetArrayElementAtIndex(i).stringValue = names[i];
+            });
+
+            string shown = null;
+            ui.OnRefresh(() =>
+            {
+                var current = data.specificBlendshapes ?? new List<string>();
+                var key = (BodyMesh != null ? BodyMesh.GetInstanceID() : 0) + "\n" + string.Join("\n", current);
+                if (key == shown) return;
+                shown = key;
+                names.Clear();
+                names.AddRange(current);
+                list.Refresh();
+            });
+        }
+
+        private void AddSpecificBlendshape()
+        {
+            var mesh = BodyMesh;
+            var menu = new GenericMenu();
+            if (mesh == null || mesh.blendShapeCount == 0)
+                menu.AddDisabledItem(new GUIContent("Assign a body mesh with blendshapes first"));
             else
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Select a SkinnedMeshRenderer with blendshapes (source mesh)", YUCPUIToolkitHelper.MessageType.None));
-            }
-        }
-
-        private void UpdateTargetMeshToModifyHelp(VisualElement container)
-        {
-            if (container == null) return;
-            container.Clear();
-            if (data.targetMeshToModify != null)
-            {
-                SkinnedMeshRenderer smr = null;
-                MeshFilter mf = null;
-
-
-                if (data.targetMeshToModify is SkinnedMeshRenderer directSmr)
+                for (var i = 0; i < mesh.blendShapeCount; i++)
                 {
-                    smr = directSmr;
-                }
-                else if (data.targetMeshToModify is MeshFilter directMf)
-                {
-                    mf = directMf;
-                }
-
-                else if (data.targetMeshToModify is GameObject go)
-                {
-                    smr = go.GetComponent<SkinnedMeshRenderer>();
-                    if (smr == null)
-                    {
-                        mf = go.GetComponent<MeshFilter>();
-                    }
-                }
-
-                if (smr != null)
-                {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Target: SkinnedMeshRenderer '{smr.name}'\nSupports blendshapes on skinned meshes.", YUCPUIToolkitHelper.MessageType.Info));
-                }
-                else if (mf != null)
-                {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Target: MeshFilter '{mf.name}'\nPerfect for static meshes like piercings, accessories, or props.", YUCPUIToolkitHelper.MessageType.Info));
-                }
-                else
-                {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Target must be a SkinnedMeshRenderer, MeshFilter, or GameObject with one of these components.\n\n• SkinnedMeshRenderer: For skinned meshes\n• MeshFilter: For static meshes (piercings, accessories, props)\n• GameObject: Will auto-detect MeshFilter or SkinnedMeshRenderer", YUCPUIToolkitHelper.MessageType.Error));
-                }
-            }
-            else
-            {
-
-                var smr = data.GetComponent<SkinnedMeshRenderer>();
-                var mf = data.GetComponent<MeshFilter>();
-                if (smr != null)
-                {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Auto-detected: SkinnedMeshRenderer on this GameObject\nSupports blendshapes on skinned meshes.", YUCPUIToolkitHelper.MessageType.Info));
-                }
-                else if (mf != null)
-                {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Auto-detected: MeshFilter on this GameObject\nPerfect for static meshes like piercings, accessories, or props.", YUCPUIToolkitHelper.MessageType.Info));
-                }
-                else
-                {
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Set target mesh or add SkinnedMeshRenderer/MeshFilter to this GameObject.\n\n• SkinnedMeshRenderer: For skinned meshes\n• MeshFilter: For static meshes (piercings, accessories, props)", YUCPUIToolkitHelper.MessageType.Warning));
-                }
-            }
-        }
-
-        private void UpdateManualTriangleHelp(VisualElement container)
-        {
-            container.Clear();
-            if (data.manualTriangleIndex >= 0)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox($"Manual mode: Using triangle #{data.manualTriangleIndex} as primary anchor", YUCPUIToolkitHelper.MessageType.Info));
-            }
-        }
-
-        private void UpdateSolverModeCard(VisualElement container)
-        {
-            if (container == null || !showSolverConfiguration) return;
-            container.Clear();
-            var solverCard = YUCPUIToolkitHelper.CreateSolverModeCard(data.solverMode);
-            container.Add(solverCard);
-        }
-
-        private void UpdateBoneHelp(VisualElement container)
-        {
-            container.Clear();
-            if (data.attachToClosestBone)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Bone attachment provides base positioning.\nBlendshape animations are applied relative to the bone.", YUCPUIToolkitHelper.MessageType.None));
-            }
-            else
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Bone attachment disabled - object will stay in place without base bone link.", YUCPUIToolkitHelper.MessageType.Warning));
-            }
-        }
-
-        private void UpdateSamplesHelp(VisualElement container)
-        {
-            container.Clear();
-            int samples = data.samplesPerBlendshape;
-            container.Add(YUCPUIToolkitHelper.CreateHelpBox($"{samples} keyframes per blendshape\n" +
-                $"More keyframes = smoother deformation but larger file size", YUCPUIToolkitHelper.MessageType.None));
-        }
-
-        private void UpdateBuildStatistics(Foldout foldout, VisualElement content)
-        {
-            if (data.TrackedBlendshapes == null || data.TrackedBlendshapes.Count == 0)
-            {
-                foldout.style.display = DisplayStyle.None;
-                return;
-            }
-
-            foldout.style.display = DisplayStyle.Flex;
-            content.Clear();
-
-            var trackedLabel = new Label($"Tracked Blendshapes: {data.TrackedBlendshapes.Count}");
-            trackedLabel.SetEnabled(false);
-            trackedLabel.style.fontSize = 11;
-            trackedLabel.style.marginBottom = 2;
-            content.Add(trackedLabel);
-
-            var transferredLabel = new Label($"Transferred Blendshapes: {data.TransferredBlendshapeCount}");
-            transferredLabel.SetEnabled(false);
-            transferredLabel.style.fontSize = 11;
-            transferredLabel.style.marginBottom = 2;
-            content.Add(transferredLabel);
-
-            var generatedLabel = new Label($"Generated Mesh Blendshapes: {data.GeneratedBlendshapeCount}");
-            generatedLabel.SetEnabled(false);
-            generatedLabel.style.fontSize = 11;
-            generatedLabel.style.marginBottom = 2;
-            content.Add(generatedLabel);
-
-            var outputLabel = new Label($"Output: {data.AppliedOutputMode} / {data.AppliedVisibilityMode}");
-            outputLabel.SetEnabled(false);
-            outputLabel.style.fontSize = 11;
-            outputLabel.style.marginBottom = 2;
-            content.Add(outputLabel);
-
-            if (!string.IsNullOrEmpty(data.GeneratedVisibilityBlendshape))
-            {
-                var visibilityLabel = new Label($"Visibility Blendshape: {data.GeneratedVisibilityBlendshape}");
-                visibilityLabel.SetEnabled(false);
-                visibilityLabel.style.fontSize = 11;
-                visibilityLabel.style.marginBottom = 2;
-                content.Add(visibilityLabel);
-            }
-
-            var remapLabel = new Label($"Remapped Curves: {data.RemappedCurveCount}");
-            remapLabel.SetEnabled(false);
-            remapLabel.style.fontSize = 11;
-            remapLabel.style.marginBottom = 2;
-            content.Add(remapLabel);
-
-            var boneLabel = new Label($"Selected Bone: {(string.IsNullOrEmpty(data.SelectedBonePath) ? "None" : data.SelectedBonePath)}");
-            boneLabel.SetEnabled(false);
-            boneLabel.style.fontSize = 11;
-            boneLabel.style.marginBottom = 2;
-            content.Add(boneLabel);
-
-            if (data.DetectedCluster != null)
-            {
-                var clusterTriLabel = new Label($"Cluster Triangles: {data.DetectedCluster.anchors.Count}");
-                clusterTriLabel.SetEnabled(false);
-                clusterTriLabel.style.fontSize = 11;
-                clusterTriLabel.style.marginBottom = 2;
-                content.Add(clusterTriLabel);
-
-                var clusterCenterLabel = new Label($"Cluster Center: {data.DetectedCluster.centerPosition.ToString("F3")}");
-                clusterCenterLabel.SetEnabled(false);
-                clusterCenterLabel.style.fontSize = 11;
-                content.Add(clusterCenterLabel);
-            }
-        }
-
-        private void UpdateTrackingModeContent(VisualElement container)
-        {
-            if (container == null || !showBlendshapeTracking) return;
-
-            container.Clear();
-
-            switch (data.trackingMode)
-            {
-                case BlendshapeTrackingMode.All:
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("All blendshapes on the target mesh will be tracked.\n\nGood for: Facial tracking", YUCPUIToolkitHelper.MessageType.Info));
-                    break;
-                case BlendshapeTrackingMode.Specific:
-                    var blendshapeEditor = YUCPUIToolkitHelper.CreateBlendshapeListEditor(
-                        data.targetMesh?.sharedMesh,
-                        data.specificBlendshapes,
-                        (list) => {
-                            data.specificBlendshapes = list;
-                            EditorUtility.SetDirty(data);
-                        }
-                    );
-                    container.Add(blendshapeEditor);
-                    break;
-                case BlendshapeTrackingMode.VisemsOnly:
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Only VRChat viseme blendshapes will be tracked.\n\nGood for: Lip piercings, mouth jewelry", YUCPUIToolkitHelper.MessageType.Info));
-                    UpdateDetectedVisemes(container);
-                    break;
-                case BlendshapeTrackingMode.Smart:
-                    container.Add(YUCPUIToolkitHelper.CreateHelpBox("Automatically detects blendshapes that move this attachment.\n\nGood for: Optimal performance, localized areas", YUCPUIToolkitHelper.MessageType.Info));
-                    YUCPUIToolkitHelper.AddSpacing(container, 3);
-                    container.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("smartDetectionThreshold"), "Detection Threshold"));
-                    break;
-            }
-        }
-
-        private void UpdateDetectedVisemes(VisualElement container)
-        {
-            if (data.targetMesh == null || data.targetMesh.sharedMesh == null) return;
-
-            int currentFrame = Time.frameCount;
-            List<string> detectedVisemes;
-
-            if (cachedDetectedVisemes != null && cachedVisemeFrameCount == currentFrame)
-            {
-                detectedVisemes = cachedDetectedVisemes;
-            }
-            else
-            {
-                GameObject avatarRoot = null;
-                var avatarDescriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
-                if (avatarDescriptor != null)
-                {
-                    avatarRoot = avatarDescriptor.gameObject;
-                }
-
-                detectedVisemes = VRChatVisemeDetector.GetVisemeBlendshapes(data.targetMesh, avatarRoot);
-                cachedDetectedVisemes = detectedVisemes;
-                cachedVisemeFrameCount = currentFrame;
-            }
-
-            YUCPUIToolkitHelper.AddSpacing(container, 5);
-
-            if (detectedVisemes.Count > 0)
-            {
-                var card = YUCPUIToolkitHelper.CreateCard($"Detected Visemes ({detectedVisemes.Count})", null);
-                var cardContent = YUCPUIToolkitHelper.GetCardContent(card);
-
-                int maxDisplay = 15;
-                int displayed = Mathf.Min(detectedVisemes.Count, maxDisplay);
-
-                var scrollView = new ScrollView();
-                scrollView.style.maxHeight = 150;
-
-                for (int i = 0; i < displayed; i++)
-                {
-                    var label = new Label($"  - {detectedVisemes[i]}");
-                    label.style.fontSize = 10;
-                    scrollView.Add(label);
-                }
-
-                if (detectedVisemes.Count > maxDisplay)
-                {
-                    var moreLabel = new Label($"  ... and {detectedVisemes.Count - maxDisplay} more");
-                    moreLabel.style.fontSize = 10;
-                    scrollView.Add(moreLabel);
-                }
-
-                cardContent.Add(scrollView);
-                container.Add(card);
-            }
-            else
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("No viseme blendshapes detected.\nCheck Avatar Descriptor or ensure blendshapes use standard VRChat naming.", YUCPUIToolkitHelper.MessageType.Warning));
-            }
-        }
-
-        private YUCPPreviewTools previewToolsInstance;
-
-        private void UpdatePreviewTools(VisualElement container)
-        {
-            if (container == null) return;
-            var previewData = CreatePreviewToolsData();
-
-            if (previewToolsInstance == null)
-            {
-
-                previewToolsInstance = YUCPUIToolkitHelper.CreatePreviewTools(
-                    previewData,
-                    () => ValidateData(),
-                    () => {
-                        if (data.previewGenerated)
+                    var name = mesh.GetBlendShapeName(i);
+                    if (data.specificBlendshapes != null && data.specificBlendshapes.Contains(name))
+                        menu.AddDisabledItem(new GUIContent(name), true);
+                    else
+                        menu.AddItem(new GUIContent(name), false, () => EditSpecificBlendshapes(p =>
                         {
-                            ClearPreview();
-                        }
-                        else
-                        {
-                            GeneratePreview();
-                        }
-                    },
-                    null,
-                    (name) => GetCurrentBlendshapeWeight(name),
-                    (name, value) => ApplyPreviewBlendshapeWeight(name, value),
-                    () => RestorePreviewBlendshapes(),
-                    () => ZeroPreviewBlendshapes()
-                );
-
-                container.Add(previewToolsInstance);
-            }
-            else
-            {
-
-
-                previewToolsInstance.Data = previewData;
-            }
+                            p.arraySize++;
+                            p.GetArrayElementAtIndex(p.arraySize - 1).stringValue = name;
+                        }));
+                }
+            menu.ShowAsContext();
         }
 
-        private YUCPPreviewTools.AttachToBlendshapePreviewData CreatePreviewToolsData()
+        private void EditSpecificBlendshapes(Action<SerializedProperty> edit)
         {
-            Mesh targetMeshForPreview = data.previewWorkingMesh ?? data.previewOriginalTargetMesh;
-            if (targetMeshForPreview == null)
-            {
-                if (data.targetMeshToModify is SkinnedMeshRenderer smr) targetMeshForPreview = smr.sharedMesh;
-                else if (data.targetMeshToModify is MeshFilter mf) targetMeshForPreview = mf.sharedMesh;
-                else if (data.targetMeshToModify is GameObject go)
-                    targetMeshForPreview = go.GetComponent<MeshFilter>()?.sharedMesh ?? go.GetComponent<SkinnedMeshRenderer>()?.sharedMesh;
-            }
+            var so = ui.Object;
+            so.Update();
+            edit(so.FindProperty("specificBlendshapes"));
+            so.ApplyModifiedProperties();
+            ui.Refresh();
+        }
 
-            return new YUCPPreviewTools.AttachToBlendshapePreviewData
+        private void BuildPreview(VisualElement section)
+        {
+            var row = ui.ButtonRow(section);
+            var generate = ui.Button(row, "Generate Preview", () => { GeneratePreview(); ui.Refresh(); },
+                Toolkit.ButtonVariant.Primary, "Transfer the blendshapes and show the attachment following the body in the Scene view.");
+            ui.ShowWhen(generate, () => !data.previewGenerated);
+            ui.EnableWhen(generate, ValidateData);
+            var clear = ui.Button(row, "Clear Preview", () => { ClearPreview(); ui.Refresh(); },
+                Toolkit.ButtonVariant.Secondary, "Restore the meshes, the blendshape weights and the attachment's position.");
+            ui.ShowWhen(clear, () => data.previewGenerated);
+            ui.Messages(section, () => new[] { YUCPInspector.Message.Error(previewError) });
+            ui.Caption(section, () => data.previewGenerated
+                ? $"Tracking {data.previewBlendshapes?.Count ?? 0} blendshapes on {data.previewCluster?.anchors.Count ?? 0} surface triangles."
+                : "To check how the attachment follows the body, generate a preview.");
+
+            var weights = ui.Group(section, "Blendshape weights");
+            ui.ShowWhen(weights, () => data.previewGenerated);
+            var shownSet = new SegmentedField("Show", new[] { "Tracked", "Body", "Attachment" })
             {
-                previewGenerated = data.previewGenerated,
-                clusterTriangleCount = data.previewCluster?.anchors.Count ?? 0,
-                clusterCenter = data.previewCluster?.centerPosition ?? Vector3.zero,
-                blendshapes = data.previewBlendshapes,
-                blendshapeWeights = data.previewBlendshapeWeights,
-                originalWeights = data.previewOriginalWeights,
-                targetMesh = targetMeshForPreview,
-                sourceMesh = data.targetMesh != null ? data.targetMesh.sharedMesh : null,
-                originalTargetMesh = data.previewOriginalTargetMesh
+                tooltip = "Tracked: the blendshapes the attachment follows. Body: every body blendshape. Attachment: the attachment mesh's blendshapes."
             };
+            shownSet.SetValueWithoutNotify(0);
+            weights.Add(shownSet);
+            var names = new List<string>();
+            var sliders = new ListView(names, SliderHeight, () =>
+            {
+                var slider = new Slider(0f, 100f) { showInputField = true };
+                slider.AddToClassList(BaseField<float>.alignedFieldUssClassName);
+                slider.RegisterValueChangedCallback(e =>
+                {
+                    if (slider.userData is string name) ApplyPreviewBlendshapeWeight(name, e.newValue);
+                });
+                return slider;
+            }, (element, i) =>
+            {
+                var slider = (Slider)element;
+                slider.userData = names[i];
+                slider.label = names[i];
+                slider.SetValueWithoutNotify(data.previewBlendshapeWeights != null && data.previewBlendshapeWeights.TryGetValue(names[i], out var weight)
+                    ? weight
+                    : GetCurrentBlendshapeWeight(names[i]));
+            }) { selectionType = SelectionType.None };
+            sliders.AddToClassList("yucp-list");
+            weights.Add(sliders);
+            var actions = ui.ButtonRow(weights);
+            ui.Button(actions, "Restore Weights", () => { RestorePreviewBlendshapes(); sliders.RefreshItems(); },
+                Toolkit.ButtonVariant.Secondary, "Set the blendshapes back to their weights before the preview.");
+            ui.Button(actions, "Zero Tracked Weights", () => { ZeroPreviewBlendshapes(); sliders.RefreshItems(); },
+                Toolkit.ButtonVariant.Secondary, "Set the tracked blendshapes to 0.");
+
+            string shown = null;
+            void UpdateSliders()
+            {
+                var attachment = PreviewAttachmentMesh();
+                var key = $"{data.previewGenerated}|{shownSet.value}|{data.previewBlendshapes?.Count}|" +
+                          $"{(BodyMesh != null ? BodyMesh.GetInstanceID() : 0)}|{(attachment != null ? attachment.GetInstanceID() : 0)}";
+                if (key == shown) return;
+                shown = key;
+                names.Clear();
+                if (data.previewGenerated)
+                {
+                    var mesh = shownSet.value == 1 ? BodyMesh : shownSet.value == 2 ? attachment : null;
+                    if (shownSet.value == 0) names.AddRange(data.previewBlendshapes ?? new List<string>());
+                    else if (mesh != null) names.AddRange(Enumerable.Range(0, mesh.blendShapeCount).Select(mesh.GetBlendShapeName));
+                }
+                // ponytail: list height is the only inline geometry; ten rows, then it scrolls.
+                sliders.style.height = Mathf.Clamp(names.Count, 1, 10) * SliderHeight + 2;
+                sliders.RefreshItems();
+            }
+            shownSet.RegisterValueChangedCallback(_ => UpdateSliders());
+            ui.OnRefresh(UpdateSliders);
         }
 
-        public override void OnInspectorGUI()
+        /// <summary>The attachment's mesh as the preview sees it: the working copy once generated.</summary>
+        private Mesh PreviewAttachmentMesh()
         {
-
+            if (data.previewWorkingMesh != null) return data.previewWorkingMesh;
+            if (data.previewOriginalTargetMesh != null) return data.previewOriginalTargetMesh;
+            if (data.targetMeshToModify is SkinnedMeshRenderer smr) return smr.sharedMesh;
+            if (data.targetMeshToModify is MeshFilter mf) return mf.sharedMesh;
+            if (data.targetMeshToModify is GameObject go)
+            {
+                var filter = go.GetComponent<MeshFilter>();
+                if (filter != null) return filter.sharedMesh;
+                var skinned = go.GetComponent<SkinnedMeshRenderer>();
+                return skinned != null ? skinned.sharedMesh : null;
+            }
+            return null;
         }
+
+        private void BuildAdvanced(VisualElement advanced)
+        {
+            var surface = ui.Group(advanced, "Surface detection");
+            ui.Field(surface, "clusterTriangleCount", "Triangle Count");
+            ui.Field(surface, "searchRadius", "Search Radius");
+            ui.Field(surface, "manualTriangleIndex", "Manual Triangle");
+
+            var bone = ui.Group(advanced, "Bone");
+            ui.Field(bone, "attachToClosestBone", "Attach to Closest Bone");
+            var boneSearch = ui.Indent(bone);
+            ui.Field(boneSearch, "boneSearchRadius", "Search Radius");
+            ui.Field(boneSearch, "boneNameFilter", "Name Filter");
+            ui.Field(boneSearch, "ignoreHumanoidBones", "Ignore Humanoid Bones");
+            ui.Field(boneSearch, "boneOffset", "Bone Offset");
+            ui.ShowWhen(boneSearch, () => data.attachToClosestBone);
+
+            var automatic = ui.Group(advanced, "Automatic output");
+            ui.Field(automatic, "autoAvoidMergeIfComplexTransformAnimation", "Avoid Merge with Transform Animation");
+            ui.Field(automatic, "autoAvoidMergeIfMaterialAnimation", "Avoid Merge with Material Animation");
+            ui.ShowWhen(automatic, () => data.outputMode == AttachToBlendshapeOutputMode.Auto);
+
+            var merging = ui.Group(advanced, "Merging");
+            ui.Field(merging, "unmatchedHandling", "Unmatched Vertices");
+            ui.Field(merging, "disableOriginalRendererOnMerge", "Disable Original Renderer");
+            ui.Field(merging, "remapVisibilityAnimations", "Remap Animations");
+            ui.ShowWhen(merging, Merges);
+
+            var uv = ui.Group(advanced, "UV discard");
+            ui.Segmented(uv, "autoDetectUVChannel", "UV Channel", "Manual", "Automatic");
+            var channel = ui.Indent(uv);
+            ui.Field(channel, "uvChannel", "Channel");
+            ui.ShowWhen(channel, () => !data.autoDetectUVChannel);
+            ui.Field(uv, "uvDiscardRow", "Tile Row");
+            ui.Field(uv, "uvDiscardColumn", "Tile Column");
+            ui.ShowWhen(uv, () => Merges() && data.visibilityMode == AttachToBlendshapeVisibilityMode.UVDiscard);
+
+            var preview = ui.Group(advanced, "Preview");
+            ui.Field(preview, "showPreview", "Show Surface in Scene");
+            ui.Field(preview, "rotationSmoothingFactor", "Rotation Smoothing");
+
+            ui.Field(advanced, "debugMode", "Verbose Logging");
+            ui.BuildSummary(BuildSummary);
+        }
+
+        private string BuildSummary()
+        {
+            var tracked = data.TrackedBlendshapes;
+            if (tracked == null || tracked.Count == 0) return null;
+            var output = ObjectNames.NicifyVariableName(data.AppliedOutputMode.ToString()) + ", " +
+                         ObjectNames.NicifyVariableName(data.AppliedVisibilityMode.ToString()) +
+                         (string.IsNullOrEmpty(data.GeneratedVisibilityBlendshape) ? "" : $" ({data.GeneratedVisibilityBlendshape})");
+            var parts = new List<string>
+            {
+                $"{tracked.Count} blendshapes tracked, {data.TransferredBlendshapeCount} transferred, {data.GeneratedBlendshapeCount} generated",
+                output,
+                $"{data.RemappedCurveCount} curves remapped",
+                "Bone: " + (string.IsNullOrEmpty(data.SelectedBonePath) ? "none" : data.SelectedBonePath)
+            };
+            if (data.DetectedCluster != null)
+                parts.Add($"{data.DetectedCluster.anchors.Count} surface triangles at {data.DetectedCluster.centerPosition.ToString("F3")}");
+            return string.Join(". ", parts) + ".";
+        }
+
+        private GameObject AvatarRoot()
+        {
+            var descriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
+            return descriptor != null ? descriptor.gameObject : null;
+        }
+
+        private void Log(string message)
+        {
+            if (data.debugMode) Debug.Log("[AttachToBlendshape Preview] " + message, data);
+        }
+
+        // ---- Preview pipeline --------------------------------------------------------------------
 
         private void EnsurePreviewBlendshapeCaches()
         {
@@ -834,17 +428,16 @@ namespace YUCP.Components.Resources
                 return;
             }
 
-
             int sourceIndex = data.targetMesh.sharedMesh.GetBlendShapeIndex(name);
             if (sourceIndex >= 0)
             {
+                // Remember the weight before the preview first moves it, so any body slider is restored, not only tracked ones.
+                if (data.previewOriginalWeights != null && !data.previewOriginalWeights.ContainsKey(name))
+                    data.previewOriginalWeights[name] = data.targetMesh.GetBlendShapeWeight(sourceIndex);
                 data.targetMesh.SetBlendShapeWeight(sourceIndex, value);
             }
 
-
             data.previewBlendshapeWeights[name] = value;
-
-
 
             if (data.previewUsesMergedMesh)
             {
@@ -853,7 +446,6 @@ namespace YUCP.Components.Resources
                 EditorApplication.QueuePlayerLoopUpdate();
                 return;
             }
-
 
             SkinnedMeshRenderer targetSkinnedMesh = null;
             MeshFilter targetMeshFilter = null;
@@ -875,19 +467,16 @@ namespace YUCP.Components.Resources
                 }
             }
 
-
             if (targetMeshFilter != null && data.previewTempSkinnedMesh != null)
             {
                 targetSkinnedMesh = data.previewTempSkinnedMesh;
             }
 
-
             if (targetSkinnedMesh != null && data.previewWorkingMesh != null && targetSkinnedMesh.sharedMesh != data.previewWorkingMesh)
             {
-                Debug.Log($"[AttachToBlendshape Preview] Updating SkinnedMeshRenderer to use working mesh before applying weight. Current: {targetSkinnedMesh.sharedMesh.name}, Working: {data.previewWorkingMesh.name}", data);
+                Log($"Updating SkinnedMeshRenderer to use working mesh before applying weight. Current: {targetSkinnedMesh.sharedMesh.name}, Working: {data.previewWorkingMesh.name}");
                 targetSkinnedMesh.sharedMesh = data.previewWorkingMesh;
             }
-
 
             if (targetSkinnedMesh != null && targetSkinnedMesh.sharedMesh != null)
             {
@@ -895,30 +484,25 @@ namespace YUCP.Components.Resources
                 if (targetIndex >= 0)
                 {
                     targetSkinnedMesh.SetBlendShapeWeight(targetIndex, value);
-                    Debug.Log($"[AttachToBlendshape Preview] Applied blendshape '{name}' weight {value} to target mesh '{targetSkinnedMesh.name}' (index: {targetIndex}, mesh: {targetSkinnedMesh.sharedMesh.name}, blendShapeCount: {targetSkinnedMesh.sharedMesh.blendShapeCount})", data);
-
+                    Log($"Applied blendshape '{name}' weight {value} to target mesh '{targetSkinnedMesh.name}' (index: {targetIndex}, mesh: {targetSkinnedMesh.sharedMesh.name}, blendShapeCount: {targetSkinnedMesh.sharedMesh.blendShapeCount})");
 
                     EditorUtility.SetDirty(targetSkinnedMesh);
                     EditorUtility.SetDirty(targetSkinnedMesh.sharedMesh);
 
-
                     targetSkinnedMesh.enabled = false;
                     targetSkinnedMesh.enabled = true;
-
 
                     if (targetSkinnedMesh.gameObject.scene.IsValid())
                     {
                         UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(targetSkinnedMesh.gameObject.scene);
                     }
 
-
                     UnityEditor.SceneView.RepaintAll();
                     UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
                 }
-                else
+                else if (data.debugMode) // Expected for body-only blendshapes moved from the Body sliders.
                 {
                     Debug.LogWarning($"[AttachToBlendshape Preview] Blendshape '{name}' not found on target mesh '{targetSkinnedMesh.name}' (mesh: {targetSkinnedMesh.sharedMesh.name}, blendShapeCount: {targetSkinnedMesh.sharedMesh.blendShapeCount})", data);
-
 
                     if (targetSkinnedMesh.sharedMesh.blendShapeCount > 0)
                     {
@@ -927,7 +511,7 @@ namespace YUCP.Components.Resources
                         {
                             allBlendshapes.Append($"{targetSkinnedMesh.sharedMesh.GetBlendShapeName(i)}, ");
                         }
-                        Debug.Log($"[AttachToBlendshape Preview] Available blendshapes on target mesh: {allBlendshapes.ToString()}", data);
+                        Log($"Available blendshapes on target mesh: {allBlendshapes.ToString()}");
                     }
                 }
             }
@@ -936,9 +520,7 @@ namespace YUCP.Components.Resources
                 Debug.LogWarning($"[AttachToBlendshape Preview] Target SkinnedMeshRenderer is null or has no mesh. targetSkinnedMesh={targetSkinnedMesh != null}, targetMeshFilter={targetMeshFilter != null}, previewTempSkinnedMesh={data.previewTempSkinnedMesh != null}, previewWorkingMesh={data.previewWorkingMesh != null}", data);
             }
 
-
             UpdatePreviewAttachmentPose();
-
 
             UnityEditor.EditorUtility.SetDirty(data.targetMesh);
             if (data.targetMeshToModify is SkinnedMeshRenderer smr2 && smr2 != null)
@@ -1037,8 +619,6 @@ namespace YUCP.Components.Resources
             data.previewBaseCaptured = true;
             data.previewHasLastTangent = false;
 
-
-
             try
             {
                 var baseSolver = SolveClusterPose(
@@ -1051,7 +631,6 @@ namespace YUCP.Components.Resources
                 {
                     data.previewBaseSolverPosition = baseSolver.position;
                     data.previewBaseSolverRotation = baseSolver.rotation;
-
 
                     data.previewPositionOffset = Quaternion.Inverse(baseSolver.rotation) *
                                                 (data.transform.localPosition - baseSolver.position);
@@ -1124,11 +703,9 @@ namespace YUCP.Components.Resources
                 return;
             }
 
-
             SkinnedMeshRenderer targetSkinnedMesh = null;
             MeshFilter targetMeshFilter = null;
             Mesh targetMeshInstance = null;
-
 
             if (data.previewWorkingMesh != null)
             {
@@ -1208,19 +785,13 @@ namespace YUCP.Components.Resources
                 return;
             }
 
-
             if (data.previewWorkingMesh != null && targetMeshInstance != data.previewWorkingMesh)
             {
-                Debug.Log($"[AttachToBlendshape Preview] Switching to working mesh. Original: {targetMeshInstance.name} ({targetMeshInstance.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)", data);
+                Log($"Switching to working mesh. Original: {targetMeshInstance.name} ({targetMeshInstance.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)");
                 targetMeshInstance = data.previewWorkingMesh;
             }
 
-
-
-
             SkinnedMeshRenderer activeSkinnedMesh = targetSkinnedMesh;
-
-
 
             if (targetMeshFilter != null)
             {
@@ -1229,13 +800,11 @@ namespace YUCP.Components.Resources
 
                     data.previewOriginalMeshFilter = targetMeshFilter;
 
-
-
                     var meshRenderer = targetMeshFilter.GetComponent<MeshRenderer>();
                     if (meshRenderer != null)
                     {
                         data.previewOriginalMeshRenderer = meshRenderer;
-                        Debug.Log($"[AttachToBlendshape Preview] Stored MeshRenderer reference '{meshRenderer.name}' before creating temp SkinnedMeshRenderer", data);
+                        Log($"Stored MeshRenderer reference '{meshRenderer.name}' before creating temp SkinnedMeshRenderer");
                     }
                     else
                     {
@@ -1244,8 +813,7 @@ namespace YUCP.Components.Resources
 
                     data.previewTempSkinnedMesh = targetMeshFilter.gameObject.AddComponent<SkinnedMeshRenderer>();
                     data.previewTempSkinnedMesh.sharedMesh = targetMeshInstance;
-                    Debug.Log($"[AttachToBlendshape Preview] Created temp SkinnedMeshRenderer with mesh '{targetMeshInstance.name}' (blendShapeCount: {targetMeshInstance.blendShapeCount})", data);
-
+                    Log($"Created temp SkinnedMeshRenderer with mesh '{targetMeshInstance.name}' (blendShapeCount: {targetMeshInstance.blendShapeCount})");
 
                     if (meshRenderer != null)
                     {
@@ -1255,17 +823,16 @@ namespace YUCP.Components.Resources
                         }
 
                         meshRenderer.enabled = false;
-                        Debug.Log($"[AttachToBlendshape Preview] Disabled MeshRenderer '{meshRenderer.name}'", data);
+                        Log($"Disabled MeshRenderer '{meshRenderer.name}'");
                     }
                     data.previewTempSkinnedMesh.enabled = true;
                 }
 
                 activeSkinnedMesh = data.previewTempSkinnedMesh;
 
-
                 if (data.previewWorkingMesh != null && activeSkinnedMesh.sharedMesh != data.previewWorkingMesh)
                 {
-                    Debug.Log($"[AttachToBlendshape Preview] Updating temp SkinnedMeshRenderer to use working mesh. Current: {activeSkinnedMesh.sharedMesh.name} ({activeSkinnedMesh.sharedMesh.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)", data);
+                    Log($"Updating temp SkinnedMeshRenderer to use working mesh. Current: {activeSkinnedMesh.sharedMesh.name} ({activeSkinnedMesh.sharedMesh.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)");
                     activeSkinnedMesh.sharedMesh = data.previewWorkingMesh;
                 }
             }
@@ -1274,7 +841,7 @@ namespace YUCP.Components.Resources
 
                 if (data.previewWorkingMesh != null && targetSkinnedMesh.sharedMesh != data.previewWorkingMesh)
                 {
-                    Debug.Log($"[AttachToBlendshape Preview] Updating SkinnedMeshRenderer to use working mesh. Current: {targetSkinnedMesh.sharedMesh.name} ({targetSkinnedMesh.sharedMesh.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)", data);
+                    Log($"Updating SkinnedMeshRenderer to use working mesh. Current: {targetSkinnedMesh.sharedMesh.name} ({targetSkinnedMesh.sharedMesh.blendShapeCount} blendshapes), Working: {data.previewWorkingMesh.name} ({data.previewWorkingMesh.blendShapeCount} blendshapes)");
                     targetSkinnedMesh.sharedMesh = data.previewWorkingMesh;
                 }
                 activeSkinnedMesh = targetSkinnedMesh;
@@ -1306,20 +873,15 @@ namespace YUCP.Components.Resources
                     }
                 }
 
-
-
                 UnityEditor.EditorUtility.SetDirty(activeSkinnedMesh);
-
 
                 activeSkinnedMesh.enabled = false;
                 activeSkinnedMesh.enabled = true;
-
 
                 if (activeSkinnedMesh.gameObject.scene.IsValid())
                 {
                     UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(activeSkinnedMesh.gameObject.scene);
                 }
-
 
                 if (activeSkinnedMesh.sharedMesh != null)
                 {
@@ -1331,13 +893,11 @@ namespace YUCP.Components.Resources
                 Debug.LogWarning("[Preview] No active SkinnedMeshRenderer found for preview", data);
             }
 
-
             if (!data.previewBaseCaptured)
             {
 
                 CapturePreviewBasePose();
             }
-
 
             var bakeMesh = GetPreviewBakeMesh();
             data.targetMesh.BakeMesh(bakeMesh);
@@ -1362,21 +922,16 @@ namespace YUCP.Components.Resources
                 data.previewLastTangent = clusterTangent;
                 data.previewHasLastTangent = true;
 
-
                 if (!data.previewHasBaseSolver)
                 {
                     data.previewBaseSolverRotation = solver.rotation;
                     data.previewHasBaseSolver = true;
                 }
 
-
-
                 Vector3 currentClusterWorldPos = data.targetMesh.transform.TransformPoint(clusterPos);
                 Vector3 baseClusterWorldPos = data.targetMesh.transform.TransformPoint(data.previewBasePosition);
 
-
                 Vector3 clusterWorldDelta = currentClusterWorldPos - baseClusterWorldPos;
-
 
                 Vector3 clusterLocalDelta;
                 if (data.transform.parent != null)
@@ -1389,10 +944,7 @@ namespace YUCP.Components.Resources
                     clusterLocalDelta = data.transform.InverseTransformDirection(clusterWorldDelta);
                 }
 
-
-
                 data.transform.localPosition = data.previewOriginalLocalPosition + clusterLocalDelta;
-
 
                 Quaternion surfaceRotationDelta = solver.rotation * Quaternion.Inverse(data.previewBaseSolverRotation);
                 data.transform.localRotation = surfaceRotationDelta * data.previewOriginalLocalRotation;
@@ -1493,28 +1045,19 @@ namespace YUCP.Components.Resources
             previewBakeMesh = null;
         }
 
-
-
-
         private void GeneratePreview()
         {
-            Debug.Log("[AttachToBlendshape Preview] Generating preview...");
+            Log("Generating preview...");
+            previewError = null;
 
             try
             {
                 CleanupOrphanedLegacyPreviewRenderer();
 
-                if (!ValidateData())
-                {
-                    EditorUtility.DisplayDialog("Validation Failed", GetValidationError(), "OK");
-                    return;
-                }
+                // ponytail: the status area already says what to fix, and the button is disabled meanwhile.
+                if (!ValidateData()) return;
 
-                GameObject avatarRoot = null;
-                var avatarDescriptor = data.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
-                if (avatarDescriptor != null) avatarRoot = avatarDescriptor.gameObject;
-
-
+                GameObject avatarRoot = AvatarRoot();
 
                 data.previewCluster = SurfaceClusterDetector.DetectCluster(
                     data.targetMesh,
@@ -1526,10 +1069,9 @@ namespace YUCP.Components.Resources
 
                 if (data.previewCluster == null)
                 {
-                    EditorUtility.DisplayDialog("Preview Failed", "Failed to detect surface cluster.", "OK");
+                    previewError = "No body surface found near the attachment. Move it onto the body, or raise Search Radius in Advanced Options.";
                     return;
                 }
-
 
                 switch (data.trackingMode)
                 {
@@ -1548,12 +1090,10 @@ namespace YUCP.Components.Resources
                         break;
 
                     case BlendshapeTrackingMode.Smart:
-                        EditorUtility.DisplayProgressBar("Smart Detection", "Analyzing blendshapes...", 0.5f);
                         data.previewBlendshapes = VRChatVisemeDetector.DetectActiveBlendshapes(
                             data.targetMesh,
                             data.previewCluster,
                             data.smartDetectionThreshold);
-                        EditorUtility.ClearProgressBar();
                         break;
                 }
 
@@ -1570,12 +1110,11 @@ namespace YUCP.Components.Resources
                     data.showPreview = true;
                     SceneView.RepaintAll();
                     Repaint();
-                    Debug.Log($"[AttachToBlendshape Preview] Generated merged preview: {data.previewBlendshapes.Count} tracked blendshapes, {data.previewCluster.anchors.Count} triangles", data);
+                    Log($"Generated merged preview: {data.previewBlendshapes.Count} tracked blendshapes, {data.previewCluster.anchors.Count} triangles");
                     return;
                 }
 
-
-                Debug.Log($"[AttachToBlendshape Preview] Transferring {data.previewBlendshapes.Count} blendshapes to target mesh...", data);
+                Log($"Transferring {data.previewBlendshapes.Count} blendshapes to target mesh...");
                 bool transferSuccess = BlendshapeTransfer.TransferBlendshapes(
                     data.targetMesh,
                     data.targetMeshToModify,
@@ -1585,11 +1124,11 @@ namespace YUCP.Components.Resources
 
                 if (!transferSuccess)
                 {
-                    EditorUtility.DisplayDialog("Preview Failed", "Failed to transfer blendshapes to target mesh for preview.", "OK");
+                    previewError = "Couldn't transfer the blendshapes to the attachment mesh. Turn on Verbose Logging and check the Console.";
                     return;
                 }
 
-                Debug.Log($"[AttachToBlendshape Preview] Blendshapes transferred successfully. Target mesh should now have {data.previewBlendshapes.Count} blendshapes.", data);
+                Log($"Blendshapes transferred successfully. Target mesh should now have {data.previewBlendshapes.Count} blendshapes.");
 
                 data.previewGenerated = true;
                 data.showPreview = true;
@@ -1599,11 +1138,11 @@ namespace YUCP.Components.Resources
                 SceneView.RepaintAll();
                 Repaint();
 
-                Debug.Log($"[AttachToBlendshape Preview] Preview generated: {data.previewBlendshapes.Count} blendshapes, {data.previewCluster.anchors.Count} triangles");
+                Log($"Preview generated: {data.previewBlendshapes.Count} blendshapes, {data.previewCluster.anchors.Count} triangles");
             }
             catch (Exception ex)
             {
-                EditorUtility.ClearProgressBar();
+                previewError = "Couldn't generate the preview: " + ex.Message;
                 Debug.LogError($"[AttachToBlendshape Preview] Failed: {ex.Message}");
                 Debug.LogException(ex);
             }
@@ -1642,7 +1181,7 @@ namespace YUCP.Components.Resources
                     meshRenderer.sharedMaterials = legacyMaterials ?? Array.Empty<Material>();
                 }
                 meshRenderer.enabled = true;
-                Debug.Log("[AttachToBlendshape Preview] Removed an orphaned legacy temporary renderer.", data);
+                Log("Removed an orphaned legacy temporary renderer.");
             }
         }
 
@@ -1656,13 +1195,13 @@ namespace YUCP.Components.Resources
                     out SkinnedMeshRenderer attachmentSmr,
                     out MeshRenderer attachmentMr))
             {
-                EditorUtility.DisplayDialog("Preview Failed", "Could not resolve the attachment mesh.", "OK");
+                previewError = "Couldn't find the attachment's mesh and renderer.";
                 return false;
             }
 
             if (attachmentTransform == data.targetMesh.transform)
             {
-                EditorUtility.DisplayDialog("Preview Failed", "The attachment target resolves to the base renderer.", "OK");
+                previewError = "The attachment mesh is the body mesh. Choose the attachment's own mesh.";
                 return false;
             }
 
@@ -1693,10 +1232,9 @@ namespace YUCP.Components.Resources
                 data.targetMesh, originalBaseMesh, new[] { input });
             if (!result.success)
             {
-                EditorUtility.DisplayDialog("Preview Failed", result.error ?? "Merged mesh generation failed.", "OK");
+                previewError = result.error ?? "Couldn't merge the attachment into the body mesh.";
                 return false;
             }
-
 
             data.previewUsesMergedMesh = true;
             data.previewOriginalBaseMesh = originalBaseMesh;
@@ -1751,6 +1289,7 @@ namespace YUCP.Components.Resources
 
         private void ClearPreview()
         {
+            previewError = null;
             RestorePreviewBlendshapes();
 
             if (data.previewUsesMergedMesh)
@@ -1760,11 +1299,9 @@ namespace YUCP.Components.Resources
                 ResetPreviewState();
                 SceneView.RepaintAll();
                 Repaint();
-                Debug.Log("[AttachToBlendshape Preview] Merged preview cleared and original renderers restored", data);
+                Log("Merged preview cleared and original renderers restored");
                 return;
             }
-
-
 
             SkinnedMeshRenderer targetSkinnedMesh = null;
             MeshFilter targetMeshFilter = null;
@@ -1796,7 +1333,6 @@ namespace YUCP.Components.Resources
                 }
             }
 
-
             if (data.previewOriginalMesh != null)
             {
                 if (targetSkinnedMesh != null)
@@ -1810,20 +1346,19 @@ namespace YUCP.Components.Resources
                             targetSkinnedMesh.sharedMesh.name.Contains("_Blendshapes"))
                         {
                             targetSkinnedMesh.sharedMesh = data.previewOriginalMesh;
-                            Debug.Log($"[AttachToBlendshape Preview] Restored original mesh '{data.previewOriginalMesh.name}' to SkinnedMeshRenderer '{targetSkinnedMesh.name}'", data);
+                            Log($"Restored original mesh '{data.previewOriginalMesh.name}' to SkinnedMeshRenderer '{targetSkinnedMesh.name}'");
                         }
                     }
                 }
                 else if (targetMeshFilter != null)
                 {
 
-
                     if (targetMeshFilter.sharedMesh == data.previewWorkingMesh ||
                         targetMeshFilter.sharedMesh == null ||
                         (targetMeshFilter.sharedMesh != null && targetMeshFilter.sharedMesh.name.Contains("_Blendshapes")))
                     {
                         targetMeshFilter.sharedMesh = data.previewOriginalMesh;
-                        Debug.Log($"[AttachToBlendshape Preview] Restored original mesh '{data.previewOriginalMesh.name}' to MeshFilter '{targetMeshFilter.name}'", data);
+                        Log($"Restored original mesh '{data.previewOriginalMesh.name}' to MeshFilter '{targetMeshFilter.name}'");
                     }
                 }
                 else
@@ -1835,8 +1370,6 @@ namespace YUCP.Components.Resources
             {
                 Debug.LogWarning("[AttachToBlendshape Preview] previewOriginalMesh is null - cannot restore mesh. This may cause the mesh to disappear.", data);
             }
-
-
 
             if (data.previewWorkingMesh != null && data.previewWorkingMesh != data.previewOriginalMesh)
             {
@@ -1864,7 +1397,7 @@ namespace YUCP.Components.Resources
                     {
                         UnityEngine.Object.DestroyImmediate(data.previewWorkingMesh);
                     }
-                    Debug.Log($"[AttachToBlendshape Preview] Destroyed working mesh copy '{meshName}'", data);
+                    Log($"Destroyed working mesh copy '{meshName}'");
                     data.previewWorkingMesh = null;
                 }
                 else
@@ -1872,8 +1405,6 @@ namespace YUCP.Components.Resources
                     data.previewWorkingMesh = null;
                 }
             }
-
-
 
             if (data.previewTempSkinnedMesh != null)
             {
@@ -1885,32 +1416,28 @@ namespace YUCP.Components.Resources
                         (data.previewOriginalMeshFilter.sharedMesh != null && data.previewOriginalMeshFilter.sharedMesh.name.Contains("_Blendshapes")))
                     {
                         data.previewOriginalMeshFilter.sharedMesh = data.previewOriginalMesh;
-                        Debug.Log($"[AttachToBlendshape Preview] Ensured MeshFilter '{data.previewOriginalMeshFilter.name}' has original mesh before cleanup", data);
+                        Log($"Ensured MeshFilter '{data.previewOriginalMeshFilter.name}' has original mesh before cleanup");
                     }
                 }
 
-
-
                 MeshRenderer meshRenderer = data.previewOriginalMeshRenderer;
-
 
                 if (meshRenderer == null && data.previewOriginalMeshFilter != null)
                 {
                     meshRenderer = data.previewOriginalMeshFilter.GetComponent<MeshRenderer>();
                     if (meshRenderer != null)
                     {
-                        Debug.Log($"[AttachToBlendshape Preview] Found MeshRenderer via GetComponent (stored reference was null)", data);
+                        Log($"Found MeshRenderer via GetComponent (stored reference was null)");
                     }
                 }
 
                 if (meshRenderer != null)
                 {
                     meshRenderer.enabled = true;
-                    Debug.Log($"[AttachToBlendshape Preview] Re-enabled MeshRenderer '{meshRenderer.name}'", data);
+                    Log($"Re-enabled MeshRenderer '{meshRenderer.name}'");
                 }
                 else if (data.previewOriginalMeshFilter != null)
                 {
-
 
                     if (data.previewOriginalMeshFilter.gameObject != null)
                     {
@@ -1926,17 +1453,15 @@ namespace YUCP.Components.Resources
                                 {
                                     newMeshRenderer.sharedMaterial = data.previewTempSkinnedMesh.sharedMaterial;
                                 }
-                                Debug.Log($"[AttachToBlendshape Preview] Recreated MeshRenderer on '{data.previewOriginalMeshFilter.name}' (Unity destroyed the original)", data);
+                                Log($"Recreated MeshRenderer on '{data.previewOriginalMeshFilter.name}' (Unity destroyed the original)");
                             }
                         }
                     }
                 }
 
-
                 data.previewOriginalMeshRenderer = null;
 
-
-                Debug.Log($"[AttachToBlendshape Preview] Destroying temporary SkinnedMeshRenderer '{data.previewTempSkinnedMesh.name}'", data);
+                Log($"Destroying temporary SkinnedMeshRenderer '{data.previewTempSkinnedMesh.name}'");
                 if (Application.isPlaying)
                 {
                     UnityEngine.Object.Destroy(data.previewTempSkinnedMesh);
@@ -1966,7 +1491,7 @@ namespace YUCP.Components.Resources
             SceneView.RepaintAll();
             Repaint();
 
-            Debug.Log("[AttachToBlendshape Preview] Preview cleared and original mesh restored");
+            Log("Preview cleared and original mesh restored");
         }
 
         private void ClearMergedPreview()
@@ -2035,121 +1560,72 @@ namespace YUCP.Components.Resources
             data.showPreview = false;
         }
 
-        private bool ValidateData()
-        {
-            if (data.targetMesh == null) return false;
-            if (data.targetMesh.sharedMesh == null) return false;
-            if (!PoseSampler.HasBlendshapes(data.targetMesh)) return false;
-            if (data.trackingMode == BlendshapeTrackingMode.Specific &&
-                (data.specificBlendshapes == null || data.specificBlendshapes.Count == 0)) return false;
+        // ---- Validation ----------------------------------------------------------------------------
 
-            if (data.targetMeshToModify == null)
-            {
-                var smr = data.GetComponent<SkinnedMeshRenderer>();
-                var mf = data.GetComponent<MeshFilter>();
-                if (smr == null && mf == null) return false;
-            }
-            return true;
+        private bool ValidateData() => GetValidationError() == null;
+
+        /// <summary>What stops the component from working, as an instruction; null when nothing does.</summary>
+        private string GetValidationError() => BodyProblem() ?? TrackingProblem() ?? AttachmentProblem();
+
+        private string BodyProblem()
+        {
+            if (data.targetMesh == null) return "Assign the body mesh.";
+            if (data.targetMesh.sharedMesh == null) return "The body mesh's renderer has no mesh. Assign one to it.";
+            if (!PoseSampler.HasBlendshapes(data.targetMesh)) return "The body mesh has no blendshapes. Choose the avatar's face or body mesh.";
+            return null;
         }
 
-        private string GetValidationError()
+        private string TrackingProblem() =>
+            data.trackingMode == BlendshapeTrackingMode.Specific && (data.specificBlendshapes == null || data.specificBlendshapes.Count == 0)
+                ? "Add at least one blendshape to track, or choose another tracking mode." : null;
+
+        private string AttachmentProblem()
         {
-            if (data.targetMesh == null) return "Source mesh is not set.";
-            if (data.targetMesh.sharedMesh == null) return "Source mesh has no mesh data.";
-            if (!PoseSampler.HasBlendshapes(data.targetMesh)) return "Source mesh has no blendshapes.";
-            if (data.trackingMode == BlendshapeTrackingMode.Specific &&
-                (data.specificBlendshapes == null || data.specificBlendshapes.Count == 0))
-                return "Specific mode requires at least one blendshape name.";
-            if (data.targetMeshToModify == null)
+            var attachment = data.targetMeshToModify;
+            if (attachment == null)
             {
-                var smr = data.GetComponent<SkinnedMeshRenderer>();
-                var mf = data.GetComponent<MeshFilter>();
-                if (smr == null && mf == null)
-                    return "Target mesh to modify is not set and no SkinnedMeshRenderer/MeshFilter found on this GameObject.";
+                if (data.GetComponent<SkinnedMeshRenderer>() == null && data.GetComponent<MeshFilter>() == null)
+                    return "Assign the attachment mesh, or add this component to the attachment's object.";
             }
-            else
+            else if (!(attachment is SkinnedMeshRenderer || attachment is MeshFilter ||
+                       attachment is GameObject go && (go.GetComponent<SkinnedMeshRenderer>() != null || go.GetComponent<MeshFilter>() != null)))
             {
-
-                bool hasValidComponent = false;
-                if (data.targetMeshToModify is SkinnedMeshRenderer || data.targetMeshToModify is MeshFilter)
-                {
-                    hasValidComponent = true;
-                }
-                else if (data.targetMeshToModify is GameObject go)
-                {
-                    hasValidComponent = go.GetComponent<SkinnedMeshRenderer>() != null || go.GetComponent<MeshFilter>() != null;
-                }
-
-                if (!hasValidComponent)
-                {
-                    return "Target mesh must be a SkinnedMeshRenderer, MeshFilter, or GameObject with one of these components.";
-                }
+                return "The attachment mesh needs a Skinned Mesh Renderer or a Mesh Filter.";
             }
-            return "";
+            return null;
         }
 
-        [DrawGizmo(GizmoType.Selected | GizmoType.Active)]
-        static void DrawGizmos(AttachToBlendshapeData data, GizmoType gizmoType)
-        {
-            if (!data.showPreview || !data.previewGenerated) return;
-            if (data.previewCluster == null || data.targetMesh == null) return;
+        // ---- Scene view ------------------------------------------------------------------------------
 
-            Mesh mesh = data.targetMesh.sharedMesh;
+        /// <summary>The surface the preview follows. Drawn from duringSceneGui so it shows with gizmos off.</summary>
+        private void DrawPreview(SceneView view)
+        {
+            if (data == null || !data.showPreview || !data.previewGenerated || data.previewCluster == null) return;
+            var mesh = BodyMesh;
             if (mesh == null) return;
+            var body = data.targetMesh.transform;
 
-            Vector3[] vertices = mesh.vertices;
-            int[] triangles = mesh.triangles;
-
-
-            Handles.color = new Color(0f, 1f, 0f, 0.3f);
-
-            foreach (var anchor in data.previewCluster.anchors)
+            if (Event.current.type == EventType.Repaint)
             {
-                int idx0 = triangles[anchor.triIndex * 3];
-                int idx1 = triangles[anchor.triIndex * 3 + 1];
-                int idx2 = triangles[anchor.triIndex * 3 + 2];
+                var vertices = mesh.vertices;
+                var triangles = mesh.triangles;
+                Handles.color = new Color(0f, 1f, 0f, 0.3f);
+                foreach (var anchor in data.previewCluster.anchors)
+                    Handles.DrawAAConvexPolygon(
+                        body.TransformPoint(vertices[triangles[anchor.triIndex * 3]]),
+                        body.TransformPoint(vertices[triangles[anchor.triIndex * 3 + 1]]),
+                        body.TransformPoint(vertices[triangles[anchor.triIndex * 3 + 2]]));
 
-                Vector3 v0 = data.targetMesh.transform.TransformPoint(vertices[idx0]);
-                Vector3 v1 = data.targetMesh.transform.TransformPoint(vertices[idx1]);
-                Vector3 v2 = data.targetMesh.transform.TransformPoint(vertices[idx2]);
-
-                Handles.DrawAAConvexPolygon(v0, v1, v2);
+                var center = body.TransformPoint(data.previewCluster.centerPosition);
+                Handles.color = Color.yellow;
+                Handles.SphereHandleCap(0, center, Quaternion.identity, 0.01f, EventType.Repaint);
+                Handles.color = YUCPSceneOverlay.Accent;
+                Handles.DrawLine(center, center + body.TransformDirection(data.previewCluster.averageNormal) * 0.05f);
             }
 
-
-            Vector3 worldCenter = data.targetMesh.transform.TransformPoint(data.previewCluster.centerPosition);
-            Vector3 worldNormal = data.targetMesh.transform.TransformDirection(data.previewCluster.averageNormal);
-
-            Handles.color = Color.yellow;
-            Handles.SphereHandleCap(0, worldCenter, Quaternion.identity, 0.01f, EventType.Repaint);
-
-            Handles.color = new Color(0.212f, 0.749f, 0.694f);
-            Handles.DrawLine(worldCenter, worldCenter + worldNormal * 0.05f);
-
-
-            Handles.BeginGUI();
-
-            GUI.Box(new Rect(10, 10, 300, 120), "");
-            GUI.Label(new Rect(15, 15, 290, 20), "Attach to Blendshape Preview", EditorStyles.boldLabel);
-
-            GUI.color = new Color(0f, 1f, 0f, 0.3f);
-            GUI.Box(new Rect(15, 40, 15, 15), "");
-            GUI.color = Color.white;
-            GUI.Label(new Rect(35, 38, 250, 20), $"= Surface cluster ({data.previewCluster.anchors.Count} triangles)");
-
-            GUI.color = Color.yellow;
-            GUI.Box(new Rect(15, 60, 15, 15), "");
-            GUI.color = Color.white;
-            GUI.Label(new Rect(35, 58, 250, 20), "= Cluster center");
-
-            GUI.color = new Color(0.212f, 0.749f, 0.694f);
-            GUI.Box(new Rect(15, 80, 15, 15), "");
-            GUI.color = Color.white;
-            GUI.Label(new Rect(35, 78, 250, 20), "= Surface normal");
-
-            GUI.Label(new Rect(15, 100, 280, 20), $"Tracking {data.previewBlendshapes.Count} blendshapes");
-
-            Handles.EndGUI();
+            YUCPSceneOverlay.Draw("Attach to Blendshape preview",
+                $"Green: {data.previewCluster.anchors.Count} surface triangles. Yellow: center. Teal: normal. " +
+                $"{data.previewBlendshapes?.Count ?? 0} blendshapes tracked.");
         }
     }
 }

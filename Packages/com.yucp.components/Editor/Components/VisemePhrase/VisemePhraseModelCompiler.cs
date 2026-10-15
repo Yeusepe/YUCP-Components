@@ -85,7 +85,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                 Error(
                     messages,
                     "enrollment_schema_unsupported",
-                    "The enrollment was created by a different package data format. Open Record / Improve and record a current enrollment.");
+                    "The enrollment was created by a different package data format. Click Record Takes and record a current enrollment.");
             }
 
             var expectedId = string.IsNullOrWhiteSpace(definition.id)
@@ -124,7 +124,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                     Error(
                         messages,
                         "trace_schema_unsupported",
-                        label + " was recorded with a different trace format. Retake it in Record / Improve.");
+                        label + " was recorded with a different trace format. Retake it with Record Takes.");
                 }
                 if (trace.sampleRate <= 0)
                     Error(messages, "sample_rate_invalid", label + " has an invalid sample rate.");
@@ -178,7 +178,7 @@ namespace YUCP.Components.Editor.VisemePhrase
                     Error(
                         messages,
                         "negative_trace_schema_unsupported",
-                        "The optional ordinary-speech sample uses a different trace format. Clear it or record it again in Record / Improve.");
+                        "The optional ordinary-speech sample uses a different trace format. Clear it or record it again with Record Takes.");
                 }
             }
             if (!messages.Any(message =>

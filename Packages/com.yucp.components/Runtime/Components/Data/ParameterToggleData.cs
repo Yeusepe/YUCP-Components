@@ -33,26 +33,26 @@ namespace YUCP.Components
     [Serializable]
     public class ParameterCondition
     {
-        [Tooltip("Name of the Animator parameter to check.")]
+        [Tooltip("The Animator parameter to check.")]
         public string parameterName = "";
 
-        [Tooltip("Type of the parameter (Bool, Int, or Float).")]
+        [Tooltip("The parameter's type in the Animator.")]
         public ToggleParameterType parameterType = ToggleParameterType.Bool;
 
-        [Tooltip("How to compare the parameter value.")]
+        [Tooltip("How the parameter is compared with the threshold. If and IfNot check a bool.")]
         public ConditionMode conditionMode = ConditionMode.If;
 
-        [Tooltip("Value to compare against (for Equals, NotEqual, Greater, Less, etc.).")]
+        [Tooltip("The value the parameter is compared with. If and IfNot don't use it.")]
         public float threshold = 0f;
     }
 
     [Serializable]
     public class ParameterConditionGroup
     {
-        [Tooltip("How to combine conditions within this group (AND = all must be true, OR = any can be true).")]
+        [Tooltip("AND needs every condition in the group to be true. OR needs any one.")]
         public ConditionOperator groupOperator = ConditionOperator.AND;
 
-        [Tooltip("List of parameter conditions in this group.")]
+        [Tooltip("The conditions in this group.")]
         public List<ParameterCondition> conditions = new List<ParameterCondition>();
     }
 
@@ -62,120 +62,116 @@ namespace YUCP.Components
     public class ParameterToggleData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Parameter Conditions")]
-        [Tooltip("Condition groups that activate this toggle. Groups are OR'd together (any group can activate).\n\n" +
-                 "Within each group, conditions are combined based on the Group Operator (AND/OR).\n\n" +
-                 "Example: Group 1 (AND): x == true AND y == 0\n" +
-                 "         Group 2 (OR): a == true OR b > 5\n" +
-                 "Result: Toggle activates when (x==true AND y==0) OR (a==true OR b>5)")]
+        [Tooltip("Each group combines its own conditions with its operator.")]
         public List<ParameterConditionGroup> conditionGroups = new List<ParameterConditionGroup>();
 
         [Header("Toggle Actions")]
-        [Tooltip("Actions to perform when toggle is ON (main state).")]
+        [Tooltip("What the toggle does while it is on.")]
         public StateData state = new StateData();
 
-        [Tooltip("Enable transition animations when turning on/off.")]
+        [Tooltip("Plays transition actions while the toggle turns on and off.")]
         public bool hasTransition = false;
 
-        [Tooltip("Actions to play when transitioning IN (turning on).")]
+        [Tooltip("Actions played while the toggle turns on.")]
         public StateData transitionStateIn = new StateData();
 
-        [Tooltip("Blend duration for transition in (seconds).")]
+        [Tooltip("How long the transition in takes, in seconds.")]
         public float transitionTimeIn = 0f;
 
-        [Tooltip("Actions to play when transitioning OUT (turning off).")]
+        [Tooltip("Actions played while the toggle turns off.")]
         public StateData transitionStateOut = new StateData();
 
-        [Tooltip("Blend duration for transition out (seconds).")]
+        [Tooltip("How long the transition out takes, in seconds.")]
         public float transitionTimeOut = 0f;
 
-        [Tooltip("Transition out is reverse of transition in.")]
+        [Tooltip("Plays the transition in backwards when the toggle turns off.")]
         public bool simpleOutTransition = true;
 
-        [Tooltip("Extend object enabling and material settings into transitions.")]
+        [Tooltip("Applies the On state's object toggles and material changes during the transitions too.")]
         public bool expandIntoTransition = true;
 
         [Header("Local/Remote Separation")]
-        [Tooltip("Use different actions for local vs remote players.")]
+        [Tooltip("Uses different actions for you than for other players.")]
         public bool separateLocal = false;
 
-        [Tooltip("Actions for local player when toggle is ON.")]
+        [Tooltip("What you see while the toggle is on.")]
         public StateData localState = new StateData();
 
-        [Tooltip("Transition in actions for local player.")]
+        [Tooltip("Actions you see while the toggle turns on.")]
         public StateData localTransitionStateIn = new StateData();
 
-        [Tooltip("Transition out actions for local player.")]
+        [Tooltip("Actions you see while the toggle turns off.")]
         public StateData localTransitionStateOut = new StateData();
 
-        [Tooltip("Local transition in duration (seconds).")]
+        [Tooltip("How long your transition in takes, in seconds.")]
         public float localTransitionTimeIn = 0f;
 
-        [Tooltip("Local transition out duration (seconds).")]
+        [Tooltip("How long your transition out takes, in seconds.")]
         public float localTransitionTimeOut = 0f;
 
         [Header("Basic Settings")]
-        [Tooltip("Save toggle state across avatar reloads.")]
+        [Tooltip("Remembers the toggle's state between worlds and avatar reloads.")]
         public bool saved = false;
 
-        [Tooltip("Toggle starts in the ON state by default.")]
+        [Tooltip("The toggle starts on.")]
         public bool defaultOn = false;
 
-        [Tooltip("Run animation to completion before allowing exit.")]
+        [Tooltip("Lets the On animation play to its end before the toggle turns off.")]
         public bool hasExitTime = false;
 
-        [Tooltip("Hold button instead of latching toggle.")]
+        [Tooltip("The toggle is on only while its button is held.")]
         public bool holdButton = false;
 
         [Header("Slider Settings")]
-        [Tooltip("Use a slider (radial) instead of a toggle.")]
+        [Tooltip("Uses a radial slider instead of an on/off toggle.")]
         public bool slider = false;
 
-        [Tooltip("Default slider value (0-1, 0-100%).")]
+        [Tooltip("The slider's starting value, from 0 to 1.")]
         [Range(0f, 1f)]
         public float defaultSliderValue = 0f;
 
-        [Tooltip("Passthrough at 0% (unusual). When checked, slider is bypassed at 0%, allowing other systems to control properties.")]
+        [Tooltip("At 0% the slider stops controlling its properties, so another toggle or layer can.")]
         public bool sliderInactiveAtZero = false;
 
         [Header("Exclusive Tags")]
-        [Tooltip("Enable exclusive tags (mutually exclusive with other toggles sharing the same tags).")]
+        [Tooltip("Turns off other toggles that share a tag when this one turns on.")]
         public bool enableExclusiveTag = false;
 
-        [Tooltip("Exclusive tags (comma-separated). Toggles sharing tags are mutually exclusive.")]
+        [Tooltip("Comma-separated tags. Toggles that share a tag can't be on together.")]
         public string exclusiveTag = "";
 
-        [Tooltip("This is the exclusive off state (activates when all toggles with matching tags are off).")]
+        [Tooltip("Turns on when every toggle with these tags is off.")]
         public bool exclusiveOffState = false;
 
         [Header("Security")]
-        [Tooltip("Protect toggle with security pin (requires Security Lock component on avatar).")]
+        [Tooltip("Locks the toggle until the avatar's Security Lock is unlocked. Needs a Security Lock component on the avatar.")]
         public bool securityEnabled = false;
 
         [Header("Icon")]
-        [Tooltip("Enable custom menu icon (note: no menu will be created, but icon can be used for other purposes).")]
+        [Tooltip("Gives the toggle a custom icon. This component adds no menu item of its own.")]
         public bool enableIcon = false;
 
-        [Tooltip("Custom icon texture.")]
+        [Tooltip("The icon texture.")]
         public Texture2D icon;
 
         [Header("Global Parameters")]
-        [Tooltip("Use a global parameter instead of creating a new one.")]
+        [Tooltip("Uses a named parameter instead of a generated one, so other toggles and systems can share it.")]
         public bool useGlobalParam = false;
 
-        [Tooltip("Global parameter name to use.")]
+        [Tooltip("The global parameter's name.")]
         public string globalParam = "";
 
-        [Tooltip("Drive a global parameter based on toggle state (advanced).")]
+        [Tooltip("Sets global parameters to match the toggle's state.")]
         public bool enableDriveGlobalParam = false;
 
-        [Tooltip("Global parameter(s) to drive (comma-separated).")]
+        [Tooltip("Comma-separated names of the parameters to set.")]
         public string driveGlobalParam = "";
 
         [Header("Advanced")]
-        [Tooltip("Hide when animator disabled / Show when animator disabled (inverts rest logic).")]
+        [Tooltip("Reverses whether the toggle's objects show while the animator is disabled.")]
         public bool invertRestLogic = false;
 
-        [Tooltip("Internal parameter name override (leave empty for auto-generated).")]
+        [Tooltip("The parameter name to use. Empty generates one.")]
         public string paramOverride = "";
 
         public int PreprocessOrder => 0;

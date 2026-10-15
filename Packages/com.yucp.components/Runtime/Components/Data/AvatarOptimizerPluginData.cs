@@ -11,202 +11,116 @@ namespace YUCP.Components
     /// Only works if d4rkAvatarOptimizer is installed in the project.
     /// </summary>
     [SupportBanner]
-    [BetaWarning("This component is in BETA and may not work as intended. Avatar optimization integration is experimental and may require manual configuration.")]
+    [BetaWarning("This component is in beta. The optimizer integration may need manual settings.")]
     [AddComponentMenu("YUCP/Avatar Optimizer Plugin")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     [DisallowMultipleComponent]
     [RequireComponent(typeof(VRC.SDK3.Avatars.Components.VRCAvatarDescriptor))]
     public class AvatarOptimizerPluginData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
-        [Header("▼ General Configuration")]
-        [Tooltip("Enable optimizer for this avatar during upload/build")]
+        [Header("Optimizer")]
+        [Tooltip("Optimizes this avatar with d4rkAvatarOptimizer when it's built or uploaded.")]
         public bool enableOptimizer = true;
         
-        [Tooltip("Automatically configure settings based on avatar complexity\n\n" +
-                 "Recommended for most users - the optimizer will analyze your avatar and choose appropriate settings.")]
+        [Tooltip("Lets the optimizer choose settings from the avatar's complexity, in place of the manual settings. Recommended for most avatars.")]
         public bool useAutoSettings = true;
         
-        [Header("▼ Mesh Merging")]
-        [Tooltip("Merge multiple skinned meshes into fewer meshes to reduce draw calls\n\n" +
-                 "Benefits:\n" +
-                 "• Reduces skinned mesh count\n" +
-                 "• Improves rendering performance\n" +
-                 "• May reduce material count\n\n" +
-                 "Recommended: ON")]
+        [Header("Meshes")]
+        [Tooltip("Merges skinned meshes into fewer meshes, which cuts draw calls and often the material count.")]
         public bool mergeSkinnedMeshes = true;
         
-        [Tooltip("Convert static (non-skinned) meshes to skinned meshes so they can be merged\n\n" +
-                 "Use when: You have many static meshes that could be combined\n" +
-                 "Skip when: Static meshes are used for specific performance reasons")]
+        [Tooltip("Turns static meshes into skinned meshes so they can be merged too.")]
         public bool mergeStaticMeshesAsSkinned = false;
         
-        [Header("▼ Advanced Mesh Merging")]
-        [Tooltip("Use shader toggle system for mesh merging\n\n" +
-                 "0 = Disabled (standard merging)\n" +
-                 "1 = Basic (compatible shader toggles)\n" +
-                 "2 = Advanced (aggressive shader toggles)\n\n" +
-                 "Requires: Windows build target\n" +
-                 "Benefit: Can merge meshes with different materials more aggressively")]
+        [Header("Mesh toggles")]
+        [Tooltip("Lets meshes with different materials merge by toggling them in the shader. Advanced merges more; Windows build target only.")]
         [Range(0, 2)]
         public int mergeSkinnedMeshesWithShaderToggle = 0;
         
-        [Tooltip("Use NaNimation technique for mesh merging\n\n" +
-                 "0 = Disabled\n" +
-                 "1 = Basic NaNimation\n" +
-                 "2 = Advanced NaNimation\n\n" +
-                 "How it works: Uses NaN (Not a Number) in animations to hide meshes instead of toggling\n" +
-                 "Benefit: Can merge meshes that have different visibility states")]
+        [Tooltip("Lets meshes that are toggled separately merge by hiding them with NaN values in animations. Advanced merges more.")]
         [Range(0, 2)]
         public int mergeSkinnedMeshesWithNaNimation = 0;
         
-        [Tooltip("Allow 3-bone skinning weights when using NaNimation\n\n" +
-                 "ON: More aggressive merging, may affect mesh quality slightly\n" +
-                 "OFF: Conservative merging, maintains 4-bone weights")]
+        [Tooltip("Allows 3-bone skin weights so more meshes can merge. Deformation can change slightly.")]
         public bool naNimationAllow3BoneSkinning = false;
         
-        [Tooltip("Keep meshes with different default enabled states separated during merging\n\n" +
-                 "ON: Safer, maintains visibility behavior\n" +
-                 "OFF: More aggressive, may change default visibility")]
+        [Tooltip("Merges meshes that start hidden separately from meshes that start visible, so default visibility stays the same.")]
         public bool mergeSkinnedMeshesSeparatedByDefaultEnabledState = true;
         
-        [Header("▼ Material Optimization")]
-        [Tooltip("Merge materials with different property values\n\n" +
-                 "Requires: Windows build target (custom shader support)\n" +
-                 "How it works: Creates optimized shaders that combine multiple materials\n" +
-                 "Benefit: Dramatically reduces material count\n\n" +
-                 "Warning: Advanced feature, test thoroughly")]
+        [Header("Materials")]
+        [Tooltip("Merges materials whose properties differ by generating a combined shader. Windows build target only; test the avatar afterwards.")]
         public bool mergeDifferentPropertyMaterials = false;
         
-        [Tooltip("Merge textures of the same dimensions into texture arrays\n\n" +
-                 "Requires: mergeDifferentPropertyMaterials = ON\n" +
-                 "Benefit: Reduces texture memory usage\n" +
-                 "Compatible: Most modern shaders")]
+        [Tooltip("Packs merged textures of the same size into texture arrays, which saves texture memory.")]
         public bool mergeSameDimensionTextures = false;
         
-        [Tooltip("Include _MainTex in texture merging\n\n" +
-                 "Requires: mergeSameDimensionTextures = ON\n" +
-                 "Warning: May affect main texture quality, test carefully")]
+        [Tooltip("Includes the main texture in the texture arrays. Check the result, because main texture quality can drop.")]
         public bool mergeMainTex = false;
         
-        [Tooltip("Write non-animated material properties as static values in generated shaders\n\n" +
-                 "Benefit: Reduces shader parameters and improves performance\n" +
-                 "Automatic: Enabled when using material merging features")]
+        [Tooltip("Writes material properties that aren't animated as fixed values in the generated shaders, which makes them faster. Always on while materials are merged.")]
         public bool writePropertiesAsStaticValues = false;
         
-        [Header("▼ FX Layer Optimization")]
-        [Tooltip("Optimize and merge FX animator layers\n\n" +
-                 "What it does:\n" +
-                 "• Removes empty/unused layers\n" +
-                 "• Merges compatible layers\n" +
-                 "• Optimizes layer structure\n\n" +
-                 "Benefit: Reduces animator complexity\n" +
-                 "Recommended: ON")]
+        [Header("FX layer")]
+        [Tooltip("Removes unused FX layers and merges compatible ones, which makes the animator cheaper.")]
         public bool optimizeFXLayer = true;
         
-        [Tooltip("Combine animations that have approximately the same motion time\n\n" +
-                 "Requires: optimizeFXLayer = ON\n" +
-                 "What it does: Merges animations with similar durations to reduce layer count\n" +
-                 "Use when: You have many similar-length animations")]
+        [Tooltip("Combines animations of about the same length, which removes more layers.")]
         public bool combineApproximateMotionTimeAnimations = false;
         
-        [Header("▼ Component Cleanup")]
-        [Tooltip("Automatically disable PhysBones when they are not being used\n\n" +
-                 "Detection:\n" +
-                 "• Checks if PhysBone transforms are animated\n" +
-                 "• Checks if PhysBone affects visible meshes\n" +
-                 "• Disables if completely unused\n\n" +
-                 "Recommended: ON")]
+        [Header("Components")]
+        [Tooltip("Turns off PhysBones that aren't used, such as ones that move nothing visible.")]
         public bool disablePhysBonesWhenUnused = true;
         
-        [Tooltip("Delete components that don't affect the avatar\n\n" +
-                 "Removed components:\n" +
-                 "• Unused MonoBehaviours\n" +
-                 "• Empty/disabled components\n" +
-                 "• IEditorOnly components\n\n" +
-                 "Recommended: ON")]
+        [Tooltip("Deletes components that don't affect the avatar, such as disabled and editor-only ones.")]
         public bool deleteUnusedComponents = true;
         
-        [Tooltip("Delete GameObjects that are not used\n\n" +
-                 "0 = Disabled (keep all GameObjects)\n" +
-                 "1 = Safe (only delete clearly unused objects)\n" +
-                 "2 = Aggressive (delete more aggressively)\n\n" +
-                 "Recommended: 1 (Safe) for most avatars")]
+        [Tooltip("Deletes objects the avatar doesn't use. Safe deletes only clearly unused objects; Aggressive deletes more.")]
         [Range(0, 2)]
         public int deleteUnusedGameObjects = 0;
         
-        [Header("▼ Blendshape Optimization")]
-        [Tooltip("Merge blendshapes that always move together with the same ratio\n\n" +
-                 "What it does:\n" +
-                 "• Detects blendshapes animated identically\n" +
-                 "• Combines them into single blendshapes\n" +
-                 "• Reduces blendshape count\n\n" +
-                 "Benefit: Better performance, fewer blendshape slots used\n" +
-                 "Recommended: ON")]
+        [Header("Blendshapes")]
+        [Tooltip("Combines blendshapes that are always animated together at the same ratio, which reduces the blendshape count.")]
         public bool mergeSameRatioBlendShapes = true;
         
-        [Tooltip("Preserve MikuMikuDance (MMD) blendshape compatibility\n\n" +
-                 "What it does:\n" +
-                 "• Keeps common MMD blendshape names\n" +
-                 "• Prevents merging/renaming MMD-specific shapes\n\n" +
-                 "Enable if: Using MMD models or animations\n" +
-                 "Disable if: Not using MMD content")]
+        [Tooltip("Keeps MMD blendshapes from being merged or renamed, so MMD dances still move the face.")]
         public bool mmdCompatibility = true;
         
-        [Header("▼ Advanced Features")]
-        [Tooltip("Use ring finger bone as foot collider\n\n" +
-                 "What it does: Moves ring finger contact receivers to feet\n" +
-                 "Why: Ring finger collisions are rarely used in VRChat\n" +
-                 "Benefit: Frees up a contact receiver slot\n\n" +
-                 "Warning: Disables ring finger interactions")]
+        [Header("Contacts")]
+        [Tooltip("Moves the ring finger contacts to the feet, which frees a contact slot. Ring fingers stop interacting.")]
         public bool useRingFingerAsFootCollider = false;
         
-        [Header("▼ Exclusions")]
-        [Tooltip("GameObjects/Transforms to completely exclude from all optimizations\n\n" +
-                 "Use for:\n" +
-                 "• Custom systems that break with optimization\n" +
-                 "• Penetrators or posebones\n" +
-                 "• Specific accessories that need to stay separate\n\n" +
-                 "Excluded objects and their children won't be touched by the optimizer")]
+        [Header("Exclusions")]
+        [Tooltip("Objects the optimizer leaves alone, with their children. Use it for penetrators, pose bones or systems that break when optimized.")]
         public List<Transform> excludeTransforms = new List<Transform>();
         
-        [Header("▼ Debug & Profiling")]
-        [Tooltip("Show detailed time profiling for each optimization step\n\n" +
-                 "Displays:\n" +
-                 "• Time spent on each optimization\n" +
-                 "• Performance bottlenecks\n" +
-                 "• Optimization order\n\n" +
-                 "Use for: Understanding what takes the longest")]
+        [Header("Logging")]
+        [Tooltip("Logs how long each optimization step takes.")]
         public bool profileTimeUsed = false;
         
-        [Tooltip("Enable detailed debug logging\n\n" +
-                 "Shows:\n" +
-                 "• Which settings are applied\n" +
-                 "• Reflection calls\n" +
-                 "• Configuration steps\n\n" +
-                 "Use for: Troubleshooting issues")]
+        [Tooltip("Logs each setting as it's applied to the optimizer.")]
         public bool debugMode = false;
         
-        [Header("▼ Inspector Display Options")]
-        [Tooltip("Show d4rkAvatarOptimizer's mesh merge preview in this component's inspector")]
+        [Header("Optimizer inspector")]
+        [Tooltip("Shows the mesh merge preview in d4rkAvatarOptimizer's inspector.")]
         public bool showMeshMergePreview = true;
         
-        [Tooltip("Show d4rkAvatarOptimizer's FX layer merge results in this component's inspector")]
+        [Tooltip("Shows the FX layer merge results in d4rkAvatarOptimizer's inspector.")]
         public bool showFXLayerMergeResults = true;
         
-        [Tooltip("Show detailed debug information in this component's inspector")]
+        [Tooltip("Shows debug information in d4rkAvatarOptimizer's inspector.")]
         public bool showDebugInfo = false;
         
-        [Header("■ Build Statistics (Read-only)")]
-        [Tooltip("Whether d4rkAvatarOptimizer was detected at build time")]
+        [Header("Last build")]
+        [Tooltip("Whether the last build found d4rkAvatarOptimizer.")]
         [SerializeField] private bool optimizerDetected = false;
         
-        [Tooltip("Whether optimization was applied")]
+        [Tooltip("Whether the last build applied the settings.")]
         [SerializeField] private bool optimizationApplied = false;
         
-        [Tooltip("Build-time error message if any")]
+        [Tooltip("Why the last build didn't apply the settings, if it didn't.")]
         [SerializeField] private string buildError = "";
         
-        [Tooltip("Number of optimizations applied")]
+        [Tooltip("How many settings the last build applied.")]
         [SerializeField] private int optimizationsApplied = 0;
         
         public bool OptimizerDetected => optimizerDetected;

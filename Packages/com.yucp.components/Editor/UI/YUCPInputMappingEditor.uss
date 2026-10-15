@@ -1,0 +1,39 @@
+/* One input mapping: a row in the mappings list, not a nested box (DESIGN.md §3). */
+.yucp-input-mapping-editor {
+    flex-direction: column;
+    padding: var(--yucp-spacing-xs) 0;
+    border-bottom-width: 1px;
+    border-color: var(--yucp-border-secondary);
+}
+
+.yucp-input-mapping-header {
+    flex-direction: row;
+    align-items: center;
+}
+
+.yucp-mapping-enabled {
+    width: 20px;
+    margin-right: var(--yucp-spacing-xs);
+}
+
+.yucp-mapping-foldout {
+    flex-grow: 1;
+}
+
+.yucp-mapping-remove {
+    min-width: 24px;
+    height: 20px;
+    padding: 0;
+    margin-left: var(--yucp-spacing-xs);
+}
+
+.yucp-input-mapping-content {
+    flex-direction: column;
+    padding-left: 15px;
+    margin-top: var(--yucp-spacing-xs);
+}
+
+.yucp-input-specific-fields,
+.yucp-parameter-value-fields {
+    flex-direction: column;
+}

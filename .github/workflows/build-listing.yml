@@ -3,7 +3,7 @@ name: Build Repo Listing
 env:
   listPublishDirectory: Website
   pathToCi: ci
-  packageNames: com.yucp.components
+  packageNames: com.yucp.components com.yucp.ui
   
 on:
   workflow_dispatch:

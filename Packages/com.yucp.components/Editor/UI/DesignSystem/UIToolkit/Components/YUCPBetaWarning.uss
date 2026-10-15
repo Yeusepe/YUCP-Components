@@ -1,7 +1,0 @@
-/* YUCP Beta Warning Component */
-.yucp-alert-warning {
-    margin-top: var(--yucp-spacing-xs);
-    margin-bottom: var(--yucp-spacing-xs);
-}
-
-

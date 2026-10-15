@@ -29,74 +29,72 @@ namespace YUCP.Components
         }
 
         [Header("Sync Mode")]
-        [Tooltip("Quick Sync sends floats directly (avatar-centered only, higher parameter usage, lowest latency).\n" +
-                 "Disable to use the bit-packed multi-step sync that saves parameters at the cost of latency.")]
+        [Tooltip("Sends the position directly for the lowest delay, at a higher parameter cost. Off sends it in steps that use fewer parameters.")]
         public bool quickSync = true;
 
-        [Tooltip("Reference frame used when quick sync is disabled.\n" +
-                 "Avatar centered drops an anchor when sync starts (no late join). World space anchors to origin (supports late join, needs larger range).")]
+        [Tooltip("Avatar anchors where syncing starts, so late joiners miss it. World anchors to the world origin and supports late joiners, but needs a larger radius.")]
         public ReferenceFrame referenceFrame = ReferenceFrame.AvatarCentered;
 
         [Header("Precision & Range")]
-        [Tooltip("Maximum radius exponent. The actual range is 2^maxRadius meters.\nHigher values = larger range but more bits required.")]
+        [Tooltip("How far the object can move from its anchor: 2 to this power, in meters. Higher uses more parameters.")]
         [Range(1, 12)]
         public int maxRadius = 7;
 
-        [Tooltip("Position precision exponent (fractional bits per axis). Higher = more precision, more bits.")]
+        [Tooltip("How finely the position syncs. Higher uses more parameters.")]
         [Range(1, 12)]
         public int positionPrecision = 6;
 
-        [Tooltip("Rotation precision exponent (fractional bits per axis). Only used when rotation sync is enabled.")]
+        [Tooltip("How finely the rotation syncs. Higher uses more parameters.")]
         [Range(0, 12)]
         public int rotationPrecision = 8;
 
-        [Tooltip("Bits per sync step (only used when Quick Sync is disabled). Lower bits reduce parameters but increase latency.")]
+        [Tooltip("Bits sent per step while Quick Sync is off. Fewer bits use fewer parameters but add delay.")]
         [Range(4, 32)]
         public int bitCount = 16;
 
         [Header("Options")]
-        [Tooltip("Sync rotational data alongside position.")]
+        [Tooltip("Syncs the object's rotation as well as its position.")]
         public bool rotationEnabled = true;
 
-        [Tooltip("Adds the damping constraint helper so remote objects ease into their new positions.")]
+        [Tooltip("Remote players see the object ease into new positions instead of jumping.")]
         public bool addDampingConstraint = true;
 
-        [Tooltip("How aggressively the damping helper chases new positions (0 = never, 1 = instant).")]
+        [Tooltip("How quickly the object catches up with its target. Lower is smoother and slower.")]
         [Range(0.01f, 1f)]
         public float dampingConstraintValue = 0.15f;
 
-        [Tooltip("Adds the local debug view rig so you can visualize the remote copy in Play Mode.")]
+        [Tooltip("Adds a view of where remote players see the object, for testing.")]
         public bool addLocalDebugView = false;
 
-        [Tooltip("When enabled, generated animator states will use Write Defaults.")]
+        [Tooltip("The generated animator states use Write Defaults.")]
         public bool writeDefaults = true;
 
-        [Tooltip("When enabled, an expression menu toggle is generated so users can enable/disable the sync in-game. When disabled, no menu entry is added (e.g. when you drive the parameter yourself).")]
+        [Tooltip("Adds a menu toggle that turns syncing on and off. Leave it off if you drive the parameter yourself.")]
         public bool generateMenu = false;
 
-        [Tooltip("Expressions menu path where the enable toggle should be created (e.g. \"Utility/Custom Sync\"). Leave blank to place it at the root menu. Only used when Generate Menu is enabled.")]
+        [Tooltip("Submenu for the toggle, e.g. Utility/Custom Sync. Empty puts it at the root.")]
         public string menuLocation = "Utility/Custom Sync";
 
-        [Tooltip("Optional parent transform for the generated \"Object-Name Target\" GameObject. If not specified, the generated object will be parented to the sync object's parent.")]
+        [Tooltip("Parent for the generated target object. Empty uses this object's parent.")]
         [FormerlySerializedAs("syncTarget")]
         public Transform syncParent;
 
         [Header("Grouping")]
-        [Tooltip("Enable to combine multiple components into a shared Custom Object Sync rig (reduces parameters, but objects take turns syncing). Leave off for per-object rigs.")]
+        [Tooltip("Shares one sync setup between components with the same group ID. Uses fewer parameters, but the objects take turns syncing.")]
         public bool enableGrouping = false;
 
-        [Tooltip("Identifier used when grouping is enabled. Components with matching IDs are merged into the same rig.")]
+        [Tooltip("Components with the same group ID share one setup.")]
         public string syncGroupId = DefaultGroupId;
 
         [Header("Visualization")]
-        [Tooltip("Draw helper gizmos in the Scene view that illustrate travel radius, damping, and precision.")]
+        [Tooltip("Shows the sync radius and precision in the Scene view while this object is selected.")]
         public bool showSceneGizmo = true;
 
         [Header("Diagnostics")]
-        [Tooltip("Print additional information while building.")]
+        [Tooltip("Logs extra detail while the avatar builds.")]
         public bool verboseLogging = false;
 
-        [Tooltip("Include the automatic credit banner in the inspector and documentation.")]
+        [Tooltip("Shows the credit line for the VRLabs prefab this component is based on.")]
         public bool includeCredits = true;
 
 #if UNITY_EDITOR

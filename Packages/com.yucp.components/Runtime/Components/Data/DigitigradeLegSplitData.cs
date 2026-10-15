@@ -21,19 +21,16 @@ namespace YUCP.Components
             [Tooltip("Name given to the generated bone.")]
             public string name = "Metatarsus";
 
-            [Tooltip("Where along the source bone the joint is inserted. 0 = knee, 1 = ankle.")]
+            [Tooltip("Where the joint sits along the lower leg: 0 is the knee, 1 the ankle.")]
             [Range(0.02f, 0.98f)]
             public float position = 0.67f;
 
-            [Tooltip("Moves the joint off the straight knee-to-ankle line, in metres, in the source " +
-                     "bone's local frame. The line between two bone origins is a chord through a " +
-                     "curved leg, so the real hock usually does not sit on it.")]
+            [Tooltip("Moves the joint off the straight knee-to-ankle line, in metres, in the lower " +
+                     "leg's local space. The real hock rarely sits on that line.")]
             public Vector3 offset = Vector3.zero;
 
-            [Tooltip("Tilt of the joint, in degrees, relative to the source bone. Rotates the cut " +
-                     "plane so the weight boundary follows the real crease instead of sitting " +
-                     "square to the bone, and gives the generated bone the same rest orientation. " +
-                     "Nothing moves at rest -- the tilt is baked into the bind pose.")]
+            [Tooltip("Tilts the joint, in degrees, so the weight boundary follows the mesh crease " +
+                     "instead of sitting square to the bone. Nothing moves at rest.")]
             public Vector3 angle = Vector3.zero;
 
             public Split() { }
@@ -56,25 +53,27 @@ namespace YUCP.Components
         [Tooltip("Bone at the far end of the source segment. Leave empty to use the humanoid Foot.")]
         public Transform leftEndBone;
 
+        [Tooltip("Bone the new joints are inserted into. Leave empty to use the humanoid Lower Leg.")]
         public Transform rightSourceBone;
+
+        [Tooltip("Bone at the far end of the source segment. Leave empty to use the humanoid Foot.")]
         public Transform rightEndBone;
 
         [Header("Splits")]
-        [Tooltip("Joints inserted into each lower leg, ordered from knee to ankle. One split is enough to make a 4-segment digitigrade leg.")]
+        [Tooltip("Joints added to each lower leg, from knee to ankle. One joint makes a four-segment digitigrade leg.")]
         public List<Split> splits = new List<Split> { new Split("Metatarsus", 0.67f) };
 
         [Tooltip("Width of the smooth weight transition either side of each joint, as a fraction of the source bone's length. 0 gives a hard edge.")]
         [Range(0f, 0.25f)]
         public float blendBand = 0.06f;
 
-        [Tooltip("Keeps the protruding hock tip with the new lower segment instead of stretching it across the joint. " +
-                 "Uses the split's off-axis offset to identify the tip side. 0 keeps the original flat weight boundary; " +
-                 "1 preserves the tip while leaving the opposite crease unchanged.")]
+        [Tooltip("Keeps the protruding hock tip with the lower segment instead of stretching it across the joint. " +
+                 "0 keeps a flat weight boundary; 1 preserves the tip.")]
         [Range(0f, 1f)]
         public float jointTipPreservation = 1f;
 
-        [Tooltip("Mirror the offset and tilt onto the right leg. Turn this off if the rig's left " +
-                 "and right bone axes are already mirrored, which would double up the flip.")]
+        [Tooltip("Mirrors the offset and tilt onto the right leg. Turn off if the rig's left " +
+                 "and right bone axes are already mirrored.")]
         public bool mirrorRightLeg = true;
 
         [Header("Diagnostics")]

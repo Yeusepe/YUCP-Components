@@ -28,7 +28,7 @@ namespace YUCP.Components.Editor
         /// <summary>The type the FX controller declares, which the encoder reads.</summary>
         internal AnimatorControllerParameterType AnimatorType { get; }
 
-        /// <summary>Also a time-multiplexed bus candidate; packed only after the rest.</summary>
+        /// <summary>Also an event bus candidate; packed only after the rest.</summary>
         internal bool PreferBus { get; }
 
         internal int CurrentBits =>
@@ -244,7 +244,7 @@ namespace YUCP.Components.Editor
                     var encode = layer.State("Encode " + code);
                     encode.writeDefaultValues = writeDefaults;
                     encode.motion = refreshClip;
-                    AddDriver(layer, encode, true, new[]
+                    AddDriver(layer, encode, "YUCP Parameter Compressor Pack Encoder", true, new[]
                     {
                         Set(group.Carrier, code)
                     });
@@ -272,7 +272,7 @@ namespace YUCP.Components.Editor
                     var decode = layer.State("Decode " + code);
                     decode.writeDefaultValues = writeDefaults;
                     decode.motion = refreshClip;
-                    AddDriver(layer, decode, false, group.Members.Select(
+                    AddDriver(layer, decode, "YUCP Parameter Compressor Pack Decoder", false, group.Members.Select(
                         (member, memberIndex) => Set(member.Candidate.Name,
                             member.Observation.Representatives[cells[memberIndex]])));
                     Refresh(layer, decode, router);
@@ -485,7 +485,7 @@ namespace YUCP.Components.Editor
                     0.5f, IsLocalName);
         }
 
-        private static void EnsureParameter(
+        internal static void EnsureParameter(
             AnimatorController controller,
             string name,
             AnimatorControllerParameterType type,
@@ -522,7 +522,7 @@ namespace YUCP.Components.Editor
             transition.interruptionSource = TransitionInterruptionSource.None;
         }
 
-        private static void ConfigureImmediate(AnimatorStateTransition transition)
+        internal static void ConfigureImmediate(AnimatorStateTransition transition)
         {
             transition.hasExitTime = false;
             transition.duration = 0f;
@@ -531,16 +531,15 @@ namespace YUCP.Components.Editor
             transition.interruptionSource = TransitionInterruptionSource.None;
         }
 
-        private static void AddDriver(
+        internal static void AddDriver(
             GeneratedAnimatorLayer layer,
             AnimatorState state,
+            string name,
             bool localOnly,
             IEnumerable<VRC_AvatarParameterDriver.Parameter> parameters)
         {
             var driver = ScriptableObject.CreateInstance<VRCAvatarParameterDriver>();
-            driver.name = localOnly
-                ? "YUCP Parameter Compressor Pack Encoder"
-                : "YUCP Parameter Compressor Pack Decoder";
+            driver.name = name;
             driver.localOnly = localOnly;
             driver.isEnabled = true;
             driver.parameters = parameters.ToList();
@@ -550,7 +549,7 @@ namespace YUCP.Components.Editor
                 .ToArray();
         }
 
-        private static VRC_AvatarParameterDriver.Parameter Set(string name, float value)
+        internal static VRC_AvatarParameterDriver.Parameter Set(string name, float value)
         {
             return new VRC_AvatarParameterDriver.Parameter
             {
@@ -568,8 +567,7 @@ namespace YUCP.Components.Editor
             AssetDatabase.AddObjectToAsset(value, controller);
         }
 
-        // Matches the transport builder: generated states follow the controller's
-
+        // Generated states follow the controller's Write Defaults so they never mix modes.
         internal static bool DetermineWriteDefaults(AnimatorController controller)
         {
             var states = controller.layers

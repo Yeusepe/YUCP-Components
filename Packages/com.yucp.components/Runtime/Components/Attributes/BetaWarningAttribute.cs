@@ -14,7 +14,7 @@ namespace YUCP.Components
         
         public BetaWarningAttribute()
         {
-            Message = "This component is in BETA and may not work as intended. Use with caution.";
+            Message = "This component is in beta and may not work as intended.";
         }
         
         public BetaWarningAttribute(string customMessage)

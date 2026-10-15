@@ -12,22 +12,14 @@ namespace YUCP.Components.Editor
             EditorApplication.delayCall += DisableYUCPSceneGizmos;
         }
 
+        // Recuerda: SetIconEnabled tira "Annotation not found!" si el tipo no tiene gizmo, so primero TryGetGizmoInfo https://docs.unity3d.com/ScriptReference/GizmoUtility.TryGetGizmoInfo.html
         private static void DisableYUCPSceneGizmos()
         {
             foreach (var type in TypeCache.GetTypesDerivedFrom<MonoBehaviour>())
             {
-                if (type.IsAbstract || type.Namespace == null ||
-                    !type.Namespace.StartsWith("YUCP.Components", StringComparison.Ordinal))
-                    continue;
-
-                try
-                {
+                if (type.Namespace != null && type.Namespace.StartsWith("YUCP.Components", StringComparison.Ordinal) &&
+                    GizmoUtility.TryGetGizmoInfo(type, out var info) && info.iconEnabled)
                     GizmoUtility.SetIconEnabled(type, false);
-                }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"[YUCP] Failed to disable icon for {type.Name}: {e.Message}");
-                }
             }
         }
     }

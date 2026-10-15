@@ -38,16 +38,16 @@
 
 Add this VPM repository to your VRChat Creator Companion:
 ```
-http://vpm.yucp.club/index.json
+https://vpm.yucp.club/index.json
 ```
 
-Then install "YUCP Components" from the package list in your project. VRCFury will install automatically.
+Then install "YUCP Components" from the package list in your project. VRCFury and YUCP UI will install automatically. YUCP UI is also available separately from the same package list.
 
 ### Manual Installation
 
 1. Download the latest `.unitypackage` from [Releases](https://github.com/Yeusepe/YUCP-Components/releases)
 2. Import into your Unity project
-3. Install [VRCFury](https://vrcfury.com/) as a dependency
+3. Install [VRCFury](https://vrcfury.com/) and [YUCP UI](https://vpm.yucp.club/) as dependencies
 
 ## 🔧 Usage
 

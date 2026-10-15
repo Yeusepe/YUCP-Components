@@ -185,6 +185,7 @@ namespace YUCP.Components.Editor
             AssemblyReloadEvents.beforeAssemblyReload += StopAll;
             EditorApplication.quitting += StopAll;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            VisemeTestEmulatorData.Enabled += OnEmulatorEnabled;
             TrackingControlBridge.Initialize();
         }
 
@@ -380,7 +381,6 @@ namespace YUCP.Components.Editor
 
         private static void Update()
         {
-            EnsurePlayModeSessions();
             if (Sessions.Count == 0) return;
             foreach (var state in Sessions.Values.ToArray())
             {
@@ -414,14 +414,22 @@ namespace YUCP.Components.Editor
             var components = UnityEngine.Object.FindObjectsByType<VisemeTestEmulatorData>(
                 FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var component in components)
-            {
-                if (component == null || !component.isActiveAndEnabled || !component.startWithPlayMode || IsRunning(component))
-                    continue;
-                var id = component.GetInstanceID();
-                if (!AutoStartAttempted.Add(id)) continue;
-                if (!Start(component, out var error) && !string.IsNullOrEmpty(error))
-                    Debug.LogWarning($"[YUCP Viseme Test Emulator] Play Mode preview could not start on '{component.name}': {error}", component);
-            }
+                AutoStart(component);
+        }
+
+        private static void OnEmulatorEnabled(VisemeTestEmulatorData component)
+        {
+            if (Application.isPlaying)
+                EditorApplication.delayCall += () => AutoStart(component);
+        }
+
+        private static void AutoStart(VisemeTestEmulatorData component)
+        {
+            if (component == null || !component.isActiveAndEnabled || !component.startWithPlayMode || IsRunning(component) ||
+                !AutoStartAttempted.Add(component.GetInstanceID()))
+                return;
+            if (!Start(component, out var error) && !string.IsNullOrEmpty(error))
+                Debug.LogWarning($"[YUCP Viseme Test Emulator] Play Mode preview could not start on '{component.name}': {error}", component);
         }
 
         private static void OnPlayModeStateChanged(PlayModeStateChange state)

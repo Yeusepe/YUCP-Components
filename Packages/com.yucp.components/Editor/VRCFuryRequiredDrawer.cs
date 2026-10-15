@@ -32,6 +32,7 @@ namespace YUCP.Components.Editor
         private static void OnPostHeaderGUI(UnityEditor.Editor editor)
         {
             if (editor.target == null) return;
+            if (YUCPInspectorChrome.DrawsNotices(editor)) return; // shown in its status area
 
             // Check if this is a YUCP component
             string typeName = editor.target.GetType().FullName;

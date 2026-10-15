@@ -54,60 +54,61 @@ namespace YUCP.Components
             AdvancedVisemeParameterContract.DefaultAdvancedVisemePrefix;
 
         [Header("Face Rig")]
-        [Tooltip("Renderer containing the Oculus visemes. When empty, the renderer configured on the avatar descriptor is used.")]
+        [Tooltip("The mesh with the Oculus visemes. Leave empty to use the avatar's viseme mesh.")]
         public SkinnedMeshRenderer faceRenderer;
 
-        [Tooltip("Optional reusable reconstruction and face-tracking calibration profile. Built-in defaults are used when empty.")]
+        [Tooltip("Custom tuning, viseme poses and rig mappings, reusable across avatars. Leave empty to use the built-in tuning.")]
         public VisemeReconstructionProfile profile;
 
         [Header("Behavior")]
-        [Tooltip("Drive the lower-face rig, or only publish reconstructed Animator parameters for another controller to consume.")]
+        [Tooltip("Lower Face animates the mouth. Parameters Only writes the results to animator parameters for another controller to use.")]
         public AdvancedVisemeMouthOwnership mouthOwnership = AdvancedVisemeMouthOwnership.DriveLowerFace;
 
-        [Tooltip("Normal preserves the established observer. Beta Coarticulation uses recent viseme context to lead articulatory transitions without adding synced parameters.")]
+        [Tooltip("Eases each mouth shape into the next using the sounds around it, and infers tongue motion. Adds no synced parameters.")]
         public AdvancedVisemeReconstructionMode reconstructionMode = AdvancedVisemeReconstructionMode.Normal;
 
-        [Tooltip("VRCFaceTracking inputs to reuse or explicitly generate. Auto only reuses an existing compatible stream and otherwise stays speech-only.")]
+        [Tooltip("Automatic uses the avatar's face tracking when it has a compatible setup, otherwise speech only. The Inputs options add their own synced parameters.")]
         public AdvancedVisemeTrackingInputs trackingInputs = AdvancedVisemeTrackingInputs.Auto;
 
-        [Tooltip("Phonetic Assist preserves required closures while tracking. Tracker Authoritative follows tracking without constraint projection.")]
+        [Tooltip("Speech corrects closures and sharp consonants that face tracking misses.")]
         public AdvancedVisemeFusionMode fusionMode = AdvancedVisemeFusionMode.PhoneticAssist;
 
-        [Tooltip("Binary modes use VRCFaceTracking bit parameters and reconstruct local floats in the FX controller. Adaptive Binary uses fewer bits on gate-like channels.")]
+        [Tooltip("How face tracking values are packed into synced bits. Adaptive Binary uses fewer bits for channels that are mostly on or off.")]
         public AdvancedVisemeTrackingEncoding trackingEncoding = AdvancedVisemeTrackingEncoding.AdaptiveBinary;
 
         [Header("Parameters")]
-        [Tooltip("Prefix used for generated output and VRCFaceTracking parameters.")]
+        [Tooltip("Prefix for the generated animator and face tracking parameters.")]
         public string parameterPrefix = DefaultParameterPrefix;
 
-        [Tooltip("Create a VRCFury Face Tracking menu toggle. The toggle starts enabled.")]
+        [Tooltip("Adds a VRCFury toggle that turns face tracking on and off. It starts on and uses one synced bit.")]
         public bool createFaceTrackingToggle = true;
 
-        [Tooltip("Optional menu path for the generated tracking toggle.")]
+        [Tooltip("Where the face tracking toggle goes in the avatar menu.")]
         public string faceTrackingMenuPath = "YUCP/Face Tracking";
 
-        [Tooltip("When reusing existing VRCFaceTracking inputs, select their prefix. Leave empty to detect it by /v2/ suffix coverage.")]
+        [Tooltip("Prefix of the avatar's existing face tracking parameters. Leave empty to auto-detect it.")]
         public string existingTrackingPrefix = "";
 
         [Header("Avatar Tuning Menu")]
-        [Tooltip("Add radial sliders for live viseme tuning. Every slider is shared through one compact quantized transport.")]
+        [Tooltip("Adds radial sliders to the avatar menu for tuning speech while wearing the avatar. Other players see the changes.")]
         public bool createTuningMenu = true;
 
-        [Tooltip("Menu path that contains the generated Speech, Tracking, Phonetics, and Tongue slider groups.")]
+        [Tooltip("Where the tuning sliders go in the avatar menu.")]
         public string tuningMenuPath = "YUCP/Viseme Settings";
 
-        [Tooltip("Remember tuning slider values when changing worlds or avatars. Shared remote values follow these saved settings.")]
+        [Tooltip("Keeps the slider values when changing worlds or avatars.")]
         public bool saveTuningValues = true;
 
-        [Tooltip("Every generated tuning slider is shared through one quantized network bus. Local values stay full precision and can remain saved; remote avatars receive 255 evenly spaced levels using exactly 13 synced bits.")]
+        [Tooltip("Tuning sliders are always shared through one compact synced parameter. Kept for older saves.")]
         public AdvancedVisemeTuningSyncMode tuningSyncMode =
             AdvancedVisemeTuningSyncMode.CompactSynced;
 
-        [Tooltip("Choose which groups of tuning sliders are generated.")]
+        [Tooltip("Which groups of tuning sliders to add.")]
         public AdvancedVisemeTuningMenuSections tuningMenuSections =
             AdvancedVisemeTuningMenuSections.All;
 
         [Header("Diagnostics")]
+        [Tooltip("Logs build details to the Console.")]
         public bool verboseLogging;
 
         [SerializeField, HideInInspector]

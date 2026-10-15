@@ -10,21 +10,21 @@ namespace YUCP.Components
 	/// (e.g. a body or foot collider) to every PhysBone without assigning it manually.
 	/// </summary>
 	[SupportBanner]
-	[AddComponentMenu("YUCP/Universal Physbone Collider")]
+	[AddComponentMenu("YUCP/Universal PhysBone Collider")]
 	[HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
 	[DisallowMultipleComponent]
 	public class UniversalPhysboneColliderData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
 	{
 		[Header("Collider")]
-		[Tooltip("Assign a GameObject (all VRC PhysBone Colliders on it and its children will be added to every PhysBone) or a single VRC PhysBone Collider component. Must be under this avatar.")]
+		[Tooltip("A PhysBone Collider, or an object to use every PhysBone Collider on it and its children.")]
 		public new Object collider;
 
 		[Header("Exclusions")]
-		[Tooltip("PhysBones to exclude. Assign VRCPhysBone components, or GameObjects/Transforms (bones). Excludes any PhysBone that contains that bone: as root, as parent of root, or anywhere in the chain.")]
+		[Tooltip("PhysBones that don't get the collider. Assign a PhysBone, or a bone to skip every PhysBone whose chain contains it.")]
 		public List<Object> exclude = new List<Object>();
 
 		[Header("Diagnostics")]
-		[Tooltip("Print how many PhysBones were updated when building.")]
+		[Tooltip("Logs how many PhysBones got the collider when the avatar builds.")]
 		public bool verboseLogging = false;
 
 		public int PreprocessOrder => 0;

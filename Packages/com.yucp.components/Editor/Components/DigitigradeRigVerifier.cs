@@ -18,7 +18,7 @@ namespace YUCP.Components.Editor
         private const string LimbIkType = "RootMotion.FinalIK.LimbIK";
         private const string ExecutionOrderType = "RootMotion.FinalIK.IKExecutionOrder";
 
-        [MenuItem("Tools/YUCP/Digitigrade/Verify Rig Conformance", false, 100)]
+        [MenuItem("Tools/YUCP/Diagnostics/Verify Digitigrade Rig", false, 100)]
         private static void VerifySelection()
         {
             var target = Selection.activeGameObject;
@@ -38,7 +38,7 @@ namespace YUCP.Components.Editor
                 "OK");
         }
 
-        [MenuItem("Tools/YUCP/Digitigrade/Verify Rig Conformance", true)]
+        [MenuItem("Tools/YUCP/Diagnostics/Verify Digitigrade Rig", true)]
         private static bool VerifySelectionEnabled() => Selection.activeGameObject != null;
 
         public class Report

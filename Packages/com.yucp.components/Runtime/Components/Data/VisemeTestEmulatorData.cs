@@ -21,41 +21,41 @@ namespace YUCP.Components
     [SupportBanner]
     public sealed class VisemeTestEmulatorData : MonoBehaviour
     {
-        [Tooltip("Use live audio or select visemes by hand.")]
+        [Tooltip("Microphone listens to your voice. Manual shows the viseme you choose.")]
         public VisemeTestInput input = VisemeTestInput.Microphone;
 
-        [Tooltip("The input device used for live preview. Leave empty to use the system default.")]
+        [Tooltip("The microphone the preview listens to.")]
         public string microphoneDevice = string.Empty;
 
-        [Tooltip("Auto uses the Oculus LipSync Unity plugin when installed, then falls back to YUCP's local analyzer.")]
+        [Tooltip("Auto uses Oculus LipSync, like VRChat, when it's installed, and YUCP's approximate classifier otherwise.")]
         public VisemeTestAnalysisBackend analysisBackend = VisemeTestAnalysisBackend.Auto;
 
-        [Tooltip("Automatically boosts quiet speech before analysis. Disable this to leave low-level input at its original volume.")]
+        [Tooltip("Boosts quiet speech before analysis.")]
         public bool automaticGain = true;
 
         [Range(0.1f, 5f)]
-        [Tooltip("Input gain applied before analysis.")]
+        [Tooltip("Gain applied to the microphone before analysis.")]
         public float microphoneGain = 1f;
 
         [Range(0f, 0.2f)]
-        [Tooltip("Audio below this level is treated as silence.")]
+        [Tooltip("Input below this level counts as silence.")]
         public float noiseGate = 0.012f;
 
         [Range(0f, 14f)]
-        [Tooltip("Viseme used while Manual input is selected.")]
+        [Tooltip("The viseme shown while Source is Manual.")]
         public int manualViseme;
 
         [Range(0f, 1f)]
-        [Tooltip("Voice value used while Manual input is selected.")]
+        [Tooltip("The voice level used while Source is Manual.")]
         public float manualVoice = 1f;
 
-        [Tooltip("Write Viseme and Voice into every targeted Gesture Manager when it is active.")]
+        [Tooltip("Writes Viseme and Voice to each active Gesture Manager that targets the avatar.")]
         public bool driveGestureManager = true;
 
-        [Tooltip("Also write the built-in Viseme and Voice parameters on the avatar Animator.")]
+        [Tooltip("Also writes the built-in Viseme and Voice parameters on the avatar's Animator.")]
         public bool driveAnimator = true;
 
-        [Tooltip("Start microphone/manual emulation automatically when Unity enters Play Mode.")]
+        [Tooltip("Starts the preview when you enter Play Mode.")]
         public bool startWithPlayMode = true;
 
         private void OnValidate()
@@ -72,5 +72,11 @@ namespace YUCP.Components
             Destroy(this);
 #endif
         }
+
+#if UNITY_EDITOR
+        public static event System.Action<VisemeTestEmulatorData> Enabled;
+
+        private void OnEnable() => Enabled?.Invoke(this);
+#endif
     }
 }

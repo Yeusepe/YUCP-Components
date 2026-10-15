@@ -5,9 +5,9 @@
   "Author": {
     "Name": "YUCP Club",
     "Url": "https://vpm.yucp.club/",
-    "Email": "conact@yucp.club"
+    "Email": "contact@yucp.club"
   },
-  "Description": "Official YUCP Club VCC listing for Components, Importer, DevTools, and Motion.",
+  "Description": "Official YUCP Club VCC listing for Components, UI, DevTools, and Motion.",
   "InfoLink": {
     "Text": "Documentation",
     "Url": "https://github.com/Yeusepe/YUCP-Components"

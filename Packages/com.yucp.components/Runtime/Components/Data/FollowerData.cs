@@ -20,44 +20,44 @@ namespace YUCP.Components
         [SerializeField, HideInInspector]
         private GameObject _followedObjectInfo;
         
-        [Tooltip("Applied object override (transform): The object that will be moved into the Follower's Container. If empty, the component's GameObject is used.")]
+        [Tooltip("The object that follows the player. Empty uses this object.")]
         public Transform appliedObjectOverride;
 
-        [Tooltip("POSITION TARGET: The object the follower should move toward. If not set, will use the applied object.")]
+        [Tooltip("Where the followed object moves to. Empty uses the followed object.")]
         [FormerlySerializedAs("followerTarget")]
         [FormerlySerializedAs("appliedTransform")]
         public Transform positionTarget;
 
-        [Tooltip("LOOK TARGET: The object the follower looks at (for look constraint). If not set, will use Follower Target/Look Target from prefab. This determines what direction the follower faces.")]
+        [Tooltip("What the followed object faces. Empty uses the follower prefab's own look target.")]
         public Transform lookTarget;
 
         [Header("Options")]
-        [Tooltip("When enabled, an expression menu toggle is generated so users can stop the follower in-game. When disabled, no menu entry is added.")]
+        [Tooltip("Adds a menu toggle that stops the follower in game.")]
         public bool generateMenu = false;
 
-        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Follower\"). Leave blank to place it at the root menu. Only used when Generate Menu is enabled.")]
+        [Tooltip("Submenu for the toggle, e.g. Utility/Follower. Empty puts it at the root.")]
         public string menuLocation = "Utility/Follower";
 
-        [Tooltip("OPTIONAL: Base parameter name for Follower/Stop. The system will append /<Target> to make it unique per component and register it as a global parameter.")]
+        [Tooltip("Optional global parameter that stops the follower. /<object> is appended to keep it unique.")]
         public string globalParameterStop = "";
 
         [Header("Follow Settings")]
-        [Tooltip("Follow speed multiplier. Higher values = faster following. This affects the Follow animation clip.")]
+        [Tooltip("How fast the object catches up. Higher is faster.")]
         [Range(0.1f, 5f)]
         public float followSpeed = 1f;
 
         [Header("Grouping")]
-        [Tooltip("Enable to combine multiple components into a shared follower setup.")]
+        [Tooltip("Shares one follower setup between components with the same group ID.")]
         public bool enableGrouping = false;
 
-        [Tooltip("Identifier used when grouping is enabled. Components with matching IDs are merged into the same setup.")]
+        [Tooltip("Components with the same group ID share one setup.")]
         public string followerGroupId = "Default";
 
         [Header("Diagnostics")]
-        [Tooltip("Print additional information while building.")]
+        [Tooltip("Logs extra detail while the avatar builds.")]
         public bool verboseLogging = false;
 
-        [Tooltip("Include the automatic credit banner in the inspector and documentation.")]
+        [Tooltip("Shows the credit line for the VRLabs prefab this component is based on.")]
         public bool includeCredits = true;
 
 #if UNITY_EDITOR

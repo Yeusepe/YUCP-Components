@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
+using YUCP.UI.DesignSystem.Utilities;
 using Toolkit = YUCP.UI.DesignSystem.Utilities.YUCPUIToolkitHelper;
 
 namespace YUCP.Components.Editor
@@ -15,162 +16,109 @@ namespace YUCP.Components.Editor
         public override VisualElement CreateInspectorGUI()
         {
             var data = (LiveGripData)target;
-            serializedObject.Update();
-            var root = LiveGripUI.Root("Live Grip");
-            var support = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(LiveGripData));
-            if (support != null) root.Add(support);
-            var validation = new VisualElement();
-            root.Add(validation);
+            var ui = YUCPInspector.Create(this, "Live Grip");
+            ui.Status(() => LiveGripScene.Problems(data).Select(YUCPInspector.Message.Error));
 
+            var grip = ui.Section("Grip");
+            ui.Segmented(grip, "hand", "Hand", "Left", "Right");
+            ui.Segmented(grip, "mode", "Mode", "Live", "Baked");
+            ui.Caption(grip, () => data.mode == LiveGripData.Mode.Live
+                ? "Fingers follow the object with IK."
+                : "Fingers hold the saved grip. No IK.");
 
-            var grip = Toolkit.CreateCard("Grip");
-            var gripContent = Toolkit.GetCardContent(grip);
-            gripContent.Add(LiveGripUI.Segmented(serializedObject, "hand", "Hand", "Left", "Right"));
-            gripContent.Add(LiveGripUI.Segmented(serializedObject, "mode", "Mode", "Live", "Baked"));
-            var modeNote = LiveGripUI.Note("");
-            gripContent.Add(modeNote);
-            root.Add(grip);
-
-            var points = Toolkit.CreateCard("Grip Points");
-            var pointsContent = Toolkit.GetCardContent(points);
+            var points = ui.Section("Grip points");
             var items = new List<LiveGripPoint>();
-            var list = new ListView(items, 24, () =>
+            var list = ui.List(points, items, () =>
             {
                 var row = new VisualElement();
-                row.AddToClassList("live-grip-list-item");
+                row.AddToClassList("yucp-list-item");
                 var name = new Label();
-                name.AddToClassList("live-grip-list-item-name");
+                name.AddToClassList("yucp-list-item-name");
                 row.Add(name);
                 var badge = new Label();
                 badge.AddToClassList("yucp-badge");
                 row.Add(badge);
                 return row;
-            }, (element, i) =>
+            }, (row, i) =>
             {
-                var point = items[i];
-                element.Q<Label>(className: "live-grip-list-item-name").text = point.name;
-                var badge = element.Q<Label>(className: "yucp-badge");
-                var pinned = point.Pins.Count(p => p != null);
+                row.Q<Label>(className: "yucp-list-item-name").text = items[i].name;
+                var badge = row.Q<Label>(className: "yucp-badge");
+                var pinned = items[i].Pins.Count(p => p != null);
                 badge.text = pinned == 0 ? "Auto" : pinned + " Pinned";
                 badge.EnableInClassList("yucp-badge-default", pinned == 0);
                 badge.EnableInClassList("yucp-badge-warning", pinned > 0);
-            })
-            {
-                selectionType = SelectionType.Single,
-                reorderable = true,
-                reorderMode = ListViewReorderMode.Animated,
-                tooltip = "Drag to reorder. The grip parameter moves through the grip points in this order."
-            };
-            list.AddToClassList("live-grip-list");
-            list.selectionChanged += _ => LiveGripScene.SelectPoint(data, list.selectedItem as LiveGripPoint);
-            list.itemIndexChanged += (_, __) => LiveGripScene.ApplyOrder(items);
-            var empty = new Label("Held as placed. Add a grip point to choose where the hand holds it.");
-            empty.AddToClassList("live-grip-empty");
-            pointsContent.Add(empty);
-            pointsContent.Add(list);
-            var footer = new VisualElement();
-            footer.AddToClassList("live-grip-footer");
-            footer.Add(LiveGripUI.IconButton("Toolbar Plus", "Add Grip Point", () => LiveGripScene.Add(data)));
-            var remove = LiveGripUI.IconButton("Toolbar Minus", "Remove Grip Point", () =>
-            {
-                var selected = LiveGripScene.SelectedPoint(data);
-                if (selected != null) LiveGripScene.Remove(selected);
-            });
-            footer.Add(remove);
-            pointsContent.Add(footer);
+            },
+                "Held as placed. Add a grip point to choose where the hand holds it.",
+                () => LiveGripScene.Add(data), i => LiveGripScene.Remove(items[i]),
+                "Add Grip Point", "Remove Grip Point");
+            list.View.tooltip = "Drag to reorder. The grip parameter moves through the grip points in this order.";
+            list.View.selectionChanged += _ => LiveGripScene.SelectPoint(data, list.View.selectedItem as LiveGripPoint);
+            list.View.itemIndexChanged += (_, __) => LiveGripScene.ApplyOrder(items);
             var detail = new VisualElement();
-            pointsContent.Add(detail);
-            var parameter = new VisualElement();
-            LiveGripUI.Bind(serializedObject, parameter, new TextField("Grip Parameter"), "gripParameter");
-            parameter.Add(LiveGripUI.Note("0 is the first grip point, 1 the last. Empty uses LiveGrip/<object>."));
-            pointsContent.Add(parameter);
-            root.Add(points);
-
-            var toggle = Toolkit.CreateCard("Toggle");
-            var toggleContent = Toolkit.GetCardContent(toggle);
-            toggleContent.Add(LiveGripUI.Segmented(serializedObject, "useExistingToggle", "Control", "Menu Toggle", "Existing Toggle"));
-            var menuFields = new VisualElement();
-            LiveGripUI.Bind(serializedObject, menuFields, new TextField("Menu Path"), "menuPath");
-            LiveGripUI.Bind(serializedObject, menuFields, new TextField("Toggle Name"), "menuName");
-            LiveGripUI.Bind(serializedObject, menuFields, new Toggle("On by Default"), "defaultOn");
-            toggleContent.Add(menuFields);
-            var existingFields = new VisualElement();
-            toggleContent.Add(existingFields);
-            var toggleProblem = new VisualElement();
-            toggleContent.Add(toggleProblem);
-            root.Add(toggle);
-
-            var advanced = Toolkit.CreateFoldout("Advanced & Diagnostics");
-            advanced.viewDataKey = "live-grip-advanced";
-            LiveGripUI.Bind(serializedObject, advanced, new Slider("Finger Thickness", 0f, 0.03f) { showInputField = true }, "fingerThickness");
-            LiveGripUI.Bind(serializedObject, advanced, new FloatField("Release Distance"), "releaseDistance");
-            var summary = LiveGripUI.Note("");
-            summary.style.marginLeft = 0;
-            advanced.Add(summary);
-            root.Add(advanced);
+            points.Add(detail);
+            var parameter = ui.Group(points);
+            ui.Field(parameter, "gripParameter", "Grip Parameter");
+            ui.Caption(parameter, "0 is the first grip point, 1 the last. Empty uses LiveGrip/<object>.");
 
             string shownItems = null;
             LiveGripPoint shownPoint = null;
             var shownEditing = false;
-            List<Component> shownToggles = null;
-            void Refresh()
+            ui.OnRefresh(() =>
             {
-                if (target == null) return;
-                serializedObject.Update();
-                validation.Clear();
-                foreach (var problem in LiveGripScene.Problems(data))
-                    validation.Add(Toolkit.CreateHelpBox(problem, Toolkit.MessageType.Error));
-                modeNote.text = data.mode == LiveGripData.Mode.Live
-                    ? "Fingers follow the object with IK."
-                    : "Fingers hold the saved grip. No IK.";
-
                 var current = data.GetComponentsInChildren<LiveGripPoint>(true).ToList();
-                var itemsKey = string.Join("|", current.Select(p => p.GetInstanceID() + p.name + p.Pins.Count(x => x != null)));
-                if (itemsKey != shownItems)
+                var key = string.Join("|", current.Select(p => p.GetInstanceID() + p.name + p.Pins.Count(x => x != null)));
+                if (key != shownItems)
                 {
-                    shownItems = itemsKey;
+                    shownItems = key;
                     items.Clear();
                     items.AddRange(current);
-                    list.style.height = Mathf.Max(1, items.Count) * 24 + 2;
-                    list.RefreshItems();
+                    list.Refresh();
                 }
-                list.style.display = items.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
-                empty.style.display = items.Count > 0 ? DisplayStyle.None : DisplayStyle.Flex;
                 var selected = LiveGripScene.SelectedPoint(data);
-                var index = items.IndexOf(selected);
-                if (list.selectedIndex != index) list.SetSelectionWithoutNotify(index >= 0 ? new[] { index } : Array.Empty<int>());
-                remove.SetEnabled(selected != null);
+                list.Select(items.IndexOf(selected));
                 var editing = selected != null && LiveGripScene.Editing == selected;
-                if (selected != shownPoint || editing != shownEditing)
-                {
-                    shownPoint = selected;
-                    shownEditing = editing;
-                    detail.Clear();
-                    if (selected != null) detail.Add(LiveGripUI.Detail(selected));
-                }
-                parameter.style.display = items.Count > 1 ? DisplayStyle.Flex : DisplayStyle.None;
+                if (selected == shownPoint && editing == shownEditing) return;
+                shownPoint = selected;
+                shownEditing = editing;
+                detail.Clear();
+                if (selected != null) detail.Add(LiveGripUI.Detail(ui, selected));
+            });
+            ui.ShowWhen(parameter, () => items.Count > 1);
 
-                var useExisting = data.useExistingToggle;
-                menuFields.style.display = useExisting ? DisplayStyle.None : DisplayStyle.Flex;
-                existingFields.style.display = useExisting ? DisplayStyle.Flex : DisplayStyle.None;
+            var toggle = ui.Section("Toggle");
+            ui.Segmented(toggle, "useExistingToggle", "Control", "Menu Toggle", "Existing Toggle");
+            var menu = new VisualElement();
+            toggle.Add(menu);
+            ui.Field(menu, "menuPath", "Menu Path");
+            ui.Field(menu, "menuName", "Toggle Name");
+            ui.Field(menu, "defaultOn", "On by Default");
+            ui.ShowWhen(menu, () => !data.useExistingToggle);
+            var existing = new VisualElement();
+            toggle.Add(existing);
+            var picker = new VisualElement();
+            existing.Add(picker);
+            ui.Caption(existing, "The grip is on while this toggle is on.");
+            ui.Messages(existing, () => new[] { YUCPInspector.Message.Error(LiveGripScene.ToggleProblem(data)) });
+            ui.ShowWhen(existing, () => data.useExistingToggle);
+            List<Component> shownToggles = null;
+            ui.OnRefresh(() =>
+            {
+                if (!data.useExistingToggle) return;
                 var toggles = LiveGripUI.Toggles(data);
-                if (useExisting && (shownToggles == null || !toggles.SequenceEqual(shownToggles)))
-                {
-                    shownToggles = toggles;
-                    existingFields.Clear();
-                    existingFields.Add(LiveGripUI.TogglePicker(serializedObject, data, toggles));
-                    existingFields.Add(LiveGripUI.Note("The grip is on while this toggle is on."));
-                }
-                toggleProblem.Clear();
-                var problemText = LiveGripScene.ToggleProblem(data);
-                if (problemText != null) toggleProblem.Add(Toolkit.CreateHelpBox(problemText, Toolkit.MessageType.Error));
-                summary.text = string.IsNullOrEmpty(data.GetBuildSummary()) ? "" : "Last build: " + data.GetBuildSummary();
-            }
+                if (shownToggles != null && toggles.SequenceEqual(shownToggles)) return;
+                shownToggles = toggles;
+                picker.Clear();
+                picker.Add(LiveGripUI.TogglePicker(ui.Object, data, toggles));
+            });
 
-            root.TrackSerializedObjectValue(serializedObject, _ => Refresh());
-            root.schedule.Execute(Refresh).Every(250);
-            Refresh();
-            return root;
+            var advanced = ui.Advanced();
+            ui.Field(advanced, "fingerThickness");
+            ui.BuildSummary(data.GetBuildSummary);
+
+            LiveGripScene.Changed += ui.Refresh;
+            ui.Root.RegisterCallback<DetachFromPanelEvent>(_ => LiveGripScene.Changed -= ui.Refresh);
+            ui.Refresh();
+            return ui.Root;
         }
     }
 
@@ -180,132 +128,38 @@ namespace YUCP.Components.Editor
         public override VisualElement CreateInspectorGUI()
         {
             var point = (LiveGripPoint)target;
-            serializedObject.Update();
-            var root = LiveGripUI.Root("Live Grip Point");
-            var validation = new VisualElement();
-            root.Add(validation);
-            var card = Toolkit.CreateCard("Grip");
-            var content = Toolkit.GetCardContent(card);
-            root.Add(card);
-            var pins = Toolkit.CreateFoldout("Pins");
-            pins.viewDataKey = "live-grip-point-pins";
-            foreach (var finger in LiveGripProcessor.FingerNames)
-                pins.Add(Toolkit.CreateField(serializedObject.FindProperty(finger.ToLowerInvariant()), finger));
-            root.Add(pins);
-
-            bool? shownEditing = null;
-            void Refresh()
+            var ui = YUCPInspector.Create(this, "Live Grip Point");
+            ui.Status(() =>
             {
-                if (target == null) return;
-                validation.Clear();
                 var data = point.GetComponentInParent<LiveGripData>(true);
-                if (data == null) validation.Add(Toolkit.CreateHelpBox("Put this under an object with Live Grip.", Toolkit.MessageType.Error));
-                else foreach (var problem in LiveGripScene.Problems(data))
-                    validation.Add(Toolkit.CreateHelpBox(problem, Toolkit.MessageType.Error));
+                return data == null
+                    ? new[] { YUCPInspector.Message.Error("Put this under an object with Live Grip.") }
+                    : LiveGripScene.Problems(data).Select(YUCPInspector.Message.Error);
+            });
+            var grip = ui.Section("Grip");
+            bool? shownEditing = null;
+            ui.OnRefresh(() =>
+            {
                 var editing = LiveGripScene.Editing == point;
                 if (shownEditing == editing) return;
                 shownEditing = editing;
-                content.Clear();
-                content.Add(LiveGripUI.Detail(point, rename: false));
-            }
-            root.schedule.Execute(Refresh).Every(250);
-            Refresh();
-            return root;
+                grip.Clear();
+                grip.Add(LiveGripUI.Detail(ui, point, rename: false));
+            });
+            var pins = ui.Advanced();
+            foreach (var finger in LiveGripProcessor.FingerNames)
+                ui.Field(pins, finger.ToLowerInvariant(), finger + " Pin");
+
+            LiveGripScene.Changed += ui.Refresh;
+            ui.Root.RegisterCallback<DetachFromPanelEvent>(_ => LiveGripScene.Changed -= ui.Refresh);
+            ui.Refresh();
+            return ui.Root;
         }
     }
 
-    /// <summary>Pieces both Live Grip inspectors are built from, on the YUCP design system.</summary>
+    /// <summary>Live Grip's own pieces: the toggle picker and the selected grip's detail.</summary>
     internal static class LiveGripUI
     {
-        private const string StylePath = "Packages/com.yucp.components/Editor/UI/LiveGripStyle.uss";
-
-        internal static VisualElement Root(string title)
-        {
-            var root = new VisualElement();
-            Toolkit.LoadDesignSystemStyles(root);
-            var style = AssetDatabase.LoadAssetAtPath<StyleSheet>(StylePath);
-            if (style != null) root.styleSheets.Add(style);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay(title));
-            return root;
-        }
-
-        /// <summary>A segmented control over an enum or bool property: one segment per value.</summary>
-        internal static VisualElement Segmented(SerializedObject so, string property, string label, params string[] segments)
-        {
-            var field = new SegmentedField(label, segments) { tooltip = so.FindProperty(property).tooltip };
-            int Get()
-            {
-                var p = so.FindProperty(property);
-                return p.propertyType == SerializedPropertyType.Boolean ? (p.boolValue ? 1 : 0) : p.enumValueIndex;
-            }
-            field.RegisterValueChangedCallback(e =>
-            {
-                so.Update();
-                var p = so.FindProperty(property);
-                if (p.propertyType == SerializedPropertyType.Boolean) p.boolValue = e.newValue == 1;
-                else p.enumValueIndex = e.newValue;
-                so.ApplyModifiedProperties();
-            });
-            field.TrackSerializedObjectValue(so, _ => field.SetValueWithoutNotify(Get()));
-            field.SetValueWithoutNotify(Get());
-            return field;
-        }
-
-        /// <summary>
-        /// Segments in a Unity field, so its label lines up with every other field in the inspector.
-        /// </summary>
-        private sealed class SegmentedField : BaseField<int>
-        {
-            private readonly Button[] segments;
-
-            public SegmentedField(string label, string[] names) : base(label, new VisualElement())
-            {
-                AddToClassList(alignedFieldUssClassName);
-                var input = this.Q(className: inputUssClassName);
-                input.AddToClassList("live-grip-segmented");
-                segments = names.Select((name, i) =>
-                {
-                    var button = new Button(() => value = i) { text = name };
-                    button.AddToClassList("live-grip-segment");
-                    input.Add(button);
-                    return button;
-                }).ToArray();
-            }
-
-            public override void SetValueWithoutNotify(int newValue)
-            {
-                base.SetValueWithoutNotify(newValue);
-                for (var i = 0; i < segments.Length; i++)
-                    segments[i].EnableInClassList("live-grip-segment--selected", i == newValue);
-            }
-        }
-
-        internal static Label Note(string text)
-        {
-            var note = new Label(text);
-            note.AddToClassList("live-grip-note");
-            return note;
-        }
-
-        internal static Button IconButton(string icon, string tooltip, Action onClick)
-        {
-            var button = new Button(onClick) { tooltip = tooltip };
-            button.AddToClassList("live-grip-icon-button");
-            button.Add(new Image { image = EditorGUIUtility.IconContent(icon).image });
-            return button;
-        }
-
-        internal static void Bind(SerializedObject so, VisualElement parent, BindableElement field, string property)
-        {
-            var p = so.FindProperty(property);
-            field.bindingPath = p.propertyPath;
-            field.tooltip = p.tooltip;
-            field.AddToClassList("yucp-field-input");
-            field.AddToClassList("unity-base-field__aligned");
-            field.Bind(so);
-            parent.Add(field);
-        }
-
         /// <summary>The avatar's VRCFury toggles.</summary>
         internal static List<Component> Toggles(LiveGripData data)
         {
@@ -322,7 +176,7 @@ namespace YUCP.Components.Editor
             var index = toggles.IndexOf(property.objectReferenceValue as Component) + 1;
             var picker = new DropdownField("Toggle", labels, Mathf.Max(0, index)) { tooltip = property.tooltip };
             picker.AddToClassList("yucp-field-input");
-            picker.AddToClassList("unity-base-field__aligned");
+            picker.AddToClassList(BaseField<string>.alignedFieldUssClassName);
             picker.RegisterValueChangedCallback(_ =>
             {
                 so.Update();
@@ -333,31 +187,26 @@ namespace YUCP.Components.Editor
         }
 
         /// <summary>The selected grip: its name, the edit button, and one row per finger.</summary>
-        internal static VisualElement Detail(LiveGripPoint point, bool rename = true)
+        internal static VisualElement Detail(YUCPInspector ui, LiveGripPoint point, bool rename = true)
         {
-            var detail = new VisualElement();
+            var detail = ui.Group(new VisualElement());
             if (rename)
             {
-                detail.AddToClassList("live-grip-detail");
                 var name = new TextField("Name") { bindingPath = "m_Name", isDelayed = true };
                 name.AddToClassList("yucp-field-input");
-                name.AddToClassList("unity-base-field__aligned");
+                name.AddToClassList(BaseField<string>.alignedFieldUssClassName);
                 name.Bind(new SerializedObject(point.gameObject));
                 detail.Add(name);
             }
             var editing = LiveGripScene.Editing == point;
-            var edit = Toolkit.CreateButton("", () =>
+            ui.Button(detail, editing ? "Done" : "Edit Grip", () =>
             {
                 if (LiveGripScene.Editing == point) LiveGripScene.StopEditing();
                 else LiveGripScene.StartEditing(point);
-            }, editing ? Toolkit.ButtonVariant.Primary : Toolkit.ButtonVariant.Secondary);
-            edit.AddToClassList("live-grip-edit");
-            edit.tooltip = editing ? "Stop editing (Esc)." : "Move the wrist and fingertips in the Scene view.";
-            edit.Add(new Image { image = EditorGUIUtility.IconContent("EditCollider").image });
-            edit.Add(new Label(editing ? "Done" : "Edit Grip"));
-            detail.Add(edit);
+            }, editing ? Toolkit.ButtonVariant.Primary : Toolkit.ButtonVariant.Secondary,
+                editing ? "Stop editing (Esc)." : "Move the wrist and fingertips in the Scene view.", "EditCollider");
             detail.Add(LiveGripScene.CreateFingerList(point));
-            return detail;
+            return detail.parent;
         }
     }
 
@@ -384,6 +233,9 @@ namespace YUCP.Components.Editor
         private static int surfaceKey;
 
         internal static LiveGripPoint Editing { get; private set; }
+
+        /// <summary>Raised when the edited grip or the selected element changes, so inspectors refresh.</summary>
+        internal static event Action Changed;
 
         /// <summary>The selected element while editing: the wrist, or a finger index.</summary>
         internal static int Selected { get; private set; } = Wrist;
@@ -412,6 +264,7 @@ namespace YUCP.Components.Editor
                 if (point != null) StartEditing(point);
                 else StopEditing();
             }
+            Changed?.Invoke();
         }
 
         internal static void SelectFinger(LiveGripPoint point, int finger)
@@ -419,6 +272,7 @@ namespace YUCP.Components.Editor
             if (Editing != point) StartEditing(point);
             Selected = finger;
             SceneView.RepaintAll();
+            Changed?.Invoke();
         }
 
         internal static void StartEditing(LiveGripPoint point)
@@ -429,6 +283,7 @@ namespace YUCP.Components.Editor
             if (data != null) ListSelection[data] = point;
             Tools.hidden = true;
             SceneView.RepaintAll();
+            Changed?.Invoke();
         }
 
         internal static void StopEditing()
@@ -439,6 +294,7 @@ namespace YUCP.Components.Editor
             if (surface != null) UnityEngine.Object.DestroyImmediate(surface.gameObject);
             surface = null;
             SceneView.RepaintAll();
+            Changed?.Invoke();
         }
 
         internal static IEnumerable<string> Problems(LiveGripData data)
@@ -511,22 +367,23 @@ namespace YUCP.Components.Editor
                 {
                     var finger = f;
                     var row = new VisualElement();
-                    row.AddToClassList("live-grip-finger");
-                    row.EnableInClassList("live-grip-finger--selected", Editing == point && Selected == f);
+                    row.AddToClassList("yucp-row");
+                    row.EnableInClassList("yucp-row--selected", Editing == point && Selected == f);
                     if (reaches)
                     {
+                        row.AddToClassList("yucp-row-selectable");
                         row.tooltip = "Select this fingertip in the Scene view.";
                         row.RegisterCallback<ClickEvent>(_ => SelectFinger(point, finger));
                     }
                     var label = new Label(LiveGripProcessor.FingerNames[f]);
-                    label.AddToClassList("live-grip-finger-name");
+                    label.AddToClassList("yucp-row-label");
                     row.Add(label);
                     var badge = new Label(text);
                     badge.AddToClassList("yucp-badge");
                     badge.AddToClassList("yucp-badge-" + variant);
                     row.Add(badge);
                     var spacer = new VisualElement();
-                    spacer.AddToClassList("live-grip-finger-spacer");
+                    spacer.AddToClassList("yucp-spacer");
                     row.Add(spacer);
                     if (pins[f] != null)
                     {
@@ -706,21 +563,7 @@ namespace YUCP.Components.Editor
                 return;
             }
 
-            var title = new GUIContent("Editing " + Editing.name);
-            var body = new GUIContent("Click a dot, then drag its handle. Esc to finish.");
-            var titleStyle = new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = Color.white } };
-            var bodyStyle = new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.85f, 0.85f, 0.85f) } };
-            var width = Mathf.Max(titleStyle.CalcSize(title).x, bodyStyle.CalcSize(body).x) + 20f;
-            var height = titleStyle.CalcHeight(title, width) + bodyStyle.CalcHeight(body, width) + 14f;
-            Handles.BeginGUI();
-            var panel = new Rect(10f, 10f, width, height);
-            EditorGUI.DrawRect(panel, new Color(0.13f, 0.13f, 0.13f, 0.92f));
-            EditorGUI.DrawRect(new Rect(panel.x, panel.y, 3f, panel.height), Touching);
-            GUILayout.BeginArea(new Rect(panel.x + 10f, panel.y + 6f, width - 14f, height - 8f));
-            GUILayout.Label(title, titleStyle);
-            GUILayout.Label(body, bodyStyle);
-            GUILayout.EndArea();
-            Handles.EndGUI();
+            YUCPSceneOverlay.Draw("Editing " + Editing.name, "Click a dot, then drag its handle. Esc to finish.");
         }
 
         /// <summary>The point of the object's hull nearest <paramref name="position"/>; from inside, the one above it along <paramref name="normal"/>.</summary>

@@ -1,9 +1,5 @@
-using System;
 using UnityEditor;
-using UnityEditor.UIElements;
-using UnityEngine;
 using UnityEngine.UIElements;
-using VRC.SDK3.Avatars.Components;
 using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.Components.Editor
@@ -11,220 +7,23 @@ namespace YUCP.Components.Editor
     [CustomEditor(typeof(CollisionDetectionData))]
     public class CollisionDetectionDataEditor : UnityEditor.Editor
     {
-        private CollisionDetectionData data;
-        private string previousBuildSummary = null;
-        private bool previousIncludeCredits = false;
-
-        private SerializedProperty alwaysResetProp;
-        private SerializedProperty menuLocationProp;
-        private SerializedProperty globalParameterResetProp;
-        private SerializedProperty globalParameterAlwaysResetProp;
-        private SerializedProperty collisionLayersProp;
-        private SerializedProperty useTriggersProp;
-        private SerializedProperty particleScaleProp;
-        private SerializedProperty enableGroupingProp;
-        private SerializedProperty collisionGroupIdProp;
-        private SerializedProperty verboseLoggingProp;
-        private SerializedProperty includeCreditsProp;
-
-        private static readonly string WikiUrl = "https://github.com/Yeusepe/Yeusepes-Modules/wiki/Collision-Detection";
-
-        private void OnEnable()
-        {
-            data = (CollisionDetectionData)target;
-
-            alwaysResetProp = serializedObject.FindProperty("alwaysReset");
-            menuLocationProp = serializedObject.FindProperty("menuLocation");
-            globalParameterResetProp = serializedObject.FindProperty("globalParameterReset");
-            globalParameterAlwaysResetProp = serializedObject.FindProperty("globalParameterAlwaysReset");
-            collisionLayersProp = serializedObject.FindProperty("collisionLayers");
-            useTriggersProp = serializedObject.FindProperty("useTriggers");
-            particleScaleProp = serializedObject.FindProperty("particleScale");
-            enableGroupingProp = serializedObject.FindProperty("enableGrouping");
-            collisionGroupIdProp = serializedObject.FindProperty("collisionGroupId");
-            verboseLoggingProp = serializedObject.FindProperty("verboseLogging");
-            includeCreditsProp = serializedObject.FindProperty("includeCredits");
-        }
-
         public override VisualElement CreateInspectorGUI()
         {
-            serializedObject.Update();
-            
-            var root = new VisualElement();
-            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Collision Detection"));
-            
-            var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(CollisionDetectionData));
-            if (betaWarning != null) root.Add(betaWarning);
-            
-            var supportBanner = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(CollisionDetectionData));
-            if (supportBanner != null) root.Add(supportBanner);
-            
-            var creditBanner = new VisualElement();
-            creditBanner.name = "credit-banner";
-            root.Add(creditBanner);
-            
-            var buildSummary = new VisualElement();
-            buildSummary.name = "build-summary";
-            root.Add(buildSummary);
-            
-            var descriptorWarnings = new VisualElement();
-            descriptorWarnings.name = "descriptor-warnings";
-            root.Add(descriptorWarnings);
-            
-            var overviewCard = new VisualElement();
-            overviewCard.name = "overview-card";
-            root.Add(overviewCard);
-            
-            var optionsCard = YUCPUIToolkitHelper.CreateCard("Options", "Configure collision detection behavior.");
-            var optionsContent = YUCPUIToolkitHelper.GetCardContent(optionsCard);
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(alwaysResetProp, "Always Reset"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, IsColliding resets immediately after collision stops. When disabled, it stays on until Reset is triggered.", YUCPUIToolkitHelper.MessageType.Info));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(menuLocationProp, "Menu Location"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterResetProp, "Global Parameter (Reset)"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateField(globalParameterAlwaysResetProp, "Global Parameter (Always Reset)"));
-            optionsContent.Add(YUCPUIToolkitHelper.CreateHelpBox("OPTIONAL: When set, these parameters will be registered as global parameters that can be controlled by VRChat worlds or external sources. Leave empty to use local parameters only.", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(optionsCard);
-            
-            var collisionCard = YUCPUIToolkitHelper.CreateCard("Collision Settings", "Configure particle system collision detection.");
-            var collisionContent = YUCPUIToolkitHelper.GetCardContent(collisionCard);
-            collisionContent.Add(YUCPUIToolkitHelper.CreateField(collisionLayersProp, "Collision Layers"));
-            collisionContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Select which layers the particle system will detect collisions with.", YUCPUIToolkitHelper.MessageType.Info));
-            collisionContent.Add(YUCPUIToolkitHelper.CreateField(useTriggersProp, "Use Triggers"));
-            collisionContent.Add(YUCPUIToolkitHelper.CreateHelpBox("When enabled, uses trigger colliders instead of collision detection. The collision module is disabled and triggers module is enabled.", YUCPUIToolkitHelper.MessageType.Info));
-            collisionContent.Add(YUCPUIToolkitHelper.CreateField(particleScaleProp, "Particle Scale"));
-            collisionContent.Add(YUCPUIToolkitHelper.CreateHelpBox("Scale of the collision detection area. This affects the size of the particle system bounds.", YUCPUIToolkitHelper.MessageType.Info));
-            root.Add(collisionCard);
-            
-            var groupingCard = YUCPUIToolkitHelper.CreateCard("Grouping & Collaboration", "Keep multiple components in sync automatically.");
-            var groupingContent = YUCPUIToolkitHelper.GetCardContent(groupingCard);
-            groupingContent.Add(YUCPUIToolkitHelper.CreateField(enableGroupingProp, "Enable Grouping"));
-            
-            var groupIdField = YUCPUIToolkitHelper.CreateField(collisionGroupIdProp, "Group ID");
-            groupIdField.name = "group-id";
-            groupingContent.Add(groupIdField);
-            
-            var groupingHelp = new VisualElement();
-            groupingHelp.name = "grouping-help";
-            groupingContent.Add(groupingHelp);
-            root.Add(groupingCard);
-            
-            var diagnosticsCard = YUCPUIToolkitHelper.CreateCard("Diagnostics & Debug", "Surface build output and logging helpers.");
-            var diagnosticsContent = YUCPUIToolkitHelper.GetCardContent(diagnosticsCard);
-            diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(verboseLoggingProp, "Verbose Logging"));
-            diagnosticsContent.Add(YUCPUIToolkitHelper.CreateField(includeCreditsProp, "Include Credits Banner"));
-            root.Add(diagnosticsCard);
-            
-            YUCPUIToolkitHelper.AddSpacing(root, 6);
-            var helpLinks = new VisualElement();
-            helpLinks.style.flexDirection = FlexDirection.Row;
-            helpLinks.style.marginBottom = 10;
-            
-            var docButton = YUCPUIToolkitHelper.CreateButton("Open Documentation", () => Application.OpenURL(WikiUrl), YUCPUIToolkitHelper.ButtonVariant.Secondary);
-            docButton.style.flexGrow = 1;
-            docButton.style.marginRight = 5;
-            helpLinks.Add(docButton);
-            
-            root.Add(helpLinks);
-            
-            previousBuildSummary = data.GetBuildSummary();
-            previousIncludeCredits = includeCreditsProp.boolValue;
-            
-            UpdateCreditBanner(creditBanner);
-            YUCPUIToolkitHelper.UpdateBuildSummary(buildSummary, data.GetBuildSummary(), data.GetLastBuildTimeUtc());
-            UpdateDescriptorWarnings(descriptorWarnings);
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            UpdateOverviewCard(overviewCard, data, descriptor);
-            UpdateGroupingHelp(groupingHelp);
-            
-            root.schedule.Execute(() =>
-            {
-                serializedObject.Update();
-                
-                bool currentIncludeCredits = includeCreditsProp.boolValue;
-                if (currentIncludeCredits != previousIncludeCredits)
-                {
-                    UpdateCreditBanner(creditBanner);
-                    previousIncludeCredits = currentIncludeCredits;
-                }
-                
-                string currentBuildSummary = data.GetBuildSummary();
-                if (currentBuildSummary != previousBuildSummary)
-                {
-                    YUCPUIToolkitHelper.UpdateBuildSummary(buildSummary, data.GetBuildSummary(), data.GetLastBuildTimeUtc());
-                    previousBuildSummary = currentBuildSummary;
-                }
-                
-                UpdateDescriptorWarnings(descriptorWarnings);
-                descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-                UpdateOverviewCard(overviewCard, data, descriptor);
-                
-                groupIdField.SetEnabled(enableGroupingProp.boolValue);
-                
-                UpdateGroupingHelp(groupingHelp);
-                
-                serializedObject.ApplyModifiedProperties();
-            }).Every(100);
-            
-            return root;
-        }
-        
-        private void UpdateOverviewCard(VisualElement container, CollisionDetectionData data, VRCAvatarDescriptor descriptor)
-        {
-            container.Clear();
-            
-            string targetPath = descriptor != null ? UnityEditor.AnimationUtility.CalculateTransformPath(data.transform, descriptor.transform) : data.gameObject.name;
-            var groupingLabel = enableGroupingProp.boolValue
-                ? CollisionDetectionData.NormalizeGroupId(collisionGroupIdProp.stringValue)
-                : "Isolated (per-object)";
-            
-            var overviewCard = YUCPUIToolkitHelper.CreateCard("Collision Detection Overview", null);
-            var overviewContent = YUCPUIToolkitHelper.GetCardContent(overviewCard);
-            
-            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Detecting Object", targetPath);
-            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Group", groupingLabel);
-            YUCPUIToolkitHelper.AddInfoRow(overviewContent, "Always Reset", alwaysResetProp.boolValue ? "Yes" : "No");
-            
-            container.Add(overviewCard);
-        }
-        
-        
-        private void UpdateCreditBanner(VisualElement container)
-        {
-            container.Clear();
-            if (includeCreditsProp.boolValue)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Powered by VRLabs Collision Detection (MIT). Please credit VRLabs when shipping your avatar.", YUCPUIToolkitHelper.MessageType.Info));
-            }
-        }
-        
-        
-        private void UpdateDescriptorWarnings(VisualElement container)
-        {
-            container.Clear();
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
-            if (descriptor == null)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("This component must be placed under a VRCAvatarDescriptor in order for the builder to configure collision detection.", YUCPUIToolkitHelper.MessageType.Error));
-            }
-            else if (data.transform == descriptor.transform)
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Attach Collision Detection to the object you want to detect collisions on, not the descriptor root.", YUCPUIToolkitHelper.MessageType.Warning));
-            }
-            else if (!data.transform.IsChildOf(descriptor.transform))
-            {
-                container.Add(YUCPUIToolkitHelper.CreateHelpBox("Collision Detection target must be within the avatar hierarchy. Please move it inside the descriptor object.", YUCPUIToolkitHelper.MessageType.Error));
-            }
-        }
-        
-        private void UpdateGroupingHelp(VisualElement container)
-        {
-            container.Clear();
-            var groupingInfo = enableGroupingProp.boolValue
-                ? "Components with the same Group ID share one collision detection setup to reduce overhead."
-                : "Grouping disabled: this component will get its own collision detection setup.";
-            container.Add(YUCPUIToolkitHelper.CreateHelpBox(groupingInfo, YUCPUIToolkitHelper.MessageType.Info));
+            var data = (CollisionDetectionData)target;
+            var ui = YUCPInspector.Create(this, "Collision Detection");
+            ui.Status(() => VRLabsInspector.Placement(data));
+
+            var collision = ui.Section("Collision");
+            ui.Field(collision, "collisionLayers");
+            ui.Field(collision, "useTriggers");
+            ui.Field(collision, "particleScale", "Detection Size");
+            ui.Field(collision, "alwaysReset");
+
+            VRLabsInspector.Menu(ui, null, "menuLocation",
+                ("globalParameterReset", "Reset Parameter"), ("globalParameterAlwaysReset", "Always Reset Parameter"));
+            VRLabsInspector.Advanced(ui, "collisionGroupId", "Based on VRLabs Collision Detection (MIT). Credit VRLabs when you share the avatar.",
+                data.GetBuildSummary, () => data.GetLastBuildTimeUtc());
+            return ui.Root;
         }
     }
 }
-

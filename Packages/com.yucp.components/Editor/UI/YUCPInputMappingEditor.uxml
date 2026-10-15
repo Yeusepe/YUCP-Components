@@ -1,0 +1,19 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <Style src="project://database/Assets/../Packages/com.yucp.components/Editor/UI/YUCPInputMappingEditor.uss" />
+    
+    <ui:VisualElement class="yucp-input-mapping-editor">
+        <ui:VisualElement class="yucp-input-mapping-header">
+            <ui:Toggle name="mapping-enabled" class="yucp-mapping-enabled" />
+            <ui:Foldout name="mapping-foldout" class="yucp-mapping-foldout" text="Mapping" />
+            <ui:Button name="mapping-remove" class="yucp-mapping-remove" text="×" />
+        </ui:VisualElement>
+        <ui:VisualElement name="mapping-content" class="yucp-input-mapping-content">
+            <ui:TextField name="mapping-name" class="unity-base-field__aligned" label="Mapping Name" />
+            <uie:EnumField name="mapping-input-type" class="unity-base-field__aligned" label="Input Type" />
+            <ui:VisualElement name="input-specific-fields" class="yucp-input-specific-fields" />
+            <ui:TextField name="mapping-parameter-name" class="unity-base-field__aligned" label="Parameter Name" />
+            <uie:EnumField name="mapping-parameter-type" class="unity-base-field__aligned" label="Parameter Type" />
+            <ui:VisualElement name="parameter-value-fields" class="yucp-parameter-value-fields" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -3,5 +3,6 @@
 
 # YUCP Components Package
 !com.yucp.components
+!com.yucp.ui
 #
 !com.vrchat.core.*/

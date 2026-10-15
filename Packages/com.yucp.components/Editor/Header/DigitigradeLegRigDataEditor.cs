@@ -1,9 +1,10 @@
+using System.Collections.Generic;
 using UnityEditor;
-using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
+using YUCP.Components.Editor.MeshUtils;
 using YUCP.UI.DesignSystem.Utilities;
-using Toolkit = YUCP.UI.DesignSystem.Utilities.YUCPUIToolkitHelper;
+using Message = YUCP.UI.DesignSystem.Utilities.YUCPInspector.Message;
 
 namespace YUCP.Components.Editor
 {
@@ -13,119 +14,103 @@ namespace YUCP.Components.Editor
         public override VisualElement CreateInspectorGUI()
         {
             var data = (DigitigradeLegRigData)target;
-            data.ResolveBones();
-            serializedObject.Update();
+            var ui = YUCPInspector.Create(this, "Digitigrade Leg Rig");
+            ui.Status(() => Problems(data));
+            bool Limits() => data.enforceJointLimits;
 
-            var root = new VisualElement();
-            Toolkit.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Digitigrade Leg Rig"));
-            var support = SupportBannerHelper.CreateSupportBannerVisualElement(typeof(DigitigradeLegRigData));
-            if (support != null) root.Add(support);
-            var validation = new VisualElement();
-            root.Add(validation);
+            var wearer = ui.Section("Wearer defaults", "Starting values for the wearer's menu sliders. Adjust them live in Play Mode with Gesture Manager.");
+            var movement = ui.ShowWhen(new VisualElement(), Limits);
+            wearer.Add(movement);
+            ui.Field(movement, "thighMovement");
+            ui.Field(movement, "kneeMovement");
+            ui.Field(movement, "hockMovement");
+            ui.Caption(movement, "Lower movement can pull the paw away from tracking.");
+            ui.Field(wearer, "pawFlattenWeight", "Paw Follow");
+            ui.Field(wearer, "anklesWeight", "Contact Response");
 
-            var style = Toolkit.CreateCard("Wearer Defaults", "Starting values for the wearer's controls. Enter Play Mode to rebuild, then adjust them live in Gesture Manager.");
-            var styleContent = Toolkit.GetCardContent(style);
-            var movement = new VisualElement();
-            AddSlider(movement, "thighMovement", "Thigh Movement");
-            AddSlider(movement, "kneeMovement", "Knee Movement");
-            AddSlider(movement, "hockMovement", "Hock Movement");
-            movement.Add(Toolkit.CreateHelpBox("0 holds the joint near its safe rest pose; 1 uses its full solved motion. Reducing movement can move the paw away from tracking."));
-            styleContent.Add(movement);
-            AddSlider(styleContent, "pawFlattenWeight", "Paw Follow");
-            AddSlider(styleContent, "anklesWeight", "Contact Response");
-            root.Add(style);
-
-            var limits = Toolkit.CreateCard("Joint Limits", "Keep the knee and hock within their allowed angles, even when the tracked pose cannot be reached.");
-            var limitsContent = Toolkit.GetCardContent(limits);
-            AddBoundField(limitsContent, new Toggle("Enforce Joint Limits"), "enforceJointLimits");
-            var bounded = new VisualElement();
-            bounded.Add(Toolkit.CreateField(serializedObject.FindProperty("kneeAngleLimits"), "Knee Angles"));
-            bounded.Add(Toolkit.CreateField(serializedObject.FindProperty("hockAngleLimits"), "Hock Angles"));
-            limitsContent.Add(bounded);
-            var legacy = new VisualElement();
-            legacy.Add(Toolkit.CreateHelpBox("Without Joint Limits the leg uses the original two-pass fold. Individual joint movement controls require Joint Limits.", Toolkit.MessageType.Warning));
-            AddSlider(legacy, "ankleUpAngle", "Ankle Up Angle", 90f);
-            AddSlider(legacy, "ankleDownAngle", "Ankle Down Angle", 90f);
-            AddSlider(legacy, "kneeStraightness", "Knee Straightness");
-            limitsContent.Add(legacy);
-            root.Add(limits);
-
-            var menu = Toolkit.CreateCard("Avatar Menu", "The wearer can save and adjust these settings in the avatar's expression menu.");
-            var menuContent = Toolkit.GetCardContent(menu);
-            AddBoundField(menuContent, new TextField("Menu Path"), "menuPath");
-            menuContent.Add(Toolkit.CreateField(serializedObject.FindProperty("menuName"), "Toggle Name"));
-            var menuLocation = new Label();
-            menuLocation.AddToClassList("yucp-card-subtitle");
-            menuLocation.style.whiteSpace = WhiteSpace.Normal;
-            menuContent.Add(menuLocation);
-            root.Add(menu);
-
-            var bones = Toolkit.CreateFoldout("Leg Bones");
-            bones.viewDataKey = "digitigrade-rig-bones";
-            foreach (var side in new[] { "left", "right" })
+            var limits = ui.Section("Joint limits");
+            ui.Field(limits, "enforceJointLimits");
+            var bounded = ui.ShowWhen(ui.Indent(limits), Limits);
+            ui.Field(bounded, "kneeAngleLimits", "Knee Angles");
+            ui.Field(bounded, "hockAngleLimits", "Hock Angles");
+            ui.Messages(bounded, () => new[]
             {
-                var label = side == "left" ? "Left" : "Right";
-                AddBoundField(bones, new ObjectField(label + " Thigh") { objectType = typeof(Transform) }, side + "Thigh");
-                bones.Add(Toolkit.CreateField(serializedObject.FindProperty(side + "Shin"), label + " Shin"));
-                bones.Add(Toolkit.CreateField(serializedObject.FindProperty(side + "Metatarsus"), label + " Metatarsus"));
-                bones.Add(Toolkit.CreateField(serializedObject.FindProperty(side + "Foot"), label + " Foot"));
-            }
-            root.Add(bones);
+                ValidLimits(data.kneeAngleLimits) && ValidLimits(data.hockAngleLimits)
+                    ? default
+                    : Message.Error("Keep each range between 0 and 180 degrees, with the minimum below the maximum.")
+            });
+            var legacy = ui.ShowWhen(ui.Indent(limits), () => !Limits());
+            ui.Caption(legacy, "The leg uses the original two-pass fold, without the wearer's joint movement sliders.");
+            ui.Field(legacy, "ankleUpAngle");
+            ui.Field(legacy, "ankleDownAngle");
+            ui.Field(legacy, "kneeStraightness");
 
-            var advanced = Toolkit.CreateFoldout("Advanced & Diagnostics");
-            advanced.viewDataKey = "digitigrade-rig-advanced";
-            AddSlider(advanced, "stanceAngle", "Stance Angle", 60f);
-            advanced.Add(Toolkit.CreateField(serializedObject.FindProperty("bendNormalOverride"), "Bend Normal Override"));
-            AddBoundField(advanced, new Toggle("Verbose Logging"), "verboseLogging");
-            var summary = new Label();
-            summary.style.whiteSpace = WhiteSpace.Normal;
-            summary.AddToClassList("yucp-card-subtitle");
-            advanced.Add(summary);
-            root.Add(advanced);
+            var menu = ui.Section("Avatar menu");
+            ui.Field(menu, "menuPath", "Menu Path");
+            ui.Field(menu, "menuName", "Toggle Name");
+            ui.Caption(menu, () => Limits()
+                ? "The wearer's sliders go in the same submenu."
+                : "The submenu also gets Ankle Only Mode and Ankle Weight.");
 
-            void Refresh()
+            var advanced = ui.Advanced();
+            ui.Field(advanced, "stanceAngle");
+            ui.Field(advanced, "bendNormalOverride");
+            var bones = ui.Group(advanced, "Leg bones");
+            foreach (var side in new[] { "Left", "Right" })
+                foreach (var bone in new[] { "Thigh", "Shin", "Metatarsus", "Foot" })
+                    ui.Field(bones, side.ToLowerInvariant() + bone, side + " " + bone);
+            ui.Caption(bones, "Empty slots use the avatar's humanoid bones.");
+            var resolve = ui.ButtonRow(bones);
+            ui.Button(resolve, "Auto-Resolve From Humanoid", () =>
             {
-                if (target == null) return;
-                var useLimits = serializedObject.FindProperty("enforceJointLimits").boolValue;
-                bounded.style.display = movement.style.display = useLimits ? DisplayStyle.Flex : DisplayStyle.None;
-                legacy.style.display = useLimits ? DisplayStyle.None : DisplayStyle.Flex;
-                var path = serializedObject.FindProperty("menuPath").stringValue.Trim('/');
-                menuLocation.text = useLimits
-                    ? "Wearer sliders appear in " + (string.IsNullOrEmpty(path) ? "the menu root." : path + ".")
-                    : "Without Joint Limits the leg uses the original ankle controls.";
-                summary.text = string.IsNullOrEmpty(data.GetBuildSummary()) ? "" : "Last build: " + data.GetBuildSummary();
-                validation.Clear();
-                var animator = data.GetComponentInParent<Animator>();
-                var split = animator != null ? animator.GetComponentInChildren<DigitigradeLegSplitData>(true) : null;
-                if (data.leftThigh == null || data.rightThigh == null || data.leftShin == null || data.rightShin == null || data.leftFoot == null || data.rightFoot == null)
-                    validation.Add(Toolkit.CreateHelpBox("Some leg bones are missing. Assign them under Leg Bones.", Toolkit.MessageType.Warning));
-                else if (data.leftMetatarsus == null || data.rightMetatarsus == null)
-                    validation.Add(Toolkit.CreateHelpBox(split != null
-                        ? "Digitigrade Leg Split will create the metatarsus bones during the build."
-                        : "Add Digitigrade Leg Split or assign the existing metatarsus bones under Leg Bones.",
-                        split != null ? Toolkit.MessageType.Info : Toolkit.MessageType.Error));
+                Undo.RecordObject(data, "Auto-Resolve Leg Bones");
+                data.ResolveBones();
+                ui.Refresh();
+            }, YUCPUIToolkitHelper.ButtonVariant.Secondary, "Fills the empty slots with the bones the build would use.");
+            ui.ShowWhen(resolve, () => !data.IsComplete());
+            ui.Field(advanced, "verboseLogging");
+            ui.BuildSummary(data.GetBuildSummary);
+            return ui.Root;
+        }
+
+        private static IEnumerable<Message> Problems(DigitigradeLegRigData data)
+        {
+            var animator = data.GetComponentInParent<Animator>();
+            if (animator == null || !animator.isHuman)
+            {
+                yield return Message.Error("Put this on a humanoid avatar.");
+                yield break;
             }
 
-            root.TrackSerializedObjectValue(serializedObject, _ => Refresh());
-            root.Query<Label>(className: "yucp-card-subtitle").ForEach(label => label.style.whiteSpace = WhiteSpace.Normal);
-            Refresh();
-            return root;
+            if (!FinalIkBridge.IsAvailable)
+                yield return Message.Error("To build the rig, import Final IK.");
+            else if (data.enforceJointLimits && !FinalIkBridge.JointLimitsAvailable)
+                yield return Message.Error("Joint limits need Final IK's CCDIK and Rotation Limit Hinge. Update Final IK, or turn off Enforce Joint Limits.");
+
+            // The bones the build will use: what ResolveBones fills in, without changing the component.
+            Transform Human(Transform assigned, HumanBodyBones bone) => assigned != null ? assigned : animator.GetBoneTransform(bone);
+            var legs = new[]
+            {
+                (thigh: Human(data.leftThigh, HumanBodyBones.LeftUpperLeg), shin: Human(data.leftShin, HumanBodyBones.LeftLowerLeg),
+                    foot: Human(data.leftFoot, HumanBodyBones.LeftFoot), metatarsus: data.leftMetatarsus),
+                (thigh: Human(data.rightThigh, HumanBodyBones.RightUpperLeg), shin: Human(data.rightShin, HumanBodyBones.RightLowerLeg),
+                    foot: Human(data.rightFoot, HumanBodyBones.RightFoot), metatarsus: data.rightMetatarsus)
+            };
+            var chainMissing = false;
+            var metatarsusMissing = false;
+            foreach (var leg in legs)
+            {
+                chainMissing |= leg.thigh == null || leg.shin == null || leg.foot == null;
+                metatarsusMissing |= (leg.metatarsus != null ? leg.metatarsus : DigitigradeLegRigData.FindBetween(leg.shin, leg.foot)) == null;
+            }
+
+            if (chainMissing)
+                yield return Message.Error("Assign the missing leg bones in Advanced Options.");
+            else if (metatarsusMissing && animator.GetComponentInChildren<DigitigradeLegSplitData>(true) == null)
+                yield return Message.Error("Add Digitigrade Leg Split, or assign the metatarsus bones in Advanced Options.");
         }
 
-        private void AddSlider(VisualElement parent, string property, string label, float maximum = 1f)
-        {
-            AddBoundField(parent, new Slider(label, 0f, maximum) { showInputField = true }, property);
-        }
-
-        private void AddBoundField(VisualElement parent, BindableElement field, string propertyName)
-        {
-            var property = serializedObject.FindProperty(propertyName);
-            field.bindingPath = property.propertyPath;
-            field.tooltip = property.tooltip;
-            field.AddToClassList("yucp-field-input");
-            field.AddToClassList("unity-base-field__aligned");
-            parent.Add(field);
-        }
+        // ponytail: mirrors DigitigradeRigBuilder.ValidLimits (private there), so the build error shows here first.
+        private static bool ValidLimits(Vector2 limits) => limits.x > 0f && limits.y < 180f && limits.x < limits.y;
     }
 }

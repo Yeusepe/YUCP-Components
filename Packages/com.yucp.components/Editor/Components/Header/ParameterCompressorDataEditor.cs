@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
-using UnityEditor.UIElements;
-using UnityEngine;
 using UnityEngine.UIElements;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
@@ -14,513 +12,253 @@ namespace YUCP.Components.Editor
     [CustomEditor(typeof(ParameterCompressorData))]
     public sealed class ParameterCompressorDataEditor : UnityEditor.Editor
     {
-        private enum InspectorMode
-        {
-            Simple,
-            Advanced
-        }
-
-        private ParameterCompressorData data;
-        private SerializedProperty automaticSelectionProp;
-        private SerializedProperty reserveSyncedBitsProp;
-        private SerializedProperty optimizationBiasProp;
-        private SerializedProperty parameterPrefixProp;
-        private SerializedProperty profileProp;
-        private SerializedProperty rulesProp;
-
-        private InspectorMode inspectorMode;
-        private VisualElement validation;
-        private VisualElement simpleHost;
-        private VisualElement advancedHost;
-        private VisualElement manualSimpleHint;
-        private VisualElement ruleList;
-        private Button simpleButton;
-        private Button advancedButton;
-        private Label summaryValue;
-        private Label summaryDetails;
-        private Label advancedSummary;
-
-        private void OnEnable()
-        {
-            data = (ParameterCompressorData)target;
-            automaticSelectionProp = serializedObject.FindProperty(
-                "automaticSelection");
-            reserveSyncedBitsProp = serializedObject.FindProperty(
-                "reserveSyncedBits");
-            optimizationBiasProp = serializedObject.FindProperty(
-                "optimizationBias");
-            parameterPrefixProp = serializedObject.FindProperty(
-                "parameterPrefix");
-            profileProp = serializedObject.FindProperty("profile");
-            rulesProp = serializedObject.FindProperty("rules");
-
-            inspectorMode = (InspectorMode)Mathf.Clamp(
-                SessionState.GetInt(ModeKey, (int)InspectorMode.Simple),
-                (int)InspectorMode.Simple,
-                (int)InspectorMode.Advanced);
-        }
+        private const int Budget = ParameterCompressionContract.VrchatParameterBudget;
 
         public override VisualElement CreateInspectorGUI()
         {
-            serializedObject.Update();
+            var data = (ParameterCompressorData)target;
+            var ui = YUCPInspector.Create(this, "Parameter Compressor");
+            ui.Status(() => Problems(data));
 
-            var root = new VisualElement();
-            YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-            root.Add(YUCP.Components.Resources.YUCPComponentHeader
-                .CreateHeaderOverlay("Parameter Compressor"));
+            var compression = ui.Section("Compression");
+            ui.Field(compression, "automaticSelection");
+            ui.Field(compression, "reserveSyncedBits", "Reserved Bits");
 
-            var support = SupportBannerHelper.CreateSupportBannerVisualElement(
-                typeof(ParameterCompressorData));
-            if (support != null) root.Add(support);
-
-            validation = new VisualElement { name = "validation-messages" };
-            root.Add(validation);
-
-            var tabStyles = AssetDatabase.LoadAssetAtPath<StyleSheet>(
-                "Packages/com.yucp.components/Editor/UI/DesignSystem/UIToolkit/Layouts/YUCPTabs.uss");
-            if (tabStyles != null) root.styleSheets.Add(tabStyles);
-
-            BuildTabs(root);
-
-            simpleHost = new VisualElement { name = "simple-mode-ui" };
-            simpleHost.AddToClassList("yucp-tabs-content");
-            BuildSimple(simpleHost);
-            root.Add(simpleHost);
-
-            advancedHost = new VisualElement { name = "advanced-mode-ui" };
-            advancedHost.AddToClassList("yucp-tabs-content");
-            BuildAdvanced(advancedHost);
-            root.Add(advancedHost);
-
-            UpdateDynamicUi();
-            root.schedule.Execute(() =>
+            var bits = ui.Section("Synced bits");
+            ui.InfoRow(bits, "Current Use", () =>
             {
-                if (target == null) return;
-                serializedObject.UpdateIfRequiredOrScript();
-                UpdateDynamicUi();
-            }).Every(250);
+                var current = CurrentSyncedBits(data);
+                return current < 0 ? "Unknown outside an avatar" : $"{current} of {Budget} bits";
+            }).tooltip = "Synced parameters on the avatar now. Other tools can add more during the build.";
+            ui.InfoRow(bits, "Target", () => $"{TargetBits(data)} bits or fewer");
+            var last = ui.Group(bits, "Last build");
+            ui.InfoRow(last, "Synced Bits", () => $"{data.GetBuildSummary().beforeBits} → {data.GetBuildSummary().afterBits}");
+            ui.InfoRow(last, "Compressed", () => Parameters(data.GetBuildSummary().compressedParameters));
+            ui.InfoRow(last, "Protected", () => Parameters(data.GetBuildSummary().protectedParameters));
+            ui.InfoRow(last, "Carrier Bits", () => data.GetBuildSummary().carrierBits.ToString());
+            ui.ShowWhen(ui.InfoRow(last, "Full Refresh", () => $"Up to {data.GetBuildSummary().nominalFullRefreshSeconds:0.0} s"),
+                () => data.GetBuildSummary().nominalFullRefreshSeconds > 0f);
+            ui.ShowWhen(ui.InfoRow(last, "Transport", () => data.GetBuildSummary().transportName),
+                () => !string.IsNullOrWhiteSpace(data.GetBuildSummary().transportName));
+            ui.ShowWhen(last, () => data.GetBuildSummary().hasResult);
+            ui.Caption(bits, () => Note(data));
+            ui.Messages(bits, () =>
+            {
+                var build = data.GetBuildSummary();
+                return new[] { YUCPInspector.Message.Warning(build.hasResult ? null : build.message) };
+            });
 
-            return root;
+            BuildRules(ui, data);
+
+            ui.Field(ui.Advanced(), "parameterPrefix");
+            return ui.Root;
         }
 
-        private string ModeKey =>
-            "YUCP_ParameterCompressor_UIMode_" +
-            (data != null ? data.GetInstanceID() : 0);
-
-        private void BuildTabs(VisualElement root)
+        /// <summary>Rules: the list, the selected rule's settings under it, and problems with the rules.</summary>
+        private static void BuildRules(YUCPInspector ui, ParameterCompressorData data)
         {
-            var tabs = new VisualElement { name = "mode-switcher" };
-            tabs.AddToClassList("yucp-tabs-header");
-
-            simpleButton = new Button(() => SetMode(InspectorMode.Simple))
+            var section = ui.Section("Parameter rules");
+            ui.Field(section, "profile");
+            var selected = -1;
+            var items = new List<ParameterCompressionRule>();
+            var list = ui.List(section, items, () =>
             {
-                text = "Simple",
-                name = "simple-mode-tab"
+                var row = new VisualElement();
+                row.AddToClassList("yucp-list-item");
+                var name = new Label();
+                name.AddToClassList("yucp-list-item-name");
+                row.Add(name);
+                var badge = new Label();
+                badge.AddToClassList("yucp-badge");
+                row.Add(badge);
+                return row;
+            }, (row, i) =>
+            {
+                var rule = items[i];
+                row.Q<Label>(className: "yucp-list-item-name").text =
+                    string.IsNullOrWhiteSpace(rule.parameterName) ? "New Rule" : rule.parameterName;
+                var badge = row.Q<Label>(className: "yucp-badge");
+                badge.text = Badge(rule.selection);
+                badge.EnableInClassList("yucp-badge-default", rule.selection == ParameterCompressionRuleSelection.Automatic ||
+                                                              rule.selection == ParameterCompressionRuleSelection.KeepDirect);
+                badge.EnableInClassList("yucp-badge-primary", rule.selection == ParameterCompressionRuleSelection.Include);
+                badge.EnableInClassList("yucp-badge-warning", rule.selection == ParameterCompressionRuleSelection.IncludeUnverified);
+            },
+                "No rules yet. Add one to include, protect or tune a parameter.",
+                () =>
+                {
+                    selected = AddRule(ui);
+                    ui.Refresh();
+                },
+                i =>
+                {
+                    selected = RemoveRule(ui, i, selected);
+                    ui.Refresh();
+                },
+                "Add Rule", "Remove Rule");
+            list.View.tooltip = "Rules apply after the profile's rules.";
+            list.View.selectionChanged += _ =>
+            {
+                selected = list.View.selectedIndex;
+                ui.Refresh();
             };
-            simpleButton.AddToClassList("yucp-tab");
-            simpleButton.style.flexGrow = 1;
-            tabs.Add(simpleButton);
-
-            advancedButton = new Button(() => SetMode(InspectorMode.Advanced))
+            list.View.itemIndexChanged += (from, to) =>
             {
-                text = "Advanced",
-                name = "advanced-mode-tab"
+                ui.Object.Update();
+                ui.Object.FindProperty("rules").MoveArrayElement(from, to);
+                ui.Object.ApplyModifiedProperties();
+                selected = to;
+                ui.Refresh();
             };
-            advancedButton.AddToClassList("yucp-tab");
-            advancedButton.style.flexGrow = 1;
-            tabs.Add(advancedButton);
-            root.Add(tabs);
-        }
 
-        private void BuildSimple(VisualElement root)
-        {
-            var setup = YUCPUIToolkitHelper.CreateCard(
-                "Make Parameters Fit",
-                "The compressor keeps local controls unchanged and shares them through a smaller network channel.");
-            var content = YUCPUIToolkitHelper.GetCardContent(setup);
-            content.Add(YUCPUIToolkitHelper.CreateField(
-                automaticSelectionProp, "Choose Safe Parameters Automatically"));
-            content.Add(CreateReservedBitsSlider("Keep Space Free"));
-            content.Add(CreateBiasSlider());
-            manualSimpleHint = YUCPUIToolkitHelper.CreateHelpBox(
-                "Automatic selection is off. Open Advanced to choose which parameters are included.",
-                YUCPUIToolkitHelper.MessageType.Info);
-            content.Add(manualSimpleHint);
-            root.Add(setup);
+            // The selected rule's settings. Rebuilt only when the selection or the rule count changes.
+            var detail = ui.Group(section);
+            var top = new VisualElement();
+            detail.Add(top);
+            var custom = ui.Indent(detail);
+            var bottom = new VisualElement();
+            detail.Add(bottom);
+            ParameterCompressionRule Selected() =>
+                data.rules != null && selected >= 0 && selected < data.rules.Count ? data.rules[selected] : null;
+            ui.ShowWhen(detail, () => Selected() != null);
+            ui.ShowWhen(custom, () => Selected()?.range == ParameterCompressionRangeMode.Custom);
 
-            var summary = YUCPUIToolkitHelper.CreateCard(
-                "Synced Space", "The exact plan is calculated after avatar tools finish generating their parameters.");
-            var summaryContent = YUCPUIToolkitHelper.GetCardContent(summary);
-            summaryValue = new Label { name = "compression-summary-value" };
-            summaryValue.style.fontSize = 18;
-            summaryValue.style.unityFontStyleAndWeight = FontStyle.Bold;
-            summaryValue.style.marginBottom = 4;
-            summaryContent.Add(summaryValue);
-            summaryDetails = new Label { name = "compression-summary-details" };
-            summaryDetails.style.whiteSpace = WhiteSpace.Normal;
-            summaryContent.Add(summaryDetails);
-            root.Add(summary);
-        }
-
-        private void BuildAdvanced(VisualElement root)
-        {
-            var behavior = YUCPUIToolkitHelper.CreateCard(
-                "Compression Policy",
-                "Control how the final merged avatar is analyzed and how much space is reserved.");
-            var behaviorContent = YUCPUIToolkitHelper.GetCardContent(behavior);
-            behaviorContent.Add(YUCPUIToolkitHelper.CreateField(
-                automaticSelectionProp, "Automatic Selection"));
-            behaviorContent.Add(CreateReservedBitsSlider("Reserved Synced Bits"));
-            behaviorContent.Add(CreateBiasSlider());
-            advancedSummary = new Label { name = "advanced-compression-summary" };
-            advancedSummary.style.whiteSpace = WhiteSpace.Normal;
-            advancedSummary.style.marginTop = 4;
-            behaviorContent.Add(advancedSummary);
-            root.Add(behavior);
-
-            var identity = YUCPUIToolkitHelper.CreateFoldout(
-                "Transport Identity", false);
-            identity.Add(YUCPUIToolkitHelper.CreateField(
-                parameterPrefixProp, "Parameter Prefix"));
-            identity.Add(YUCPUIToolkitHelper.CreateField(
-                profileProp, "Reusable Profile"));
-            root.Add(identity);
-
-            var rulesCard = YUCPUIToolkitHelper.CreateCard(
-                "Parameter Rules",
-                "Override automatic choices, update priority, precision, range, or scheduling group for individual parameters.");
-            var rulesContent = YUCPUIToolkitHelper.GetCardContent(rulesCard);
-            ruleList = new VisualElement { name = "parameter-rule-list" };
-            rulesContent.Add(ruleList);
-
-            var addRule = new Button(AddRule)
+            string shownItems = null;
+            string shownDetail = null;
+            ui.OnRefresh(() =>
             {
-                text = "Add Parameter Rule",
-                name = "add-parameter-rule"
-            };
-            addRule.style.marginTop = 6;
-            rulesContent.Add(addRule);
-            root.Add(rulesCard);
-            RebuildRules();
+                var rules = data.rules ?? new List<ParameterCompressionRule>();
+                var key = string.Join("|", rules.Select(r => r == null ? "" : r.parameterName + (int)r.selection));
+                if (key != shownItems)
+                {
+                    shownItems = key;
+                    items.Clear();
+                    items.AddRange(rules);
+                    list.Refresh();
+                }
+                if (selected >= rules.Count) selected = rules.Count - 1;
+                list.Select(selected);
+
+                var detailKey = Selected() == null ? "" : selected + "/" + rules.Count;
+                if (detailKey == shownDetail) return;
+                shownDetail = detailKey;
+                top.Clear();
+                custom.Clear();
+                bottom.Clear();
+                if (Selected() == null) return;
+                var path = $"rules.Array.data[{selected}].";
+                ui.Field(top, path + "parameterName", "Parameter");
+                ui.Field(top, path + "selection", "Include");
+                ui.Field(top, path + "priority", "Update Priority");
+                ui.Field(top, path + "precision", "Precision");
+                ui.Field(top, path + "range", "Range");
+                ui.Field(custom, path + "minimum", "Minimum");
+                ui.Field(custom, path + "maximum", "Maximum");
+                ui.Field(bottom, path + "group", "Group");
+            });
+
+            ui.Messages(section, () => RuleProblems(data));
         }
 
-        private VisualElement CreateReservedBitsSlider(string label)
+        private static int AddRule(YUCPInspector ui)
         {
-            var slider = new SliderInt(
-                label, 0, ParameterCompressionContract.MaximumReservedBits)
-            {
-                showInputField = true,
-                tooltip = "Space left available for parameters created later in the build."
-            };
-            slider.AddToClassList("yucp-field-input");
-            slider.BindProperty(reserveSyncedBitsProp);
-            return slider;
-        }
-
-        private VisualElement CreateBiasSlider()
-        {
-            var container = new VisualElement { name = "compression-bias" };
-            var title = new Label("Sync Preference");
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            container.Add(title);
-
-            var slider = new Slider(0f, 1f)
-            {
-                showInputField = false,
-                tooltip = "Move left for faster refreshes or right to use fewer synced bits."
-            };
-            slider.AddToClassList("yucp-field-input");
-            slider.BindProperty(optimizationBiasProp);
-            container.Add(slider);
-
-            var labels = new VisualElement();
-            labels.style.flexDirection = FlexDirection.Row;
-            labels.style.justifyContent = Justify.SpaceBetween;
-            var fast = new Label("Faster updates");
-            fast.style.opacity = 0.7f;
-            var small = new Label("Smaller footprint");
-            small.style.opacity = 0.7f;
-            labels.Add(fast);
-            labels.Add(small);
-            container.Add(labels);
-            container.style.marginTop = 3;
-            container.style.marginBottom = 5;
-            return container;
-        }
-
-        private void AddRule()
-        {
-            serializedObject.Update();
-            Undo.RecordObject(data, "Add Parameter Compression Rule");
-            var index = rulesProp.arraySize;
-            rulesProp.arraySize++;
-            var rule = rulesProp.GetArrayElementAtIndex(index);
+            ui.Object.Update();
+            var rules = ui.Object.FindProperty("rules");
+            var index = rules.arraySize;
+            rules.arraySize++;
+            var rule = rules.GetArrayElementAtIndex(index);
             rule.FindPropertyRelative("parameterName").stringValue = string.Empty;
-            rule.FindPropertyRelative("selection").enumValueIndex =
-                (int)ParameterCompressionRuleSelection.Automatic;
-            rule.FindPropertyRelative("priority").enumValueIndex =
-                (int)ParameterCompressionPriority.Normal;
-            rule.FindPropertyRelative("precision").enumValueIndex =
-                (int)ParameterCompressionPrecision.Automatic;
-            rule.FindPropertyRelative("range").enumValueIndex =
-                (int)ParameterCompressionRangeMode.Automatic;
+            rule.FindPropertyRelative("selection").enumValueIndex = (int)ParameterCompressionRuleSelection.Automatic;
+            rule.FindPropertyRelative("priority").enumValueIndex = (int)ParameterCompressionPriority.Normal;
+            rule.FindPropertyRelative("precision").enumValueIndex = (int)ParameterCompressionPrecision.Automatic;
+            rule.FindPropertyRelative("range").enumValueIndex = (int)ParameterCompressionRangeMode.Automatic;
             rule.FindPropertyRelative("minimum").floatValue = 0f;
             rule.FindPropertyRelative("maximum").floatValue = 1f;
-            rule.FindPropertyRelative("group").stringValue =
-                ParameterCompressionContract.DefaultGroup;
-            rule.FindPropertyRelative("stableId").stringValue =
-                ParameterCompressionContract.NewStableId();
-            serializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(data);
-            RebuildRules();
+            rule.FindPropertyRelative("group").stringValue = ParameterCompressionContract.DefaultGroup;
+            rule.FindPropertyRelative("stableId").stringValue = ParameterCompressionContract.NewStableId();
+            ui.Object.ApplyModifiedProperties();
+            return index;
         }
 
-        private void RemoveRule(int index)
+        private static int RemoveRule(YUCPInspector ui, int index, int selected)
         {
-            if (index < 0 || index >= rulesProp.arraySize) return;
-            serializedObject.Update();
-            Undo.RecordObject(data, "Remove Parameter Compression Rule");
-            rulesProp.DeleteArrayElementAtIndex(index);
-            serializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(data);
-            RebuildRules();
+            ui.Object.Update();
+            var rules = ui.Object.FindProperty("rules");
+            if (index < 0 || index >= rules.arraySize) return selected;
+            rules.DeleteArrayElementAtIndex(index);
+            ui.Object.ApplyModifiedProperties();
+            return Math.Min(index, rules.arraySize - 1);
         }
 
-        private void RebuildRules()
+        private static string Badge(ParameterCompressionRuleSelection selection) => selection switch
         {
-            if (ruleList == null || rulesProp == null) return;
-            serializedObject.UpdateIfRequiredOrScript();
-            ruleList.Clear();
+            ParameterCompressionRuleSelection.Include => "Included",
+            ParameterCompressionRuleSelection.IncludeUnverified => "Unverified",
+            ParameterCompressionRuleSelection.KeepDirect => "Direct",
+            _ => "Automatic"
+        };
 
-            if (rulesProp.arraySize == 0)
-            {
-                var empty = new Label(
-                    "No overrides yet. Automatic mode will protect unsafe inputs and choose persistent menu controls for you.");
-                empty.style.whiteSpace = WhiteSpace.Normal;
-                empty.style.opacity = 0.75f;
-                empty.style.marginBottom = 4;
-                ruleList.Add(empty);
-                return;
-            }
+        private static string Parameters(int count) => count == 1 ? "1 parameter" : count + " parameters";
 
-            for (var index = 0; index < rulesProp.arraySize; index++)
-            {
-                var capturedIndex = index;
-                var rule = rulesProp.GetArrayElementAtIndex(index);
-                var name = rule.FindPropertyRelative("parameterName").stringValue;
-                var card = YUCPUIToolkitHelper.CreateCard(
-                    string.IsNullOrWhiteSpace(name)
-                        ? "New Parameter"
-                        : name,
-                    "Rule " + (index + 1));
-                var content = YUCPUIToolkitHelper.GetCardContent(card);
+        private static int TargetBits(ParameterCompressorData data) => Math.Max(0, Budget - data.reserveSyncedBits);
 
-                var parameterField = YUCPUIToolkitHelper.CreateField(
-                    rule.FindPropertyRelative("parameterName"), "Parameter");
-                content.Add(parameterField);
-                content.Add(YUCPUIToolkitHelper.CreateField(
-                    rule.FindPropertyRelative("selection"), "Include"));
-                content.Add(YUCPUIToolkitHelper.CreateField(
-                    rule.FindPropertyRelative("priority"), "Update Priority"));
-                content.Add(YUCPUIToolkitHelper.CreateField(
-                    rule.FindPropertyRelative("precision"), "Precision"));
-
-                var rangeMode = rule.FindPropertyRelative("range");
-                var rangeField = YUCPUIToolkitHelper.CreateField(
-                    rangeMode, "Range");
-                content.Add(rangeField);
-                var customRange = new VisualElement
-                {
-                    name = "custom-range-" + index
-                };
-                customRange.Add(YUCPUIToolkitHelper.CreateField(
-                    rule.FindPropertyRelative("minimum"), "Minimum"));
-                customRange.Add(YUCPUIToolkitHelper.CreateField(
-                    rule.FindPropertyRelative("maximum"), "Maximum"));
-                content.Add(customRange);
-                Action refreshRange = () =>
-                {
-                    customRange.style.display = rangeMode.enumValueIndex ==
-                        (int)ParameterCompressionRangeMode.Custom
-                        ? DisplayStyle.Flex
-                        : DisplayStyle.None;
-                };
-                rangeField.RegisterCallback<SerializedPropertyChangeEvent>(_ =>
-                    refreshRange());
-                refreshRange();
-
-                content.Add(YUCPUIToolkitHelper.CreateField(
-                    rule.FindPropertyRelative("group"), "Group"));
-
-                var remove = new Button(() => RemoveRule(capturedIndex))
-                {
-                    text = "Remove Rule",
-                    name = "remove-parameter-rule-" + index
-                };
-                remove.style.marginTop = 5;
-                content.Add(remove);
-                ruleList.Add(card);
-            }
-        }
-
-        private void SetMode(InspectorMode mode)
+        /// <summary>Bits the avatar's synced parameters use now, or -1 outside an avatar.</summary>
+        private static int CurrentSyncedBits(ParameterCompressorData data)
         {
-            inspectorMode = mode;
-            SessionState.SetInt(ModeKey, (int)mode);
-            UpdateMode();
-        }
-
-        private void UpdateMode()
-        {
-            if (simpleHost != null)
-                simpleHost.style.display = inspectorMode == InspectorMode.Simple
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
-            if (advancedHost != null)
-                advancedHost.style.display = inspectorMode == InspectorMode.Advanced
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
-
-            SetSelected(simpleButton, inspectorMode == InspectorMode.Simple);
-            SetSelected(advancedButton, inspectorMode == InspectorMode.Advanced);
-        }
-
-        private static void SetSelected(Button button, bool selected)
-        {
-            if (button == null) return;
-            if (selected) button.AddToClassList("yucp-tab-selected");
-            else button.RemoveFromClassList("yucp-tab-selected");
-        }
-
-        private void UpdateDynamicUi()
-        {
-            serializedObject.UpdateIfRequiredOrScript();
-            UpdateMode();
-            if (manualSimpleHint != null)
-                manualSimpleHint.style.display = automaticSelectionProp.boolValue
-                    ? DisplayStyle.None
-                    : DisplayStyle.Flex;
-            UpdateSummary();
-            UpdateValidation();
-        }
-
-        private void UpdateSummary()
-        {
-            var currentBits = CurrentSyncedBits();
-            var targetBits = Mathf.Max(
-                0,
-                ParameterCompressionContract.VrchatParameterBudget -
-                reserveSyncedBitsProp.intValue);
-            var build = data.GetBuildSummary();
-
-            string value;
-            string details;
-            if (build.hasResult)
-            {
-                value = build.beforeBits + "  →  " + build.afterBits + " bits";
-                var parts = new List<string>
-                {
-                    build.compressedParameters + " compressed",
-                    build.protectedParameters + " protected",
-                    build.carrierBits + " carrier bits"
-                };
-                if (build.nominalFullRefreshSeconds > 0f)
-                    parts.Add("up to " +
-                              build.nominalFullRefreshSeconds.ToString("0.0") +
-                              "s nominal full refresh");
-                if (!string.IsNullOrWhiteSpace(build.transportName))
-                    parts.Add(build.transportName);
-                details = string.Join("  •  ", parts);
-                if (!string.IsNullOrWhiteSpace(build.message))
-                    details += "\n" + build.message;
-            }
-            else if (currentBits >= 0)
-            {
-                value = currentBits <= targetBits
-                    ? currentBits + "  →  " + currentBits + " bits"
-                    : currentBits + "  →  target ≤ " + targetBits + " bits";
-                details = currentBits <= targetBits
-                    ? "This avatar already fits the selected reserve. The build-time planner will leave safe parameters direct."
-                    : "The build-time planner will inspect the final merged avatar and choose the smallest safe transport that reaches this target.";
-            }
-            else
-            {
-                value = "Build-time plan";
-                details = "Place this component inside an avatar to preview its current synced parameter use.";
-            }
-
-            if (summaryValue != null) summaryValue.text = value;
-            if (summaryDetails != null) summaryDetails.text = details;
-            if (advancedSummary != null)
-                advancedSummary.text = value + "\n" + details;
-        }
-
-        private int CurrentSyncedBits()
-        {
-            var descriptor = data != null
-                ? data.GetComponentInParent<VRCAvatarDescriptor>()
-                : null;
-            var parameters = descriptor != null
-                ? descriptor.expressionParameters
-                : null;
-            if (parameters == null || parameters.parameters == null) return -1;
+            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>(true);
+            if (descriptor == null) return -1;
+            var parameters = descriptor.expressionParameters;
+            if (parameters == null || parameters.parameters == null) return 0;
             return parameters.parameters
                 .Where(parameter => parameter != null && parameter.networkSynced)
-                .Sum(parameter => parameter.valueType ==
-                                  VRCExpressionParameters.ValueType.Bool ? 1 : 8);
+                .Sum(parameter => parameter.valueType == VRCExpressionParameters.ValueType.Bool ? 1 : 8);
         }
 
-        private void UpdateValidation()
+        private static string Note(ParameterCompressorData data)
         {
-            if (validation == null) return;
-            validation.Clear();
-            if (data == null) return;
+            var build = data.GetBuildSummary();
+            if (build.hasResult) return build.message;
+            var current = CurrentSyncedBits(data);
+            if (current < 0) return null;
+            return current <= TargetBits(data)
+                ? "The avatar already fits. Safe parameters stay direct."
+                : "The build compresses parameters on the finished avatar until it fits the target.";
+        }
 
-            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>();
+        private static IEnumerable<YUCPInspector.Message> Problems(ParameterCompressorData data)
+        {
+            var descriptor = data.GetComponentInParent<VRCAvatarDescriptor>(true);
             if (descriptor == null)
             {
-                validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "Place this component anywhere inside a VRChat avatar.",
-                    YUCPUIToolkitHelper.MessageType.Warning));
-                return;
+                yield return YUCPInspector.Message.Error("Put this inside an avatar (under a VRC Avatar Descriptor).");
+                yield break;
             }
+            if (descriptor.GetComponentsInChildren<ParameterCompressorData>(true).Length > 1)
+                yield return YUCPInspector.Message.Error("Use one Parameter Compressor per avatar. It already sees every parameter on the avatar.");
+        }
 
-            var compressors = descriptor.GetComponentsInChildren<
-                ParameterCompressorData>(true);
-            if (compressors.Length > 1)
-                validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "Use one Parameter Compressor per avatar. It already sees parameters from every prefab and component.",
-                    YUCPUIToolkitHelper.MessageType.Error));
+        private static IEnumerable<YUCPInspector.Message> RuleProblems(ParameterCompressorData data)
+        {
+            var rules = (data.rules ?? new List<ParameterCompressionRule>()).Where(rule => rule != null).ToList();
+            var unnamed = rules.Count(rule => string.IsNullOrWhiteSpace(rule.parameterName));
+            if (unnamed > 0)
+                yield return YUCPInspector.Message.Warning(unnamed == 1
+                    ? "A rule has no parameter name. Enter one or remove the rule."
+                    : $"{unnamed} rules have no parameter name. Enter them or remove the rules.");
 
-            var emptyRules = data.rules != null
-                ? data.rules.Count(rule => rule != null &&
-                                          string.IsNullOrWhiteSpace(
-                                              rule.parameterName))
-                : 0;
-            if (emptyRules > 0)
-                validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    emptyRules + " parameter rule" +
-                    (emptyRules == 1 ? " is" : "s are") +
-                    " missing a parameter name.",
-                    YUCPUIToolkitHelper.MessageType.Warning));
+            var duplicates = rules
+                .Where(rule => !string.IsNullOrWhiteSpace(rule.parameterName))
+                .GroupBy(rule => ParameterCompressionContract.NormalizeParameterName(rule.parameterName), StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToArray();
+            if (duplicates.Length > 0)
+                yield return YUCPInspector.Message.Error("Combine the duplicate rules for " + string.Join(", ", duplicates) + ".");
 
-            var duplicateNames = data.rules == null
-                ? Array.Empty<string>()
-                : data.rules
-                    .Where(rule => rule != null &&
-                                   !string.IsNullOrWhiteSpace(rule.parameterName))
-                    .GroupBy(rule =>
-                            ParameterCompressionContract.NormalizeParameterName(
-                                rule.parameterName),
-                        StringComparer.Ordinal)
-                    .Where(group => group.Count() > 1)
-                    .Select(group => group.Key)
-                    .ToArray();
-            if (duplicateNames.Length > 0)
-                validation.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "Combine duplicate rules for: " +
-                    string.Join(", ", duplicateNames) + ".",
-                    YUCPUIToolkitHelper.MessageType.Error));
+            if (!data.automaticSelection && !data.EnumerateRules().Any(rule =>
+                    rule.selection == ParameterCompressionRuleSelection.Include ||
+                    rule.selection == ParameterCompressionRuleSelection.IncludeUnverified))
+                yield return YUCPInspector.Message.Info("Automatic Selection is off, so nothing is compressed until a rule includes a parameter.");
         }
     }
 }

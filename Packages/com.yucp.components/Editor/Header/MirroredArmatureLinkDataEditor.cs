@@ -1,8 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
-using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
-using YUCP.Components;
 using YUCP.Components.Editor.Utils;
 using YUCP.UI.DesignSystem.Utilities;
 
@@ -11,237 +12,201 @@ namespace YUCP.Components.Editor
 	[CustomEditor(typeof(MirroredArmatureLinkData))]
 	public class MirroredArmatureLinkDataEditor : UnityEditor.Editor
 	{
+		private const string ShowPreviewKey = "YUCP.MirroredArmatureLink.ShowPreview";
+		private static readonly string[] TargetTypes = { "Humanoid Bone", "Transform", "Armature Path" };
+
 		private static Material previewMat;
-		private static readonly System.Collections.Generic.Dictionary<SkinnedMeshRenderer, Mesh> bakedMeshCache = new System.Collections.Generic.Dictionary<SkinnedMeshRenderer, Mesh>();
+		private static readonly Dictionary<SkinnedMeshRenderer, Mesh> bakedMeshCache = new Dictionary<SkinnedMeshRenderer, Mesh>();
 
-
-		private bool foldTarget = true;
-		private bool foldBuiltins = true;
-		private bool foldCustoms = true;
-		private bool foldMenu = true;
-		private bool foldConstraint = true;
-		private bool foldAdvanced = false;
-
-		private VisualElement customTargetsContainer;
-		private SerializedProperty customTargetsProp;
-		private int lastCustomTargetsArraySize = -1;
-
-		private void OnEnable()
-		{
-			SceneView.duringSceneGui += OnSceneGUI;
-
-
-			var t = target as MirroredArmatureLinkData;
-			if (t != null)
-			{
-				int id = t.GetInstanceID();
-				foldTarget = SessionState.GetBool($"MirLink_Target_{id}", true);
-				foldBuiltins = SessionState.GetBool($"MirLink_Builtins_{id}", true);
-				foldCustoms = SessionState.GetBool($"MirLink_Customs_{id}", true);
-				foldMenu = SessionState.GetBool($"MirLink_Menu_{id}", true);
-				foldConstraint = SessionState.GetBool($"MirLink_Constraint_{id}", true);
-				foldAdvanced = SessionState.GetBool($"MirLink_Advanced_{id}", false);
-			}
-		}
-
-		private void OnDisable()
-		{
-			SceneView.duringSceneGui -= OnSceneGUI;
-			var t = target as MirroredArmatureLinkData;
-			if (t != null)
-			{
-				int id = t.GetInstanceID();
-				SessionState.SetBool($"MirLink_Target_{id}", foldTarget);
-				SessionState.SetBool($"MirLink_Builtins_{id}", foldBuiltins);
-				SessionState.SetBool($"MirLink_Customs_{id}", foldCustoms);
-				SessionState.SetBool($"MirLink_Menu_{id}", foldMenu);
-				SessionState.SetBool($"MirLink_Constraint_{id}", foldConstraint);
-				SessionState.SetBool($"MirLink_Advanced_{id}", foldAdvanced);
-			}
-		}
+		private void OnEnable() => SceneView.duringSceneGui += OnSceneGUI;
+		private void OnDisable() => SceneView.duringSceneGui -= OnSceneGUI;
 
 		public override VisualElement CreateInspectorGUI()
 		{
-			serializedObject.Update();
+			var data = (MirroredArmatureLinkData)target;
+			var ui = YUCPInspector.Create(this, "Mirrored Armature Link");
+			ui.Status(() => Problems(data));
 
-			var root = new VisualElement();
-			YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
-			root.Add(YUCP.Components.Resources.YUCPComponentHeader.CreateHeaderOverlay("Mirrored Armature Link"));
-
-			var betaWarning = BetaWarningHelper.CreateBetaWarningVisualElement(typeof(MirroredArmatureLinkData));
-			if (betaWarning != null) root.Add(betaWarning);
-
-			var targetCard = YUCPUIToolkitHelper.CreateCard("Target Configuration", "Configure the symmetric body part and offset");
-			var targetContent = YUCPUIToolkitHelper.GetCardContent(targetCard);
-			targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("part"), "Symmetric Body Part"));
-			targetContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("offset"), "Offset Path"));
-			root.Add(targetCard);
-
-			var builtinsCard = YUCPUIToolkitHelper.CreateCard("Built-in Left/Right Options", "Configure left and right side options");
-			var builtinsContent = YUCPUIToolkitHelper.GetCardContent(builtinsCard);
-
-			var includeLeft = serializedObject.FindProperty("includeLeft");
-			var includeRight = serializedObject.FindProperty("includeRight");
-			builtinsContent.Add(YUCPUIToolkitHelper.CreateField(includeLeft, "Include Left"));
-
-			var leftContainer = new VisualElement();
-			leftContainer.style.paddingLeft = 15;
-			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftParam"), "Left Global Param"));
-			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftDefaultOn"), "Left Default On"));
-			leftContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftExclusiveOffState"), "Left Exclusive Off State"));
-
-			var leftAnimContainer = new VisualElement();
-			leftAnimContainer.style.flexDirection = FlexDirection.Row;
-			leftAnimContainer.style.marginBottom = 5;
-			var leftAnimField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("leftAnimation"), "Left Animation Clip");
-			leftAnimField.style.flexGrow = 1;
-			leftAnimField.style.marginRight = 5;
-			leftAnimContainer.Add(leftAnimField);
-
-			var leftRecordButton = YUCPUIToolkitHelper.CreateButton("Record", () =>
+			var part = ui.Section("Body part");
+			ui.Field(part, "part", "Body Part");
+			ui.Field(part, "offset", "Offset Path");
+			ui.Segmented(part, "constraintMode", "Constraint", "Parent", "Position", "Rotation");
+			// A view setting, not part of the component: kept in EditorPrefs, never serialized.
+			var preview = YUCPInspector.Checkbox("Show Preview",
+				"Shows a ghost of the object on the other side and on each custom target in the Scene view.");
+			preview.value = EditorPrefs.GetBool(ShowPreviewKey, true);
+			preview.RegisterValueChangedCallback(e =>
 			{
-				var data = target as MirroredArmatureLinkData;
-				if (data != null)
-				{
-					var go = data.gameObject;
-					EditorApplication.delayCall += () =>
-					{
-						var so = new SerializedObject(data);
-						AnimationClipRecorder.RecordMuscleAnimation(so.FindProperty("leftAnimation"), go, "LeftAnimation");
-					};
-				}
-			}, YUCPUIToolkitHelper.ButtonVariant.Secondary);
-			leftRecordButton.style.width = 60;
-			leftAnimContainer.Add(leftRecordButton);
-			leftContainer.Add(leftAnimContainer);
-			builtinsContent.Add(leftContainer);
+				EditorPrefs.SetBool(ShowPreviewKey, e.newValue);
+				SceneView.RepaintAll();
+			});
+			part.Add(preview);
 
-			builtinsContent.Add(YUCPUIToolkitHelper.CreateField(includeRight, "Include Right"));
-
-			var rightContainer = new VisualElement();
-			rightContainer.style.paddingLeft = 15;
-			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightParam"), "Right Global Param"));
-			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightDefaultOn"), "Right Default On"));
-			rightContainer.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightExclusiveOffState"), "Right Exclusive Off State"));
-
-			var rightAnimContainer = new VisualElement();
-			rightAnimContainer.style.flexDirection = FlexDirection.Row;
-			rightAnimContainer.style.marginBottom = 5;
-			var rightAnimField = YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("rightAnimation"), "Right Animation Clip");
-			rightAnimField.style.flexGrow = 1;
-			rightAnimField.style.marginRight = 5;
-			rightAnimContainer.Add(rightAnimField);
-
-			var rightRecordButton = YUCPUIToolkitHelper.CreateButton("Record", () =>
+			var sides = ui.Section("Left and right");
+			foreach (var side in new[] { "Left", "Right" })
 			{
-				var data = target as MirroredArmatureLinkData;
-				if (data != null)
-				{
-					var go = data.gameObject;
-					EditorApplication.delayCall += () =>
-					{
-						var so = new SerializedObject(data);
-						AnimationClipRecorder.RecordMuscleAnimation(so.FindProperty("rightAnimation"), go, "RightAnimation");
-					};
-				}
-			}, YUCPUIToolkitHelper.ButtonVariant.Secondary);
-			rightRecordButton.style.width = 60;
-			rightAnimContainer.Add(rightRecordButton);
-			rightContainer.Add(rightAnimContainer);
-			builtinsContent.Add(rightContainer);
+				var key = side.ToLowerInvariant();
+				var options = ToggleSettingsInspector.Option(ui, sides, "include" + side, side);
+				TargetToggle(ui, options, key + "Param", key + "DefaultOn", key + "ExclusiveOffState", key + "Animation", side + "Animation");
+			}
 
-			root.schedule.Execute(() =>
-			{
-				leftContainer.style.display = includeLeft.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
-				rightContainer.style.display = includeRight.boolValue ? DisplayStyle.Flex : DisplayStyle.None;
-			}).Every(100);
+			CustomTargets(ui);
 
-			root.Add(builtinsCard);
+			ToggleSettingsInspector.Section(ui, menuPath: "menuPath", saved: "saved", exclusiveTags: "exclusiveTag");
 
-			var customsCard = YUCPUIToolkitHelper.CreateCard("Custom Targets", "Configure custom symmetric targets");
-			var customsContent = YUCPUIToolkitHelper.GetCardContent(customsCard);
-			customTargetsProp = serializedObject.FindProperty("customTargets");
-
-			var addButton = YUCPUIToolkitHelper.CreateButton("Add Custom Target", () =>
-			{
-				customTargetsProp.arraySize++;
-				serializedObject.ApplyModifiedProperties();
-			}, YUCPUIToolkitHelper.ButtonVariant.Secondary);
-			addButton.style.marginBottom = 10;
-			customsContent.Add(addButton);
-
-			customTargetsContainer = new VisualElement();
-			customTargetsContainer.name = "customTargetsContainer";
-			customsContent.Add(customTargetsContainer);
-
-			lastCustomTargetsArraySize = -1;
-			UpdateCustomTargetsUI(customTargetsContainer, customTargetsProp);
-
-			root.schedule.Execute(() =>
-			{
-				serializedObject.Update();
-				if (customTargetsProp.arraySize != lastCustomTargetsArraySize)
-				{
-					lastCustomTargetsArraySize = customTargetsProp.arraySize;
-					UpdateCustomTargetsUI(customTargetsContainer, customTargetsProp);
-				}
-			}).Every(100);
-
-			root.Add(customsCard);
-
-			var menuCard = YUCPUIToolkitHelper.CreateCard("Toggles & Menu", "Configure menu and toggle settings");
-			var menuContent = YUCPUIToolkitHelper.GetCardContent(menuCard);
-			menuContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("menuPath"), "Menu Path"));
-			menuContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("saved"), "Saved"));
-			menuContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("exclusiveTag"), "Exclusive Tag"));
-			root.Add(menuCard);
-
-			var constraintCard = YUCPUIToolkitHelper.CreateCard("Constraint Mode", "Configure constraint behavior");
-			var constraintContent = YUCPUIToolkitHelper.GetCardContent(constraintCard);
-			constraintContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("constraintMode"), "Mode"));
-			root.Add(constraintCard);
-
-			var advancedFoldout = YUCPUIToolkitHelper.CreateFoldout("Advanced", foldAdvanced);
-			advancedFoldout.RegisterValueChangedCallback(evt => { foldAdvanced = evt.newValue; });
-			advancedFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("debugMode"), "Debug Logging"));
-			root.Add(advancedFoldout);
-
-			root.schedule.Execute(() => serializedObject.ApplyModifiedProperties()).Every(100);
-
-			return root;
+			ui.Field(ui.Advanced(), "debugMode", "Verbose Logging");
+			return ui.Root;
 		}
 
+		private static IEnumerable<YUCPInspector.Message> Problems(MirroredArmatureLinkData data)
+		{
+			var animator = data.GetComponentInParent<Animator>(true);
+			if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+				yield return YUCPInspector.Message.Error("Put this inside a humanoid avatar.");
+			if (!data.includeLeft && !data.includeRight && data.customTargets.Count == 0)
+				yield return YUCPInspector.Message.Error("Turn on Left or Right, or add a custom target.");
+		}
+
+		/// <summary>The toggle settings every target has, left, right or custom.</summary>
+		private static void TargetToggle(YUCPInspector ui, VisualElement parent, string parameter, string defaultOn,
+			string exclusiveOffState, string animation, string clipName)
+		{
+			ui.Field(parent, parameter, "Global Parameter");
+			ui.Field(parent, defaultOn, "On by Default");
+			ui.Field(parent, exclusiveOffState, "Exclusive Off State");
+			ui.Field(parent, animation, "Animation");
+			ui.Button(parent, "Record Animation", () =>
+			{
+				var component = (Component)ui.Object.targetObject;
+				EditorApplication.delayCall += () =>
+				{
+					if (component == null) return;
+					AnimationClipRecorder.RecordMuscleAnimation(new SerializedObject(component).FindProperty(animation), component.gameObject, clipName);
+				};
+			}, tooltip: "Record the pose with VRCFury's recorder. Creates a clip first if none is set.", icon: "Animation.Record");
+		}
+
+		/// <summary>
+		/// Custom targets as a list: select one to edit it below. The detail is rebuilt only when the
+		/// selection or the number of targets changes, from plain bound fields, so no refreshers pile up.
+		/// </summary>
+		private static void CustomTargets(YUCPInspector ui)
+		{
+			const string array = "customTargets";
+			var section = ui.Section("Custom targets");
+			var names = new List<string>();
+			var selected = -1;
+			var shown = (index: -2, count: -1);
+			var detail = new VisualElement();
+			SegmentedField type = null;
+			VisualElement bone = null, transform = null, path = null;
+
+			var list = ui.List(section, names, () =>
+			{
+				var row = new VisualElement();
+				row.AddToClassList("yucp-list-item");
+				var name = new Label();
+				name.AddToClassList("yucp-list-item-name");
+				row.Add(name);
+				return row;
+			}, (row, i) => row.Q<Label>().text = names[i],
+				"Add a custom target to link the object to any bone or object.",
+				() => Change(p => p.arraySize++, () => ui.Object.FindProperty(array).arraySize - 1),
+				i => Change(p => p.DeleteArrayElementAtIndex(i), () => Mathf.Min(i, ui.Object.FindProperty(array).arraySize - 1)),
+				"Add Custom Target", "Remove Custom Target");
+			list.View.selectionChanged += _ =>
+			{
+				selected = list.View.selectedIndex;
+				ui.Refresh();
+			};
+			list.View.itemIndexChanged += (from, to) => Change(p => p.MoveArrayElement(from, to), () => to);
+			section.Add(detail);
+
+			void Change(Action<SerializedProperty> edit, Func<int> select)
+			{
+				ui.Object.Update();
+				edit(ui.Object.FindProperty(array));
+				ui.Object.ApplyModifiedProperties();
+				selected = select();
+				shown.index = -2;
+				ui.Refresh();
+			}
+
+			void UpdateType()
+			{
+				var property = type == null ? null : ui.Object.FindProperty($"{array}.Array.data[{shown.index}].targetType");
+				if (property == null) return;
+				var value = property.enumValueIndex;
+				if (type.value != value) type.SetValueWithoutNotify(value);
+				Show(bone, value == (int)MirroredArmatureLinkData.TargetType.HumanoidBone);
+				Show(transform, value == (int)MirroredArmatureLinkData.TargetType.Transform);
+				Show(path, value == (int)MirroredArmatureLinkData.TargetType.ArmaturePath);
+			}
+
+			void BuildDetail()
+			{
+				shown = (selected, names.Count);
+				detail.Clear();
+				type = null;
+				if (selected < 0) return;
+				var element = $"{array}.Array.data[{selected}].";
+				var group = ui.Group(detail);
+				ui.Field(group, element + "displayName", "Name");
+				var typePath = element + "targetType";
+				type = new SegmentedField("Target Type", TargetTypes) { tooltip = ui.Object.FindProperty(typePath).tooltip };
+				type.RegisterValueChangedCallback(e =>
+				{
+					ui.Object.Update();
+					ui.Object.FindProperty(typePath).enumValueIndex = e.newValue;
+					ui.Object.ApplyModifiedProperties();
+					UpdateType();
+				});
+				group.Add(type);
+				bone = ui.Field(group, element + "humanoidBone", "Humanoid Bone");
+				transform = ui.Field(group, element + "transform", "Transform");
+				path = ui.Field(group, element + "armaturePath", "Armature Path");
+				ui.Field(group, element + "offsetPath", "Offset Path");
+				ui.Field(group, element + "keepTransforms", "Keep Transforms");
+				TargetToggle(ui, group, element + "globalBoolParam", element + "defaultOn", element + "exclusiveOffState",
+					element + "animationClip", names[selected].Replace(" ", "") + "Animation");
+				UpdateType();
+			}
+
+			ui.OnRefresh(() =>
+			{
+				var targets = ui.Object.FindProperty(array);
+				var current = new List<string>();
+				for (var i = 0; i < targets.arraySize; i++)
+				{
+					var name = targets.GetArrayElementAtIndex(i).FindPropertyRelative("displayName").stringValue;
+					current.Add(string.IsNullOrEmpty(name) ? "Custom" : name);
+				}
+				if (!current.SequenceEqual(names))
+				{
+					names.Clear();
+					names.AddRange(current);
+					list.Refresh();
+				}
+				if (selected >= names.Count) selected = names.Count - 1;
+				if (selected < 0 && names.Count > 0) selected = 0;
+				list.Select(selected);
+				if (shown.index != selected || shown.count != names.Count) BuildDetail();
+				else UpdateType();
+			});
+			ui.Refresh();
+		}
+
+		private static void Show(VisualElement element, bool visible)
+		{
+			var display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+			if (element != null && element.style.display != display) element.style.display = display;
+		}
 
 		private void OnSceneGUI(SceneView sceneView)
 		{
 			var data = target as MirroredArmatureLinkData;
-			if (data == null || data.gameObject == null) return;
-
-			var sel = Selection.activeGameObject;
-			bool shouldShow = false;
-			if (sel != null)
-			{
-				shouldShow = (sel == data.gameObject || sel.transform.IsChildOf(data.transform));
-			}
-
-			if (!shouldShow && Selection.gameObjects.Length > 0)
-			{
-				foreach (var go in Selection.gameObjects)
-				{
-					if (go == data.gameObject || go.transform.IsChildOf(data.transform))
-					{
-						shouldShow = true;
-						break;
-					}
-				}
-			}
-
-
-			if (!shouldShow && target != null)
-			{
-				shouldShow = true;
-			}
-			if (!shouldShow) return;
+			// The editor lives only while the component is inspected, so that is when the ghost shows; Show Preview hides it.
+			if (data == null || data.gameObject == null || !EditorPrefs.GetBool(ShowPreviewKey, true)) return;
 
 			var animator = data.GetComponentInParent<Animator>();
 			if (animator == null || animator.avatar == null) return;
@@ -491,146 +456,5 @@ namespace YUCP.Components.Editor
 			var Rp = S * R * S;
 			return Rp.rotation;
 		}
-
-		private void UpdateCustomTargetsUI(VisualElement container, SerializedProperty customTargetsProp)
-		{
-			serializedObject.Update();
-			container.Clear();
-
-			if (customTargetsProp.arraySize == 0)
-			{
-				var emptyLabel = new Label("No custom targets. Click 'Add Custom Target' to add one.");
-				emptyLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
-				emptyLabel.style.fontSize = 12;
-				emptyLabel.style.marginTop = 5;
-				emptyLabel.style.marginBottom = 5;
-				container.Add(emptyLabel);
-				return;
-			}
-
-			for (int i = 0; i < customTargetsProp.arraySize; i++)
-			{
-				var elementProp = customTargetsProp.GetArrayElementAtIndex(i);
-				var displayNameProp = elementProp.FindPropertyRelative("displayName");
-				var displayName = string.IsNullOrEmpty(displayNameProp.stringValue) ? "Custom" : displayNameProp.stringValue;
-				var targetFoldout = YUCPUIToolkitHelper.CreateFoldout($"Target {i + 1}: {displayName}", true);
-
-				var targetContent = new VisualElement();
-				targetContent.style.paddingLeft = 10;
-				targetContent.style.paddingTop = 5;
-				targetContent.style.paddingBottom = 5;
-				targetContent.Bind(serializedObject);
-
-				var targetTypeProp = elementProp.FindPropertyRelative("targetType");
-				var displayNameField = YUCPUIToolkitHelper.CreateField(displayNameProp, "Display Name");
-				var targetTypeField = YUCPUIToolkitHelper.CreateField(targetTypeProp, "Target Type");
-				var globalBoolParamField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("globalBoolParam"), "Global Bool Param");
-
-				targetContent.Add(displayNameField);
-				targetContent.Add(globalBoolParamField);
-				targetContent.Add(targetTypeField);
-
-				var humanoidBoneField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("humanoidBone"), "Humanoid Bone");
-				var transformField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("transform"), "Transform");
-				var armaturePathField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("armaturePath"), "Armature Path");
-
-				var humanoidBoneContainer = new VisualElement();
-				humanoidBoneContainer.Add(humanoidBoneField);
-				humanoidBoneContainer.style.paddingLeft = 15;
-
-				var transformContainer = new VisualElement();
-				transformContainer.Add(transformField);
-				transformContainer.style.paddingLeft = 15;
-
-				var armaturePathContainer = new VisualElement();
-				armaturePathContainer.Add(armaturePathField);
-				armaturePathContainer.style.paddingLeft = 15;
-
-				targetContent.Add(humanoidBoneContainer);
-				targetContent.Add(transformContainer);
-				targetContent.Add(armaturePathContainer);
-
-				var offsetPathField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("offsetPath"), "Offset Path");
-				var defaultOnField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("defaultOn"), "Default On");
-				var keepTransformsField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("keepTransforms"), "Keep Transforms");
-				var exclusiveOffStateField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("exclusiveOffState"), "Exclusive Off State");
-
-				targetContent.Add(offsetPathField);
-				targetContent.Add(defaultOnField);
-				targetContent.Add(keepTransformsField);
-				targetContent.Add(exclusiveOffStateField);
-
-				var animContainer = new VisualElement();
-				animContainer.style.flexDirection = FlexDirection.Row;
-				animContainer.style.marginBottom = 5;
-				var animField = YUCPUIToolkitHelper.CreateField(elementProp.FindPropertyRelative("animationClip"), "Animation Clip");
-				animField.style.flexGrow = 1;
-				animField.style.marginRight = 5;
-				animContainer.Add(animField);
-				targetContent.Add(animContainer);
-
-				var index = i;
-				var removeButtonContainer = new VisualElement();
-				removeButtonContainer.style.flexDirection = FlexDirection.Row;
-				removeButtonContainer.style.justifyContent = Justify.FlexEnd;
-				removeButtonContainer.style.marginTop = 8;
-				removeButtonContainer.style.paddingTop = 8;
-				removeButtonContainer.style.borderTopWidth = 1;
-				removeButtonContainer.style.borderTopColor = new StyleColor(new Color(0.3f, 0.3f, 0.3f, 0.5f));
-
-				var removeButton = YUCPUIToolkitHelper.CreateButton("Remove", () =>
-				{
-					customTargetsProp.DeleteArrayElementAtIndex(index);
-					serializedObject.ApplyModifiedProperties();
-				}, YUCPUIToolkitHelper.ButtonVariant.Danger);
-				removeButton.style.fontSize = 12;
-				removeButton.style.height = 26;
-				removeButton.style.paddingLeft = 12;
-				removeButton.style.paddingRight = 12;
-				removeButton.style.paddingTop = 4;
-				removeButton.style.paddingBottom = 4;
-
-				removeButtonContainer.Add(removeButton);
-				targetContent.Add(removeButtonContainer);
-
-				targetFoldout.Add(targetContent);
-
-				var targetIndex = index;
-				System.Action updateVisibility = () =>
-				{
-					serializedObject.Update();
-					if (targetIndex >= customTargetsProp.arraySize) return;
-
-					var currentElement = customTargetsProp.GetArrayElementAtIndex(targetIndex);
-					var currentTargetType = (MirroredArmatureLinkData.TargetType)currentElement.FindPropertyRelative("targetType").enumValueIndex;
-					var currentDisplayName = currentElement.FindPropertyRelative("displayName").stringValue;
-					if (string.IsNullOrEmpty(currentDisplayName))
-					{
-						currentDisplayName = "Custom";
-					}
-
-					humanoidBoneContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.HumanoidBone ? DisplayStyle.Flex : DisplayStyle.None;
-					transformContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.Transform ? DisplayStyle.Flex : DisplayStyle.None;
-					armaturePathContainer.style.display = currentTargetType == MirroredArmatureLinkData.TargetType.ArmaturePath ? DisplayStyle.Flex : DisplayStyle.None;
-
-					targetFoldout.text = $"Target {targetIndex + 1}: {currentDisplayName}";
-				};
-
-				targetFoldout.schedule.Execute(() => updateVisibility()).Every(100);
-
-				updateVisibility();
-
-				container.Add(targetFoldout);
-
-				if (i < customTargetsProp.arraySize - 1)
-				{
-					container.Add(YUCPUIToolkitHelper.CreateDivider());
-				}
-			}
-		}
-
-
 	}
 }
-
-

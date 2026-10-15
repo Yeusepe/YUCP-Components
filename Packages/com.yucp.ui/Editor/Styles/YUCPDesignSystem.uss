@@ -1,0 +1,781 @@
+/* YUCP design system. The look is the DevTools Package Exporter's, rule for rule: same selectors,
+   same values (colors go through tokens only where the dark value is identical). Two deliberate
+   changes: message text is white for contrast, and nothing scales on hover (DESIGN.md §7).
+   Inspectors scale these controls down in YUCPInspector.uss. Rules: Packages/com.yucp.ui/DESIGN.md */
+
+.yucp-root {
+    --yucp-bg-primary: #151515;
+    --yucp-bg-secondary: #1a1a1a;
+    --yucp-bg-raised: #232323;
+    --yucp-bg-input: #282828;
+    --yucp-bg-tertiary: #2a2a2a;
+    --yucp-bg-control: #3a3a3a;
+    --yucp-bg-control-hover: #4a4a4a;
+    --yucp-bg-hover: rgba(255, 255, 255, 0.05);
+
+    --yucp-border-primary: #2a2a2a;
+    --yucp-border-secondary: #3a3a3a;
+    --yucp-border-input: rgba(255, 255, 255, 0.1);
+    --yucp-border-input-hover: rgba(255, 255, 255, 0.15);
+    --yucp-separator: rgba(0, 0, 0, 0.35);
+
+    --yucp-text-primary: #ffffff;
+    --yucp-text-secondary: #b0b0b0;
+    --yucp-text-tertiary: #808080;
+    --yucp-text-disabled: #606060;
+
+    --yucp-accent-primary: #36BFB1;
+    --yucp-accent-primary-hover: #3fc9b8;
+    --yucp-accent-primary-active: #2da89c;
+    --yucp-accent-success: #36BFB1;
+    --yucp-accent-warning: #E2A54A;
+    --yucp-accent-danger: #E24A4A;
+    --yucp-accent-danger-active: #c93a3a;
+    --yucp-accent-info: #5BA3FF;
+
+    --yucp-tint-accent: rgba(54, 191, 177, 0.2);
+    --yucp-tint-accent-hover: rgba(54, 191, 177, 0.3);
+    --yucp-border-accent: rgba(54, 191, 177, 0.5);
+    --yucp-border-accent-hover: rgba(54, 191, 177, 0.7);
+    --yucp-tint-info: rgba(91, 163, 255, 0.1);
+    --yucp-tint-warning: rgba(226, 165, 74, 0.25);
+    --yucp-tint-danger: rgba(226, 74, 74, 0.25);
+    --yucp-tint-success: rgba(54, 191, 177, 0.25);
+
+    --yucp-radius-card: 6px;
+    --yucp-radius-button: 6px;
+    --yucp-radius-input: 8px;
+    --yucp-radius-small: 4px;
+    --yucp-radius-pill: 12px;
+
+    --yucp-spacing-xs: 4px;
+    --yucp-spacing-sm: 8px;
+    --yucp-spacing-md: 12px;
+    --yucp-spacing-lg: 16px;
+    --yucp-spacing-xl: 20px;
+    --yucp-spacing-xxl: 24px;
+}
+
+/* Light skin (inspectors only; DevTools windows are dark). Same roles, light values. */
+.yucp-root.yucp-root--light {
+    --yucp-bg-primary: #e4e4e4;
+    --yucp-bg-secondary: #ececec;
+    --yucp-bg-raised: #f5f5f5;
+    --yucp-bg-input: #ffffff;
+    --yucp-bg-tertiary: #d6d6d6;
+    --yucp-bg-control: #d0d0d0;
+    --yucp-bg-control-hover: #c2c2c2;
+    --yucp-bg-hover: rgba(0, 0, 0, 0.05);
+
+    --yucp-border-primary: #d0d0d0;
+    --yucp-border-secondary: #b8b8b8;
+    --yucp-border-input: rgba(0, 0, 0, 0.15);
+    --yucp-border-input-hover: rgba(0, 0, 0, 0.25);
+    --yucp-separator: rgba(0, 0, 0, 0.2);
+
+    --yucp-text-primary: #111111;
+    --yucp-text-secondary: #3d3d3d;
+    --yucp-text-tertiary: #5c5c5c;
+    --yucp-text-disabled: #8c8c8c;
+
+    --yucp-accent-primary: #1f8c81;
+    --yucp-accent-primary-hover: #26a194;
+    --yucp-accent-primary-active: #187268;
+    --yucp-accent-success: #1f8c81;
+    --yucp-accent-warning: #a96a0d;
+    --yucp-accent-danger: #c62828;
+    --yucp-accent-danger-active: #a31f1f;
+    --yucp-accent-info: #1f63c4;
+
+    --yucp-tint-accent: rgba(31, 140, 129, 0.16);
+    --yucp-tint-accent-hover: rgba(31, 140, 129, 0.24);
+    --yucp-border-accent: rgba(31, 140, 129, 0.5);
+    --yucp-border-accent-hover: rgba(31, 140, 129, 0.7);
+    --yucp-tint-info: rgba(31, 99, 196, 0.1);
+    --yucp-tint-warning: rgba(169, 106, 13, 0.16);
+    --yucp-tint-danger: rgba(198, 40, 40, 0.14);
+    --yucp-tint-success: rgba(31, 140, 129, 0.14);
+}
+
+/* ---- Window ------------------------------------------------------------------------------------ */
+
+.yucp-window {
+    flex-grow: 1;
+    background-color: var(--yucp-bg-primary);
+    min-width: 0;
+}
+
+.yucp-main-container {
+    flex-grow: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.yucp-top-bar {
+    flex-direction: row;
+    min-height: 48px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 16px;
+    padding-right: 16px;
+    background-color: #1f1f1f;
+    border-bottom-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+.yucp-title {
+    font-size: 18px;
+    color: var(--yucp-text-primary);
+    -unity-font-style: bold;
+    margin-right: 16px;
+}
+
+.yucp-content-container {
+    flex-grow: 1;
+    flex-direction: row;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.yucp-left-pane {
+    width: 270px;
+    min-width: 200px;
+    flex-shrink: 0;
+    background-color: var(--yucp-bg-primary);
+    border-right-width: 1px;
+    border-right-color: var(--yucp-border-primary);
+    padding: 20px;
+    overflow: hidden;
+}
+
+.yucp-right-pane {
+    position: relative;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    background-color: var(--yucp-bg-primary);
+    overflow: hidden;
+}
+
+.yucp-right-pane .yucp-panel {
+    padding-right: 24px;
+}
+
+.yucp-panel {
+    flex-direction: column;
+    padding: 20px;
+}
+
+.yucp-bottom-bar {
+    flex-direction: column;
+    background-color: var(--yucp-bg-secondary);
+    border-top-width: 0;
+    padding: 16px 20px;
+    flex-shrink: 0;
+}
+
+.yucp-scrollview {
+    flex-grow: 1;
+}
+
+/* ---- Buttons ----------------------------------------------------------------------------------- */
+
+.yucp-button {
+    height: 36px;
+    min-height: 36px;
+    padding-left: 16px;
+    padding-right: 16px;
+    border-radius: 6px;
+    background-color: var(--yucp-bg-control);
+    border-width: 0;
+    color: var(--yucp-text-primary);
+    font-size: 12px;
+    -unity-font-style: normal;
+    margin-left: 4px;
+    margin-right: 4px;
+    -unity-text-align: middle-center;
+    transition-property: background-color, color;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-button:hover {
+    background-color: var(--yucp-bg-control-hover);
+    color: var(--yucp-text-primary);
+}
+
+.yucp-button:active {
+    background-color: var(--yucp-bg-tertiary);
+    color: var(--yucp-text-primary);
+}
+
+.yucp-button:disabled {
+    opacity: 0.5;
+}
+
+/* The one prominent action: tinted teal (the Package Exporter's "Export"). */
+.yucp-button-primary {
+    height: 36px;
+    min-height: 36px;
+    font-size: 12px;
+    -unity-font-style: bold;
+    background-color: var(--yucp-tint-accent);
+    border-color: var(--yucp-border-accent);
+    color: var(--yucp-accent-primary);
+    transition-property: background-color, border-color, color;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-button-primary:hover {
+    background-color: var(--yucp-tint-accent-hover);
+    border-color: var(--yucp-border-accent-hover);
+}
+
+.yucp-button-primary:active {
+    background-color: var(--yucp-tint-accent);
+}
+
+.yucp-button-action {
+    background-color: var(--yucp-bg-control);
+    color: var(--yucp-text-primary);
+}
+
+.yucp-button-action:hover {
+    background-color: var(--yucp-accent-primary);
+    color: #ffffff;
+}
+
+.yucp-button-action:active {
+    background-color: var(--yucp-accent-primary-active);
+    color: #ffffff;
+}
+
+/* Destructive: neutral until hovered, then the system red (HIG Buttons). */
+.yucp-button-danger {
+    background-color: var(--yucp-bg-control);
+    color: var(--yucp-text-primary);
+}
+
+.yucp-button-danger:hover {
+    background-color: var(--yucp-accent-danger);
+    color: #ffffff;
+}
+
+.yucp-button-danger:active {
+    background-color: var(--yucp-accent-danger-active);
+    color: #ffffff;
+}
+
+.yucp-button-export {
+    background-color: var(--yucp-accent-primary);
+    color: #ffffff;
+}
+
+.yucp-button-export:hover {
+    background-color: var(--yucp-accent-primary-hover);
+}
+
+.yucp-button-export:active {
+    background-color: var(--yucp-accent-primary-active);
+}
+
+.yucp-button-build {
+    height: 36px;
+    min-height: 36px;
+    background-color: var(--yucp-accent-primary);
+    color: #ffffff;
+    font-size: 12px;
+    -unity-font-style: bold;
+}
+
+.yucp-button-build:hover {
+    background-color: var(--yucp-accent-primary-hover);
+}
+
+.yucp-button-build:active {
+    background-color: var(--yucp-accent-primary-active);
+}
+
+.yucp-button-text {
+    background-color: transparent;
+    border-width: 0;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.yucp-button-text:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.yucp-button-small {
+    height: 24px;
+    padding-left: 12px;
+    padding-right: 12px;
+    font-size: 11px;
+}
+
+.yucp-button-large {
+    height: 50px;
+    font-size: 14px;
+    padding-left: 24px;
+    padding-right: 24px;
+}
+
+.yucp-button-icon {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    justify-content: center;
+    align-items: center;
+    border-radius: 6px;
+}
+
+/* ---- Text -------------------------------------------------------------------------------------- */
+
+.yucp-section-header {
+    font-size: 13px;
+    color: var(--yucp-text-secondary);
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+.yucp-label {
+    font-size: 12px;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-label-secondary {
+    font-size: 11px;
+    color: var(--yucp-text-secondary);
+}
+
+.yucp-label-small {
+    font-size: 10px;
+    color: var(--yucp-text-tertiary);
+}
+
+.yucp-section-title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    margin-bottom: 12px;
+    color: var(--yucp-text-primary);
+    letter-spacing: 0.2px;
+}
+
+/* ---- Sections ---------------------------------------------------------------------------------- */
+
+.yucp-section {
+    margin-bottom: 16px;
+    padding: 16px;
+    background-color: var(--yucp-bg-secondary);
+    border-radius: 6px;
+    border-width: 0;
+    overflow: hidden;
+}
+
+/* ---- Forms ------------------------------------------------------------------------------------- */
+
+.yucp-form-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.yucp-form-label {
+    width: 120px;
+    font-size: 12px;
+    color: var(--yucp-text-secondary);
+    flex-shrink: 0;
+}
+
+.yucp-form-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.yucp-input {
+    background-color: var(--yucp-bg-input);
+    border-width: 1px;
+    border-color: var(--yucp-border-input);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    min-height: 30px;
+    max-width: 100%;
+    overflow: hidden;
+    transition-duration: 0.15s;
+    transition-property: border-color, background-color;
+}
+
+.yucp-input:hover {
+    border-color: var(--yucp-border-input-hover);
+}
+
+.yucp-input:focus {
+    border-color: var(--yucp-border-accent);
+    background-color: var(--yucp-bg-tertiary);
+}
+
+.yucp-input .unity-text-field__input,
+.yucp-input .unity-base-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: var(--yucp-text-primary);
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yucp-input-multiline {
+    min-height: 80px;
+}
+
+.yucp-dropdown {
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    background-color: transparent;
+}
+
+.yucp-dropdown .unity-enum-field__input {
+    background-color: var(--yucp-bg-input);
+    border-width: 1px;
+    border-color: var(--yucp-border-input);
+    border-radius: 6px;
+    padding: 2px 8px;
+    color: rgba(255, 255, 255, 0.9);
+    height: 24px;
+    min-height: 24px;
+    margin: 0;
+}
+
+.yucp-dropdown:hover .unity-enum-field__input {
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(45, 45, 45, 1);
+}
+
+.yucp-dropdown .unity-enum-field__arrow {
+    -unity-background-image-tint-color: rgba(255, 255, 255, 0.5);
+}
+
+.yucp-toggle {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.yucp-toggle .unity-toggle__checkmark {
+    background-color: var(--yucp-bg-tertiary);
+    border-color: var(--yucp-border-secondary);
+    border-width: 1px;
+    flex-shrink: 0;
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color;
+    transition-timing-function: ease-out;
+}
+
+.yucp-toggle:checked .unity-toggle__checkmark {
+    background-color: var(--yucp-accent-primary);
+    border-color: var(--yucp-accent-primary);
+}
+
+.yucp-toggle:hover .unity-toggle__checkmark {
+    border-color: #525252;
+}
+
+.yucp-toggle:checked:hover .unity-toggle__checkmark {
+    background-color: var(--yucp-accent-primary-hover);
+    border-color: var(--yucp-accent-primary-hover);
+}
+
+.yucp-toggle .unity-label {
+    color: var(--yucp-text-primary);
+    font-size: 12px;
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
+.yucp-search-row {
+    flex-direction: row;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.yucp-search-row .yucp-input {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.yucp-filter-row {
+    flex-direction: row;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.yucp-filter-row .yucp-toggle {
+    margin-right: 16px;
+    flex-shrink: 0;
+}
+
+/* ---- Messages: tinted, borderless, white text (HIG Accessibility: 4.5:1 contrast) --------------- */
+
+.yucp-help-box {
+    background-color: var(--yucp-tint-info);
+    border-left-width: 0;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 6px;
+}
+
+.yucp-help-box-text {
+    font-size: 11px;
+    color: var(--yucp-text-primary);
+    white-space: normal;
+}
+
+.yucp-help-box-title {
+    margin-bottom: 2px;
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-help-box-warning,
+.yucp-validation-warning {
+    background-color: var(--yucp-tint-warning);
+    border-left-width: 0;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.yucp-help-box-error,
+.yucp-validation-error {
+    background-color: var(--yucp-tint-danger);
+    border-left-width: 0;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.yucp-help-box-success,
+.yucp-validation-success {
+    background-color: var(--yucp-tint-success);
+    border-left-width: 0;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.yucp-validation-error-text,
+.yucp-validation-warning-text,
+.yucp-validation-success-text {
+    font-size: 12px;
+    color: var(--yucp-text-primary);
+    white-space: normal;
+}
+
+/* ---- Progress ---------------------------------------------------------------------------------- */
+
+.yucp-progress-container {
+    margin-top: 12px;
+}
+
+.yucp-progress-bar {
+    height: 24px;
+    background-color: var(--yucp-bg-tertiary);
+    border-radius: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.yucp-progress-fill {
+    height: 100%;
+    background-color: var(--yucp-accent-primary);
+    border-radius: 0;
+}
+
+.yucp-progress-text {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    -unity-text-align: middle-center;
+    font-size: 11px;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-progress-detail-scroll {
+    background-color: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    padding: 6px 8px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.yucp-progress-detail {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.65);
+    padding: 0;
+    margin: 0;
+    -unity-font-style: normal;
+}
+
+/* ---- Empty states, separators, stats ----------------------------------------------------------- */
+
+.yucp-empty-state {
+    flex-grow: 1;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+}
+
+.yucp-empty-state-title {
+    font-size: 16px;
+    color: var(--yucp-text-secondary);
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-empty-state-description {
+    font-size: 12px;
+    color: var(--yucp-text-tertiary);
+    -unity-text-align: middle-center;
+    max-width: 300px;
+}
+
+.yucp-separator {
+    height: 1px;
+    background-color: var(--yucp-border-primary);
+    margin-top: 16px;
+    margin-bottom: 16px;
+}
+
+.yucp-spacer {
+    flex-grow: 1;
+}
+
+.yucp-horizontal-line {
+    height: 1px;
+    background-color: var(--yucp-border-primary);
+}
+
+.yucp-stats-container {
+    flex-direction: row;
+    margin-top: 8px;
+}
+
+.yucp-stat-item {
+    flex-direction: column;
+    margin-right: 20px;
+}
+
+.yucp-stat-label {
+    font-size: 10px;
+    color: var(--yucp-text-tertiary);
+    margin-bottom: 4px;
+}
+
+.yucp-stat-value {
+    font-size: 12px;
+    color: var(--yucp-text-primary);
+    -unity-font-style: bold;
+}
+
+/* ---- Responsive windows: the window code sets these classes from its width ------------------- */
+
+.yucp-window-narrow .yucp-left-pane {
+    display: none;
+    opacity: 0;
+}
+
+.yucp-window-narrow .yucp-right-pane {
+    width: 100%;
+}
+
+.yucp-window-narrow .yucp-content-container {
+    position: relative;
+}
+
+.yucp-window-narrow .yucp-form-row {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-form-label {
+    width: 100%;
+    margin-bottom: 4px;
+}
+
+.yucp-window-narrow .yucp-top-bar {
+    flex-wrap: wrap;
+}
+
+.yucp-window-narrow .yucp-stats-container {
+    flex-direction: column;
+}
+
+.yucp-window-narrow .yucp-stat-item {
+    margin-bottom: 8px;
+}
+
+.yucp-window-narrow .yucp-filter-row {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-filter-row .yucp-toggle {
+    margin-bottom: 8px;
+}
+
+.yucp-window-narrow .yucp-section {
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.yucp-window-narrow .yucp-help-box {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding: 10px;
+}
+
+.yucp-window-narrow .yucp-validation-error,
+.yucp-window-narrow .yucp-validation-warning,
+.yucp-window-narrow .yucp-validation-success {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding: 10px;
+}
+
+.yucp-window-medium .yucp-left-pane {
+    width: 220px;
+    min-width: 180px;
+}
+
+.yucp-window-medium .yucp-form-row {
+    flex-wrap: wrap;
+}
+
+.yucp-window-medium .yucp-form-label {
+    width: 100px;
+}

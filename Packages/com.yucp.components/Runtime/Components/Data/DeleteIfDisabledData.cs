@@ -14,7 +14,7 @@ namespace YUCP.Components
 	public class DeleteIfDisabledData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
 	{
 		[Header("Debug")]
-		[Tooltip("Enable detailed logging during avatar build when this object is deleted.")]
+		[Tooltip("Logs to the Console when the build removes this object.")]
 		public bool debugMode = false;
 
 		public int PreprocessOrder => 0;

@@ -11,88 +11,68 @@ namespace YUCP.Components
     /// Optionally integrates with AutoBodyHider for automatic body hiding.
     /// </summary>
     [SupportBanner]
-    [BetaWarning("This component is in BETA and may not work as intended. UV Discard Toggle is experimental and may require manual UV configuration.")]
+    [BetaWarning("This component is in beta. The UV tile may need to be set by hand.")]
     [AddComponentMenu("YUCP/UV Discard Toggle")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     public class UVDiscardToggleData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Target Meshes")]
-        [Tooltip("The body mesh renderer to merge the clothing into.")]
+        [Tooltip("The body mesh the clothing is merged into. Its material needs Poiyomi or FastFur UV discard.")]
         public SkinnedMeshRenderer targetBodyMesh;
 
-        [Tooltip("The clothing mesh renderer to be merged and toggled.")]
+        [Tooltip("The clothing mesh that is merged into the body and toggled.")]
         public SkinnedMeshRenderer clothingMesh;
 
         [Header("UV Discard Settings")]
-        [Tooltip("Which UV channel to use for UV discard (UV1 is recommended).")]
+        [Tooltip("The UV channel used for discarding. UV1 is recommended.")]
         [Range(0, 3)]
         [UnityEngine.Serialization.FormerlySerializedAs("udimUVChannel")]
         public int uvChannel = 1; // Default to UV1 for merged meshes
 
-        [Tooltip("Which UV tile row to use for discarding (0-3).\n\n" +
-                 "⚠️ WARNING: Avoid row 0 (especially 0,0) as it overlaps with main texture!\n" +
-                 "• Row 1-3: Safe for discard\n" +
-                 "• Row 3 (default): Safest, rarely used\n\n" +
-                 "For multiple clothing pieces, each needs a unique tile.")]
+        [Tooltip("The UV tile row that hides the clothing. Row 0 can overlap the main texture, and each clothing piece needs its own tile.")]
         [Range(0, 3)]
         [UnityEngine.Serialization.FormerlySerializedAs("udimDiscardRow")]
         public int uvDiscardRow = 3;
 
-        [Tooltip("Which UV tile column to use for discarding (0-3).\n\n" +
-                 "⚠️ WARNING: Avoid (row 0, col 0-1) as it overlaps with main texture!\n" +
-                 "• Columns 0-3: All usable in rows 1-3\n" +
-                 "• Column 3 (default): Safest\n\n" +
-                 "For multiple clothing pieces, each needs a unique tile.")]
+        [Tooltip("The UV tile column that hides the clothing. Each clothing piece needs its own tile.")]
         [Range(0, 3)]
         [UnityEngine.Serialization.FormerlySerializedAs("udimDiscardColumn")]
         public int uvDiscardColumn = 3;
 
         [Header("VRCFury Toggle Settings")]
-        [Tooltip("Menu path for the toggle (e.g., 'Clothing/Jacket').\n\n" +
-                 "Leave empty to use global parameter control only (no menu item).")]
+        [Tooltip("Where the toggle appears in the avatar menu, e.g. Clothing/Jacket. Empty adds no menu item, so set a global parameter.")]
         public string menuPath = "Clothing/Toggle Item";
 
-        [Tooltip("OPTIONAL: Global parameter name for network sync or outfit groups.\n\n" +
-                 "When EMPTY:\n" +
-                 "• Creates a local toggle (parameter auto-named by VRCFury with 'VF##' prefix)\n" +
-                 "• Toggle state is local to your client only\n" +
-                 "• Standard individual clothing toggle\n\n" +
-                 "When SET:\n" +
-                 "• Uses this exact parameter name (no prefix)\n" +
-                 "• Synced across all players in the instance\n" +
-                 "• Multiple clothing pieces can share the same parameter\n\n" +
-                 "Advanced: If menuPath is also empty, ONLY global parameter controls this (no menu item).")]
+        [Tooltip("Uses this exact parameter name, so other clothing and systems can share it. Empty lets VRCFury generate one.")]
         public string globalParameter = "";
 
-        [Tooltip("Save toggle state across avatar reloads.")]
+        [Tooltip("Remembers the toggle's state between worlds and avatar reloads.")]
         public bool saved = true;
 
-        [Tooltip("Toggle starts in the ON state by default.\n\n" +
-                 "When ON: Clothing visible\n" +
-                 "When OFF: Clothing hidden\n\n" +
-                 "Note: Due to VRCFury's resting state system, this MUST be false for material animations to work correctly.")]
+        [Tooltip("The clothing starts visible. Leave it off: the material animation needs it off.")]
         public bool defaultOn = false;
 
-        [Tooltip("If true, the toggle will be a slider instead of a button.")]
+        [Tooltip("Uses a radial slider instead of an on/off toggle.")]
         public bool slider = false;
 
-        [Tooltip("If true, the toggle will be a hold button instead of a latching toggle.")]
+        [Tooltip("The toggle is on only while its button is held.")]
         public bool holdButton = false;
 
-        [Tooltip("If true, the toggle will be secured, preventing others from toggling it.")]
+        [Tooltip("Locks the toggle until the avatar's Security Lock is unlocked. Needs a Security Lock component on the avatar.")]
         public bool securityEnabled = false;
 
-        [Tooltip("If true, this toggle will be mutually exclusive with others sharing the same tag.\n\n" +
-                 "Example: 'Outfit1,Outfit2' - only one can be active at a time.")]
+        [Tooltip("Turns off other toggles that share a tag when this one turns on.")]
         public bool enableExclusiveTag = false;
+        [Tooltip("Comma-separated tags. Toggles that share a tag can't be on together.")]
         public string exclusiveTag = "";
 
-        [Tooltip("If true, the toggle will have a custom icon in the menu.")]
+        [Tooltip("Gives the toggle a custom icon in the menu.")]
         public bool enableIcon = false;
+        [Tooltip("The icon texture.")]
         public Texture2D icon;
 
         [Header("Debug Settings")]
-        [Tooltip("Save generated animation clip as asset for debugging.")]
+        [Tooltip("Saves the generated animation clip as an asset, for debugging.")]
         public bool debugSaveAnimation = false;
 
         public int PreprocessOrder => 0;

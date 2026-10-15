@@ -29,7 +29,6 @@ namespace YUCP.Components.Editor
         internal static AdvancedVisemeReconstructionMode ReplayReconstructionMode =
             AdvancedVisemeReconstructionMode.BetaCoarticulation;
 
-        [MenuItem("Tools/YUCP/Replay Sweep Voice Gain")]
         internal static void ReplaySweepVoiceGain()
         {
             var capture = NewestCapture();
@@ -59,7 +58,6 @@ namespace YUCP.Components.Editor
             }
         }
 
-        [MenuItem("Tools/YUCP/Replay Sweep Fusion Hold Amp")]
         internal static void ReplaySweepFusionAmp()
         {
             var capture = NewestCapture();
@@ -107,7 +105,6 @@ namespace YUCP.Components.Editor
             }
         }
 
-        [MenuItem("Tools/YUCP/Replay Sweep Syllabic Gain")]
         internal static void ReplaySweepSyllabicGain()
         {
             var capture = NewestCapture();
@@ -140,7 +137,6 @@ namespace YUCP.Components.Editor
             }
         }
 
-        [MenuItem("Tools/YUCP/Replay Sweep Observer Response")]
         internal static void ReplaySweep()
         {
             var capture = NewestCapture();
@@ -164,7 +160,6 @@ namespace YUCP.Components.Editor
             return newest?.FullName;
         }
 
-        [MenuItem("Tools/YUCP/Replay Newest Viseme Capture")]
         internal static void ReplayNewest()
         {
             var directory = Path.Combine(

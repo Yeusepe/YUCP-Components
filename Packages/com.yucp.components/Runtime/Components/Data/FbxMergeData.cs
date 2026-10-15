@@ -5,66 +5,66 @@ using VRC.SDKBase;
 namespace YUCP.Components
 {
     [SupportBanner]
-    [BetaWarning("This component is in BETA and may not work as intended. Mesh Merger modifies renderer/animation bindings at build time.")]
+    [BetaWarning("This component is in beta. It changes renderer and animation bindings when the avatar builds.")]
     [AddComponentMenu("YUCP/Mesh Merger")]
     [HelpURL("https://github.com/Yeusepe/Yeusepes-Modules")]
     [DisallowMultipleComponent]
     public class FbxMergeData : MonoBehaviour, IEditorOnly, IPreprocessCallbackBehaviour
     {
         [Header("Targets")]
-        [Tooltip("Base skinned renderer that receives merged geometry.")]
+        [Tooltip("The skinned mesh the attachment merges into, usually the body.")]
         public SkinnedMeshRenderer baseRenderer;
 
-        [Tooltip("Attachment source to merge into the base renderer.\n\nSupported:\n• SkinnedMeshRenderer\n• MeshFilter (with MeshRenderer)\n• GameObject containing either of the above")]
+        [Tooltip("The mesh to merge into the base mesh: a Skinned Mesh Renderer, a Mesh Filter, or an object that has one.")]
         public UnityEngine.Object attachmentTarget;
 
         [Header("Merge Behavior")]
-        [Tooltip("Delete the source attachment GameObject after successful merge/remap.")]
+        [Tooltip("Removes the attachment's object from the built avatar once it has merged.")]
         public bool deleteAttachmentObjectAfterMerge = true;
 
-        [Tooltip("Rename attachment blendshapes when names conflict with base blendshapes.")]
+        [Tooltip("Renames attachment blendshapes that share a name with a base blendshape.")]
         public bool renameConflictingAttachmentBlendshapes = true;
 
-        [Tooltip("Prefix used when renaming conflicting attachment blendshapes.")]
+        [Tooltip("Added to the start of renamed blendshapes.")]
         public string attachmentBlendshapePrefix = "Merged_";
 
-        [Tooltip("How unmatched closest-surface mapping points are handled during blendshape bake.")]
+        [Tooltip("How points with no matching base surface are handled when blendshapes are baked.")]
         public AttachToBlendshapeUnmatchedHandling unmatchedHandling = AttachToBlendshapeUnmatchedHandling.NeighborPropagate;
 
         [Header("Animation Remap")]
-        [Tooltip("Remap animation clips that target the attachment to the merged base renderer.")]
+        [Tooltip("Points animations that target the attachment at the merged mesh.")]
         public bool remapAnimations = true;
 
-        [Tooltip("Remap attachment blendshape curves to merged blendshape names/paths.")]
+        [Tooltip("Points the attachment's blendshape curves at the merged blendshapes.")]
         public bool remapBlendshapeAnimations = true;
 
-        [Tooltip("Remap attachment material curves to merged material slots.")]
+        [Tooltip("Points the attachment's material curves at the merged material slots.")]
         public bool remapMaterialAnimations = true;
 
-        [Tooltip("Convert attachment renderer/object OFF animation states into UV discard animation on merged materials.")]
+        [Tooltip("Animations that turn the attachment off hide its part of the merged mesh with UV discard instead.")]
         public bool remapRendererAndObjectOffToUvDiscard = true;
 
-        [Tooltip("When attachment materials lack UV discard support, collapse attachment vertices via a blendshape to simulate toggling off.")]
+        [Tooltip("When the attachment's materials can't use UV discard, hides it by shrinking it with a blendshape.")]
         public bool scaleToZeroFallback = true;
 
         [Header("UV Discard")]
-        [Tooltip("Automatically detect which UV channel to use for discard data.")]
+        [Tooltip("Picks the UV channel for the discard data automatically.")]
         public bool autoDetectUVChannel = true;
 
-        [Tooltip("UV channel used for discard data when auto detect is disabled.")]
+        [Tooltip("UV channel for the discard data.")]
         [Range(0, 3)]
         public int uvChannel = 1;
 
-        [Tooltip("UV tile row used for merged attachment discard.")]
+        [Tooltip("UV tile row the attachment is discarded with.")]
         [Range(0, 3)]
         public int uvDiscardRow = 3;
 
-        [Tooltip("UV tile column used for merged attachment discard.")]
+        [Tooltip("UV tile column the attachment is discarded with.")]
         [Range(0, 3)]
         public int uvDiscardColumn = 3;
 
         [Header("Debug")]
-        [Tooltip("Enable detailed build logs.")]
+        [Tooltip("Logs each step of the merge to the Console.")]
         public bool debugMode = false;
 
         [Header("Build Statistics (Read-only)")]

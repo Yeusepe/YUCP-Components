@@ -3507,16 +3507,12 @@ namespace YUCP.Components.Editor.Tests
                     .ClassListContains("yucp-tab-selected"), Is.True);
                 Assert.That(UQueryExtensions.Q<Button>(root, "advanced-mode-tab")
                     .ClassListContains("yucp-tab-selected"), Is.False);
-                Assert.That(UQueryExtensions.Query<VisualElement>(simple, className: "yucp-card")
+                Assert.That(UQueryExtensions.Query<VisualElement>(simple, className: "yucp-section")
                     .ToList().Count, Is.EqualTo(3));
                 Assert.That(UQueryExtensions.Q<PopupField<string>>(root, "simple-face-tracking"),
                     Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Toggle>(root, "simple-natural-transitions"),
                     Is.Not.Null);
-                Assert.That(UQueryExtensions.Q<Toggle>(root, "simple-share-tuning"),
-                    Is.Not.Null);
-                Assert.That(UQueryExtensions.Q<Toggle>(root, "simple-share-tuning").value,
-                    Is.True);
                 Assert.That(UQueryExtensions.Q<Slider>(root, "simple-speech-movement"),
                     Is.Not.Null);
                 Assert.That(UQueryExtensions.Q<Slider>(root, "simple-speech-liveliness"),

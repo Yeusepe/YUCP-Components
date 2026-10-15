@@ -1,0 +1,74 @@
+/* Material picker (YUCPMaterialPicker.cs): multi-select tiles that wrap to the inspector's width.
+   Each tile is a checkbox, so the selection shows as a check, not by color alone (HIG Color).
+   Hover and selection are a short color change only (HIG Motion). */
+
+.yucp-material-picker {
+    flex-direction: column;
+}
+
+.yucp-material-picker > .yucp-info-row {
+    align-items: center;
+}
+
+.yucp-material-picker > .yucp-info-row > .yucp-button {
+    margin: 0;
+}
+
+.yucp-material-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin: var(--yucp-spacing-xs) 0 0 3px;
+}
+
+/* Two classes, so the tile wins over Unity's own toggle and field styles. */
+.yucp-material-grid > .yucp-material-tile {
+    flex-direction: column;
+    flex-grow: 1;
+    flex-basis: 88px;
+    min-width: 88px;
+    max-width: 136px;
+    margin: 0 var(--yucp-spacing-xs) var(--yucp-spacing-xs) 0;
+    padding: var(--yucp-spacing-xs);
+    border-width: 1px;
+    border-color: var(--yucp-border-secondary);
+    border-radius: var(--yucp-radius-input);
+    background-color: var(--yucp-bg-tertiary);
+    transition-property: background-color, border-color;
+    transition-duration: 0.12s;
+}
+
+.yucp-material-grid > .yucp-material-tile:hover {
+    background-color: var(--yucp-bg-hover);
+}
+
+.yucp-material-grid > .yucp-material-tile--selected,
+.yucp-material-grid > .yucp-material-tile--selected:hover {
+    border-color: var(--yucp-accent-primary);
+    background-color: var(--yucp-tint-accent);
+}
+
+.yucp-material-tile__preview {
+    height: 64px;
+    border-radius: var(--yucp-radius-small);
+    background-color: var(--yucp-bg-secondary);
+}
+
+.yucp-material-tile > .unity-toggle__input {
+    flex-shrink: 1;
+    min-width: 0;
+    margin-top: var(--yucp-spacing-xs);
+}
+
+.yucp-material-tile .unity-toggle__text {
+    flex-shrink: 1;
+    max-height: 30px;
+    overflow: hidden;
+    font-size: 11px;
+    white-space: normal;
+    color: var(--yucp-text-primary);
+}
+
+.yucp-material-tile > .yucp-badge {
+    align-self: flex-start;
+    margin-top: var(--yucp-spacing-xs);
+}

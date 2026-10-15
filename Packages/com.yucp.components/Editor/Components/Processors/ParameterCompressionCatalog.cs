@@ -31,7 +31,6 @@ namespace YUCP.Components.Editor
         internal bool eligible;
         internal bool hardUnsafe;
         internal string reason;
-        internal int minimumLevels;
         internal int desiredLevels;
         internal float minimum;
         internal float maximum;
@@ -103,15 +102,6 @@ namespace YUCP.Components.Editor
                     maximum = DefaultMaximum(parameter.valueType, role)
                 };
 
-                entry.desiredLevels = NativeLevels(parameter.valueType);
-
-
-
-
-                entry.minimumLevels = parameter.valueType ==
-                                      VRCExpressionParameters.ValueType.Float
-                    ? Math.Max(2, entry.desiredLevels - 8)
-                    : entry.desiredLevels;
                 ApplyRuleQuantization(entry, rule);
 
                 if (parameter.name.StartsWith(reservedPrefix, StringComparison.Ordinal) ||
@@ -397,27 +387,32 @@ namespace YUCP.Components.Editor
             ParameterCompressionCatalogEntry entry,
             ParameterCompressionRule rule)
         {
-            if (rule == null) return;
-            if (rule.range != ParameterCompressionRangeMode.Automatic)
+            if (rule != null && rule.range != ParameterCompressionRangeMode.Automatic)
                 ParameterCompressionContract.ResolveRange(
                     rule.range, rule.minimum, rule.maximum,
                     out entry.minimum, out entry.maximum);
+            entry.desiredLevels = NativeLevels(entry);
 
-            var requested = ParameterCompressionContract.QuantizationLevelCount(
-                rule.precision);
-            if (requested <= 0) return;
-            entry.desiredLevels = Math.Max(2,
-                Math.Min(entry.desiredLevels, requested));
-            entry.minimumLevels = entry.desiredLevels;
+            var requested = rule == null
+                ? 0
+                : ParameterCompressionContract.QuantizationLevelCount(rule.precision);
+            if (requested > 0)
+                entry.desiredLevels = Math.Max(2, Math.Min(entry.desiredLevels, requested));
         }
 
-        private static int NativeLevels(VRCExpressionParameters.ValueType type)
+        /// <summary>
+        /// Values a remote can tell apart. A synced Float is k/127 for k in -127..127,
+        /// so a range that never goes negative only reaches 128 of them.
+        /// Taken from: https://creators.vrchat.com/avatars/animator-parameters/
+        /// </summary>
+        private static int NativeLevels(ParameterCompressionCatalogEntry entry)
         {
-            switch (type)
+            switch (entry.parameter.valueType)
             {
                 case VRCExpressionParameters.ValueType.Bool: return 2;
-                case VRCExpressionParameters.ValueType.Int: return 256;
-                default: return 255;
+                case VRCExpressionParameters.ValueType.Int:
+                    return Mathf.Clamp(Mathf.RoundToInt(entry.maximum - entry.minimum) + 1, 2, 256);
+                default: return entry.minimum >= 0f ? 128 : 255;
             }
         }
 

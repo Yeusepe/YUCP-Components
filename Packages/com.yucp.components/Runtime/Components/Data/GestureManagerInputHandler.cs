@@ -12,7 +12,7 @@ namespace YUCP.Components
     /// This component is automatically added by the processor during build.
     /// </summary>
     [SupportBanner]
-    [BetaWarning("This component is in BETA and may not work as intended. Gesture Manager input handling is experimental and may require manual configuration.")]
+    [BetaWarning("This component is in beta. Input handling may need manual setup.")]
     public class GestureManagerInputHandler : MonoBehaviour
     {
         #region Fields and Properties
@@ -100,28 +100,22 @@ namespace YUCP.Components
 
         #region Unity Lifecycle
 
-        private void Awake()
+        public static GestureManagerInputHandler Current { get; private set; }
+
+        private void Awake() => InitializeInputStates();
+
+        private void OnEnable() => Current = this;
+
+        private void OnDisable()
         {
-            Debug.Log($"[GestureManagerInputHandler] Awake called - Debug Mode: {debugMode}");
-            Debug.Log($"[GestureManagerInputHandler] Runtime mappings count: {runtimeMappings.Count}");
-            Debug.Log($"[GestureManagerInputHandler] Enable input capture: {enableInputCapture}");
-
-
-            InitializeInputStates();
-            Debug.Log($"[GestureManagerInputHandler] Initialization complete");
+            if (Current == this)
+                Current = null;
         }
 
         private void Start()
         {
-            Debug.Log($"[GestureManagerInputHandler] Start called - Component enabled: {enabled}");
-            Debug.Log($"[GestureManagerInputHandler] Debug mode: {debugMode}, Show overlay: {showDebugOverlay}");
-
-
             if (debugMode)
-            {
-                Debug.Log($"[GestureManagerInputHandler] Debug mode enabled - overlay will be shown");
                 showDebugOverlay = true;
-            }
         }
 
         private void Update()

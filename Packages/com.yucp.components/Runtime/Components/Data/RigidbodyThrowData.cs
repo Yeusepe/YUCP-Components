@@ -32,63 +32,63 @@ namespace YUCP.Components
         [SerializeField, HideInInspector]
         private GameObject _thrownObjectInfo;
         
-        [Tooltip("Applied object (transform): The object that will be thrown. This object will be moved outside the prefab hierarchy and will be thrown when the gesture condition is met. Uses particle system and contacts to sync position (and optionally rotation) across clients.")]
+        [Tooltip("Where the throw starts, such as a hand. Empty keeps the prefab's default position.")]
         [FormerlySerializedAs("throwTarget")]
         public Transform appliedTransform;
 
         [Header("Options")]
-        [Tooltip("Enable rotation sync for the thrown object (requires additional parameters).")]
+        [Tooltip("Syncs the object's rotation as well as its position. Uses 51 parameter bits instead of 27.")]
         public bool enableRotationSync = false;
 
-        [Tooltip("When enabled, an expression menu toggle is generated for this throw. When disabled, no menu entry is added.")]
+        [Tooltip("Adds a menu toggle for the throw.")]
         public bool generateMenu = false;
 
-        [Tooltip("Expressions menu path where the control toggle should be created (e.g. \"Utility/Throw\"). Leave blank to place it at the root menu. Only used when Generate Menu is enabled.")]
+        [Tooltip("Submenu for the toggle, e.g. Utility/Throw. Empty puts it at the root.")]
         public string menuLocation = "Utility/Throw";
 
         [Header("Throw Settings")]
-        [Tooltip("Physics material for collision. Applied to the Collision Collider.")]
+        [Tooltip("Physics material of the thrown object's collider.")]
         public PhysicMaterial physicsMaterial;
 
-        [Tooltip("Which hand to use for gesture triggers (Left or Right).")]
+        [Tooltip("The hand whose gestures throw and reset the object.")]
         public GestureHand gestureHand = GestureHand.Right;
 
-        [Tooltip("Gesture value for throwing (default: 2 = HandOpen).")]
+        [Tooltip("The gesture that throws the object.")]
         [Range(0, 7)]
         public int throwGesture = 2;
 
-        [Tooltip("Gesture value for resetting (default: 1 = Fist).")]
+        [Tooltip("The gesture that brings the object back.")]
         [Range(0, 7)]
         public int resetGesture = 1;
 
-        [Tooltip("Layers that collision detection will use.")]
+        [Tooltip("Layers the thrown object collides with.")]
         public LayerMask collisionLayers = -1;
 
         [Header("Global Parameter Settings")]
-        [Tooltip("Enable global parameter triggers instead of gestures.")]
+        [Tooltip("Throws and resets with global parameters instead of gestures.")]
         public bool useGlobalParameters = false;
 
-        [Tooltip("Parameter mode: Single uses one parameter (true=throw, false=reset), Dual uses separate parameters for throw and reset.")]
+        [Tooltip("One parameter throws when on and resets when off. Two uses separate throw and reset parameters.")]
         public ParameterMode parameterMode = ParameterMode.Single;
 
-        [Tooltip("Base parameter name for throw. The system will append /<Target> to make it unique per component. In Single mode, this parameter is used for both throw (true) and reset (false).")]
+        [Tooltip("Global parameter that throws the object. /<object> is appended to keep it unique.")]
         public string throwParameterName = "ThrowObject";
 
-        [Tooltip("Base parameter name for reset. The system will append /<Target> to make it unique per component. Only used in Dual mode.")]
+        [Tooltip("Global parameter that resets the object. /<object> is appended to keep it unique.")]
         public string resetParameterName = "ResetObject";
 
         [Header("Grouping")]
-        [Tooltip("Enable to combine multiple components into a shared throw setup.")]
+        [Tooltip("Shares one throw setup between components with the same group ID.")]
         public bool enableGrouping = false;
 
-        [Tooltip("Identifier used when grouping is enabled. Components with matching IDs are merged into the same setup.")]
+        [Tooltip("Components with the same group ID share one setup.")]
         public string throwGroupId = "Default";
 
         [Header("Diagnostics")]
-        [Tooltip("Print additional information while building.")]
+        [Tooltip("Logs extra detail while the avatar builds.")]
         public bool verboseLogging = false;
 
-        [Tooltip("Include the automatic credit banner in the inspector and documentation.")]
+        [Tooltip("Shows the credit line for the VRLabs prefab this component is based on.")]
         public bool includeCredits = true;
 
 #if UNITY_EDITOR
