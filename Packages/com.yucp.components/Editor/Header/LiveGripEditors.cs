@@ -89,6 +89,7 @@ namespace YUCP.Components.Editor
             ui.Segmented(toggle, "useExistingToggle", "Control", "Menu Toggle", "Existing Toggle");
             var menu = new VisualElement();
             toggle.Add(menu);
+            ui.Field(menu, "toggleParameter", "Driven By Parameter");
             ui.Field(menu, "menuPath", "Menu Path");
             ui.Field(menu, "menuName", "Toggle Name");
             ui.Field(menu, "defaultOn", "On by Default");

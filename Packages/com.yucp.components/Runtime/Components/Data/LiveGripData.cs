@@ -47,6 +47,9 @@ namespace YUCP.Components
         [Tooltip("The VRCFury toggle that turns the grip on. Empty uses the first toggle on this object or its children.")]
         public Component selectedToggle;
 
+        [Tooltip("Turn the grip on with this existing Bool parameter instead of a toggle, e.g. one a generator drives. Adds no menu item or parameter.")]
+        public string toggleParameter = "";
+
         [Tooltip("Submenu path for the grip toggle, e.g. \"Props\". Empty puts it at the root.")]
         public string menuPath = "";
 

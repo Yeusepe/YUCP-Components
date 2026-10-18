@@ -69,7 +69,7 @@ namespace YUCP.Components.Editor
                 Debug.LogError("[YUCP Live Grip] The avatar needs a humanoid rig.", datas[0]);
                 return false;
             }
-            if (!FinalIkBridge.IsAvailable)
+            if (datas.Any(d => d.mode == LiveGripData.Mode.Live) && !FinalIkBridge.IsAvailable)
             {
                 Debug.LogError("[YUCP Live Grip] Final IK is not in the project.", datas[0]);
                 return false;
@@ -127,7 +127,11 @@ namespace YUCP.Components.Editor
                 Debug.LogError($"[YUCP Live Grip] {data.name}: choose the VRCFury toggle that turns the grip on.", data);
                 return false;
             }
-            var toggle = existing != null ? ExistingToggle(data, existing) : ("YUCPLiveGrip" + index, false);
+            var external = existing == null && !string.IsNullOrWhiteSpace(data.toggleParameter);
+            var ownToggle = existing == null && !external;
+            var toggle = existing != null ? ExistingToggle(data, existing)
+                : external ? (data.toggleParameter.Trim(), false)
+                : ("YUCPLiveGrip" + index, false);
 
             var ik = data.mode == LiveGripData.Mode.Live ? BuildIk(avatarRoot, data, hand, grips) : null;
 
@@ -160,8 +164,8 @@ namespace YUCP.Components.Editor
                 {
                     name = toggle.Item1,
                     type = toggle.Item2 ? AnimatorControllerParameterType.Float : AnimatorControllerParameterType.Bool,
-                    defaultBool = existing == null && data.defaultOn,
-                    defaultFloat = existing == null && data.defaultOn ? 1f : 0f
+                    defaultBool = ownToggle && data.defaultOn,
+                    defaultFloat = ownToggle && data.defaultOn ? 1f : 0f
                 });
                 if (position != null) DigitigradeControllerBuilder.AddFloat(c, position, 0f);
                 return c;
@@ -227,7 +231,7 @@ namespace YUCP.Components.Editor
             var parameters = ScriptableObject.CreateInstance<VRCExpressionParameters>();
             parameters.name = "YUCP_LiveGrip_Params";
             var expressionParameters = new List<VRCExpressionParameters.Parameter>();
-            if (existing == null)
+            if (ownToggle)
                 expressionParameters.Add(new VRCExpressionParameters.Parameter
                 {
                     name = toggle.Item1, valueType = VRCExpressionParameters.ValueType.Bool,
@@ -246,7 +250,7 @@ namespace YUCP.Components.Editor
             var menu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
             menu.name = "YUCP_LiveGrip_Menu";
             menu.controls = new List<VRCExpressionsMenu.Control>();
-            if (existing == null)
+            if (ownToggle)
                 menu.controls.Add(new VRCExpressionsMenu.Control
                 {
                     name = menuName,
@@ -272,14 +276,15 @@ namespace YUCP.Components.Editor
             full.AddParams(parameters);
             if (menu.controls.Count > 0) full.AddMenu(menu, data.menuPath ?? string.Empty);
             if (position != null) full.AddGlobalParam(position);
-            if (existing != null) full.AddGlobalParam(toggle.Item1);
+            if (!ownToggle) full.AddGlobalParam(toggle.Item1);
             EditorUtility.SetDirty(descriptor.gameObject);
 
             var summary = (ik != null ? "Live" : "Baked") + ". " +
                           string.Join("; ", grips.Select(g => g.name + ": " + string.Join(", ", g.fingers.Select(f => f.Name)))) +
                           (position != null ? $"; driven by \"{position}\"" : string.Empty) +
                           (attached != null ? "; " + attached : string.Empty) +
-                          (existing != null ? $"; on with the \"{ToggleName(existing)}\" toggle" : "; menu toggle added");
+                          (existing != null ? $"; on with the \"{ToggleName(existing)}\" toggle"
+                             : external ? $"; on with \"{toggle.Item1}\"" : "; menu toggle added");
             data.SetBuildSummary(summary);
             Debug.Log("[YUCP Live Grip] " + data.name + ": " + summary, data);
             return true;
