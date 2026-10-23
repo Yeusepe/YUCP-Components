@@ -1,7 +1,7 @@
 {
   "name": "com.yucp.components",
   "displayName": "YUCP Components",
-  "version": "0.3.45",
+  "version": "0.3.46",
   "unity": "2022.3",
   "changelogUrl": "https://vpm.yucp.club/CHANGELOG.md",
   "description": "VRChat avatar utilities with VRCFury integration: armature linking, blendshape attachment, body hiding, UV tools, facial animation, and parameter compression",
@@ -12,7 +12,7 @@
   "vpmDependencies": {
     "com.vrcfury.vrcfury": ">=1.1258.0",
     "com.vrchat.core.vpm-resolver": ">=0.1.27",
-    "com.yucp.ui": ">=0.1.0"
+    "com.yucp.ui": ">=0.1.1"
   },
   "legacyPackages": [
     "one.razgriz.harmony-vpm"

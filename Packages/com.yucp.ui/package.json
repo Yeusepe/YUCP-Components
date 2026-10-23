@@ -1,7 +1,7 @@
 {
   "name": "com.yucp.ui",
   "displayName": "YUCP UI",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "unity": "2022.3",
   "changelogUrl": "https://vpm.yucp.club/CHANGELOG.md",
   "description": "The YUCP design system: tokens, stylesheets and the inspector and window builder shared by every YUCP package. See DESIGN.md.",

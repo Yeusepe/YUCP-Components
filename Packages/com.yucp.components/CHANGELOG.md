@@ -2,6 +2,12 @@
 
 All notable changes to YUCP Components will be documented in this file.
 
+## [0.3.46] - 2026-10-23
+
+- Add the Live Grip external Bool parameter and inspector control used by generated props.
+- Allow baked Live Grip to build without Final IK.
+- Require UI 0.1.1, which gives shared assets unique GUIDs.
+
 ## [0.3.45] - 2026-10-15
 
 ### Shared UI
