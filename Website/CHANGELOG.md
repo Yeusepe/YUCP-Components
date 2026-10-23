@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-10-23]
+
+### com.yucp.components 0.3.46
+- Add Live Grip control through an existing Bool parameter and allow baked grips without Final IK.
+- Require YUCP UI 0.1.1.
+
+### com.yucp.ui 0.1.1
+- Use unique identifiers for the shared stylesheet and helper to avoid collisions with older Components assets.
+
 ## [2026-10-15]
 
 ### com.yucp.ui 0.1.0
