@@ -11,11 +11,9 @@ on:
   schedule:
     - cron: "0 * * * *"
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
-  pages: write
-  id-token: write
+  pages: read
   
 # Allow one concurrent deployment
 concurrency:
@@ -24,12 +22,10 @@ concurrency:
 
 jobs:
   
-  # Build the VPM Listing Website and deploy to GitHub Pages
   build-listing:
     name: build-listing
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact_id }}
     runs-on: ubuntu-latest
     steps:
       
@@ -57,8 +53,13 @@ jobs:
       # Build Package Version Listing with Nuke
       - name: Build Package Version Listing
         run: |
+          project="${{ env.pathToCi }}/PackageBuilder/PackageBuilder.csproj"
+          dotnet build "$project" --framework net8.0
           for package in ${{ env.packageNames }}; do
-            ${{ env.pathToCi }}/build.cmd BuildRepoListing --root ${{ env.pathToCi }} --list-publish-directory $GITHUB_WORKSPACE/${{ env.listPublishDirectory }} --current-package-name "$package" --current-listing-url "https://vpm.yucp.club/index.json"
+            dotnet run --project "$project" --framework net8.0 --no-build -- \
+              BuildRepoListing --root "${{ env.pathToCi }}" \
+              --list-publish-directory "$GITHUB_WORKSPACE/${{ env.listPublishDirectory }}" \
+              --current-package-name "$package" --current-listing-url "https://vpm.yucp.club/index.json"
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,11 +81,63 @@ jobs:
       
       # Upload the VPM Listing Website to GitHub Pages artifacts
       - name: Upload Pages Artifact
+        id: upload
         uses: actions/upload-pages-artifact@v3
         with:
           path: ${{ env.listPublishDirectory }}
       
-      # Deploy the uploaded VPM Listing Website to GitHub Pages
+  deploy:
+    needs: build-listing
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # The upload returns the artifact ID before Actions consistently lists it by name.
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          ARTIFACT_ID: ${{ needs.build-listing.outputs.artifact_id }}
+        with:
+          script: |
+            const artifactId = Number(process.env.ARTIFACT_ID)
+            if (!Number.isSafeInteger(artifactId) || artifactId <= 0) {
+              throw new Error('The Pages upload did not return a valid artifact ID.')
+            }
+            const { data } = await github.request('POST /repos/{owner}/{repo}/pages/deployments', {
+              ...context.repo,
+              artifact_id: artifactId,
+              pages_build_version: context.sha,
+              oidc_token: await core.getIDToken()
+            })
+            core.setOutput('status_url', data.status_url)
+            core.setOutput('page_url', data.page_url)
+
+      - name: Wait for Pages deployment
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS_URL: ${{ steps.deployment.outputs.status_url }}
+        run: |
+          test -n "$STATUS_URL"
+          while true; do
+            sleep 5
+            if status=$(gh api "$STATUS_URL" --jq '.status'); then
+              echo "Pages deployment: $status"
+              case "$status" in
+                succeed) exit 0 ;;
+                deployment_failed|deployment_content_failed|deployment_cancelled|deployment_lost) exit 1 ;;
+              esac
+            fi
+          done
+
+      - name: Cancel unfinished Pages deployment
+        if: ${{ cancelled() && steps.deployment.outputs.status_url != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS_URL: ${{ steps.deployment.outputs.status_url }}
+        run: gh api --method POST "$STATUS_URL/cancel"
